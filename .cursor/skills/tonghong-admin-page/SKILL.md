@@ -8,7 +8,7 @@ description: Menambah atau mengubah halaman Vue di frontend/src/views/admin meng
 ## Sebelum ngoding
 
 1. Baca contoh yang sudah konsisten: `CustomersPage.vue`, `PurchaseOrderPage.vue`, atau `DeliveryPage.vue`.
-2. Cek rule proyek: `.cursor/rules/tonghong-admin-vue.mdc` dan `tonghong-stack.mdc`.
+2. Cek rule proyek: `.cursor/rules/tonghong-admin-vue.mdc`, `.cursor/rules/tonghong-element-plus-ui.mdc`, dan `tonghong-stack.mdc`.
 
 ## Struktur halaman
 
@@ -16,6 +16,7 @@ description: Menambah atau mengubah halaman Vue di frontend/src/views/admin meng
 - Toolbar di slot `#actions`: `el-input` pencarian + tombol sekunder + `el-button type="primary"` dengan ikon (`Plus`, `Download`, dll.).
 - Panel filter: `div.filter-panel` + `filter-panel__title` + `el-form.filter-form`.
 - Tabel: `class="admin-table"`, `border stripe size="small"`, kolom index, `empty-text`, aksi pakai ikon `link` + `el-tooltip`, hindari lebar tetap pada input toolbar (pakai class `*-toolbar-search`).
+- Utamakan props/slot API Element Plus; hindari custom CSS atau style inline untuk "patch" visual komponen.
 
 ## Dialog & form
 

@@ -11,3 +11,4 @@ alwaysApply: true
 - **Quality gates CI**: frontend wajib `npm run lint` + `npm run build`; backend wajib `python -m ruff check --select F,E9 app tests` + `python -m pytest`; workflow GitHub Actions divalidasi dengan `actionlint`.
 
 Saat menyentuh halaman admin baru atau mengubah UI, ikuti rule **`tonghong-admin-vue`** (file di folder yang sama, glob `frontend/src/views/admin/**/*.vue`).
+Untuk konsistensi UI/UX, ikuti rule **`tonghong-element-plus-ui`** agar tetap memakai komponen + theming Element Plus tanpa custom CSS/hardcode per halaman.

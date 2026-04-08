@@ -2,16 +2,23 @@
   <AdminSection :title="t('pages.delivery.title')" :subtitle="t('pages.delivery.subtitle')">
     <template #actions>
       <el-input v-model="keyword" :placeholder="t('pages.delivery.searchPlaceholder')" clearable class="delivery-toolbar-search" />
-      <el-button :icon="Van" @click="ElMessage.info('Alur: QC OK → Packing done → Delivery + detail → status sent → Invoice.')">{{ t('menu.deliveryPull') }}</el-button>
-      <el-button :icon="Document" @click="ElMessage.info('Surat jalan: cetak dari detail delivery.')">{{ t('menu.suratJalan') }}</el-button>
+      <el-button :icon="Van" @click="ElMessage.info(t('pages.delivery.flowInfo'))">{{ t('menu.deliveryPull') }}</el-button>
+      <el-button :icon="Document" @click="ElMessage.info(t('pages.delivery.sjInfo'))">{{ t('menu.suratJalan') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
-    <p class="mb-3 text-sm text-slate-600">
-      Buat delivery hanya dari <b>packing selesai (done)</b>. Isi baris detail (QC OK) lalu set status <code class="rounded bg-slate-100 px-1">sent</code> sebelum invoice.
-    </p>
+    <el-alert :title="t('pages.delivery.deliveryGuide')" type="info" show-icon :closable="false" class="mb-3" />
 
-    <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.delivery.tableEmpty')">
+    <el-table
+      :data="filteredRows"
+      v-loading="loading"
+      border
+      stripe
+      size="small"
+      class="admin-table"
+      table-layout="auto"
+      :empty-text="t('pages.delivery.tableEmpty')"
+    >
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
       <el-table-column prop="delivery_number" :label="t('common.deliveryNo')" min-width="160" />
       <el-table-column prop="customer_name" :label="t('common.customer')" min-width="200" />
@@ -21,25 +28,27 @@
       <el-table-column prop="status" :label="t('common.status')" width="100" />
       <el-table-column :label="t('common.actions')" width="100" fixed="right">
         <template #default="{ row }">
-          <el-button :icon="View" link type="primary" @click="openDetail(row)" />
+          <el-tooltip :content="t('common.detail')" placement="top">
+            <el-button :icon="View" link type="primary" @click="openDetail(row)" />
+          </el-tooltip>
         </template>
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="formVisible" :title="`${t('common.create')} ${t('menu.delivery')}`" width="560px" destroy-on-close>
+    <el-dialog v-model="formVisible" :title="`${t('common.create')} ${t('menu.delivery')}`" width="560px" destroy-on-close align-center>
       <el-form label-position="top">
         <el-form-item :label="t('common.customer')" required>
           <el-select v-model="form.customer_id" filterable class="w-full">
             <el-option
               v-for="c in customers"
               :key="c.id"
-              :label="(c.code || '') + ' — ' + (c.name || '') + (c.city ? ' · ' + c.city : '')"
+              :label="customerOptionLabel(c)"
               :value="c.id"
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="Packing (wajib, status done)" required>
-          <el-select v-model="form.packing_id" filterable class="w-full" placeholder="Pilih packing selesai">
+        <el-form-item :label="t('pages.delivery.packingRequiredLabel')" required>
+          <el-select v-model="form.packing_id" filterable class="w-full" :placeholder="t('pages.delivery.pickDonePacking')">
             <el-option
               v-for="p in packingsDone"
               :key="p.id"
@@ -61,16 +70,25 @@
           <el-select v-model="form.status" class="w-full" disabled>
             <el-option :label="t('status.draft')" value="draft" />
           </el-select>
-          <span class="mt-1 block text-xs text-slate-500">Setelah ada detail, buka detail delivery dan klik «Tandai terkirim».</span>
+          <span class="mt-1 block text-xs text-slate-500">{{ t('pages.delivery.markSentHint') }}</span>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button v-if="canCreate" type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
+        <div class="delivery-dialog-footer">
+          <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
+          <el-button v-if="canCreate" type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
+        </div>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="detailVisible" :title="t('pages.delivery.dialogDetail')" width="640px" destroy-on-close @closed="resetDetail">
+    <el-dialog
+      v-model="detailVisible"
+      :title="t('pages.delivery.dialogDetail')"
+      width="640px"
+      destroy-on-close
+      align-center
+      @closed="resetDetail"
+    >
       <template v-if="detailRow">
         <el-descriptions :column="1" border size="small" class="mb-4">
           <el-descriptions-item :label="t('common.deliveryNo')">{{ detailRow.delivery_number }}</el-descriptions-item>
@@ -81,7 +99,7 @@
           <el-descriptions-item :label="t('common.status')">{{ detailRow.status }}</el-descriptions-item>
         </el-descriptions>
 
-        <div class="mb-2 flex flex-wrap items-center gap-2">
+        <div class="delivery-detail-actions">
           <el-button
             v-if="canUpdate"
             type="primary"
@@ -89,44 +107,46 @@
             :loading="markingSent"
             @click="markSent"
           >
-            Tandai terkirim (sent)
+            {{ t('pages.delivery.markSent') }}
           </el-button>
-          <el-button v-if="canPrint" @click="openSjPrint">Cetak Surat Jalan</el-button>
-          <el-button v-if="canPrint" @click="downloadSjPdf">Unduh PDF</el-button>
-          <el-button v-if="canPrint" @click="downloadSjExcel">Unduh Excel</el-button>
-          <el-button v-if="canUpdate" type="success" plain :loading="markingSj" @click="markSjPrinted">Tandai SJ dicetak</el-button>
-          <span v-if="detailLines.length === 0" class="text-xs text-amber-600">Tambah minimal satu baris detail dulu.</span>
+          <el-button v-if="canPrint" @click="openSjPrint">{{ t('pages.delivery.printSj') }}</el-button>
+          <el-button v-if="canPrint" @click="downloadSjPdf">{{ t('pages.delivery.downloadPdf') }}</el-button>
+          <el-button v-if="canPrint" @click="downloadSjExcel">{{ t('pages.delivery.downloadExcel') }}</el-button>
+          <el-button v-if="canUpdate" type="success" plain :loading="markingSj" @click="markSjPrinted">{{ t('pages.delivery.markSjPrinted') }}</el-button>
+          <span v-if="detailLines.length === 0" class="text-xs text-amber-600">{{ t('pages.delivery.needAtLeastOneLine') }}</span>
         </div>
 
-        <h4 class="mb-2 text-sm font-medium text-slate-700">Baris delivery</h4>
-        <el-table :data="detailLines" border size="small" class="mb-4" empty-text="Belum ada baris">
-          <el-table-column prop="id" label="ID" width="64" />
-          <el-table-column prop="production_detail_id" label="Prod. detail ID" min-width="120" />
-          <el-table-column prop="qty" label="Qty" width="100" align="right" />
+        <h4 class="mb-2 text-sm font-medium text-slate-700">{{ t('pages.delivery.deliveryLines') }}</h4>
+        <el-table :data="detailLines" border size="small" class="mb-4" table-layout="auto" :empty-text="t('pages.delivery.linesEmpty')">
+          <el-table-column prop="id" :label="t('pages.delivery.lineId')" width="64" />
+          <el-table-column prop="production_detail_id" :label="t('pages.delivery.productionDetailId')" min-width="120" />
+          <el-table-column prop="qty" :label="t('common.quantity')" width="100" align="right" />
         </el-table>
 
         <el-form v-if="canUpdate && candidateProdDetails.length" label-position="top" class="border-t border-slate-100 pt-3">
-          <el-form-item label="Tambah baris (hanya QC OK — validasi server)">
-            <el-select v-model="lineForm.production_detail_id" filterable clearable class="w-full" placeholder="Production detail">
+          <el-form-item :label="t('pages.delivery.addLineLabel')">
+            <el-select v-model="lineForm.production_detail_id" filterable clearable class="w-full" :placeholder="t('pages.delivery.productionDetailPlaceholder')">
               <el-option
                 v-for="pd in candidateProdDetails"
                 :key="pd.id"
-                :label="`#${pd.id} · aktual ${pd.qty_actual ?? '—'}`"
+                :label="`#${pd.id} ${t('common.dotSeparator')} ${t('common.actual').toLowerCase()} ${pd.qty_actual ?? t('common.emptyValue')}`"
                 :value="pd.id"
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="Qty">
+          <el-form-item :label="t('common.quantity')">
             <el-input v-model="lineForm.qty" type="number" step="0.01" />
           </el-form-item>
-          <el-button type="primary" :loading="addingLine" @click="addLine">Tambah ke delivery</el-button>
+          <el-button type="primary" :loading="addingLine" @click="addLine">{{ t('pages.delivery.addToDelivery') }}</el-button>
         </el-form>
         <p v-else-if="detailRow && detailLoading === false" class="text-sm text-slate-500">
-          Tidak ada daftar baris produksi (pastikan packing punya production).
+          {{ t('pages.delivery.noProductionLines') }}
         </p>
       </template>
       <template #footer>
-        <el-button type="primary" @click="detailVisible = false">{{ t('pages.delivery.closeDetail') }}</el-button>
+        <div class="delivery-dialog-footer">
+          <el-button type="primary" @click="detailVisible = false">{{ t('pages.delivery.closeDetail') }}</el-button>
+        </div>
       </template>
     </el-dialog>
   </AdminSection>
@@ -172,7 +192,13 @@ const packingsDone = computed(() =>
 
 function custName(id) {
   const c = customers.value.find((x) => x.id === id)
-  return c ? `${c.name}` : '—'
+  return c ? `${c.name}` : t('common.emptyValue')
+}
+
+function customerOptionLabel(c) {
+  const base = [c.code, c.name].filter(Boolean).join(` ${t('common.dashSeparator')} `)
+  if (!base) return String(c.id)
+  return c.city ? `${base} ${t('common.dotSeparator')} ${c.city}` : base
 }
 
 async function load() {
@@ -187,7 +213,7 @@ async function load() {
       delivery_date: r.delivery_date ? String(r.delivery_date).slice(0, 10) : '',
     }))
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     loading.value = false
   }
@@ -227,11 +253,11 @@ function openCreate() {
 
 async function submit() {
   if (!form.customer_id) {
-    ElMessage.warning('Pilih customer')
+    ElMessage.warning(t('pages.delivery.pickCustomerWarning'))
     return
   }
   if (!form.packing_id) {
-    ElMessage.warning('Pilih packing (status done)')
+    ElMessage.warning(t('pages.delivery.pickDonePackingWarning'))
     return
   }
   saving.value = true
@@ -248,7 +274,7 @@ async function submit() {
     formVisible.value = false
     await load()
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     saving.value = false
   }
@@ -291,7 +317,7 @@ async function openDetail(row) {
       }
     }
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     detailLoading.value = false
   }
@@ -317,9 +343,9 @@ async function markSjPrinted() {
   markingSj.value = true
   try {
     await markSuratJalanPrinted(detailRow.value.id)
-    ElMessage.success('Surat jalan ditandai sudah dicetak')
+    ElMessage.success(t('pages.delivery.sjMarkedPrinted'))
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     markingSj.value = false
   }
@@ -330,11 +356,11 @@ async function markSent() {
   markingSent.value = true
   try {
     await updateDelivery(detailRow.value.id, { status: 'sent' })
-    ElMessage.success('Delivery ditandai terkirim')
+    ElMessage.success(t('pages.delivery.deliveryMarkedSent'))
     detailVisible.value = false
     await load()
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     markingSent.value = false
   }
@@ -342,7 +368,7 @@ async function markSent() {
 
 async function addLine() {
   if (!detailRow.value?.id || !lineForm.production_detail_id) {
-    ElMessage.warning('Pilih production detail')
+    ElMessage.warning(t('pages.delivery.pickProductionDetailWarning'))
     return
   }
   addingLine.value = true
@@ -351,12 +377,12 @@ async function addLine() {
       production_detail_id: lineForm.production_detail_id,
       qty: lineForm.qty ? Number(lineForm.qty) : undefined,
     })
-    ElMessage.success('Baris ditambahkan')
+    ElMessage.success(t('pages.delivery.lineAdded'))
     detailLines.value = await listDeliveryDetails(detailRow.value.id)
     lineForm.production_detail_id = null
     lineForm.qty = ''
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     addingLine.value = false
   }
@@ -366,5 +392,19 @@ async function addLine() {
 <style scoped>
 .admin-table {
   width: 100%;
+}
+
+.delivery-detail-actions {
+  margin-bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.delivery-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 </style>

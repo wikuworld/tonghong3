@@ -44,7 +44,7 @@ async function submit() {
     const next = route.query.next ? String(route.query.next) : '/admin/dashboard'
     router.replace(next)
   } catch (e) {
-    ElMessage.error(e.message || 'Login gagal')
+    ElMessage.error(e.message || t('pages.login.failed'))
   } finally {
     loading.value = false
   }

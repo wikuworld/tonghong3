@@ -34,3 +34,4 @@ alwaysApply: false
 
 - Contoh pola CRUD: `CustomersPage.vue`, `PurchaseOrderPage.vue`, `DeliveryPage.vue`.
 - Layout global & anti-overlap: `frontend/src/components/AdminSection.vue`, `frontend/src/layouts/AdminLayout.vue`, `frontend/src/style.css` (`.admin-section-*`, `*-toolbar-search`).
+- Konsistensi design system: `.cursor/rules/tonghong-element-plus-ui.mdc`.

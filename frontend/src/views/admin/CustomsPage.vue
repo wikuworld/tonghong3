@@ -83,7 +83,7 @@
         <el-divider content-position="left">{{ t('pages.customs.sectionHeader') }}</el-divider>
         <p class="text-sm text-slate-500">
           <span class="font-medium text-slate-700">{{ t('pages.customs.nomorAju') }}:</span>
-          {{ masterNomorAju || '—' }}
+          {{ masterNomorAju || t('common.emptyValue') }}
         </p>
         <el-form label-position="top" class="max-w-3xl">
           <el-row :gutter="16">
@@ -365,7 +365,7 @@ async function submitCreate() {
     if (msg.includes('409')) {
       ElMessage.error(t('pages.customs.duplicateNomor'))
     } else {
-      ElMessage.error(msg || 'Error')
+      ElMessage.error(msg || t('common.errorGeneric'))
     }
   } finally {
     createSaving.value = false
@@ -393,7 +393,7 @@ async function openMaster(id) {
     sheetsState.value = hasSheets ? sheetsFromApi(d) : defaultInitialSheets(d.nomor_aju)
     activeSheetTab.value = tabCodes.value[0] || 'HEADER'
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
     masterDrawer.value = false
   } finally {
     masterLoading.value = false
@@ -519,7 +519,7 @@ async function saveMaster() {
     await load()
     await openMaster(activeListId.value)
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     masterSaving.value = false
   }
@@ -540,13 +540,13 @@ async function confirmDelete(row) {
       type: 'warning',
     })
     await deleteCustomsDeclaration(row.id)
-    ElMessage.success(t('common.delete') + ' OK')
+    ElMessage.success(t('common.deleteSuccess'))
     await load()
     if (activeListId.value === row.id) {
       masterDrawer.value = false
     }
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.message || 'Error')
+    if (e !== 'cancel') ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
 
@@ -555,7 +555,8 @@ onMounted(load)
 
 <style scoped>
 .customs-toolbar-search {
-  width: 220px;
+  min-width: 220px;
+  flex: 1 1 220px;
   max-width: 100%;
   margin-right: 8px;
   vertical-align: middle;

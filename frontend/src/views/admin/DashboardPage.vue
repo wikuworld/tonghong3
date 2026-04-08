@@ -144,7 +144,7 @@ function formatActivityTime(iso) {
 
 function statusLabel(st) {
   if (st && te(`status.${st}`)) return t(`status.${st}`)
-  return st || '—'
+  return st || t('common.emptyValue')
 }
 
 function activityText(ev) {
@@ -171,7 +171,7 @@ function weekdayLabelFromIso(iso) {
 
 function categoryPieLabel(cat) {
   if (cat && te(`status.${cat}`)) return t(`status.${cat}`)
-  return cat || '—'
+  return cat || t('common.emptyValue')
 }
 
 const stats = computed(() => {
@@ -179,19 +179,19 @@ const stats = computed(() => {
   const rate = apiSummary.value?.exchange_rate
   const rateLabel = rate
     ? `1 USD = ${Number(rate.idr_per_usd).toLocaleString()} IDR`
-    : '—'
+    : t('common.emptyValue')
   return [
     {
       label: t('dashboard.kpiTotalSo'),
-      value: c?.sales_orders ?? '—',
-      delta: t('dashboard.kpiOpenSoHint', { n: c?.sales_orders_open ?? '—' }),
+      value: c?.sales_orders ?? t('common.emptyValue'),
+      delta: t('dashboard.kpiOpenSoHint', { n: c?.sales_orders_open ?? t('common.emptyValue') }),
       deltaColor: 'text-slate-600',
       icon: Tickets,
       iconBg: 'bg-blue-600',
     },
     {
       label: t('dashboard.kpiProduction'),
-      value: c?.production_orders ?? '—',
+      value: c?.production_orders ?? t('common.emptyValue'),
       delta: t('dashboard.kpiProdInProgress', { n: c?.production_in_progress ?? 0 }),
       deltaColor: 'text-emerald-600',
       icon: TrendCharts,
@@ -199,7 +199,7 @@ const stats = computed(() => {
     },
     {
       label: t('dashboard.kpiQcReject'),
-      value: c?.qc_reject_lines ?? '—',
+      value: c?.qc_reject_lines ?? t('common.emptyValue'),
       delta:
         c?.qc_total_lines != null && c.qc_total_lines > 0
           ? `${t('dashboard.qcPassRate')}: ${Math.round((100 * (c.qc_ok_lines || 0)) / c.qc_total_lines)}%`
@@ -211,7 +211,7 @@ const stats = computed(() => {
     {
       label: t('dashboard.kpiExchange'),
       value: rateLabel,
-      delta: t('dashboard.kpiDeliveryHint', { n: c?.deliveries ?? '—' }),
+      delta: t('dashboard.kpiDeliveryHint', { n: c?.deliveries ?? t('common.emptyValue') }),
       deltaColor: 'text-amber-600',
       icon: DataLine,
       iconBg: 'bg-amber-500',
@@ -325,7 +325,7 @@ const pipelineStatusOption = computed(() => {
 const monitoringRows = computed(() => {
   const m = apiSummary.value?.monitoring
   if (!m) return []
-  const pct = (v) => (v != null ? `${v}%` : '—')
+  const pct = (v) => (v != null ? `${v}%` : t('common.emptyValue'))
   const ach = (v) => (v != null ? Math.min(100, Math.round(Number(v))) : 0)
   return [
     {

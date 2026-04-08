@@ -294,7 +294,7 @@ async function submitCreate() {
     if (msg.includes('409') || msg.toLowerCase().includes('already')) {
       ElMessage.error(t('pages.buyerPrices.duplicateBuyer'))
     } else {
-      ElMessage.error(msg || 'Error')
+      ElMessage.error(msg || t('common.errorGeneric'))
     }
   } finally {
     createSaving.value = false
@@ -324,7 +324,7 @@ async function openMaster(id) {
     sheetColumnKeys.value = keys
     sheetRows.value = normalizeRows(d.rows, keys)
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
     masterDrawer.value = false
   } finally {
     masterLoading.value = false
@@ -396,7 +396,7 @@ async function saveMaster() {
     await load()
     await openMaster(activeListId.value)
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     masterSaving.value = false
   }
@@ -417,13 +417,13 @@ async function confirmDelete(row) {
       type: 'warning',
     })
     await deleteBuyerPriceList(row.id)
-    ElMessage.success(t('common.delete') + ' OK')
+    ElMessage.success(t('common.deleteSuccess'))
     await load()
     if (activeListId.value === row.id) {
       masterDrawer.value = false
     }
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.message || 'Error')
+    if (e !== 'cancel') ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
 
@@ -432,7 +432,8 @@ onMounted(load)
 
 <style scoped>
 .buyer-price-toolbar-search {
-  width: 220px;
+  min-width: 220px;
+  flex: 1 1 220px;
   max-width: 100%;
   margin-right: 8px;
   vertical-align: middle;

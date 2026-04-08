@@ -37,9 +37,9 @@ async function doUpload(req) {
   try {
     const file = req.file
     result.value = await importMasterZip(file)
-    ElMessage.success('Import selesai')
+    ElMessage.success(t('pages.masterImport.done'))
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     uploading.value = false
   }

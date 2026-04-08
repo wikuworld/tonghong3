@@ -41,7 +41,7 @@
           <el-table-column prop="status" :label="t('common.status')" width="110" />
           <el-table-column prop="order_date" :label="t('common.orderDate')" width="120" />
           <el-table-column :label="t('pages.marketingFlow.materialDone')" width="120" align="center">
-            <template #default="{ row }">{{ row.material_followup_done ? '✓' : '—' }}</template>
+            <template #default="{ row }">{{ row.material_followup_done ? '✓' : t('common.emptyValue') }}</template>
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="200" fixed="right">
             <template #default="{ row }">
@@ -238,7 +238,7 @@ const labels = computed(() => ({
 }))
 
 function labelFor(stage) {
-  return labels.value[stage] || stage || '—'
+  return labels.value[stage] || stage || t('common.emptyValue')
 }
 
 const activeStep = computed(() => {
@@ -253,7 +253,7 @@ async function load() {
     const params = filterStage.value ? { mkt_workflow_stage: filterStage.value } : {}
     rows.value = await listPo(params)
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     loading.value = false
   }
@@ -267,7 +267,7 @@ async function loadOutstanding() {
       computed_balance: true,
     })
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     outstandingLoading.value = false
   }
@@ -278,7 +278,7 @@ async function loadDelivery() {
   try {
     deliveryRows.value = await listMarketingDeliveryLines()
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     deliveryLoading.value = false
   }
@@ -306,7 +306,7 @@ async function advance(row) {
     ElMessage.success(t('pages.marketingFlow.advanced'))
     await load()
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     advancing.value = null
   }
@@ -317,7 +317,7 @@ function goPo(id) {
 }
 
 function goDelivery(row) {
-  const kw = (row.surat_jalan_no && row.surat_jalan_no !== '—' ? row.surat_jalan_no : '') || String(row.delivery_id || '')
+  const kw = (row.surat_jalan_no && row.surat_jalan_no !== t('common.emptyValue') ? row.surat_jalan_no : '') || String(row.delivery_id || '')
   router.push({ path: '/admin/delivery', query: kw ? { keyword: kw } : {} })
 }
 

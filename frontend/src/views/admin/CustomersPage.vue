@@ -66,37 +66,37 @@
       <template v-if="detailRow">
         <el-descriptions :column="2" border size="small" class="customer-descriptions">
           <el-descriptions-item :label="t('common.code')" :span="1">
-            {{ detailRow.code || '—' }}
+            {{ detailRow.code || t('common.emptyValue') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('common.name')" :span="1">
-            {{ detailRow.name || '—' }}
+            {{ detailRow.name || t('common.emptyValue') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldContactPerson')" :span="1">
-            {{ detailRow.contact_person || '—' }}
+            {{ detailRow.contact_person || t('common.emptyValue') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldEmail')" :span="1">
-            {{ detailRow.email || '—' }}
+            {{ detailRow.email || t('common.emptyValue') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('common.phone')" :span="1">
-            {{ detailRow.phone || '—' }}
+            {{ detailRow.phone || t('common.emptyValue') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldTaxId')" :span="1">
-            {{ detailRow.tax_id || '—' }}
+            {{ detailRow.tax_id || t('common.emptyValue') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldCity')" :span="1">
-            {{ detailRow.city || '—' }}
+            {{ detailRow.city || t('common.emptyValue') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldCountry')" :span="1">
-            {{ detailRow.country || '—' }}
+            {{ detailRow.country || t('common.emptyValue') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.wilayahDetail')" :span="2">
-            {{ wilayahDetailText || '—' }}
+            {{ wilayahDetailText || t('common.emptyValue') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('common.address')" :span="2">
-            {{ detailRow.address || '—' }}
+            {{ detailRow.address || t('common.emptyValue') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldRemark')" :span="2">
-            {{ detailRow.remark || '—' }}
+            {{ detailRow.remark || t('common.emptyValue') }}
           </el-descriptions-item>
         </el-descriptions>
       </template>
@@ -333,7 +333,7 @@ async function load() {
   try {
     rows.value = await listCustomers()
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     loading.value = false
   }
@@ -343,7 +343,7 @@ onMounted(load)
 
 function cityCountry(row) {
   const p = [row.city, row.country].filter(Boolean)
-  return p.length ? p.join(', ') : '—'
+  return p.length ? p.join(', ') : t('common.emptyValue')
 }
 
 const detailVisible = ref(false)
@@ -375,9 +375,9 @@ async function buildWilayahReadable(row) {
   } catch {
     return [row.wilayah_province_code, row.wilayah_regency_code, row.wilayah_district_code, row.wilayah_village_code]
       .filter(Boolean)
-      .join(' → ')
+      .join(` ${t('common.pathSeparator')} `)
   }
-  return parts.join(' → ')
+  return parts.join(` ${t('common.pathSeparator')} `)
 }
 
 async function openDetail(row) {
@@ -455,7 +455,7 @@ async function ensureProvinceOptions() {
     const r = await wilayahProvinces()
     provinceOptions.value = r.data || []
   } catch (e) {
-    ElMessage.error(e.message || 'Gagal memuat provinsi')
+    ElMessage.error(e.message || t('pages.customers.loadProvinceFailed'))
   } finally {
     wilayahLoading.province = false
   }
@@ -478,7 +478,7 @@ async function onProvincePicked(code) {
     const r = await wilayahRegencies(code)
     regencyOptions.value = r.data || []
   } catch (e) {
-    ElMessage.error(e.message || 'Gagal memuat kab/kota')
+    ElMessage.error(e.message || t('pages.customers.loadRegencyFailed'))
   } finally {
     wilayahLoading.regency = false
   }
@@ -492,7 +492,7 @@ async function onRegencyPicked(code) {
   const sel = regencyOptions.value.find((x) => x.code === code)
   if (sel) {
     formModel.city = sel.name
-    formModel.country = 'Indonesia'
+    formModel.country = t('common.countryIndonesia')
   }
   if (!code) return
   wilayahLoading.district = true
@@ -500,7 +500,7 @@ async function onRegencyPicked(code) {
     const r = await wilayahDistricts(code)
     districtOptions.value = r.data || []
   } catch (e) {
-    ElMessage.error(e.message || 'Gagal memuat kecamatan')
+    ElMessage.error(e.message || t('pages.customers.loadDistrictFailed'))
   } finally {
     wilayahLoading.district = false
   }
@@ -515,7 +515,7 @@ async function onDistrictPicked(code) {
     const r = await wilayahVillages(code)
     villageOptions.value = r.data || []
   } catch (e) {
-    ElMessage.error(e.message || 'Gagal memuat kelurahan/desa')
+    ElMessage.error(e.message || t('pages.customers.loadVillageFailed'))
   } finally {
     wilayahLoading.village = false
   }
@@ -621,7 +621,7 @@ async function submitForm() {
     if (msg.includes('duplicate') || msg.includes('409')) {
       ElMessage.error(t('pages.customers.codeDuplicate'))
     } else {
-      ElMessage.error(msg || 'Error')
+      ElMessage.error(msg || t('common.errorGeneric'))
     }
   } finally {
     formSubmitting.value = false
@@ -641,7 +641,7 @@ function confirmDelete(row) {
         ElMessage.success(t('pages.customers.deleted'))
         await load()
       } catch (e) {
-        ElMessage.error(e.message || 'Error')
+        ElMessage.error(e.message || t('common.errorGeneric'))
       }
     })
     .catch(() => {})
@@ -667,12 +667,6 @@ function confirmDelete(row) {
 
 .customer-form :deep(.el-form-item:last-child) {
   margin-bottom: 0;
-}
-
-.customer-descriptions :deep(.el-descriptions__label) {
-  width: 120px;
-  font-weight: 600;
-  color: #475569;
 }
 
 .customer-dialog-footer {

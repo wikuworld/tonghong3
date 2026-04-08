@@ -17,7 +17,7 @@
         <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.invoice.tableEmpty')">
           <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
           <el-table-column prop="invoice_number" :label="t('common.invoiceNo')" min-width="150" />
-          <el-table-column prop="delivery_id" label="Delivery ID" width="100" align="center" />
+          <el-table-column prop="delivery_id" :label="t('pages.invoice.deliveryId')" width="100" align="center" />
           <el-table-column prop="po_number" :label="t('common.poNo')" min-width="150" />
           <el-table-column prop="customer_name" :label="t('common.customer')" min-width="200" />
           <el-table-column prop="invoice_date" :label="t('common.date')" width="120" />
@@ -68,11 +68,11 @@
     <el-dialog v-model="detailVisible" :title="t('pages.invoice.dialogDetail')" width="560px" destroy-on-close>
       <el-descriptions v-if="detailRow" :column="1" border size="small">
         <el-descriptions-item :label="t('common.invoiceNo')">{{ detailRow.invoice_number }}</el-descriptions-item>
-        <el-descriptions-item label="Delivery ID">{{ detailRow.delivery_id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.invoice.deliveryId')">{{ detailRow.delivery_id }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.poNo')">{{ detailRow.po_number }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.customer')">{{ detailRow.customer_name }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.date')">{{ detailRow.invoice_date }}</el-descriptions-item>
-        <el-descriptions-item :label="t('pages.invoice.dueDate')">{{ detailRow.due_date || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.invoice.dueDate')">{{ detailRow.due_date || t('common.emptyValue') }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.total')">{{ formatNum(detailRow.total_amount) }}</el-descriptions-item>
       </el-descriptions>
       <template #footer>
@@ -82,12 +82,12 @@
 
     <el-dialog v-model="formVisible" :title="t('pages.invoice.dialogAdd')" width="560px" destroy-on-close>
       <el-form label-position="top">
-        <el-form-item label="Delivery (harus sent)" required>
-          <el-select v-model="form.delivery_id" filterable clearable class="w-full" placeholder="Pilih delivery terkirim" @change="onDeliveryPick">
+        <el-form-item :label="t('pages.invoice.deliverySentLabel')" required>
+          <el-select v-model="form.delivery_id" filterable clearable class="w-full" :placeholder="t('pages.invoice.pickSentDelivery')" @change="onDeliveryPick">
             <el-option
               v-for="d in deliveriesReady"
               :key="d.id"
-              :label="`${d.delivery_number || 'DLV-' + d.id} · ${d.status}`"
+              :label="`${d.delivery_number || `DLV-${d.id}`} ${t('common.dotSeparator')} ${d.status}`"
               :value="d.id"
             />
           </el-select>
@@ -99,7 +99,7 @@
           <span class="mt-1 block text-xs text-slate-500">Opsional — harus cocok dengan barang di delivery (validasi server).</span>
         </el-form-item>
         <el-form-item :label="t('common.invoiceNo')">
-          <el-input v-model="form.invoice_number" clearable placeholder="Opsional — auto jika backend mendukung" />
+          <el-input v-model="form.invoice_number" clearable :placeholder="t('pages.invoice.invoiceNoOptionalPlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('common.customer')">
           <el-input v-model="form.customer_name" />
@@ -206,7 +206,7 @@ const customers = ref([])
 const deliveries = ref([])
 
 function formatNum(v) {
-  if (v == null || v === '') return '—'
+  if (v == null || v === '') return t('common.emptyValue')
   return Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })
 }
 
@@ -231,7 +231,7 @@ async function load() {
       invoice_date: r.invoice_date ? String(r.invoice_date).slice(0, 10) : '',
     }))
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     loading.value = false
   }
@@ -247,7 +247,7 @@ async function loadOutstanding() {
     if (outstandingMode.value === 'due7') params.due_within_days = 7
     outstandingRows.value = await listOutstandingInvoice(params)
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     outstandingLoading.value = false
   }
@@ -284,7 +284,7 @@ async function saveOutstanding() {
     outstandingEditVisible.value = false
     await loadOutstanding()
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     outstandingSaving.value = false
   }
@@ -346,7 +346,7 @@ function openCreate() {
 
 async function submit() {
   if (!form.delivery_id) {
-    ElMessage.warning('Pilih delivery (status sent)')
+    ElMessage.warning(t('pages.invoice.pickSentDeliveryWarning'))
     return
   }
   const p = poList.value.find((x) => x.id === form.po_id)
@@ -365,7 +365,7 @@ async function submit() {
     formVisible.value = false
     await load()
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     saving.value = false
   }

@@ -3,26 +3,26 @@
     <template #actions>
       <el-button v-if="activeTab === 'users' && canCreate" type="primary" @click="openCreate">{{ t('common.create') }}</el-button>
       <template v-if="activeTab === 'matrix'">
-        <el-tag v-if="hasMatrixChanges" type="warning" effect="dark">Unsaved changes</el-tag>
-        <el-button :disabled="!hasMatrixChanges" @click="resetMatrix">Reset</el-button>
+        <el-tag v-if="hasMatrixChanges" type="warning" effect="dark">{{ t('pages.userAccess.unsavedChanges') }}</el-tag>
+        <el-button :disabled="!hasMatrixChanges" @click="resetMatrix">{{ t('common.reset') }}</el-button>
         <el-button v-if="canUpdate" type="primary" :loading="savingMatrix" :disabled="!hasMatrixChanges" @click="saveMatrix">
-          Simpan Matrix
+          {{ t('pages.userAccess.saveMatrix') }}
         </el-button>
       </template>
     </template>
 
     <el-tabs v-model="activeTab">
-      <el-tab-pane label="Users" name="users">
+      <el-tab-pane :label="t('pages.userAccess.usersTab')" name="users">
         <div class="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <el-input v-model="userKeyword" clearable :placeholder="`${t('common.search')} username / role`" />
-          <el-select v-model="userRoleFilter" clearable placeholder="Filter role">
+          <el-select v-model="userRoleFilter" clearable :placeholder="t('pages.userAccess.filterRole')">
             <el-option v-for="r in roles" :key="r" :label="r" :value="r" />
           </el-select>
         </div>
         <el-table :data="filteredUsers" v-loading="loading" border stripe size="small" class="admin-table">
-          <el-table-column prop="id" label="ID" width="72" />
+          <el-table-column prop="id" :label="t('pages.userAccess.idLabel')" width="72" />
           <el-table-column prop="username" :label="t('pages.login.username')" min-width="180" />
-          <el-table-column prop="role" label="Role" width="140" />
+          <el-table-column prop="role" :label="t('pages.userAccess.roleLabel')" width="140" />
           <el-table-column :label="t('common.status')" width="120" align="center">
             <template #default="{ row }">
               <el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? 'active' : 'inactive' }}</el-tag>
@@ -36,10 +36,10 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane label="Permission Matrix" name="matrix">
+      <el-tab-pane :label="t('pages.userAccess.permissionMatrixTab')" name="matrix">
         <div class="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <el-input v-model="matrixKeyword" clearable placeholder="Filter module / action" />
-          <el-select v-model="matrixActionFilter" clearable placeholder="Filter action">
+          <el-input v-model="matrixKeyword" clearable :placeholder="t('pages.userAccess.filterModuleAction')" />
+          <el-select v-model="matrixActionFilter" clearable :placeholder="t('pages.userAccess.filterAction')">
             <el-option v-for="a in availableActions" :key="a" :label="a" :value="a" />
           </el-select>
         </div>
@@ -80,13 +80,13 @@
         <el-form-item :label="t('pages.login.username')" required>
           <el-input v-model="form.username" :disabled="isEdit" />
         </el-form-item>
-        <el-form-item label="Role" required>
+        <el-form-item :label="t('pages.userAccess.roleLabel')" required>
           <el-select v-model="form.role" class="w-full">
             <el-option v-for="r in roles" :key="r" :label="r" :value="r" />
           </el-select>
         </el-form-item>
         <el-form-item :label="t('pages.login.password')" :required="!isEdit">
-          <el-input v-model="form.password" type="password" show-password :placeholder="isEdit ? 'Kosongkan jika tidak diubah' : ''" />
+          <el-input v-model="form.password" type="password" show-password :placeholder="isEdit ? t('pages.userAccess.keepPasswordHint') : ''" />
         </el-form-item>
         <el-form-item :label="t('common.status')">
           <el-switch v-model="form.is_active" />
@@ -196,7 +196,7 @@ async function load() {
     editableMatrix.value = pm?.matrix && Object.keys(pm.matrix).length ? pm.matrix : JSON.parse(JSON.stringify(ACTION_MATRIX))
     matrixSavedSnapshot.value = JSON.stringify(editableMatrix.value)
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     loading.value = false
   }
@@ -208,9 +208,9 @@ async function saveMatrix() {
     await savePermissionMatrix(editableMatrix.value)
     setRuntimePermissionMatrix(editableMatrix.value)
     matrixSavedSnapshot.value = JSON.stringify(editableMatrix.value)
-    ElMessage.success('Permission matrix disimpan')
+    ElMessage.success(t('pages.userAccess.matrixSaved'))
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     savingMatrix.value = false
   }
@@ -256,7 +256,7 @@ async function submit() {
     await load()
     ElMessage.success(t('common.save'))
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     saving.value = false
   }

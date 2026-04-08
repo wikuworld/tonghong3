@@ -150,7 +150,7 @@ onMounted(async () => {
     if (pm?.matrix) setRuntimePermissionMatrix(pm.matrix)
   } catch (e) {
     localStorage.removeItem('auth_token')
-    ElMessage.error(e.message || 'Sesi habis, silakan login lagi')
+    ElMessage.error(e.message || t('common.sessionExpired'))
     router.replace({ path: '/login', query: { next: route.fullPath } })
   }
 })
@@ -178,9 +178,9 @@ onMounted(async () => {
 }
 
 :deep(.el-menu-item:hover) {
-  background-color: #1e293b !important;
+  background-color: #1e293b;
 }
 :deep(.el-menu-item.is-active) {
-  background-color: #2563eb !important;
+  background-color: #2563eb;
 }
 </style>

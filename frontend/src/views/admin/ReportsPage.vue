@@ -220,7 +220,7 @@ async function fetchReport() {
     productionRows.value = data.production_orders || []
     sampleRows.value = data.samples || []
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     reportLoading.value = false
   }
@@ -228,7 +228,7 @@ async function fetchReport() {
 
 function poStatusLabel(st) {
   if (st && te(`status.${st}`)) return t(`status.${st}`)
-  return st || '—'
+  return st || t('common.emptyValue')
 }
 
 function poStatusTagType(st) {

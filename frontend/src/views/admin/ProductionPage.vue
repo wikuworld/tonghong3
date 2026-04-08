@@ -79,28 +79,28 @@
           <el-divider content-position="left">{{ t('pages.production.sectionPo') }}</el-divider>
           <el-descriptions :column="2" border size="small" class="production-descriptions mb-4">
             <el-descriptions-item :label="t('common.productionNo')" :span="1">
-              {{ detailRow.production_number || '—' }}
+              {{ detailRow.production_number || t('common.emptyValue') }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('pages.production.fieldCreatedAt')" :span="1">
-              {{ detailRow.created_at_disp || '—' }}
+              {{ detailRow.created_at_disp || t('common.emptyValue') }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('common.poNo')" :span="1">
-              {{ detailRow.po_number_disp || '—' }}
+              {{ detailRow.po_number_disp || t('common.emptyValue') }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('pages.production.fieldPoStatus')" :span="1">
               <el-tag v-if="detailRow.po_status" size="small" type="info">{{ poStatusLabel(detailRow.po_status) }}</el-tag>
-              <span v-else>—</span>
+              <span v-else>{{ t('common.emptyValue') }}</span>
             </el-descriptions-item>
             <el-descriptions-item :label="t('common.customer')" :span="1">
-              {{ detailRow.customer_name || '—' }}
+              {{ detailRow.customer_name || t('common.emptyValue') }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('common.buyer')" :span="1">
-              {{ detailRow.buyer_disp || '—' }}
+              {{ detailRow.buyer_disp || t('common.emptyValue') }}
             </el-descriptions-item>
-            <el-descriptions-item :label="t('common.etd')" :span="1">{{ detailRow.etd_disp || '—' }}</el-descriptions-item>
-            <el-descriptions-item :label="t('common.orderDate')" :span="1">{{ detailRow.order_date_disp || '—' }}</el-descriptions-item>
-            <el-descriptions-item :label="t('common.startDate')" :span="1">{{ detailRow.start_date || '—' }}</el-descriptions-item>
-            <el-descriptions-item :label="t('common.endDate')" :span="1">{{ detailRow.end_date || '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('common.etd')" :span="1">{{ detailRow.etd_disp || t('common.emptyValue') }}</el-descriptions-item>
+            <el-descriptions-item :label="t('common.orderDate')" :span="1">{{ detailRow.order_date_disp || t('common.emptyValue') }}</el-descriptions-item>
+            <el-descriptions-item :label="t('common.startDate')" :span="1">{{ detailRow.start_date || t('common.emptyValue') }}</el-descriptions-item>
+            <el-descriptions-item :label="t('common.endDate')" :span="1">{{ detailRow.end_date || t('common.emptyValue') }}</el-descriptions-item>
             <el-descriptions-item :label="t('common.status')" :span="2">
               <el-tag :type="statusTagType(detailRow.status)" size="small">{{ productionStatusLabel(detailRow.status) }}</el-tag>
             </el-descriptions-item>
@@ -229,9 +229,9 @@ const posEligible = computed(() =>
 )
 
 function poOptionLabel(p) {
-  const cust = p.customer_name_snapshot || p.customer_code || '—'
-  const buyer = p.buyer || '—'
-  const st = p.status && te(`status.${p.status}`) ? t(`status.${p.status}`) : p.status || '—'
+  const cust = p.customer_name_snapshot || p.customer_code || t('common.emptyValue')
+  const buyer = p.buyer || t('common.emptyValue')
+  const st = p.status && te(`status.${p.status}`) ? t(`status.${p.status}`) : p.status || t('common.emptyValue')
   return `${p.po_number} · ${cust} · ${buyer} (${st})`
 }
 
@@ -241,7 +241,7 @@ function sliceDate(v) {
 }
 
 function formatCreatedAt(v) {
-  if (v == null || v === '') return '—'
+  if (v == null || v === '') return t('common.emptyValue')
   const s = String(v).replace('T', ' ')
   return s.length > 19 ? s.slice(0, 19) : s
 }
@@ -250,11 +250,11 @@ function enrichProduction(r) {
   const po = r.po_id ? poById.value[r.po_id] : null
   return {
     ...r,
-    po_number_disp: po?.po_number || (r.po_id ? `PO #${r.po_id}` : '—'),
-    customer_name: po?.customer_name_snapshot || po?.customer_code || '—',
-    buyer_disp: po?.buyer || '—',
-    etd_disp: sliceDate(po?.etd) || '—',
-    order_date_disp: sliceDate(po?.order_date) || '—',
+    po_number_disp: po?.po_number || (r.po_id ? `PO #${r.po_id}` : t('common.emptyValue')),
+    customer_name: po?.customer_name_snapshot || po?.customer_code || t('common.emptyValue'),
+    buyer_disp: po?.buyer || t('common.emptyValue'),
+    etd_disp: sliceDate(po?.etd) || t('common.emptyValue'),
+    order_date_disp: sliceDate(po?.order_date) || t('common.emptyValue'),
     po_status: po?.status || null,
     start_date: sliceDate(r.start_date),
     end_date: sliceDate(r.end_date),
@@ -264,21 +264,21 @@ function enrichProduction(r) {
 
 function productionStatusLabel(status) {
   if (status && te(`status.${status}`)) return t(`status.${status}`)
-  return status || '—'
+  return status || t('common.emptyValue')
 }
 
 function poStatusLabel(status) {
   if (status && te(`status.${status}`)) return t(`status.${status}`)
-  return status || '—'
+  return status || t('common.emptyValue')
 }
 
 function lineStatusLabel(status) {
   if (status && te(`status.${status}`)) return t(`status.${status}`)
-  return status || '—'
+  return status || t('common.emptyValue')
 }
 
 function formatQty(v) {
-  if (v == null || v === '') return '—'
+  if (v == null || v === '') return t('common.emptyValue')
   const n = Number(v)
   return Number.isFinite(n) ? String(n) : String(v)
 }
@@ -290,7 +290,7 @@ async function load() {
     poList.value = po
     rows.value = pr.map((r) => enrichProduction(r))
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     loading.value = false
   }
@@ -344,7 +344,7 @@ async function openDetail(row) {
     detailRow.value = enrichProduction(full)
     detailLines.value = await listProductionDetails(row.id)
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
     detailVisible.value = false
   } finally {
     detailLoading.value = false
@@ -401,7 +401,7 @@ async function submitForm() {
     formVisible.value = false
     await load()
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     formSubmitting.value = false
   }

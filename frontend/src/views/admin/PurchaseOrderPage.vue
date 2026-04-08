@@ -74,8 +74,8 @@
         </template>
       </el-table-column>
       <el-table-column prop="etd" :label="t('common.etd')" min-width="110" align="center" />
-      <el-table-column prop="mkt_workflow_stage" label="Alur MKT" min-width="140" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.mkt_workflow_stage || '—' }}</template>
+      <el-table-column prop="mkt_workflow_stage" :label="t('pages.po.mktFlow')" min-width="140" show-overflow-tooltip>
+        <template #default="{ row }">{{ row.mkt_workflow_stage || t('common.emptyValue') }}</template>
       </el-table-column>
       <el-table-column prop="status" :label="t('common.status')" min-width="120" align="center">
         <template #default="{ row }">
@@ -104,14 +104,14 @@
 
     <el-dialog
       v-model="formDialogVisible"
-      :title="isEditMode ? t('pages.poEntry.title') + ' (edit)' : t('pages.poEntry.title')"
+      :title="isEditMode ? `${t('pages.poEntry.title')} ${t('pages.po.editSuffix')}` : t('pages.poEntry.title')"
       width="1100px"
       destroy-on-close
       align-center
       class="po-dialog"
     >
       <el-form label-position="top" class="po-dialog-form">
-        <el-divider content-position="left">{{ t('common.customer') }} & SO</el-divider>
+        <el-divider content-position="left">{{ t('pages.po.customerSoSection') }}</el-divider>
         <el-row :gutter="12">
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.customer')" required>
@@ -135,12 +135,12 @@
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.poNo')">
               <el-input v-model="formModel.po_number" :placeholder="t('common.placeholder.poNumber')" clearable />
-              <span class="text-xs text-slate-500">{{ t('common.autoGenerate') }} (kosongkan untuk nomor otomatis)</span>
+              <span class="text-xs text-slate-500">{{ t('pages.po.autoGenerateHint') }}</span>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
-            <el-form-item label="Brand">
-              <el-select v-model="formModel.brand_id" clearable filterable class="w-full" placeholder="Brand">
+            <el-form-item :label="t('pages.po.brand')">
+              <el-select v-model="formModel.brand_id" clearable filterable class="w-full" :placeholder="t('pages.po.brand')">
                 <el-option
                   v-for="b in brandsFiltered"
                   :key="b.id"
@@ -151,13 +151,13 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
-            <el-form-item :label="t('menu.customs') + ' (AJU)'">
+            <el-form-item :label="`${t('menu.customs')} (${t('common.aju')})`">
               <el-select
                 v-model="formModel.customs_declaration_id"
                 clearable
                 filterable
                 class="w-full"
-                placeholder="Opsional — link deklarasi"
+                :placeholder="t('pages.po.customsPlaceholder')"
               >
                 <el-option
                   v-for="d in customsList"
@@ -215,30 +215,35 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24">
-            <el-divider content-position="left">Follow up material (flowchart)</el-divider>
+            <el-divider content-position="left">{{ t('pages.po.materialFollowUpSection') }}</el-divider>
           </el-col>
           <el-col :xs="24" :md="18">
-            <el-form-item label="Catatan material">
-              <el-input v-model="formModel.material_followup_remark" type="textarea" :rows="2" placeholder="Status bahan / ETA" />
+            <el-form-item :label="t('pages.po.materialFollowUpNote')">
+              <el-input
+                v-model="formModel.material_followup_remark"
+                type="textarea"
+                :rows="2"
+                :placeholder="t('pages.po.materialFollowUpPlaceholder')"
+              />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="6">
-            <el-form-item label="Selesai">
+            <el-form-item :label="t('pages.po.done')">
               <el-switch v-model="formModel.material_followup_done" />
             </el-form-item>
           </el-col>
         </el-row>
 
-        <el-divider content-position="left">{{ t('common.material') }} — baris 1</el-divider>
+        <el-divider content-position="left">{{ t('pages.po.materialLineOne') }}</el-divider>
         <el-row :gutter="12">
           <el-col :xs="24" :md="12">
-            <el-form-item :label="t('common.material') + ' (master)'">
+            <el-form-item :label="`${t('common.material')} (${t('common.masterLabel')})`">
               <el-select
                 v-model="formModel.master_item_id"
                 clearable
                 filterable
                 class="w-full"
-                placeholder="Master Item FG"
+                :placeholder="t('pages.po.masterItemPlaceholder')"
               >
                 <el-option
                   v-for="it in masterItems"
@@ -256,7 +261,7 @@
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.thickness')">
-              <el-input v-model="formModel.thickness_text" placeholder="1.2 - 1.4" />
+              <el-input v-model="formModel.thickness_text" :placeholder="t('common.placeholder.thickness')" />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
@@ -314,13 +319,21 @@
     >
       <el-descriptions v-if="detailView" :column="2" border size="small">
         <el-descriptions-item :label="t('common.poNo')">{{ detailView.po_number }}</el-descriptions-item>
-        <el-descriptions-item :label="t('common.status')">{{ detailView.status }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.status')">{{ statusLabel(detailView.status) }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.customer')">{{ detailView.customerName }}</el-descriptions-item>
-        <el-descriptions-item :label="t('common.buyer')">{{ detailView.buyer || '—' }}</el-descriptions-item>
-        <el-descriptions-item :label="t('common.etd')">{{ detailView.etd || '—' }}</el-descriptions-item>
-        <el-descriptions-item :label="t('menu.customs')">{{ detailView.customs_declaration_id || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.buyer')">{{ detailView.buyer || t('common.emptyValue') }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.etd')">{{ detailView.etd || t('common.emptyValue') }}</el-descriptions-item>
+        <el-descriptions-item :label="t('menu.customs')">{{ detailView.customs_declaration_id || t('common.emptyValue') }}</el-descriptions-item>
       </el-descriptions>
-      <el-table v-if="detailLines.length" :data="detailLines" class="mt-4" border size="small" max-height="360">
+      <el-table
+        v-if="detailLines.length"
+        :data="detailLines"
+        class="mt-4"
+        border
+        size="small"
+        table-layout="auto"
+        max-height="360"
+      >
         <el-table-column prop="material_name" :label="t('common.material')" min-width="140" />
         <el-table-column prop="thickness_text" :label="t('common.thickness')" width="120" />
         <el-table-column prop="color" :label="t('common.color')" width="100" />
@@ -336,7 +349,7 @@
           >
             <div class="text-sm">
               <b>{{ a.action }}</b>
-              <span class="text-slate-500"> — {{ a.actor || 'system' }}</span>
+              <span class="text-slate-500"> {{ t('common.dashSeparator') }} {{ a.actor || t('common.system') }}</span>
             </div>
             <div v-if="a.before || a.after" class="mt-1 text-xs text-slate-600">
               <pre class="whitespace-pre-wrap break-words">{{ prettyAudit(a) }}</pre>
@@ -361,7 +374,7 @@
         <h3 class="mb-2 text-lg font-semibold">{{ selectedRow.po_number }}</h3>
         <p><b>{{ t('common.customer') }}:</b> {{ selectedRow.customerName }}</p>
         <p><b>{{ t('common.buyer') }}:</b> {{ selectedRow.buyer }}</p>
-        <p><b>{{ t('common.poCategory') }}:</b> {{ selectedRow.po_category }}</p>
+        <p><b>{{ t('common.poCategory') }}:</b> {{ statusLabel(selectedRow.po_category) }}</p>
         <p><b>{{ t('common.material') }}:</b> {{ selectedRow.material_hint }}</p>
         <p><b>{{ t('common.etd') }}:</b> {{ selectedRow.etd }}</p>
       </div>
@@ -417,13 +430,13 @@ const rows = ref([])
 
 const customerName = (id) => {
   const c = customers.value.find((x) => x.id === id)
-  return c ? `${c.code || ''} ${c.name || ''}`.trim() : '—'
+  return c ? `${c.code || ''} ${c.name || ''}`.trim() : t('common.emptyValue')
 }
 
 function customerOptionLabel(c) {
   const base = [c.code, c.name].filter(Boolean).join(' — ')
   if (!base) return String(c.id)
-  return c.city ? `${base} · ${c.city}` : base
+  return c.city ? `${base} ${t('common.dotSeparator')} ${c.city}` : base
 }
 
 async function enrichPoRows(headers) {
@@ -435,7 +448,7 @@ async function enrichPoRows(headers) {
     return {
       ...h,
       customerName: customerName(h.customer_id),
-      material_hint: first.material_name || '—',
+      material_hint: first.material_name || t('common.emptyValue'),
       etd: h.etd ? String(h.etd).slice(0, 10) : '',
     }
   })
@@ -460,7 +473,7 @@ async function load() {
     buyerCodes.value = [...new Set([...buyerCodes.value, ...extraBuyers])]
     rows.value = await enrichPoRows(pos)
   } catch (e) {
-    ElMessage.error(e.message || 'Load PO gagal')
+    ElMessage.error(e.message || t('pages.po.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -500,6 +513,8 @@ const statusType = (status) => {
   if (status === 'production') return 'warning'
   return 'info'
 }
+
+const statusLabel = (status) => (status ? t(`status.${status}`) : t('common.emptyValue'))
 
 const formDialogVisible = ref(false)
 const isEditMode = ref(false)
@@ -608,7 +623,7 @@ const openEditDialog = async (row) => {
 
 const submitForm = async () => {
   if (!formModel.customer_id) {
-    ElMessage.warning('Pilih customer')
+    ElMessage.warning(t('pages.po.pickCustomerWarning'))
     return
   }
   saving.value = true
@@ -656,7 +671,7 @@ const submitForm = async () => {
     formDialogVisible.value = false
     await load()
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     saving.value = false
   }
@@ -687,7 +702,7 @@ const openDetailDialog = async (row) => {
 function prettyAudit(a) {
   const b = a.before ? JSON.stringify(a.before, null, 2) : ''
   const af = a.after ? JSON.stringify(a.after, null, 2) : ''
-  if (b && af) return `before:\\n${b}\\n\\nafter:\\n${af}`
+  if (b && af) return `${t('common.beforeLabel')}:\\n${b}\\n\\n${t('common.afterLabel')}:\\n${af}`
   return b || af || ''
 }
 
@@ -717,12 +732,12 @@ const removeRow = async (row) => {
     ElMessage.success(t('pages.po.deleted'))
     await load()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.message || 'Error')
+    if (e !== 'cancel') ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
 
 function openExportHint() {
-  ElMessage.info('Gunakan menu Reports atau buka URL export CSV di dokumentasi API.')
+  ElMessage.info(t('pages.po.exportHint'))
 }
 </script>
 
@@ -745,7 +760,4 @@ function openExportHint() {
   gap: 8px;
 }
 
-.po-dialog-form :deep(.el-form-item) {
-  margin-bottom: 14px;
-}
 </style>
