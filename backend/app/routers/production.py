@@ -17,6 +17,7 @@ from app.schemas import (
 )
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
+from app.services.notifications import create_notification_for_roles
 
 router = APIRouter(tags=["production"])
 
@@ -56,6 +57,17 @@ def create_production(
         action="create",
         after={"production_number": row.production_number, "po_id": row.po_id, "status": row.status},
         actor=user.username,
+    )
+    create_notification_for_roles(
+        db,
+        ("admin", "production", "ppic", "qc"),
+        title=f"Production {row.production_number} dibuat",
+        message=f"Referensi PO ID: {row.po_id}",
+        category="production",
+        entity_type="production",
+        entity_id=row.id,
+        route_path="/admin/production",
+        route_query={"production_id": row.id},
     )
     db.commit()
     db.refresh(row)

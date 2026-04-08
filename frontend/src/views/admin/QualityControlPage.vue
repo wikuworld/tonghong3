@@ -103,6 +103,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
@@ -118,6 +119,7 @@ import {
 } from '../../api/client'
 
 const { t } = useI18n()
+const route = useRoute()
 const canManage = canWrite('qc')
 const loading = ref(false)
 const saving = ref(false)
@@ -157,7 +159,15 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  const qcIdRaw = route.query.qc_id
+  const qcId = Number(qcIdRaw)
+  if (!Number.isNaN(qcId) && qcId > 0) {
+    const target = rows.value.find((r) => Number(r.id) === qcId)
+    if (target) await openDetail(target)
+  }
+})
 
 const filteredRows = computed(() => {
   const q = keyword.value.trim().toLowerCase()

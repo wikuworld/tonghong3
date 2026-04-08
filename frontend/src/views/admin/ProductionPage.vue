@@ -196,6 +196,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
@@ -210,6 +211,7 @@ import {
 } from '../../api/client'
 
 const { t, te } = useI18n()
+const route = useRoute()
 const canManage = canWrite('production')
 
 const loading = ref(false)
@@ -296,7 +298,15 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  const productionIdRaw = route.query.production_id
+  const productionId = Number(productionIdRaw)
+  if (!Number.isNaN(productionId) && productionId > 0) {
+    const target = rows.value.find((r) => Number(r.id) === productionId)
+    if (target) await openDetail(target)
+  }
+})
 
 const filteredRows = computed(() => {
   return rows.value.filter((row) => {

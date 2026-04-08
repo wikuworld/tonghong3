@@ -15,6 +15,7 @@ from app.services.business_rules import validate_invoice_against_delivery
 from app.services.mkt_workflow import sync_invoice_billing_from_delivery
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
+from app.services.notifications import create_notification_for_roles
 
 router = APIRouter(tags=["invoice"])
 
@@ -37,6 +38,17 @@ def create_invoice(
         action="create",
         after={"invoice_number": row.invoice_number, "delivery_id": row.delivery_id},
         actor=user.username,
+    )
+    create_notification_for_roles(
+        db,
+        ("admin", "finance", "marketing"),
+        title=f"Invoice {row.invoice_number or row.id} dibuat",
+        message=f"Terhubung ke delivery ID {row.delivery_id}",
+        category="invoice",
+        entity_type="invoice",
+        entity_id=row.id,
+        route_path="/admin/invoice",
+        route_query={"invoice_id": row.id},
     )
     sync_invoice_billing_from_delivery(db, body.delivery_id)
     db.commit()

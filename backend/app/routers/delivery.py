@@ -19,6 +19,7 @@ from app.schemas import (
 from app.services.business_rules import require_packing_ready
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
+from app.services.notifications import create_notification_for_roles
 
 router = APIRouter(tags=["delivery"])
 
@@ -140,6 +141,18 @@ def update_delivery(
         _require_details_if_sent(db, delivery_id, data["status"], row.status)
     for k, v in data.items():
         setattr(row, k, v)
+    if row.status == "sent" and before["status"] != "sent":
+        create_notification_for_roles(
+            db,
+            ("admin", "warehouse", "finance", "marketing"),
+            title=f"Delivery {row.delivery_number or row.id} terkirim",
+            message="Dokumen siap untuk proses invoice",
+            category="delivery",
+            entity_type="delivery",
+            entity_id=row.id,
+            route_path="/admin/delivery",
+            route_query={"delivery_id": row.id},
+        )
     log_change(
         db,
         entity_type="delivery",

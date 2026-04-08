@@ -548,3 +548,24 @@ class RolePermission(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
     )
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE")
+    )
+    title: Mapped[str] = mapped_column(String(180))
+    message: Mapped[Optional[str]] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(String(40), default="general")
+    entity_type: Mapped[Optional[str]] = mapped_column(String(80))
+    entity_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    route_path: Mapped[Optional[str]] = mapped_column(String(255))
+    route_query: Mapped[Optional[dict]] = mapped_column(JSON)
+    is_read: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)

@@ -391,6 +391,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download, View, EditPen, Delete, Printer } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
@@ -413,6 +414,7 @@ import {
 } from '../../api/client'
 
 const { t } = useI18n()
+const route = useRoute()
 const canManage = canWrite('po')
 
 const loading = ref(false)
@@ -479,7 +481,15 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  const poIdRaw = route.query.po_id
+  const poId = Number(poIdRaw)
+  if (!Number.isNaN(poId) && poId > 0) {
+    const target = rows.value.find((r) => Number(r.id) === poId)
+    if (target) await openDetailDialog(target)
+  }
+})
 
 const brandsFiltered = computed(() => {
   const cid = formModel.customer_id

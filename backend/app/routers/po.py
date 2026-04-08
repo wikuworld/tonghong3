@@ -23,6 +23,7 @@ from app.services.mkt_workflow import (
     next_mkt_stage,
     validate_mkt_advance,
 )
+from app.services.notifications import create_notification_for_roles
 from app.routers.auth import get_current_user, require_roles
 
 router = APIRouter(tags=["po"])
@@ -79,6 +80,17 @@ def advance_mkt_workflow(
         raise HTTPException(status_code=400, detail="PO sudah di tahap akhir alur MKT")
     validate_mkt_advance(db, po_id, nxt)
     apply_mkt_stage(db, po_id, nxt)
+    create_notification_for_roles(
+        db,
+        ("admin", "marketing", "ppic"),
+        title=f"PO {row.po_number or row.id} masuk tahap {nxt}",
+        message=f"Tahap alur marketing diperbarui menjadi: {nxt}",
+        category="workflow",
+        entity_type="sales_order",
+        entity_id=row.id,
+        route_path="/admin/marketing-flow",
+        route_query={"po_id": row.id},
+    )
     db.commit()
     db.refresh(row)
     return row
@@ -103,6 +115,17 @@ def create_po(
         action="create",
         after={"po_number": row.po_number, "status": row.status},
         actor=user.username,
+    )
+    create_notification_for_roles(
+        db,
+        ("admin", "marketing", "ppic"),
+        title=f"PO baru {row.po_number}",
+        message=f"Sales order dibuat oleh {user.username}",
+        category="po",
+        entity_type="sales_order",
+        entity_id=row.id,
+        route_path="/admin/po",
+        route_query={"po_id": row.id},
     )
     db.commit()
     db.refresh(row)
@@ -154,6 +177,18 @@ def update_po(
         validate_po_status_transition(row.status, data["status"])
     for k, v in data.items():
         setattr(row, k, v)
+    if "status" in data and data["status"] != before["status"]:
+        create_notification_for_roles(
+            db,
+            ("admin", "marketing", "ppic", "production"),
+            title=f"Status PO {row.po_number or row.id}: {data['status']}",
+            message=f"Diubah oleh {user.username}",
+            category="po_status",
+            entity_type="sales_order",
+            entity_id=row.id,
+            route_path="/admin/po",
+            route_query={"po_id": row.id},
+        )
     log_change(
         db,
         entity_type="sales_order",

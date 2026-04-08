@@ -6,6 +6,7 @@ const messages = {
     appSubtitle: 'PT. Tong Hong Tannery',
     common: {
       language: 'Bahasa',
+      poweredBy: 'Power By',
       nav: {
         erp: 'ERP',
         mrp: 'MRP',
@@ -150,6 +151,14 @@ const messages = {
       system: 'system',
       beforeLabel: 'before',
       afterLabel: 'after',
+      notifications: 'Notifikasi',
+      noNotifications: 'Belum ada notifikasi',
+      markAllRead: 'Tandai semua dibaca',
+      profileUser: 'User',
+      profileRole: 'Role',
+      profileStatus: 'Status',
+      notificationNoAccess: 'Anda tidak punya akses ke halaman notifikasi ini',
+      notificationTargetMissing: 'Halaman tujuan notifikasi tidak tersedia',
     },
     menu: {
       dashboard: 'Dashboard',
@@ -201,6 +210,8 @@ const messages = {
       ok: 'OK',
       ng: 'NG',
       hold: 'Tahan',
+      active: 'Aktif',
+      inactive: 'Tidak aktif',
     },
     pages: {
       login: {
@@ -770,6 +781,7 @@ const messages = {
     appSubtitle: 'PT. Tong Hong Tannery',
     common: {
       language: 'Language',
+      poweredBy: 'Power By',
       nav: {
         erp: 'ERP',
         mrp: 'MRP',
@@ -914,6 +926,14 @@ const messages = {
       system: 'system',
       beforeLabel: 'before',
       afterLabel: 'after',
+      notifications: 'Notifications',
+      noNotifications: 'No notifications',
+      markAllRead: 'Mark all read',
+      profileUser: 'User',
+      profileRole: 'Role',
+      profileStatus: 'Status',
+      notificationNoAccess: 'You do not have access to this notification target',
+      notificationTargetMissing: 'Notification target page is not available',
     },
     menu: {
       dashboard: 'Dashboard',
@@ -965,6 +985,8 @@ const messages = {
       ok: 'OK',
       ng: 'NG',
       hold: 'Hold',
+      active: 'Active',
+      inactive: 'Inactive',
     },
     pages: {
       login: {
@@ -1534,6 +1556,7 @@ const messages = {
     appSubtitle: 'PT. Tong Hong Tannery',
     common: {
       language: '语言',
+      poweredBy: '技术支持',
       nav: {
         erp: 'ERP',
         mrp: 'MRP',
@@ -1678,6 +1701,14 @@ const messages = {
       system: '系统',
       beforeLabel: '变更前',
       afterLabel: '变更后',
+      notifications: '通知',
+      noNotifications: '暂无通知',
+      markAllRead: '全部标为已读',
+      profileUser: '用户',
+      profileRole: '角色',
+      profileStatus: '状态',
+      notificationNoAccess: '您无权访问该通知目标页面',
+      notificationTargetMissing: '通知目标页面不可用',
     },
     menu: {
       dashboard: '仪表盘',
@@ -1729,6 +1760,8 @@ const messages = {
       ok: 'OK',
       ng: 'NG',
       hold: '暂缓',
+      active: '启用',
+      inactive: '停用',
     },
     pages: {
       login: {

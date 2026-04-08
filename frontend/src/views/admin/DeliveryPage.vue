@@ -222,7 +222,14 @@ async function load() {
 onMounted(() => {
   const kw = route.query.keyword
   if (kw != null && String(kw).trim()) keyword.value = String(kw).trim()
-  load()
+  load().then(() => {
+    const deliveryIdRaw = route.query.delivery_id
+    const deliveryId = Number(deliveryIdRaw)
+    if (!Number.isNaN(deliveryId) && deliveryId > 0) {
+      const target = rows.value.find((r) => Number(r.id) === deliveryId)
+      if (target) openDetail(target)
+    }
+  })
 })
 
 const filteredRows = computed(() => {

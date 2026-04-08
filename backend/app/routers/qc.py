@@ -17,6 +17,7 @@ from app.models import (
 from app.schemas import QcDetailCreate, QcDetailUpdate, QcHeaderCreate, row_to_dict
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
+from app.services.notifications import create_notification_for_roles
 
 router = APIRouter(tags=["qc"])
 
@@ -127,6 +128,18 @@ def add_qc_detail(
         after={"qc_id": qc_id, "production_detail_id": row.production_detail_id, "result": row.result, "is_ok": row.is_ok},
         actor=user.username,
     )
+    if row.is_ok is False:
+        create_notification_for_roles(
+            db,
+            ("admin", "qc", "production", "ppic"),
+            title=f"QC NG pada detail {row.id}",
+            message=f"QC {qc_id} menghasilkan status NG",
+            category="qc",
+            entity_type="qc_line",
+            entity_id=row.id,
+            route_path="/admin/qc",
+            route_query={"qc_id": qc_id, "qc_detail_id": row.id},
+        )
     db.commit()
     db.refresh(row)
     return row_to_dict(row)

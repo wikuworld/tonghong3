@@ -15,6 +15,7 @@ from app.routers import (
     invoice,
     marketing,
     masters,
+    notifications,
     permissions,
     packing,
     po,
@@ -52,6 +53,7 @@ app.include_router(invoice.router, prefix=_PREFIX)
 app.include_router(dashboard.router, prefix=_PREFIX)
 app.include_router(exchange_rates.router, prefix=_PREFIX)
 app.include_router(masters.router, prefix=_PREFIX)
+app.include_router(notifications.router, prefix=_PREFIX)
 app.include_router(permissions.router, prefix=_PREFIX)
 app.include_router(reports.router, prefix=_PREFIX)
 app.include_router(documents.router, prefix=_PREFIX)

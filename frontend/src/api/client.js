@@ -31,6 +31,28 @@ export function me() {
   return apiFetch('/auth/me')
 }
 
+// --- Notifications ---
+export function listNotifications(params = {}) {
+  const q = new URLSearchParams()
+  if (params.unread_only) q.set('unread_only', 'true')
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/notifications${suffix}`)
+}
+
+export function unreadNotificationsCount() {
+  return apiFetch('/notifications/unread-count')
+}
+
+export function markNotificationRead(id) {
+  return apiFetch(`/notifications/${id}/read`, { method: 'POST' })
+}
+
+export function markAllNotificationsRead() {
+  return apiFetch('/notifications/read-all', { method: 'POST' })
+}
+
 export function listUsers() {
   return apiFetch('/auth/users')
 }

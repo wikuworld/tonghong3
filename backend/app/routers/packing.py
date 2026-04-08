@@ -18,6 +18,7 @@ from app.services.numbering import next_number
 from app.services.business_rules import validate_packing_links
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
+from app.services.notifications import create_notification_for_roles
 
 router = APIRouter(tags=["packing"])
 
@@ -134,6 +135,18 @@ def update_packing(
             validate_packing_links(db, int(pid), int(qid))
     for k, v in data.items():
         setattr(row, k, v)
+    if row.status == "done" and before["status"] != "done":
+        create_notification_for_roles(
+            db,
+            ("admin", "warehouse", "marketing"),
+            title=f"Packing {row.packing_number} selesai",
+            message="Siap diproses ke delivery",
+            category="packing",
+            entity_type="packing",
+            entity_id=row.id,
+            route_path="/admin/packing",
+            route_query={"packing_id": row.id},
+        )
     log_change(
         db,
         entity_type="packing",

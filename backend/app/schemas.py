@@ -545,6 +545,21 @@ class UserUpdate(BaseModel):
     password: Optional[str] = None
 
 
+class NotificationOut(ORMBase):
+    id: int
+    user_id: int
+    title: str
+    message: Optional[str] = None
+    category: str
+    entity_type: Optional[str] = None
+    entity_id: Optional[int] = None
+    route_path: Optional[str] = None
+    route_query: Optional[dict[str, Any]] = None
+    is_read: bool
+    created_at: Optional[datetime] = None
+    read_at: Optional[datetime] = None
+
+
 def row_to_dict(obj: Any) -> dict[str, Any]:
     """Serialisasi sederhana untuk respons fleksibel."""
     if obj is None:

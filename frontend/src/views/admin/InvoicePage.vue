@@ -161,6 +161,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
@@ -177,6 +178,7 @@ import {
 } from '../../api/client'
 
 const { t } = useI18n()
+const route = useRoute()
 const canCreate = can('invoice', 'create')
 const canUpdate = can('invoice', 'update')
 const loading = ref(false)
@@ -237,7 +239,16 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  const invoiceIdRaw = route.query.invoice_id
+  const invoiceId = Number(invoiceIdRaw)
+  if (!Number.isNaN(invoiceId) && invoiceId > 0) {
+    tab.value = 'list'
+    const target = rows.value.find((r) => Number(r.id) === invoiceId)
+    if (target) openDetail(target)
+  }
+})
 
 async function loadOutstanding() {
   outstandingLoading.value = true
