@@ -23,10 +23,42 @@
         @select="goTo"
       >
         <el-menu-item-group :title="t('common.nav.erp')">
-          <el-menu-item v-for="item in filteredErpMenus" :key="item.path" :index="item.path">
-            <el-icon><component :is="item.icon" /></el-icon>
-            <span>{{ t(item.labelKey) }}</span>
-          </el-menu-item>
+          <el-sub-menu index="erp-flow" v-if="filteredErpFlowMenus.length">
+            <template #title>
+              <span class="admin-subgroup-title">
+                <el-icon><Share /></el-icon>
+                <span>{{ t('common.nav.flow') }}</span>
+              </span>
+            </template>
+            <el-menu-item v-for="item in filteredErpFlowMenus" :key="item.path" :index="item.path">
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ t(item.labelKey) }}</span>
+            </el-menu-item>
+          </el-sub-menu>
+          <el-sub-menu index="erp-master" v-if="filteredErpMasterMenus.length">
+            <template #title>
+              <span class="admin-subgroup-title">
+                <el-icon><Files /></el-icon>
+                <span>{{ t('common.nav.masterData') }}</span>
+              </span>
+            </template>
+            <el-menu-item v-for="item in filteredErpMasterMenus" :key="item.path" :index="item.path">
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ t(item.labelKey) }}</span>
+            </el-menu-item>
+          </el-sub-menu>
+          <el-sub-menu index="erp-system" v-if="filteredErpSystemMenus.length">
+            <template #title>
+              <span class="admin-subgroup-title">
+                <el-icon><Setting /></el-icon>
+                <span>{{ t('common.nav.system') }}</span>
+              </span>
+            </template>
+            <el-menu-item v-for="item in filteredErpSystemMenus" :key="item.path" :index="item.path">
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ t(item.labelKey) }}</span>
+            </el-menu-item>
+          </el-sub-menu>
         </el-menu-item-group>
         <el-menu-item-group :title="t('common.nav.mrp')">
           <el-menu-item v-for="item in filteredMrpMenus" :key="item.path" :index="item.path">
@@ -142,7 +174,11 @@ import {
   Box,
   FolderOpened,
   Sell,
+  CollectionTag,
   Guide,
+  Share,
+  Files,
+  Setting,
   Bell,
   UserFilled,
 } from '@element-plus/icons-vue'
@@ -181,18 +217,26 @@ const notifications = ref([])
 const unreadCount = ref(0)
 let unreadTimer = null
 
-const erpMenus = [
+const erpFlowMenus = [
   { path: '/admin/dashboard', labelKey: 'menu.dashboard', icon: DataAnalysis },
-  { path: '/admin/customers', labelKey: 'menu.customers', icon: User },
-  { path: '/admin/exchange-rates', labelKey: 'menu.exchangeRate', icon: Coin },
   { path: '/admin/po', labelKey: 'menu.po', icon: ShoppingCart },
   { path: '/admin/marketing-flow', labelKey: 'menu.marketingFlow', icon: Guide },
   { path: '/admin/delivery', labelKey: 'menu.delivery', icon: Van },
   { path: '/admin/invoice', labelKey: 'menu.invoice', icon: Tickets },
   { path: '/admin/reports', labelKey: 'menu.reports', icon: Document },
+]
+
+const erpMasterMenus = [
+  { path: '/admin/customers', labelKey: 'menu.customers', icon: User },
   { path: '/admin/buyer-prices', labelKey: 'menu.buyerPrices', icon: Sell },
+  { path: '/admin/brands', labelKey: 'menu.brandMaster', icon: CollectionTag },
   { path: '/admin/customs', labelKey: 'menu.customs', icon: FolderOpened },
+  { path: '/admin/master-items', labelKey: 'menu.masterItems', icon: Box },
+  { path: '/admin/exchange-rates', labelKey: 'menu.exchangeRate', icon: Coin },
   { path: '/admin/master-import', labelKey: 'menu.masterImport', icon: FolderOpened },
+]
+
+const erpSystemMenus = [
   { path: '/admin/user-access', labelKey: 'menu.userAccess', icon: User },
 ]
 
@@ -202,8 +246,14 @@ const mrpMenus = [
   { path: '/admin/packing', labelKey: 'menu.packing', icon: Box },
 ]
 
-const filteredErpMenus = computed(() =>
-  erpMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
+const filteredErpFlowMenus = computed(() =>
+  erpFlowMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
+)
+const filteredErpMasterMenus = computed(() =>
+  erpMasterMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
+)
+const filteredErpSystemMenus = computed(() =>
+  erpSystemMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
 )
 const filteredMrpMenus = computed(() =>
   mrpMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
@@ -354,6 +404,27 @@ async function handleMarkAllRead() {
 
 .admin-notification-item.is-read {
   opacity: 0.7;
+}
+
+.admin-subgroup-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #cbd5e1;
+}
+
+.admin-subgroup-title :deep(.el-icon) {
+  color: #94a3b8;
+  opacity: 0.9;
+}
+
+:deep(.el-sub-menu.is-active > .el-sub-menu__title .admin-subgroup-title) {
+  color: #e2e8f0;
+}
+
+:deep(.el-sub-menu.is-active > .el-sub-menu__title .admin-subgroup-title .el-icon) {
+  color: #cbd5e1;
+  opacity: 1;
 }
 
 .admin-header {

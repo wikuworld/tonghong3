@@ -7,7 +7,8 @@
         clearable
         class="customer-toolbar-search"
       />
-      <el-button v-if="canCreate" type="primary" :icon="Plus" :loading="loading" @click="openCreate">
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">
         {{ t('common.create') }}
       </el-button>
     </template>
@@ -37,6 +38,13 @@
         <template #default="{ row }">{{ cityCountry(row) }}</template>
       </el-table-column>
       <el-table-column prop="tax_id" :label="t('pages.customers.fieldTaxId')" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="skep_kb_number" :label="t('pages.customers.fieldSkepKb')" min-width="140" show-overflow-tooltip />
+      <el-table-column
+        prop="customs_office_code"
+        :label="t('pages.customers.fieldCustomsOfficeCode')"
+        min-width="140"
+        show-overflow-tooltip
+      />
       <el-table-column :label="t('common.actions')" width="132" align="center" fixed="right">
         <template #default="{ row }">
           <div class="customer-row-actions">
@@ -82,6 +90,12 @@
           </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldTaxId')" :span="1">
             {{ detailRow.tax_id || t('common.emptyValue') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.customers.fieldSkepKb')" :span="1">
+            {{ detailRow.skep_kb_number || t('common.emptyValue') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.customers.fieldCustomsOfficeCode')" :span="1">
+            {{ detailRow.customs_office_code || t('common.emptyValue') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldCity')" :span="1">
             {{ detailRow.city || t('common.emptyValue') }}
@@ -164,6 +178,16 @@
           <el-col :xs="24" :sm="12">
             <el-form-item :label="t('pages.customers.fieldTaxId')" prop="tax_id">
               <el-input v-model="formModel.tax_id" maxlength="32" clearable />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12">
+            <el-form-item :label="t('pages.customers.fieldSkepKb')" prop="skep_kb_number">
+              <el-input v-model="formModel.skep_kb_number" maxlength="80" clearable />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12">
+            <el-form-item :label="t('pages.customers.fieldCustomsOfficeCode')" prop="customs_office_code">
+              <el-input v-model="formModel.customs_office_code" maxlength="32" clearable />
             </el-form-item>
           </el-col>
           <el-col :span="24">
@@ -413,6 +437,8 @@ const formModel = reactive({
   city: '',
   country: '',
   tax_id: '',
+  skep_kb_number: '',
+  customs_office_code: '',
   address: '',
   remark: '',
   wilayah_province_code: '',
@@ -436,6 +462,8 @@ function resetFormModel() {
   formModel.city = ''
   formModel.country = ''
   formModel.tax_id = ''
+  formModel.skep_kb_number = ''
+  formModel.customs_office_code = ''
   formModel.address = ''
   formModel.remark = ''
   formModel.wilayah_province_code = ''
@@ -573,6 +601,8 @@ async function openEdit(row) {
   formModel.city = row.city || ''
   formModel.country = row.country || ''
   formModel.tax_id = row.tax_id || ''
+  formModel.skep_kb_number = row.skep_kb_number || ''
+  formModel.customs_office_code = row.customs_office_code || ''
   formModel.address = row.address || ''
   formModel.remark = row.remark || ''
   formModel.wilayah_province_code = row.wilayah_province_code || ''
@@ -601,6 +631,8 @@ async function submitForm() {
       city: formModel.city.trim() || undefined,
       country: formModel.country.trim() || undefined,
       tax_id: formModel.tax_id.trim() || undefined,
+      skep_kb_number: formModel.skep_kb_number.trim() || undefined,
+      customs_office_code: formModel.customs_office_code.trim() || undefined,
       address: formModel.address.trim() || undefined,
       remark: formModel.remark.trim() || undefined,
       wilayah_province_code: formModel.wilayah_province_code || undefined,

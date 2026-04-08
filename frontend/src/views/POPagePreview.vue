@@ -12,6 +12,9 @@
             <select v-model="form.po_category" class="w-full rounded-xl border p-2">
               <option value="production">Production</option>
               <option value="sample">Sample</option>
+              <option value="claim">Claim</option>
+              <option value="return">Return</option>
+              <option value="subcont">SubKon</option>
             </select>
           </div>
           <Field label="Buyer" v-model="form.buyer" />

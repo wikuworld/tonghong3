@@ -269,7 +269,13 @@ const poCompositionOption = computed(() => {
                 ? '#14b8a6'
                 : row.category === 'production'
                   ? '#2563eb'
-                  : '#f59e0b',
+                  : row.category === 'claim'
+                    ? '#ef4444'
+                    : row.category === 'return'
+                      ? '#f97316'
+                      : row.category === 'subcont'
+                        ? '#8b5cf6'
+                        : '#f59e0b',
           },
         }))
       : [{ value: 1, name: t('dashboard.noPoCategory'), itemStyle: { color: '#e2e8f0' } }]

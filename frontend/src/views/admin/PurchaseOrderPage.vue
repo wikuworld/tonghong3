@@ -7,8 +7,9 @@
         clearable
         class="po-toolbar-search"
       />
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Download" @click="openExportHint">{{ t('common.export') }}</el-button>
-      <el-button v-if="canManage" type="primary" :icon="Plus" :loading="loading" @click="openCreateDialog">{{ t('common.create') }}</el-button>
+      <el-button v-if="canManage" type="primary" :icon="Plus" @click="openCreateDialog">{{ t('common.create') }}</el-button>
     </template>
 
     <div class="filter-panel mb-4">
@@ -121,6 +122,7 @@
                 clearable
                 class="w-full"
                 :placeholder="t('common.placeholder.customer')"
+                :disabled="Boolean(brandLockedCustomerId)"
                 @change="onCustomerChange"
               >
                 <el-option
@@ -134,13 +136,23 @@
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.poNo')">
-              <el-input v-model="formModel.po_number" :placeholder="t('common.placeholder.poNumber')" clearable />
+              <el-input
+                :model-value="isEditMode ? formModel.po_number : t('common.autoGenerate')"
+                disabled
+              />
               <span class="text-xs text-slate-500">{{ t('pages.po.autoGenerateHint') }}</span>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('pages.po.brand')">
-              <el-select v-model="formModel.brand_id" clearable filterable class="w-full" :placeholder="t('pages.po.brand')">
+              <el-select
+                v-model="formModel.brand_id"
+                clearable
+                filterable
+                class="w-full"
+                :placeholder="t('pages.po.brand')"
+                @change="onBrandChange"
+              >
                 <el-option
                   v-for="b in brandsFiltered"
                   :key="b.id"
@@ -148,6 +160,11 @@
                   :value="b.id"
                 />
               </el-select>
+              <div class="mt-2">
+                <el-button type="primary" link :icon="Plus" @click="openInlineBrandDialog">
+                  {{ t('pages.po.addBrandInline') }}
+                </el-button>
+              </div>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
@@ -173,6 +190,9 @@
               <el-select v-model="formModel.po_category" class="w-full" :placeholder="t('common.category')">
                 <el-option :label="t('status.production')" value="production" />
                 <el-option :label="t('status.sample')" value="sample" />
+                <el-option :label="t('status.claim')" value="claim" />
+                <el-option :label="t('status.return')" value="return" />
+                <el-option :label="t('status.subcont')" value="subcont" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -186,12 +206,10 @@
               <el-select
                 v-model="formModel.buyer"
                 filterable
-                allow-create
-                default-first-option
                 class="w-full"
                 :placeholder="t('common.placeholder.buyer')"
               >
-                <el-option v-for="b in buyerCodes" :key="b" :label="b" :value="b" />
+                <el-option v-for="b in buyerCodesFiltered" :key="b" :label="b" :value="b" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -244,6 +262,7 @@
                 filterable
                 class="w-full"
                 :placeholder="t('pages.po.masterItemPlaceholder')"
+                @change="onMasterItemChange"
               >
                 <el-option
                   v-for="it in masterItems"
@@ -256,7 +275,7 @@
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.material')">
-              <el-input v-model="formModel.material_name" :placeholder="t('common.placeholder.material')" />
+              <el-input v-model="formModel.material_name" :placeholder="t('common.placeholder.material')" readonly />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
@@ -300,6 +319,31 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <div class="po-line-actions">
+          <el-button :icon="Plus" @click="pushCurrentLine(false)">{{ t('common.add') }} Line</el-button>
+          <el-button @click="pushCurrentLine(true)">Copy Line</el-button>
+        </div>
+        <el-table
+          v-if="draftLines.length"
+          :data="draftLines"
+          border
+          stripe
+          size="small"
+          class="admin-table mt-3"
+          table-layout="auto"
+        >
+          <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
+          <el-table-column prop="material_name" :label="t('common.material')" min-width="180" />
+          <el-table-column prop="thickness_text" :label="t('common.thickness')" width="120" />
+          <el-table-column prop="color" :label="t('common.color')" width="120" />
+          <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="130" />
+          <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="140" />
+          <el-table-column :label="t('common.actions')" width="90" align="center">
+            <template #default="{ $index }">
+              <el-button link type="danger" :icon="Delete" @click="removeDraftLine($index)" />
+            </template>
+          </el-table-column>
+        </el-table>
       </el-form>
       <template #footer>
         <div class="po-dialog-footer">
@@ -385,6 +429,29 @@
         </div>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="brandDialogVisible"
+      :title="t('pages.po.addBrandInline')"
+      width="460px"
+      destroy-on-close
+      align-center
+    >
+      <el-form label-position="top">
+        <el-form-item :label="t('common.code')" required>
+          <el-input v-model="inlineBrand.code" maxlength="50" />
+        </el-form-item>
+        <el-form-item :label="t('common.name')">
+          <el-input v-model="inlineBrand.name" maxlength="255" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="po-dialog-footer">
+          <el-button @click="brandDialogVisible = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :loading="brandSaving" @click="submitInlineBrand">{{ t('common.save') }}</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -398,9 +465,12 @@ import AdminSection from '../../components/AdminSection.vue'
 import { canWrite } from '../../security/permissions'
 import {
   addPoDetail,
+  createBrand,
   createPo,
+  deletePoDetail,
   deletePo,
   listBrands,
+  listBrandBuyers,
   listBuyerPriceLists,
   listCustomsDeclarations,
   listCustomers,
@@ -427,8 +497,16 @@ const brands = ref([])
 const customsList = ref([])
 const masterItems = ref([])
 const buyerCodes = ref(['NB', 'ADIDAS', 'NIKE', 'UA'])
+const brandBuyerCodes = ref([])
+const brandLockedCustomerId = ref(null)
 
 const rows = ref([])
+const brandDialogVisible = ref(false)
+const brandSaving = ref(false)
+const inlineBrand = reactive({
+  code: '',
+  name: '',
+})
 
 const customerName = (id) => {
   const c = customers.value.find((x) => x.id === id)
@@ -497,6 +575,11 @@ const brandsFiltered = computed(() => {
   return brands.value.filter((b) => !b.customer_id || b.customer_id === cid)
 })
 
+const buyerCodesFiltered = computed(() => {
+  if (brandBuyerCodes.value.length) return brandBuyerCodes.value
+  return buyerCodes.value
+})
+
 const filteredRows = computed(() =>
   rows.value.filter((row) => {
     const customerMatch = !filterCustomerId.value || row.customer_id === filterCustomerId.value
@@ -529,7 +612,8 @@ const statusLabel = (status) => (status ? t(`status.${status}`) : t('common.empt
 const formDialogVisible = ref(false)
 const isEditMode = ref(false)
 const editingPoId = ref(null)
-const editingDetailId = ref(null)
+const editingDetailIds = ref([])
+const draftLines = ref([])
 
 const formModel = reactive({
   po_number: '',
@@ -580,17 +664,143 @@ function resetForm() {
   formModel.material_followup_remark = ''
   formModel.material_followup_done = false
   editingPoId.value = null
-  editingDetailId.value = null
+  editingDetailIds.value = []
+  draftLines.value = []
+  brandLockedCustomerId.value = null
 }
 
 function onCustomerChange() {
+  if (brandLockedCustomerId.value) {
+    formModel.customer_id = brandLockedCustomerId.value
+    return
+  }
   formModel.brand_id = null
+  brandBuyerCodes.value = []
+  formModel.buyer = ''
+}
+
+async function onBrandChange(brandId) {
+  brandBuyerCodes.value = []
+  brandLockedCustomerId.value = null
+  if (!brandId) return
+  try {
+    const selectedBrand = brands.value.find((b) => b.id === brandId)
+    if (selectedBrand?.customer_id) {
+      brandLockedCustomerId.value = selectedBrand.customer_id
+      formModel.customer_id = selectedBrand.customer_id
+    }
+    const rows = await listBrandBuyers(brandId)
+    brandBuyerCodes.value = rows.map((x) => x.buyer_code).filter(Boolean)
+    if (formModel.buyer && brandBuyerCodes.value.length && !brandBuyerCodes.value.includes(formModel.buyer)) {
+      formModel.buyer = ''
+    }
+  } catch {
+    brandBuyerCodes.value = []
+  }
+}
+
+function onMasterItemChange(masterItemId) {
+  const item = masterItems.value.find((x) => x.id === masterItemId)
+  if (!item) {
+    formModel.material_name = ''
+    formModel.thickness_text = ''
+    formModel.color = ''
+    formModel.emboss = ''
+    formModel.softness = ''
+    formModel.color_reference = ''
+    formModel.backing = ''
+    formModel.quantity_order = ''
+    formModel.style_article = ''
+    formModel.model = ''
+    return
+  }
+  formModel.material_name = item.material_name || ''
+  formModel.color = item.color || ''
+  formModel.emboss = item.emboss || ''
+  formModel.thickness_text = item.thickness_mm != null ? String(item.thickness_mm) : ''
+  formModel.softness = item.softness || ''
+  formModel.color_reference = item.color_reference || ''
+  formModel.backing = item.backing || ''
+  formModel.quantity_order = item.quantity_order_default != null ? String(item.quantity_order_default) : ''
+  formModel.style_article = item.style_article || ''
+  formModel.model = item.model || ''
 }
 
 const openCreateDialog = () => {
   isEditMode.value = false
   resetForm()
+  brandLockedCustomerId.value = null
   formDialogVisible.value = true
+}
+
+function buildCurrentDetailBody() {
+  return {
+    master_item_id: formModel.master_item_id || undefined,
+    material_name: formModel.material_name || undefined,
+    thickness_text: formModel.thickness_text || undefined,
+    color: formModel.color || undefined,
+    softness: formModel.softness || undefined,
+    color_reference: formModel.color_reference || undefined,
+    backing: formModel.backing || undefined,
+    quantity_order: formModel.quantity_order ? Number(formModel.quantity_order) : undefined,
+    style_article: formModel.style_article || undefined,
+    model: formModel.model || undefined,
+    line_etd: toIsoDate(formModel.etd) || undefined,
+  }
+}
+
+function pushCurrentLine(copyCurrent = false) {
+  const line = buildCurrentDetailBody()
+  if (!line.material_name && !line.master_item_id) {
+    ElMessage.warning(t('common.material'))
+    return
+  }
+  draftLines.value.push({ ...line })
+  if (!copyCurrent) {
+    formModel.master_item_id = null
+    formModel.material_name = ''
+    formModel.thickness_text = ''
+    formModel.color = ''
+    formModel.softness = ''
+    formModel.color_reference = ''
+    formModel.backing = ''
+    formModel.quantity_order = ''
+    formModel.style_article = ''
+    formModel.model = ''
+  }
+}
+
+function removeDraftLine(index) {
+  draftLines.value.splice(index, 1)
+}
+
+function openInlineBrandDialog() {
+  inlineBrand.code = ''
+  inlineBrand.name = ''
+  brandDialogVisible.value = true
+}
+
+async function submitInlineBrand() {
+  if (!inlineBrand.code?.trim()) {
+    ElMessage.warning(t('pages.brandMaster.codeRequired'))
+    return
+  }
+  brandSaving.value = true
+  try {
+    const created = await createBrand({
+      code: inlineBrand.code.trim(),
+      name: inlineBrand.name?.trim() || undefined,
+      customer_id: formModel.customer_id || undefined,
+    })
+    brands.value = [created, ...brands.value]
+    formModel.brand_id = created.id
+    brandDialogVisible.value = false
+    ElMessage.success(t('common.save'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    brandSaving.value = false
+  }
 }
 
 const openEditDialog = async (row) => {
@@ -609,11 +819,26 @@ const openEditDialog = async (row) => {
   formModel.status = row.status || 'draft'
   formModel.material_followup_remark = row.material_followup_remark || ''
   formModel.material_followup_done = Boolean(row.material_followup_done)
+  await onBrandChange(formModel.brand_id)
   try {
     const details = await listPoDetails(row.id)
+    draftLines.value = details.map((d) => ({
+      id: d.id,
+      master_item_id: d.master_item_id || undefined,
+      material_name: d.material_name || undefined,
+      thickness_text: d.thickness_text || undefined,
+      color: d.color || undefined,
+      softness: d.softness || undefined,
+      color_reference: d.color_reference || undefined,
+      backing: d.backing || undefined,
+      quantity_order: d.quantity_order != null ? Number(d.quantity_order) : undefined,
+      style_article: d.style_article || undefined,
+      model: d.model || undefined,
+      line_etd: d.line_etd ? String(d.line_etd).slice(0, 10) : undefined,
+    }))
+    editingDetailIds.value = details.map((d) => d.id)
     const d0 = details[0]
     if (d0) {
-      editingDetailId.value = d0.id
       formModel.master_item_id = d0.master_item_id
       formModel.material_name = d0.material_name || ''
       formModel.thickness_text = d0.thickness_text || ''
@@ -626,7 +851,8 @@ const openEditDialog = async (row) => {
       formModel.model = d0.model || ''
     }
   } catch {
-    editingDetailId.value = null
+    editingDetailIds.value = []
+    draftLines.value = []
   }
   formDialogVisible.value = true
 }
@@ -639,7 +865,7 @@ const submitForm = async () => {
   saving.value = true
   try {
     const header = {
-      po_number: formModel.po_number?.trim() || undefined,
+      po_number: isEditMode.value ? formModel.po_number?.trim() || undefined : undefined,
       customer_id: formModel.customer_id,
       brand_id: formModel.brand_id || undefined,
       customs_declaration_id: formModel.customs_declaration_id || undefined,
@@ -652,30 +878,31 @@ const submitForm = async () => {
       material_followup_remark: formModel.material_followup_remark || undefined,
       material_followup_done: formModel.material_followup_done,
     }
-    const detailBody = {
-      master_item_id: formModel.master_item_id || undefined,
-      material_name: formModel.material_name || undefined,
-      thickness_text: formModel.thickness_text || undefined,
-      color: formModel.color || undefined,
-      softness: formModel.softness || undefined,
-      color_reference: formModel.color_reference || undefined,
-      backing: formModel.backing || undefined,
-      quantity_order: formModel.quantity_order ? Number(formModel.quantity_order) : undefined,
-      style_article: formModel.style_article || undefined,
-      model: formModel.model || undefined,
-      line_etd: toIsoDate(formModel.etd) || undefined,
-    }
+    const detailBodies = draftLines.value.length ? draftLines.value : [buildCurrentDetailBody()]
 
     if (isEditMode.value && editingPoId.value) {
       await updatePo(editingPoId.value, header)
-      if (editingDetailId.value) {
-        await updatePoDetail(editingDetailId.value, detailBody)
-      } else {
-        await addPoDetail(editingPoId.value, detailBody)
+      const keepIds = []
+      for (let i = 0; i < detailBodies.length; i += 1) {
+        const rowBody = detailBodies[i]
+        const existingId = editingDetailIds.value[i]
+        if (existingId) {
+          await updatePoDetail(existingId, rowBody)
+          keepIds.push(existingId)
+        } else {
+          const createdDetail = await addPoDetail(editingPoId.value, rowBody)
+          keepIds.push(createdDetail.id)
+        }
+      }
+      const staleIds = editingDetailIds.value.filter((id) => !keepIds.includes(id))
+      for (const staleId of staleIds) {
+        await deletePoDetail(staleId)
       }
     } else {
       const created = await createPo(header)
-      await addPoDetail(created.id, detailBody)
+      for (const rowBody of detailBodies) {
+        await addPoDetail(created.id, rowBody)
+      }
     }
     ElMessage.success(t('pages.customers.saved'))
     formDialogVisible.value = false

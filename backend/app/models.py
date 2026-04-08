@@ -38,6 +38,8 @@ class Customer(Base):
     city: Mapped[Optional[str]] = mapped_column(String(120))
     country: Mapped[Optional[str]] = mapped_column(String(100))
     tax_id: Mapped[Optional[str]] = mapped_column(String(32))
+    skep_kb_number: Mapped[Optional[str]] = mapped_column(String(80))
+    customs_office_code: Mapped[Optional[str]] = mapped_column(String(32))
     address: Mapped[Optional[str]] = mapped_column(Text)
     remark: Mapped[Optional[str]] = mapped_column(Text)
     wilayah_province_code: Mapped[Optional[str]] = mapped_column(String(8))
@@ -61,6 +63,12 @@ class MasterItem(Base):
     material_name: Mapped[Optional[str]] = mapped_column(String(500))
     emboss: Mapped[Optional[str]] = mapped_column(String(500))
     color: Mapped[Optional[str]] = mapped_column(String(500))
+    softness: Mapped[Optional[str]] = mapped_column(String(100))
+    color_reference: Mapped[Optional[str]] = mapped_column(String(255))
+    backing: Mapped[Optional[str]] = mapped_column(String(255))
+    quantity_order_default: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    style_article: Mapped[Optional[str]] = mapped_column(String(100))
+    model: Mapped[Optional[str]] = mapped_column(String(100))
     category: Mapped[Optional[str]] = mapped_column(String(100))
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
@@ -174,6 +182,19 @@ class Brand(Base):
     customer_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("customers.id"))
     code: Mapped[Optional[str]] = mapped_column(String(50))
     name: Mapped[Optional[str]] = mapped_column(String(255))
+
+
+class BrandBuyerMap(Base):
+    __tablename__ = "brand_buyer_maps"
+    __table_args__ = (
+        UniqueConstraint("brand_id", "buyer_code", name="uq_brand_buyer_map"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    brand_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("brands.id", ondelete="CASCADE")
+    )
+    buyer_code: Mapped[str] = mapped_column(String(32))
 
 
 class CustomerPic(Base):

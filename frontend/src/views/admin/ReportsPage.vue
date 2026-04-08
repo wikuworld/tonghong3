@@ -53,11 +53,14 @@
               </el-form-item>
             </el-col>
             <el-col :xs="24" :sm="12" :md="5">
-              <el-form-item :label="t('common.status')">
-                <el-select v-model="status" clearable class="w-full" :placeholder="t('pages.reports.allStatus')">
+              <el-form-item :label="t('common.poCategory')">
+                <el-select v-model="category" clearable class="w-full" :placeholder="t('pages.reports.allStatus')">
                   <el-option :label="t('pages.reports.allStatus')" value="" />
                   <el-option :label="t('status.production')" value="production" />
                   <el-option :label="t('status.sample')" value="sample" />
+                  <el-option :label="t('status.claim')" value="claim" />
+                  <el-option :label="t('status.return')" value="return" />
+                  <el-option :label="t('status.subcont')" value="subcont" />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -183,7 +186,7 @@ const keyword = ref('')
 const dateFrom = ref('')
 const dateTo = ref('')
 const customer = ref('')
-const status = ref('')
+const category = ref('')
 const customers = ref([])
 
 const reportLoading = ref(false)
@@ -259,12 +262,18 @@ const filteredReviseRows = computed(() =>
 )
 
 const filteredProductionRows = computed(() => {
-  if (status.value === 'sample') return []
-  return productionRows.value.filter((row) => rowMatchesKeyword(row) && rowMatchesCustomer(row))
+  if (category.value === 'sample') return []
+  return productionRows.value.filter((row) => {
+    const categoryMatch =
+      !category.value ||
+      row.po_category === category.value ||
+      (category.value === 'production' && !row.po_category)
+    return categoryMatch && rowMatchesKeyword(row) && rowMatchesCustomer(row)
+  })
 })
 
 const filteredSampleRows = computed(() => {
-  if (status.value === 'production') return []
+  if (category.value && category.value !== 'sample') return []
   return sampleRows.value.filter((row) => rowMatchesKeyword(row) && rowMatchesCustomer(row))
 })
 

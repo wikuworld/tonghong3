@@ -15,7 +15,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Brand, Customer, CustomerPic, MasterItem, MasterPrice
+from app.models import (
+    BrandBuyerMap,
+    Brand,
+    BuyerPriceList,
+    Customer,
+    CustomerPic,
+    MasterItem,
+    MasterPrice,
+)
 from app.routers.auth import get_current_user, require_roles
 
 router = APIRouter(tags=["masters"])
@@ -36,6 +44,20 @@ class BrandOut(BaseModel):
     customer_id: Optional[int] = None
     code: Optional[str] = None
     name: Optional[str] = None
+
+
+class BrandBuyerMapIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    buyer_codes: list[str] = []
+
+
+class BrandBuyerMapOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    brand_id: int
+    buyer_code: str
 
 
 class PicIn(BaseModel):
@@ -111,6 +133,72 @@ def delete_brand(
     return {"status": "deleted"}
 
 
+@router.post("/masters/brands/seed-from-buyers")
+def seed_brands_from_buyers(
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> dict[str, int]:
+    buyer_codes = db.scalars(select(BuyerPriceList.buyer_code)).all()
+    created = 0
+    mapped = 0
+    for code in sorted({str(x).strip() for x in buyer_codes if str(x).strip()}):
+        brand = db.scalars(select(Brand).where(Brand.code == code)).first()
+        if not brand:
+            brand = Brand(code=code, name=code)
+            db.add(brand)
+            db.flush()
+            created += 1
+        existing_map = db.scalars(
+            select(BrandBuyerMap).where(
+                BrandBuyerMap.brand_id == brand.id,
+                BrandBuyerMap.buyer_code == code,
+            )
+        ).first()
+        if not existing_map:
+            db.add(BrandBuyerMap(brand_id=brand.id, buyer_code=code))
+            mapped += 1
+    db.commit()
+    return {"created": created, "mapped": mapped}
+
+
+@router.get("/masters/brands/{brand_id}/buyers", response_model=list[BrandBuyerMapOut])
+def list_brand_buyers(
+    brand_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> list[BrandBuyerMap]:
+    if not db.get(Brand, brand_id):
+        raise HTTPException(status_code=404, detail="Brand tidak ada")
+    rows = db.scalars(
+        select(BrandBuyerMap)
+        .where(BrandBuyerMap.brand_id == brand_id)
+        .order_by(BrandBuyerMap.buyer_code.asc())
+    ).all()
+    return list(rows)
+
+
+@router.put("/masters/brands/{brand_id}/buyers", response_model=list[BrandBuyerMapOut])
+def replace_brand_buyers(
+    brand_id: int,
+    body: BrandBuyerMapIn,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> list[BrandBuyerMap]:
+    if not db.get(Brand, brand_id):
+        raise HTTPException(status_code=404, detail="Brand tidak ada")
+    db.query(BrandBuyerMap).filter(BrandBuyerMap.brand_id == brand_id).delete()
+    cleaned = sorted({str(code).strip() for code in body.buyer_codes if str(code).strip()})
+    for code in cleaned:
+        db.add(BrandBuyerMap(brand_id=brand_id, buyer_code=code))
+    db.commit()
+    rows = db.scalars(
+        select(BrandBuyerMap)
+        .where(BrandBuyerMap.brand_id == brand_id)
+        .order_by(BrandBuyerMap.buyer_code.asc())
+    ).all()
+    return list(rows)
+
+
 @router.get("/masters/customer-pics", response_model=list[PicOut])
 def list_pics(
     db: Session = Depends(get_db),
@@ -166,6 +254,44 @@ def create_master_item(
     db.commit()
     db.refresh(row)
     return row
+
+
+@router.put("/masters/items/{item_id}", response_model=MasterItemOut)
+def update_master_item(
+    item_id: int,
+    body: MasterItemCreate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> MasterItem:
+    row = db.get(MasterItem, item_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Master item tidak ditemukan")
+    data = body.model_dump(exclude_unset=True)
+    if "item_code" in data and str(data["item_code"]).strip() != row.item_code:
+        exists = db.scalars(
+            select(MasterItem).where(MasterItem.item_code == str(data["item_code"]).strip())
+        ).first()
+        if exists and exists.id != item_id:
+            raise HTTPException(status_code=400, detail="item_code sudah dipakai")
+    for k, v in data.items():
+        setattr(row, k, v)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/masters/items/{item_id}")
+def delete_master_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> dict[str, str]:
+    row = db.get(MasterItem, item_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Master item tidak ditemukan")
+    db.delete(row)
+    db.commit()
+    return {"status": "deleted"}
 
 
 # --- Master Harga (matrix USD) ---
@@ -248,6 +374,22 @@ async def import_master_zip(
                 row.material_name = (r.get("material_name") or row.material_name)
                 row.emboss = (r.get("emboss") or row.emboss)
                 row.color = (r.get("color") or row.color)
+                row.softness = (r.get("softness") or row.softness)
+                row.color_reference = (
+                    r.get("color_reference")
+                    or r.get("color_standard")
+                    or row.color_reference
+                )
+                row.backing = (r.get("backing") or row.backing)
+                qty_default = dec(
+                    r.get("quantity_order_default")
+                    or r.get("qty_default")
+                    or r.get("quantity_order")
+                )
+                if qty_default is not None:
+                    row.quantity_order_default = qty_default
+                row.style_article = (r.get("style_article") or row.style_article)
+                row.model = (r.get("model") or row.model)
                 row.category = (r.get("category") or row.category)
                 stats["items_upserted"] += 1
 

@@ -89,6 +89,9 @@ def _order_type_marketing(h: PoHeader) -> str:
     alias = {
         "production": "PROD",
         "sample": "SAMPLE",
+        "claim": "CLAIM",
+        "return": "RETURN",
+        "subcont": "SUBKON",
     }
     return alias.get(c, c.upper()[:20])
 

@@ -205,7 +205,7 @@ async function load() {
 async function saveMatrix() {
   savingMatrix.value = true
   try {
-    await savePermissionMatrix(editableMatrix.value)
+    await savePermissionMatrix({ matrix: editableMatrix.value })
     setRuntimePermissionMatrix(editableMatrix.value)
     matrixSavedSnapshot.value = JSON.stringify(editableMatrix.value)
     ElMessage.success(t('pages.userAccess.matrixSaved'))

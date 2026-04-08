@@ -12,8 +12,10 @@ import ExchangeRatePage from '../views/admin/ExchangeRatePage.vue'
 import PackingPage from '../views/admin/PackingPage.vue'
 import CustomsPage from '../views/admin/CustomsPage.vue'
 import BuyerPricePage from '../views/admin/BuyerPricePage.vue'
+import BrandMasterPage from '../views/admin/BrandMasterPage.vue'
 import MarketingFlowPage from '../views/admin/MarketingFlowPage.vue'
 import MasterImportPage from '../views/admin/MasterImportPage.vue'
+import MasterItemsPage from '../views/admin/MasterItemsPage.vue'
 import UserAccessPage from '../views/admin/UserAccessPage.vue'
 import LoginPage from '../views/LoginPage.vue'
 import { ROUTE_ROLES } from '../security/rbac'
@@ -59,8 +61,10 @@ const router = createRouter({
         { path: 'invoice', component: InvoicePage, meta: { titleKey: 'menu.invoice', roles: ROUTE_ROLES.invoice } },
         { path: 'reports', component: ReportsPage, meta: { titleKey: 'menu.reports', roles: ROUTE_ROLES.reports } },
         { path: 'buyer-prices', component: BuyerPricePage, meta: { titleKey: 'menu.buyerPrices', roles: ROUTE_ROLES.buyerPrices } },
+        { path: 'brands', component: BrandMasterPage, meta: { titleKey: 'menu.brandMaster', roles: ROUTE_ROLES.brandMaster } },
         { path: 'customs', component: CustomsPage, meta: { titleKey: 'menu.customs', roles: ROUTE_ROLES.customs } },
         { path: 'master-import', component: MasterImportPage, meta: { titleKey: 'menu.masterImport', roles: ROUTE_ROLES.masterImport } },
+        { path: 'master-items', component: MasterItemsPage, meta: { titleKey: 'menu.masterItems', roles: ROUTE_ROLES.masterItems } },
         { path: 'user-access', component: UserAccessPage, meta: { titleKey: 'menu.userAccess', roles: ROUTE_ROLES.userAccess } },
       ],
     },

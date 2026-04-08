@@ -100,6 +100,7 @@ def report_po_order_description(
             row = {
                 "poNo": po_no,
                 "customer": cust,
+                "po_category": cat,
                 "material": (ln.material_name or "").strip() or "—",
                 "color": (ln.color or "").strip() or "—",
                 "qty": _qty_float(ln.quantity_order),

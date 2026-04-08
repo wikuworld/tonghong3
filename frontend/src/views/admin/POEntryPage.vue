@@ -17,6 +17,9 @@
             <el-select v-model="form.category" class="w-full" :placeholder="t('common.placeholder.deliveryType')">
               <el-option :label="t('status.production')" value="production" />
               <el-option :label="t('status.sample')" value="sample" />
+              <el-option :label="t('status.claim')" value="claim" />
+              <el-option :label="t('status.return')" value="return" />
+              <el-option :label="t('status.subcont')" value="subcont" />
             </el-select>
           </el-form-item>
         </el-col>

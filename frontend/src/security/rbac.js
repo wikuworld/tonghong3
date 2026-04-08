@@ -8,8 +8,10 @@ const MENU_ROLES = {
   'menu.invoice': ['admin', 'finance'],
   'menu.reports': ['admin', 'marketing', 'ppic', 'finance', 'exim', 'sales'],
   'menu.buyerPrices': ['admin', 'marketing'],
+  'menu.brandMaster': ['admin', 'marketing', 'sales'],
   'menu.customs': ['admin', 'exim'],
   'menu.masterImport': ['admin'],
+  'menu.masterItems': ['admin'],
   'menu.userAccess': ['admin'],
   'menu.production': ['admin', 'production', 'ppic', 'qc'],
   'menu.qc': ['admin', 'qc', 'warehouse'],
@@ -35,8 +37,10 @@ export const ROUTE_ROLES = {
   invoice: MENU_ROLES['menu.invoice'],
   reports: MENU_ROLES['menu.reports'],
   buyerPrices: MENU_ROLES['menu.buyerPrices'],
+  brandMaster: MENU_ROLES['menu.brandMaster'],
   customs: MENU_ROLES['menu.customs'],
   masterImport: MENU_ROLES['menu.masterImport'],
+  masterItems: MENU_ROLES['menu.masterItems'],
   userAccess: MENU_ROLES['menu.userAccess'],
 }
 

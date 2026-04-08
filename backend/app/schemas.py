@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import field_validator
 
 
 class ORMBase(BaseModel):
@@ -23,6 +24,8 @@ class CustomerCreate(BaseModel):
     city: Optional[str] = None
     country: Optional[str] = None
     tax_id: Optional[str] = None
+    skep_kb_number: Optional[str] = None
+    customs_office_code: Optional[str] = None
     address: Optional[str] = None
     remark: Optional[str] = None
     wilayah_province_code: Optional[str] = None
@@ -40,6 +43,8 @@ class CustomerUpdate(BaseModel):
     city: Optional[str] = None
     country: Optional[str] = None
     tax_id: Optional[str] = None
+    skep_kb_number: Optional[str] = None
+    customs_office_code: Optional[str] = None
     address: Optional[str] = None
     remark: Optional[str] = None
     wilayah_province_code: Optional[str] = None
@@ -58,6 +63,8 @@ class CustomerOut(ORMBase):
     city: Optional[str] = None
     country: Optional[str] = None
     tax_id: Optional[str] = None
+    skep_kb_number: Optional[str] = None
+    customs_office_code: Optional[str] = None
     address: Optional[str] = None
     remark: Optional[str] = None
     wilayah_province_code: Optional[str] = None
@@ -139,6 +146,24 @@ class PoHeaderCreate(BaseModel):
     customer_name_snapshot: Optional[str] = None
     customs_declaration_id: Optional[int] = None
 
+    @field_validator("po_category")
+    @classmethod
+    def validate_po_category(cls, v: str) -> str:
+        raw = (v or "").strip().lower()
+        alias = {
+            "produksi": "production",
+            "sample": "sample",
+            "claim": "claim",
+            "return": "return",
+            "subkon": "subcont",
+            "subcont": "subcont",
+            "subcontract": "subcont",
+        }
+        out = alias.get(raw, raw)
+        if out not in {"production", "sample", "claim", "return", "subcont"}:
+            raise ValueError("po_category tidak valid")
+        return out
+
 
 class PoHeaderUpdate(BaseModel):
     po_number: Optional[str] = None
@@ -161,6 +186,26 @@ class PoHeaderUpdate(BaseModel):
     customs_declaration_id: Optional[int] = None
     material_followup_remark: Optional[str] = None
     material_followup_done: Optional[bool] = None
+
+    @field_validator("po_category")
+    @classmethod
+    def validate_po_category(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        raw = (v or "").strip().lower()
+        alias = {
+            "produksi": "production",
+            "sample": "sample",
+            "claim": "claim",
+            "return": "return",
+            "subkon": "subcont",
+            "subcont": "subcont",
+            "subcontract": "subcont",
+        }
+        out = alias.get(raw, raw)
+        if out not in {"production", "sample", "claim", "return", "subcont"}:
+            raise ValueError("po_category tidak valid")
+        return out
 
 
 class PoDetailCreate(BaseModel):
@@ -485,6 +530,12 @@ class MasterItemCreate(BaseModel):
     material_name: Optional[str] = None
     emboss: Optional[str] = None
     color: Optional[str] = None
+    softness: Optional[str] = None
+    color_reference: Optional[str] = None
+    backing: Optional[str] = None
+    quantity_order_default: Optional[Decimal] = None
+    style_article: Optional[str] = None
+    model: Optional[str] = None
     category: Optional[str] = None
 
 
@@ -495,6 +546,12 @@ class MasterItemOut(ORMBase):
     material_name: Optional[str] = None
     emboss: Optional[str] = None
     color: Optional[str] = None
+    softness: Optional[str] = None
+    color_reference: Optional[str] = None
+    backing: Optional[str] = None
+    quantity_order_default: Optional[Decimal] = None
+    style_article: Optional[str] = None
+    model: Optional[str] = None
     category: Optional[str] = None
     created_at: Optional[datetime] = None
 

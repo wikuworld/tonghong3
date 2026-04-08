@@ -220,8 +220,47 @@ export function listBrands() {
   return apiFetch('/masters/brands')
 }
 
+export function listBrandBuyers(brandId) {
+  return apiFetch(`/masters/brands/${brandId}/buyers`)
+}
+
+export function replaceBrandBuyers(brandId, buyer_codes) {
+  return apiFetch(`/masters/brands/${brandId}/buyers`, {
+    method: 'PUT',
+    body: JSON.stringify({ buyer_codes }),
+  })
+}
+
+export function createBrand(body) {
+  return apiFetch('/masters/brands', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateBrand(id, body) {
+  return apiFetch(`/masters/brands/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteBrand(id) {
+  return apiFetch(`/masters/brands/${id}`, { method: 'DELETE' })
+}
+
+export function seedBrandsFromBuyers() {
+  return apiFetch('/masters/brands/seed-from-buyers', { method: 'POST' })
+}
+
 export function listMasterItems() {
   return apiFetch('/masters/items')
+}
+
+export function createMasterItem(body) {
+  return apiFetch('/masters/items', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateMasterItem(id, body) {
+  return apiFetch(`/masters/items/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteMasterItem(id) {
+  return apiFetch(`/masters/items/${id}`, { method: 'DELETE' })
 }
 
 export function listMasterPrices() {

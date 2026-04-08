@@ -5,7 +5,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
-from app.models import PoDetail, PoHeader
+from app.models import Brand, BrandBuyerMap, PoDetail, PoHeader
 from app.services.audit import log_change
 from app.services.numbering import next_number
 from app.schemas import (
@@ -35,6 +35,34 @@ def _detail_loaded(db: Session, detail_id: int) -> Optional[PoDetail]:
         .options(selectinload(PoDetail.delivery_schedules))
         .where(PoDetail.id == detail_id)
     ).first()
+
+
+def _validate_customer_brand_buyer(db: Session, data: dict) -> None:
+    customer_id = data.get("customer_id")
+    brand_id = data.get("brand_id")
+    buyer_code = (data.get("buyer") or "").strip()
+    if not brand_id:
+        return
+    brand = db.get(Brand, brand_id)
+    if not brand:
+        raise HTTPException(status_code=400, detail="Brand tidak ditemukan")
+    if customer_id and brand.customer_id and int(brand.customer_id) != int(customer_id):
+        raise HTTPException(status_code=400, detail="Brand tidak terkait customer terpilih")
+    if buyer_code:
+        allowed = db.scalars(
+            select(BrandBuyerMap).where(
+                BrandBuyerMap.brand_id == brand_id,
+                BrandBuyerMap.buyer_code == buyer_code,
+            )
+        ).first()
+        has_any_map = db.scalars(
+            select(BrandBuyerMap.id).where(BrandBuyerMap.brand_id == brand_id)
+        ).first()
+        if has_any_map and not allowed:
+            raise HTTPException(
+                status_code=400,
+                detail="Buyer tidak valid untuk brand ini",
+            )
 
 
 @router.get("/po/mkt-workflow-stages")
@@ -103,6 +131,7 @@ def create_po(
     user=Depends(require_roles("admin", "marketing", "sales")),
 ) -> PoHeader:
     data = body.model_dump(exclude_unset=True)
+    _validate_customer_brand_buyer(db, data)
     if not data.get("po_number"):
         data["po_number"] = next_number(db, "SO", "SO")
     row = PoHeader(**data)
@@ -173,6 +202,13 @@ def update_po(
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
     before = {"status": row.status, "mkt_workflow_stage": row.mkt_workflow_stage}
     data = body.model_dump(exclude_unset=True)
+    merged = {
+        "customer_id": row.customer_id,
+        "brand_id": row.brand_id,
+        "buyer": row.buyer,
+        **data,
+    }
+    _validate_customer_brand_buyer(db, merged)
     if "status" in data:
         validate_po_status_transition(row.status, data["status"])
     for k, v in data.items():

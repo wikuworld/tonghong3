@@ -3,7 +3,8 @@
     <template #actions>
       <template v-if="tab === 'list'">
         <el-input v-model="keyword" :placeholder="t('pages.invoice.searchPlaceholder')" clearable class="invoice-toolbar-search" />
-        <el-button v-if="canCreate" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
+        <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
+        <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
       </template>
     </template>
 

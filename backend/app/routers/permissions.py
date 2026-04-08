@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -80,6 +82,19 @@ def _write_matrix(db: Session, matrix: dict[str, dict[str, list[str]]]) -> None:
     db.commit()
 
 
+def _merge_with_defaults(matrix: dict[str, dict[str, list[str]]]) -> dict[str, dict[str, list[str]]]:
+    merged = deepcopy(DEFAULT_PERMISSION_MATRIX)
+    for module_key, actions in (matrix or {}).items():
+        if not isinstance(actions, dict):
+            continue
+        merged.setdefault(module_key, {})
+        for action, roles in actions.items():
+            if not isinstance(roles, list):
+                continue
+            merged[module_key][action] = sorted({str(r).strip() for r in roles if str(r).strip()})
+    return merged
+
+
 def ensure_default_permissions(db: Session) -> None:
     n = db.query(RolePermission).count()
     if n == 0:
@@ -100,7 +115,7 @@ def get_permission_matrix(
         out.setdefault(r.module_key, {})
         out[r.module_key].setdefault(r.action, [])
         out[r.module_key][r.action].append(r.role)
-    return {"matrix": out}
+    return {"matrix": _merge_with_defaults(out)}
 
 
 @router.put("/permissions/matrix")
@@ -110,6 +125,6 @@ def save_permission_matrix(
     _user=Depends(require_roles("admin")),
 ) -> dict:
     matrix = (body or {}).get("matrix") or {}
-    _write_matrix(db, matrix)
+    _write_matrix(db, _merge_with_defaults(matrix))
     return {"status": "ok"}
 
