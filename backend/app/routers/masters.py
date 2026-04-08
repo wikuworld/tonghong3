@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Brand, Customer, CustomerPic, MasterItem, MasterPrice
-from app.routers.auth import require_roles
+from app.routers.auth import get_current_user, require_roles
 
 router = APIRouter(tags=["masters"])
 
@@ -60,12 +60,19 @@ class PicOut(BaseModel):
 
 
 @router.get("/masters/brands", response_model=list[BrandOut])
-def list_brands(db: Session = Depends(get_db)) -> list[Brand]:
+def list_brands(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> list[Brand]:
     return list(db.scalars(select(Brand).order_by(Brand.id.desc())).all())
 
 
 @router.post("/masters/brands", response_model=BrandOut)
-def create_brand(body: BrandIn, db: Session = Depends(get_db)) -> Brand:
+def create_brand(
+    body: BrandIn,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> Brand:
     row = Brand(**body.model_dump(exclude_unset=True))
     db.add(row)
     db.commit()
@@ -75,7 +82,10 @@ def create_brand(body: BrandIn, db: Session = Depends(get_db)) -> Brand:
 
 @router.put("/masters/brands/{brand_id}", response_model=BrandOut)
 def update_brand(
-    brand_id: int, body: BrandIn, db: Session = Depends(get_db)
+    brand_id: int,
+    body: BrandIn,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
 ) -> Brand:
     row = db.get(Brand, brand_id)
     if not row:
@@ -88,7 +98,11 @@ def update_brand(
 
 
 @router.delete("/masters/brands/{brand_id}")
-def delete_brand(brand_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+def delete_brand(
+    brand_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> dict[str, str]:
     row = db.get(Brand, brand_id)
     if not row:
         raise HTTPException(status_code=404, detail="Brand tidak ada")
@@ -98,12 +112,19 @@ def delete_brand(brand_id: int, db: Session = Depends(get_db)) -> dict[str, str]
 
 
 @router.get("/masters/customer-pics", response_model=list[PicOut])
-def list_pics(db: Session = Depends(get_db)) -> list[CustomerPic]:
+def list_pics(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> list[CustomerPic]:
     return list(db.scalars(select(CustomerPic).order_by(CustomerPic.id.desc())).all())
 
 
 @router.post("/masters/customer-pics", response_model=PicOut)
-def create_pic(body: PicIn, db: Session = Depends(get_db)) -> CustomerPic:
+def create_pic(
+    body: PicIn,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> CustomerPic:
     row = CustomerPic(**body.model_dump(exclude_unset=True))
     db.add(row)
     db.commit()
@@ -112,7 +133,11 @@ def create_pic(body: PicIn, db: Session = Depends(get_db)) -> CustomerPic:
 
 
 @router.delete("/masters/customer-pics/{pic_id}")
-def delete_pic(pic_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+def delete_pic(
+    pic_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> dict[str, str]:
     row = db.get(CustomerPic, pic_id)
     if not row:
         raise HTTPException(status_code=404, detail="PIC tidak ada")
@@ -123,12 +148,19 @@ def delete_pic(pic_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
 
 # --- Master Item (FG / sheet Master Item) ---
 @router.get("/masters/items", response_model=list[MasterItemOut])
-def list_master_items(db: Session = Depends(get_db)) -> list[MasterItem]:
+def list_master_items(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> list[MasterItem]:
     return list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all())
 
 
 @router.post("/masters/items", response_model=MasterItemOut)
-def create_master_item(body: MasterItemCreate, db: Session = Depends(get_db)) -> MasterItem:
+def create_master_item(
+    body: MasterItemCreate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> MasterItem:
     row = MasterItem(**body.model_dump(exclude_unset=True))
     db.add(row)
     db.commit()
@@ -138,7 +170,10 @@ def create_master_item(body: MasterItemCreate, db: Session = Depends(get_db)) ->
 
 # --- Master Harga (matrix USD) ---
 @router.get("/masters/prices", response_model=list[MasterPriceOut])
-def list_master_prices(db: Session = Depends(get_db)) -> list[MasterPrice]:
+def list_master_prices(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> list[MasterPrice]:
     return list(
         db.scalars(select(MasterPrice).order_by(MasterPrice.id.asc())).all()
     )
@@ -207,7 +242,9 @@ async def import_master_zip(
                 if not row:
                     row = MasterItem(item_code=item_code)
                     db.add(row)
-                row.thickness_mm = dec(r.get("thickness_mm")) or row.thickness_mm
+                thickness_mm = dec(r.get("thickness_mm"))
+                if thickness_mm is not None:
+                    row.thickness_mm = thickness_mm
                 row.material_name = (r.get("material_name") or row.material_name)
                 row.emboss = (r.get("emboss") or row.emboss)
                 row.color = (r.get("color") or row.color)
@@ -241,10 +278,18 @@ async def import_master_zip(
                 row.material_type = r.get("material_type") or row.material_type
                 row.material_name = mname or row.material_name
                 row.thickness_range = trange or row.thickness_range
-                row.price_white_usd = dec(r.get("price_white_usd")) or row.price_white_usd
-                row.price_black_usd = dec(r.get("price_black_usd")) or row.price_black_usd
-                row.price_color_usd = dec(r.get("price_color_usd")) or row.price_color_usd
-                row.price_metallic_usd = dec(r.get("price_metallic_usd")) or row.price_metallic_usd
+                price_white_usd = dec(r.get("price_white_usd"))
+                if price_white_usd is not None:
+                    row.price_white_usd = price_white_usd
+                price_black_usd = dec(r.get("price_black_usd"))
+                if price_black_usd is not None:
+                    row.price_black_usd = price_black_usd
+                price_color_usd = dec(r.get("price_color_usd"))
+                if price_color_usd is not None:
+                    row.price_color_usd = price_color_usd
+                price_metallic_usd = dec(r.get("price_metallic_usd"))
+                if price_metallic_usd is not None:
+                    row.price_metallic_usd = price_metallic_usd
                 row.remark = r.get("remark") or row.remark
                 row.price_tier = tier or row.price_tier
                 stats["prices_upserted"] += 1

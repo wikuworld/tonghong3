@@ -8,13 +8,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import CustomsAjuSheetRow, CustomsDeclaration
+from app.routers.auth import get_current_user, require_roles
 from app.schemas import (
     CustomsDeclarationCreate,
     CustomsDeclarationUpdate,
@@ -62,7 +63,8 @@ class CustomsSummaryOut(BaseModel):
 @router.get("/customs/declarations", response_model=list[CustomsSummaryOut])
 def list_declarations(
     db: Session = Depends(get_db),
-    limit: int = 200,
+    limit: int = Query(200, ge=1, le=1000),
+    _user=Depends(get_current_user),
 ) -> list[CustomsDeclaration]:
     return list(
         db.scalars(select(CustomsDeclaration).order_by(CustomsDeclaration.id.desc()).limit(limit)).all()
@@ -70,7 +72,11 @@ def list_declarations(
 
 
 @router.post("/customs/declarations", response_model=CustomsSummaryOut)
-def create_declaration(body: CustomsDeclarationCreate, db: Session = Depends(get_db)) -> CustomsSummaryOut:
+def create_declaration(
+    body: CustomsDeclarationCreate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "exim")),
+) -> CustomsSummaryOut:
     nomor = body.nomor_aju.strip()
     if not nomor:
         raise HTTPException(status_code=400, detail="Nomor AJU wajib diisi")
@@ -92,7 +98,10 @@ def create_declaration(body: CustomsDeclarationCreate, db: Session = Depends(get
 
 @router.put("/customs/declarations/{declaration_id}", response_model=CustomsSummaryOut)
 def update_declaration(
-    declaration_id: int, body: CustomsDeclarationUpdate, db: Session = Depends(get_db)
+    declaration_id: int,
+    body: CustomsDeclarationUpdate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "exim")),
 ) -> CustomsSummaryOut:
     dec = db.get(CustomsDeclaration, declaration_id)
     if not dec:
@@ -107,7 +116,10 @@ def update_declaration(
 
 @router.put("/customs/declarations/{declaration_id}/sheets-data")
 def save_sheets_data(
-    declaration_id: int, body: CustomsSheetsSave, db: Session = Depends(get_db)
+    declaration_id: int,
+    body: CustomsSheetsSave,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "exim")),
 ) -> dict[str, Any]:
     dec = db.get(CustomsDeclaration, declaration_id)
     if not dec:
@@ -151,7 +163,11 @@ def save_sheets_data(
 
 
 @router.get("/customs/declarations/{declaration_id}")
-def get_declaration(declaration_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_declaration(
+    declaration_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> dict[str, Any]:
     out = declaration_to_api_dict(db, declaration_id)
     if not out:
         raise HTTPException(status_code=404, detail="Deklarasi tidak ditemukan")
@@ -159,7 +175,11 @@ def get_declaration(declaration_id: int, db: Session = Depends(get_db)) -> dict[
 
 
 @router.get("/customs/declarations/by-nomor/{nomor_aju}")
-def get_declaration_by_nomor(nomor_aju: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_declaration_by_nomor(
+    nomor_aju: str,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> dict[str, Any]:
     dec = db.scalars(
         select(CustomsDeclaration).where(CustomsDeclaration.nomor_aju == nomor_aju)
     ).first()
@@ -169,7 +189,11 @@ def get_declaration_by_nomor(nomor_aju: str, db: Session = Depends(get_db)) -> d
 
 
 @router.delete("/customs/declarations/{declaration_id}")
-def delete_declaration(declaration_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+def delete_declaration(
+    declaration_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "exim")),
+) -> dict[str, str]:
     dec = db.get(CustomsDeclaration, declaration_id)
     if not dec:
         raise HTTPException(status_code=404, detail="Deklarasi tidak ditemukan")
@@ -183,6 +207,7 @@ async def import_upload(
     db: Session = Depends(get_db),
     files: list[UploadFile] = File(...),
     source_label: Optional[str] = Form(None),
+    _user=Depends(require_roles("admin", "exim")),
 ) -> dict[str, Any]:
     """Unggah banyak file `NN_SHEET.csv` (satu paket AJU)."""
     if not files:
@@ -210,6 +235,7 @@ async def import_zip(
     db: Session = Depends(get_db),
     file: UploadFile = File(...),
     source_label: Optional[str] = Form(None),
+    _user=Depends(require_roles("admin", "exim")),
 ) -> dict[str, Any]:
     """ZIP berisi CSV `NN_*.csv` (struktur sama folder ekstraksi)."""
     raw = await file.read()

@@ -37,6 +37,15 @@ Sistem ERP ringan untuk alur **Sales/PO → Produksi → QC → Packing → Deli
 cp .env.example .env
 ```
 
+Untuk deploy non-dev, set minimal:
+
+```bash
+APP_ENV=production
+JWT_SECRET=<secret-kuat-minimal-32-karakter>
+ADMIN_USERNAME=<admin-non-default>
+ADMIN_PASSWORD=<password-kuat>
+```
+
 2. Jalankan:
 
 ```bash
@@ -125,4 +134,5 @@ Base: `/api/v1`
 - **Migrasi DB**: Alembic ada di `backend/alembic/versions/`.
 - **CORS**: atur `CORS_ORIGINS` di `.env`.
 - **Secrets**: jangan commit `.env`; repo menyediakan `.env.example`.
+- **CD GHCR**: set GitHub Actions secrets `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` sebelum publish image.
 

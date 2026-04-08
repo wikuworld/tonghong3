@@ -61,6 +61,24 @@ app.include_router(buyer_prices.router, prefix=_PREFIX)
 
 @app.on_event("startup")
 def _bootstrap_admin() -> None:
+    non_dev_env = str(settings.app_env or "dev").strip().lower() not in {
+        "dev",
+        "local",
+        "development",
+        "test",
+    }
+    if non_dev_env and (
+        settings.jwt_secret == "dev-secret-change-me"
+        or (
+            settings.admin_username == "admin"
+            or settings.admin_password == "admin123"
+        )
+    ):
+        raise RuntimeError(
+            "Unsafe auth defaults detected for non-dev environment. "
+            "Please override JWT secret and bootstrap admin credentials."
+        )
+
     # buat user admin default jika belum ada (lihat `settings.admin_*`)
     try:
         from app.routers.auth import ensure_bootstrap_admin

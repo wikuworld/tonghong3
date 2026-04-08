@@ -43,8 +43,52 @@ jobs:
 
           echo "value=$tag" >> "$GITHUB_OUTPUT"
 
+  validate-runtime-secrets:
+    name: Validate runtime security secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required secrets for runtime hardening
+        env:
+          SECRETS_JSON: ${{ toJson(secrets) }}
+        run: |
+          set -eu
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          secrets = json.loads(os.environ.get("SECRETS_JSON", "{}"))
+
+          def fail(msg: str) -> None:
+              print(msg)
+              sys.exit(1)
+
+          jwt_secret = (secrets.get("JWT_SECRET") or "").strip()
+          admin_username = (secrets.get("ADMIN_USERNAME") or "").strip()
+          admin_password = secrets.get("ADMIN_PASSWORD") or ""
+
+          if not jwt_secret:
+              fail("Missing required secret: JWT_SECRET")
+          if len(jwt_secret) < 32:
+              fail("JWT_SECRET must be at least 32 characters")
+          if jwt_secret == "dev-secret-change-me":
+              fail("JWT_SECRET must not use development default")
+
+          if not admin_username:
+              fail("Missing required secret: ADMIN_USERNAME")
+          if admin_username == "admin":
+              fail("ADMIN_USERNAME must not use default 'admin'")
+
+          if not admin_password:
+              fail("Missing required secret: ADMIN_PASSWORD")
+          if len(admin_password) < 12:
+              fail("ADMIN_PASSWORD must be at least 12 characters")
+          if admin_password == "admin123":
+              fail("ADMIN_PASSWORD must not use development default")
+          PY
+
   publish:
-    needs: validate
+    needs: [validate, validate-runtime-secrets]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
