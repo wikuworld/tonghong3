@@ -61,7 +61,8 @@ body {
 }
 
 /* Admin layout: cegah judul/toolbar & tabel bertumpuk / overflow */
-.admin-section-card :deep(.el-card__header) {
+/* Catatan: di CSS global pakai selector biasa; :deep() hanya untuk <style scoped> Vue */
+.admin-section-card .el-card__header {
   min-width: 0;
 }
 
@@ -110,7 +111,7 @@ body {
   overflow-x: auto;
 }
 
-.admin-section-card :deep(.el-card__body) {
+.admin-section-card .el-card__body {
   padding: 16px;
 }
 
