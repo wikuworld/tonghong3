@@ -1,0 +1,566 @@
+<template>
+  <div class="space-y-4">
+    <AdminSection :title="t('pages.customs.title')" :subtitle="t('pages.customs.subtitle')">
+      <template #actions>
+        <el-input
+          v-model="keyword"
+          :placeholder="t('pages.customs.searchPlaceholder')"
+          clearable
+          class="customs-toolbar-search"
+        />
+        <el-button type="primary" :icon="Plus" :loading="loading" @click="openCreateDialog">
+          {{ t('common.create') }}
+        </el-button>
+      </template>
+
+      <el-table
+        :data="filteredRows"
+        v-loading="loading"
+        border
+        stripe
+        size="small"
+        class="admin-table"
+        table-layout="auto"
+        :empty-text="t('pages.customs.tableEmpty')"
+      >
+        <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
+        <el-table-column prop="nomor_aju" :label="t('pages.customs.nomorAju')" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="kode_dokumen" :label="t('pages.customs.kodeDok')" width="100" show-overflow-tooltip />
+        <el-table-column prop="source_label" :label="t('pages.customs.source')" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="versi_template" :label="t('pages.customs.versi')" width="88" show-overflow-tooltip />
+        <el-table-column :label="t('common.actions')" width="100" align="center" fixed="right">
+          <template #default="{ row }">
+            <div class="flex flex-wrap items-center justify-center gap-0">
+              <el-tooltip :content="t('pages.customs.manageData')" placement="top">
+                <el-button :icon="EditPen" link type="primary" @click="openMaster(row.id)" />
+              </el-tooltip>
+              <el-tooltip :content="t('common.delete')" placement="top">
+                <el-button :icon="Delete" link type="danger" @click="confirmDelete(row)" />
+              </el-tooltip>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+    </AdminSection>
+
+    <el-dialog
+      v-model="createVisible"
+      :title="t('pages.customs.dialogAdd')"
+      width="520px"
+      destroy-on-close
+      align-center
+      @closed="resetCreateForm"
+    >
+      <p class="mb-3 text-sm text-slate-600">{{ t('pages.customs.formHint') }}</p>
+      <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top" @submit.prevent>
+        <el-form-item :label="t('pages.customs.nomorAju')" prop="nomor_aju">
+          <el-input
+            v-model="createForm.nomor_aju"
+            :placeholder="t('pages.customs.placeholderNomorAju')"
+            maxlength="64"
+            show-word-limit
+            clearable
+          />
+        </el-form-item>
+        <el-form-item :label="t('pages.customs.kodeDok')">
+          <el-input v-model="createForm.kode_dokumen" maxlength="16" clearable />
+        </el-form-item>
+        <el-form-item :label="t('pages.customs.source')">
+          <el-input v-model="createForm.source_label" maxlength="255" clearable />
+        </el-form-item>
+        <el-form-item :label="t('pages.customs.versi')">
+          <el-input v-model="createForm.versi_template" maxlength="32" clearable />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="createSaving" @click="submitCreate">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-drawer v-model="masterDrawer" size="94%" :title="masterDrawerTitle" destroy-on-close @closed="onMasterClosed">
+      <div v-loading="masterLoading" class="customs-master space-y-4">
+        <el-divider content-position="left">{{ t('pages.customs.sectionHeader') }}</el-divider>
+        <p class="text-sm text-slate-500">
+          <span class="font-medium text-slate-700">{{ t('pages.customs.nomorAju') }}:</span>
+          {{ masterNomorAju || '—' }}
+        </p>
+        <el-form label-position="top" class="max-w-3xl">
+          <el-row :gutter="16">
+            <el-col :xs="24" :sm="8">
+              <el-form-item :label="t('pages.customs.kodeDok')">
+                <el-input v-model="headerForm.kode_dokumen" maxlength="16" clearable />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="8">
+              <el-form-item :label="t('pages.customs.versi')">
+                <el-input v-model="headerForm.versi_template" maxlength="32" clearable />
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item :label="t('pages.customs.source')">
+                <el-input v-model="headerForm.source_label" maxlength="255" clearable />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+
+        <el-divider content-position="left">{{ t('pages.customs.sectionSheets') }}</el-divider>
+        <div class="flex flex-wrap items-center gap-2 pb-2">
+          <el-button type="primary" plain @click="promptAddSheet">{{ t('pages.customs.addSheet') }}</el-button>
+          <el-button type="primary" :loading="masterSaving" @click="saveMaster">{{ t('pages.customs.saveSheets') }}</el-button>
+        </div>
+
+        <el-tabs v-if="tabCodes.length" v-model="activeSheetTab" type="border-card" class="customs-tabs">
+          <el-tab-pane
+            v-for="code in tabCodes"
+            :key="code"
+            :label="`${code} (${sheetRowCount(code)})`"
+            :name="code"
+          >
+            <div class="mb-3 flex flex-wrap gap-2">
+              <el-button size="small" @click="() => promptAddColumn(code)">{{ t('pages.customs.addColumn') }}</el-button>
+              <el-button size="small" @click="() => addSheetRow(code)">{{ t('pages.customs.addRow') }}</el-button>
+              <el-button size="small" type="danger" plain @click="() => removeSheet(code)">
+                {{ t('pages.customs.removeSheet') }}
+              </el-button>
+            </div>
+            <el-table
+              :data="sheetBlock(code).rows"
+              border
+              stripe
+              size="small"
+              class="admin-table"
+              max-height="48vh"
+              table-layout="auto"
+            >
+              <el-table-column type="index" :label="t('common.noLabel')" width="52" align="center" fixed />
+              <el-table-column
+                v-for="key in sheetBlock(code).columnKeys"
+                :key="`${code}-${key}`"
+                :label="key"
+                :min-width="key.length > 14 ? 168 : 120"
+              >
+                <template #default="{ row }">
+                  <el-input v-model="row[key]" size="small" clearable />
+                </template>
+              </el-table-column>
+              <el-table-column :label="t('common.actions')" width="88" align="center" fixed="right">
+                <template #default="{ $index }">
+                  <el-button link type="danger" size="small" @click="removeSheetRow(code, $index)">
+                    {{ t('pages.customs.removeRow') }}
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+        </el-tabs>
+        <p v-else class="text-sm text-slate-500">{{ t('pages.customs.addSheet') }}</p>
+      </div>
+    </el-drawer>
+  </div>
+</template>
+
+<script setup>
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { Delete, EditPen, Plus } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import AdminSection from '../../components/AdminSection.vue'
+import {
+  createCustomsDeclaration,
+  deleteCustomsDeclaration,
+  getCustomsDeclaration,
+  listCustomsDeclarations,
+  saveCustomsSheetsData,
+  updateCustomsDeclaration,
+} from '../../api/client'
+
+const { t } = useI18n()
+
+/** Selaras urutan tampilan backend `customs_import.SHEET_CODES_ORDER`. */
+const SHEET_CODES_ORDER = [
+  'HEADER',
+  'ENTITAS',
+  'DOKUMEN',
+  'PENGANGKUT',
+  'KEMASAN',
+  'KONTAINER',
+  'BARANG',
+  'BARANGTARIF',
+  'BARANGDOKUMEN',
+  'BARANGENTITAS',
+  'BARANGSPEKKHUSUS',
+  'BARANGVD',
+  'BAHANBAKU',
+  'BAHANBAKUTARIF',
+  'BAHANBAKUDOKUMEN',
+  'PUNGUTAN',
+  'JAMINAN',
+  'BANKDEVISA',
+  'VERSI',
+]
+
+const rows = ref([])
+const loading = ref(false)
+const keyword = ref('')
+
+const createVisible = ref(false)
+const createSaving = ref(false)
+const createFormRef = ref(null)
+const createForm = reactive({
+  nomor_aju: '',
+  kode_dokumen: '',
+  source_label: '',
+  versi_template: '',
+})
+const createRules = computed(() => ({
+  nomor_aju: [{ required: true, message: t('pages.customs.ruleNomorAju'), trigger: 'blur' }],
+}))
+
+const masterDrawer = ref(false)
+const masterLoading = ref(false)
+const masterSaving = ref(false)
+const activeListId = ref(null)
+const masterNomorAju = ref('')
+const headerForm = reactive({
+  kode_dokumen: '',
+  source_label: '',
+  versi_template: '',
+})
+
+/** @type {import('vue').Ref<Record<string, { columnKeys: string[], rows: Record<string, string>[] }>>} */
+const sheetsState = ref({})
+const activeSheetTab = ref('HEADER')
+
+const masterDrawerTitle = computed(() => {
+  const n = masterNomorAju.value || ''
+  return n ? `${n} · ${t('pages.customs.masterDrawerTitle')}` : t('pages.customs.masterDrawerTitle')
+})
+
+const tabCodes = computed(() => {
+  const state = sheetsState.value
+  const keys = Object.keys(state)
+  const ordered = []
+  for (const c of SHEET_CODES_ORDER) {
+    if (keys.includes(c)) ordered.push(c)
+  }
+  for (const k of [...keys].sort((a, b) => a.localeCompare(b))) {
+    if (!ordered.includes(k)) ordered.push(k)
+  }
+  return ordered
+})
+
+watch(tabCodes, (codes) => {
+  if (!codes.length) return
+  if (!codes.includes(activeSheetTab.value)) {
+    activeSheetTab.value = codes[0]
+  }
+})
+
+const filteredRows = computed(() => {
+  const k = keyword.value.trim().toLowerCase()
+  if (!k) return rows.value
+  return rows.value.filter((r) => {
+    const hay = [r.nomor_aju, r.kode_dokumen, r.source_label, r.versi_template]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return hay.includes(k)
+  })
+})
+
+function sheetBlock(code) {
+  return sheetsState.value[code] || { columnKeys: [], rows: [] }
+}
+
+function sheetRowCount(code) {
+  return sheetBlock(code).rows?.length ?? 0
+}
+
+function inferKeysFromRows(dataRows) {
+  const s = new Set()
+  for (const r of dataRows || []) {
+    if (r && typeof r === 'object') Object.keys(r).forEach((k) => s.add(k))
+  }
+  return s.size ? [...s].sort((a, b) => a.localeCompare(b)) : []
+}
+
+function normalizeRows(dataRows, keys) {
+  return (dataRows || []).map((r) => {
+    const o = {}
+    for (const k of keys) {
+      const v = r && typeof r === 'object' ? r[k] : undefined
+      o[k] = v != null && v !== '' ? String(v) : ''
+    }
+    return o
+  })
+}
+
+function sheetsFromApi(detail) {
+  const meta = detail.meta_json || {}
+  const sk = meta.sheet_column_keys || {}
+  const out = {}
+  for (const [code, dataRows] of Object.entries(detail.sheets || {})) {
+    let keys = sk[code] && sk[code].length ? [...sk[code]] : inferKeysFromRows(dataRows)
+    if (!keys.length) keys = ['COL1']
+    out[code] = {
+      columnKeys: keys,
+      rows: normalizeRows(dataRows, keys),
+    }
+  }
+  return out
+}
+
+function defaultInitialSheets(nomorAju) {
+  const row = nomorAju
+    ? { 'NOMOR AJU': String(nomorAju).trim(), 'KODE DOKUMEN': '' }
+    : {}
+  return {
+    HEADER: {
+      columnKeys: ['NOMOR AJU', 'KODE DOKUMEN'],
+      rows: nomorAju ? [row] : [],
+    },
+  }
+}
+
+function resetCreateForm() {
+  createForm.nomor_aju = ''
+  createForm.kode_dokumen = ''
+  createForm.source_label = ''
+  createForm.versi_template = ''
+}
+
+function openCreateDialog() {
+  resetCreateForm()
+  createVisible.value = true
+}
+
+function emptyToNull(s) {
+  const v = typeof s === 'string' ? s.trim() : s
+  return v === '' || v == null ? null : v
+}
+
+async function submitCreate() {
+  if (!createFormRef.value) return
+  try {
+    await createFormRef.value.validate()
+  } catch {
+    return
+  }
+  createSaving.value = true
+  try {
+    const created = await createCustomsDeclaration({
+      nomor_aju: createForm.nomor_aju.trim(),
+      kode_dokumen: emptyToNull(createForm.kode_dokumen),
+      source_label: emptyToNull(createForm.source_label),
+      versi_template: emptyToNull(createForm.versi_template),
+    })
+    ElMessage.success(t('pages.customs.saved'))
+    createVisible.value = false
+    await load()
+    await openMaster(created.id)
+  } catch (e) {
+    const msg = e?.message || ''
+    if (msg.includes('409')) {
+      ElMessage.error(t('pages.customs.duplicateNomor'))
+    } else {
+      ElMessage.error(msg || 'Error')
+    }
+  } finally {
+    createSaving.value = false
+  }
+}
+
+function onMasterClosed() {
+  activeListId.value = null
+  masterNomorAju.value = ''
+  sheetsState.value = {}
+  activeSheetTab.value = 'HEADER'
+}
+
+async function openMaster(id) {
+  activeListId.value = id
+  masterDrawer.value = true
+  masterLoading.value = true
+  try {
+    const d = await getCustomsDeclaration(id)
+    masterNomorAju.value = d.nomor_aju || ''
+    headerForm.kode_dokumen = d.kode_dokumen || ''
+    headerForm.source_label = d.source_label || ''
+    headerForm.versi_template = d.versi_template || ''
+    const hasSheets = d.sheets && Object.keys(d.sheets).length > 0
+    sheetsState.value = hasSheets ? sheetsFromApi(d) : defaultInitialSheets(d.nomor_aju)
+    activeSheetTab.value = tabCodes.value[0] || 'HEADER'
+  } catch (e) {
+    ElMessage.error(e.message || 'Error')
+    masterDrawer.value = false
+  } finally {
+    masterLoading.value = false
+  }
+}
+
+function promptAddColumn(code) {
+  ElMessageBox.prompt(t('pages.customs.columnNamePrompt'), t('pages.customs.addColumn'), {
+    confirmButtonText: t('common.save'),
+    cancelButtonText: t('common.cancel'),
+    inputPattern: /\S/,
+    inputErrorMessage: t('pages.customs.columnNamePrompt'),
+  })
+    .then(({ value }) => {
+      const name = String(value).trim()
+      if (!name) return
+      const block = sheetsState.value[code]
+      if (!block) return
+      if (block.columnKeys.includes(name)) {
+        ElMessage.error(t('pages.customs.duplicateColumn'))
+        return
+      }
+      block.columnKeys.push(name)
+      block.rows.forEach((r) => {
+        r[name] = ''
+      })
+    })
+    .catch(() => {})
+}
+
+function addSheetRow(code) {
+  const block = sheetsState.value[code]
+  if (!block) return
+  if (!block.columnKeys.length) {
+    ElMessage.warning(t('pages.customs.needColumnFirst'))
+    return
+  }
+  const o = {}
+  block.columnKeys.forEach((k) => {
+    o[k] = ''
+  })
+  block.rows.push(o)
+}
+
+function removeSheetRow(code, index) {
+  const block = sheetsState.value[code]
+  if (!block) return
+  block.rows.splice(index, 1)
+}
+
+function promptAddSheet() {
+  const used = new Set(Object.keys(sheetsState.value))
+  const options = SHEET_CODES_ORDER.filter((c) => !used.has(c))
+  const hint =
+    options.length > 0
+      ? `${t('pages.customs.pickSheetCode')}: ${options.slice(0, 6).join(', ')}…`
+      : t('pages.customs.pickSheetCode')
+  ElMessageBox.prompt(hint, t('pages.customs.addSheet'), {
+    confirmButtonText: t('common.save'),
+    cancelButtonText: t('common.cancel'),
+    inputPattern: /\S/,
+    inputErrorMessage: t('pages.customs.pickSheetCode'),
+  })
+    .then(({ value }) => {
+      const code = String(value).trim().toUpperCase()
+      if (!code) return
+      if (sheetsState.value[code]) {
+        ElMessage.error(t('pages.customs.duplicateSheet'))
+        return
+      }
+      sheetsState.value[code] = {
+        columnKeys: ['COL1'],
+        rows: [],
+      }
+      activeSheetTab.value = code
+    })
+    .catch(() => {})
+}
+
+function removeSheet(code) {
+  ElMessageBox.confirm(t('pages.customs.confirmRemoveSheet'), t('common.confirm'), { type: 'warning' })
+    .then(() => {
+      const next = { ...sheetsState.value }
+      delete next[code]
+      sheetsState.value = next
+      if (activeSheetTab.value === code) {
+        activeSheetTab.value = tabCodes.value[0] || ''
+      }
+    })
+    .catch(() => {})
+}
+
+function buildSheetsPayload() {
+  const sheets = {}
+  for (const [code, block] of Object.entries(sheetsState.value)) {
+    const keys = [...block.columnKeys]
+    const rowsPayload = block.rows.map((r) => {
+      const o = {}
+      keys.forEach((k) => {
+        o[k] = r[k] ?? ''
+      })
+      return o
+    })
+    sheets[code] = {
+      column_keys: keys,
+      rows: rowsPayload,
+    }
+  }
+  return sheets
+}
+
+async function saveMaster() {
+  if (activeListId.value == null) return
+  masterSaving.value = true
+  try {
+    await updateCustomsDeclaration(activeListId.value, {
+      kode_dokumen: emptyToNull(headerForm.kode_dokumen),
+      source_label: emptyToNull(headerForm.source_label),
+      versi_template: emptyToNull(headerForm.versi_template),
+    })
+    await saveCustomsSheetsData(activeListId.value, { sheets: buildSheetsPayload() })
+    ElMessage.success(t('pages.customs.sheetSaved'))
+    await load()
+    await openMaster(activeListId.value)
+  } catch (e) {
+    ElMessage.error(e.message || 'Error')
+  } finally {
+    masterSaving.value = false
+  }
+}
+
+async function load() {
+  loading.value = true
+  try {
+    rows.value = await listCustomsDeclarations()
+  } finally {
+    loading.value = false
+  }
+}
+
+async function confirmDelete(row) {
+  try {
+    await ElMessageBox.confirm(t('pages.customs.confirmDelete'), t('common.confirm'), {
+      type: 'warning',
+    })
+    await deleteCustomsDeclaration(row.id)
+    ElMessage.success(t('common.delete') + ' OK')
+    await load()
+    if (activeListId.value === row.id) {
+      masterDrawer.value = false
+    }
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.message || 'Error')
+  }
+}
+
+onMounted(load)
+</script>
+
+<style scoped>
+.customs-toolbar-search {
+  width: 220px;
+  max-width: 100%;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+.customs-tabs :deep(.el-tabs__content) {
+  padding-top: 8px;
+}
+</style>

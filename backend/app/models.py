@@ -1,0 +1,512 @@
+"""Model SQLAlchemy; migrasi DB: Alembic (`alembic/versions/`)."""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Optional
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    JSON,
+    Numeric,
+    String,
+    Text,
+    TIMESTAMP,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db import Base
+
+
+class Customer(Base):
+    __tablename__ = "customers"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    code: Mapped[Optional[str]] = mapped_column(String(50), unique=True)
+    name: Mapped[Optional[str]] = mapped_column(String(255))
+    contact_person: Mapped[Optional[str]] = mapped_column(String(255))
+    email: Mapped[Optional[str]] = mapped_column(String(255))
+    phone: Mapped[Optional[str]] = mapped_column(String(50))
+    city: Mapped[Optional[str]] = mapped_column(String(120))
+    country: Mapped[Optional[str]] = mapped_column(String(100))
+    tax_id: Mapped[Optional[str]] = mapped_column(String(32))
+    address: Mapped[Optional[str]] = mapped_column(Text)
+    remark: Mapped[Optional[str]] = mapped_column(Text)
+    wilayah_province_code: Mapped[Optional[str]] = mapped_column(String(8))
+    wilayah_regency_code: Mapped[Optional[str]] = mapped_column(String(16))
+    wilayah_district_code: Mapped[Optional[str]] = mapped_column(String(24))
+    wilayah_village_code: Mapped[Optional[str]] = mapped_column(String(32))
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class MasterItem(Base):
+    """Master FG / barang jadi (sheet Master Item)."""
+
+    __tablename__ = "master_items"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    item_code: Mapped[str] = mapped_column(String(50), unique=True)
+    thickness_mm: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 3))
+    material_name: Mapped[Optional[str]] = mapped_column(String(500))
+    emboss: Mapped[Optional[str]] = mapped_column(String(500))
+    color: Mapped[Optional[str]] = mapped_column(String(500))
+    category: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+
+    po_details: Mapped[list["PoDetail"]] = relationship(
+        "PoDetail", back_populates="master_item"
+    )
+
+
+class MasterPrice(Base):
+    """Matrix harga material (sheet Master Harga)."""
+
+    __tablename__ = "master_prices"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    line_no: Mapped[Optional[int]] = mapped_column(Integer)
+    material_category: Mapped[Optional[str]] = mapped_column(String(255))
+    material_type: Mapped[Optional[str]] = mapped_column(String(255))
+    material_name: Mapped[Optional[str]] = mapped_column(String(500))
+    thickness_range: Mapped[Optional[str]] = mapped_column(String(80))
+    price_white_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    price_black_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    price_color_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    price_metallic_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    remark: Mapped[Optional[str]] = mapped_column(String(255))
+    price_tier: Mapped[Optional[str]] = mapped_column(String(32))
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+
+
+class CustomsDeclaration(Base):
+    """Dokumen pabean (AJU) — snapshot lengkap per sheet sebagai baris JSON."""
+
+    __tablename__ = "customs_declarations"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    nomor_aju: Mapped[str] = mapped_column(String(64), unique=True)
+    kode_dokumen: Mapped[Optional[str]] = mapped_column(String(16))
+    source_label: Mapped[Optional[str]] = mapped_column(String(255))
+    versi_template: Mapped[Optional[str]] = mapped_column(String(32))
+    meta_json: Mapped[Optional[dict]] = mapped_column(JSON)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    sheet_rows: Mapped[list["CustomsAjuSheetRow"]] = relationship(
+        "CustomsAjuSheetRow",
+        back_populates="declaration",
+        cascade="all, delete-orphan",
+    )
+
+
+class CustomsAjuSheetRow(Base):
+    __tablename__ = "customs_aju_sheet_rows"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    declaration_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("customs_declarations.id", ondelete="CASCADE")
+    )
+    sheet_code: Mapped[str] = mapped_column(String(64))
+    row_number: Mapped[int] = mapped_column(Integer, default=0)
+    cells: Mapped[dict] = mapped_column(JSON)
+
+    declaration: Mapped["CustomsDeclaration"] = relationship(
+        "CustomsDeclaration", back_populates="sheet_rows"
+    )
+
+
+class BuyerPriceList(Base):
+    """List harga material per buyer (NB / ADIDAS / NIKE / UA) — satu versi aktif per `buyer_code`."""
+
+    __tablename__ = "buyer_price_lists"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    buyer_code: Mapped[str] = mapped_column(String(32), unique=True)
+    title: Mapped[Optional[str]] = mapped_column(Text)
+    period_label: Mapped[Optional[str]] = mapped_column(Text)
+    period_start: Mapped[Optional[date]] = mapped_column(Date)
+    period_end: Mapped[Optional[date]] = mapped_column(Date)
+    source_label: Mapped[Optional[str]] = mapped_column(String(255))
+    meta_json: Mapped[Optional[dict]] = mapped_column(JSON)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+
+    rows: Mapped[list["BuyerPriceSheetRow"]] = relationship(
+        "BuyerPriceSheetRow",
+        back_populates="price_list",
+        cascade="all, delete-orphan",
+    )
+
+
+class BuyerPriceSheetRow(Base):
+    __tablename__ = "buyer_price_sheet_rows"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    list_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("buyer_price_lists.id", ondelete="CASCADE"))
+    row_number: Mapped[int] = mapped_column(Integer, default=0)
+    cells: Mapped[dict] = mapped_column(JSON)
+
+    price_list: Mapped["BuyerPriceList"] = relationship("BuyerPriceList", back_populates="rows")
+
+
+class Brand(Base):
+    __tablename__ = "brands"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("customers.id"))
+    code: Mapped[Optional[str]] = mapped_column(String(50))
+    name: Mapped[Optional[str]] = mapped_column(String(255))
+
+
+class CustomerPic(Base):
+    __tablename__ = "customer_pics"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("customers.id", ondelete="CASCADE")
+    )
+    name: Mapped[Optional[str]] = mapped_column(String(255))
+    phone: Mapped[Optional[str]] = mapped_column(String(50))
+    email: Mapped[Optional[str]] = mapped_column(String(255))
+    title: Mapped[Optional[str]] = mapped_column(String(120))
+
+
+class PoHeader(Base):
+    __tablename__ = "po_headers"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    po_number: Mapped[Optional[str]] = mapped_column(String(100), unique=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("customers.id"))
+    customer_code: Mapped[Optional[str]] = mapped_column(String(50))
+    po_category: Mapped[str] = mapped_column(String(32), default="production")
+    buyer: Mapped[Optional[str]] = mapped_column(String(100))
+    order_date: Mapped[Optional[date]] = mapped_column(Date)
+    etd: Mapped[Optional[date]] = mapped_column(Date)
+    remark: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    billing_address: Mapped[Optional[str]] = mapped_column(Text)
+    delivery_address: Mapped[Optional[str]] = mapped_column(Text)
+    brand_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("brands.id"))
+    marketing_excel_date_serial: Mapped[Optional[int]] = mapped_column(Integer)
+    po_customer_ref: Mapped[Optional[str]] = mapped_column(Text)
+    order_type_label: Mapped[Optional[str]] = mapped_column(String(50))
+    brand_name_snapshot: Mapped[Optional[str]] = mapped_column(String(255))
+    customer_name_snapshot: Mapped[Optional[str]] = mapped_column(String(255))
+    customs_declaration_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("customs_declarations.id", ondelete="SET NULL")
+    )
+    # Alur MKT (flowchart: PO → rekap → PPIC → MKT → outstanding → material → delivery → SJ/INVPL → invoice)
+    mkt_workflow_stage: Mapped[str] = mapped_column(String(48), default="input_system")
+    mkt_workflow_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    rekap_printed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    material_followup_remark: Mapped[Optional[str]] = mapped_column(Text)
+    material_followup_done: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    details: Mapped[list["PoDetail"]] = relationship(
+        "PoDetail", back_populates="po", cascade="all, delete-orphan"
+    )
+    customs_declaration: Mapped[Optional["CustomsDeclaration"]] = relationship(
+        "CustomsDeclaration",
+        foreign_keys=[customs_declaration_id],
+    )
+
+
+class PoDetail(Base):
+    __tablename__ = "po_details"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    po_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("po_headers.id", ondelete="CASCADE"))
+    master_item_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("master_items.id", ondelete="SET NULL"))
+    thi_line_ref: Mapped[Optional[str]] = mapped_column(String(100))
+    material_name: Mapped[Optional[str]] = mapped_column(String(255))
+    color: Mapped[Optional[str]] = mapped_column(String(100))
+    thickness_min: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 3))
+    thickness_max: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 3))
+    thickness_text: Mapped[Optional[str]] = mapped_column(String(80))
+    emboss: Mapped[Optional[str]] = mapped_column(String(255))
+    vir_softness_type: Mapped[Optional[str]] = mapped_column(String(100))
+    softness: Mapped[Optional[str]] = mapped_column(String(100))
+    color_reference: Mapped[Optional[str]] = mapped_column(String(255))
+    backing: Mapped[Optional[str]] = mapped_column(String(255))
+    quantity_order: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    style_article: Mapped[Optional[str]] = mapped_column(String(100))
+    model: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    line_etd: Mapped[Optional[date]] = mapped_column(Date)
+    rtd_text: Mapped[Optional[str]] = mapped_column(String(80))
+    etd_excel_serial: Mapped[Optional[int]] = mapped_column(Integer)
+    stock_wh_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    balance_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    system_reference: Mapped[Optional[str]] = mapped_column(String(120))
+    detail_remark: Mapped[Optional[str]] = mapped_column(Text)
+    unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    copied_from_detail_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+
+    po: Mapped[Optional[PoHeader]] = relationship("PoHeader", back_populates="details")
+    master_item: Mapped[Optional["MasterItem"]] = relationship(
+        "MasterItem", back_populates="po_details"
+    )
+    delivery_schedules: Mapped[list["PoDetailDelivery"]] = relationship(
+        "PoDetailDelivery",
+        back_populates="po_detail",
+        cascade="all, delete-orphan",
+    )
+
+
+class PoDetailDelivery(Base):
+    """Jadwal pengiriman ke-1 … ke-12 per baris SO (sheet Master Data Marketing)."""
+
+    __tablename__ = "po_detail_deliveries"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    po_detail_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("po_details.id", ondelete="CASCADE"))
+    sequence_no: Mapped[int] = mapped_column(Integer)
+    qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    delivery_date: Mapped[Optional[date]] = mapped_column(Date)
+
+    po_detail: Mapped["PoDetail"] = relationship("PoDetail", back_populates="delivery_schedules")
+
+
+class ProductionOrder(Base):
+    __tablename__ = "production_orders"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    production_number: Mapped[Optional[str]] = mapped_column(String(100), unique=True)
+    po_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("po_headers.id"))
+    start_date: Mapped[Optional[date]] = mapped_column(Date)
+    end_date: Mapped[Optional[date]] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(32), default="planned")
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+
+
+class ProductionDetail(Base):
+    __tablename__ = "production_details"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    production_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("production_orders.id", ondelete="CASCADE")
+    )
+    po_detail_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("po_details.id"))
+    qty_planned: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    qty_actual: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    lot_number: Mapped[Optional[str]] = mapped_column(String(100))
+    batch_number: Mapped[Optional[str]] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    is_over_production: Mapped[Optional[bool]] = mapped_column(Boolean)
+
+
+class QcHeader(Base):
+    __tablename__ = "qc_headers"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    qc_number: Mapped[Optional[str]] = mapped_column(String(100))
+    production_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("production_orders.id"))
+    po_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("po_headers.id"))
+    qc_date: Mapped[Optional[date]] = mapped_column(Date)
+    operator_name: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+
+
+class QcDetail(Base):
+    __tablename__ = "qc_details"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    qc_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("qc_headers.id", ondelete="CASCADE"))
+    production_detail_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("production_details.id")
+    )
+    roll_number: Mapped[Optional[str]] = mapped_column(String(50))
+    batch_number: Mapped[Optional[str]] = mapped_column(String(100))
+    thickness_actual: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 3))
+    softness_actual: Mapped[Optional[str]] = mapped_column(String(100))
+    thickness_min: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 3))
+    thickness_max: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 3))
+    softness_standard: Mapped[Optional[str]] = mapped_column(String(100))
+    result: Mapped[Optional[str]] = mapped_column(String(8))
+    is_ok: Mapped[Optional[bool]] = mapped_column(Boolean)
+    device_id: Mapped[Optional[str]] = mapped_column(String(50))
+    port: Mapped[Optional[str]] = mapped_column(String(20))
+    raw_value: Mapped[Optional[str]] = mapped_column(String(100))
+    remark: Mapped[Optional[str]] = mapped_column(Text)
+    measured_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    qty_checked: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    qty_reject: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    reject_reason: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class PackingHeader(Base):
+    __tablename__ = "packing_headers"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    packing_number: Mapped[Optional[str]] = mapped_column(String(100), unique=True)
+    production_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("production_orders.id"))
+    qc_header_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("qc_headers.id"))
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    invpl_printed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class PackingDetail(Base):
+    __tablename__ = "packing_details"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    packing_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("packing_headers.id", ondelete="CASCADE")
+    )
+    production_detail_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("production_details.id")
+    )
+    qty_packed: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+
+
+class DeliveryHeader(Base):
+    __tablename__ = "delivery_headers"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    delivery_number: Mapped[Optional[str]] = mapped_column(String(100), unique=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("customers.id"))
+    delivery_date: Mapped[Optional[date]] = mapped_column(Date)
+    driver_name: Mapped[Optional[str]] = mapped_column(String(100))
+    vehicle_number: Mapped[Optional[str]] = mapped_column(String(50))
+    destination: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    packing_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("packing_headers.id"))
+    surat_jalan_printed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class DeliveryDetail(Base):
+    __tablename__ = "delivery_details"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    delivery_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("delivery_headers.id", ondelete="CASCADE")
+    )
+    production_detail_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("production_details.id")
+    )
+    qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    qty_roll: Mapped[Optional[int]] = mapped_column(Integer)
+    qty_pcs: Mapped[Optional[int]] = mapped_column(Integer)
+    weight: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+
+
+class Invoice(Base):
+    __tablename__ = "invoices"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    delivery_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("delivery_headers.id", ondelete="RESTRICT"), nullable=True
+    )
+    invoice_number: Mapped[Optional[str]] = mapped_column(String(100))
+    packing_list_number: Mapped[Optional[str]] = mapped_column(String(100))
+    po_number: Mapped[Optional[str]] = mapped_column(String(100))
+    customer_name: Mapped[Optional[str]] = mapped_column(String(255))
+    customer_address: Mapped[Optional[str]] = mapped_column(Text)
+    customer_phone: Mapped[Optional[str]] = mapped_column(String(50))
+    invoice_date: Mapped[Optional[date]] = mapped_column(Date)
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    term_of_payment: Mapped[Optional[str]] = mapped_column(String(100))
+    bank_name: Mapped[Optional[str]] = mapped_column(String(255))
+    account_number: Mapped[Optional[str]] = mapped_column(String(100))
+    bank_address: Mapped[Optional[str]] = mapped_column(Text)
+    bank_phone: Mapped[Optional[str]] = mapped_column(String(50))
+    total_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    total_in_words: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+
+
+class InvoiceDetail(Base):
+    __tablename__ = "invoice_details"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    invoice_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("invoices.id", ondelete="CASCADE")
+    )
+    item_description: Mapped[Optional[str]] = mapped_column(String(255))
+    color: Mapped[Optional[str]] = mapped_column(String(100))
+    qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    roll: Mapped[Optional[int]] = mapped_column("roll", Integer, nullable=True)
+    pcs: Mapped[Optional[int]] = mapped_column(Integer)
+    net_weight: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    gross_weight: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    remark: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class ExchangeRate(Base):
+    __tablename__ = "exchange_rates"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    idr_per_usd: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    effective_date: Mapped[date] = mapped_column(Date)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_by: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    entity_type: Mapped[str] = mapped_column(String(80))
+    entity_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    action: Mapped[str] = mapped_column(String(40))
+    payload_before: Mapped[Optional[str]] = mapped_column(Text)
+    payload_after: Mapped[Optional[str]] = mapped_column(Text)
+    actor: Mapped[Optional[str]] = mapped_column(String(120))
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+
+
+class DocumentSequence(Base):
+    __tablename__ = "document_sequences"
+    __table_args__ = (
+        UniqueConstraint("doc_type", "period", name="uq_document_sequences_doc_period"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    doc_type: Mapped[str] = mapped_column(String(20))
+    period: Mapped[str] = mapped_column(String(10))
+    last_value: Mapped[int] = mapped_column(Integer, default=0)

@@ -1,0 +1,148 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: #f8fafc;
+}
+
+/* Consistent table style for admin pages */
+.admin-table .el-table__header-wrapper th.el-table__cell {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 600;
+}
+
+.admin-table .el-table__body-wrapper td.el-table__cell {
+  vertical-align: middle;
+}
+
+/* Shared filter section styling */
+.filter-panel {
+  margin-bottom: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 12px 12px 4px;
+}
+
+.filter-panel__title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.filter-form .el-form-item {
+  margin-bottom: 12px;
+}
+
+.filter-form .el-form-item__label {
+  padding-bottom: 6px !important;
+  color: #475569 !important;
+  font-weight: 600;
+}
+
+/* Kartu halaman admin — tidak melampaui lebar main */
+.admin-section-card {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Admin layout: cegah judul/toolbar & tabel bertumpuk / overflow */
+.admin-section-card :deep(.el-card__header) {
+  min-width: 0;
+}
+
+.admin-section-header {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .admin-section-header {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px 16px;
+  }
+}
+
+.admin-section-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 100%;
+}
+
+.admin-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+@media (min-width: 640px) {
+  .admin-section-actions {
+    flex: 0 1 auto;
+    max-width: min(100%, 52rem);
+  }
+}
+
+.admin-section-body {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.admin-section-card :deep(.el-card__body) {
+  padding: 16px;
+}
+
+/* Tabel: scroll horizontal aman untuk kolom lebar + fixed actions */
+.admin-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Input pencarian di toolbar: tidak memaksa overflow horizontal */
+.customer-toolbar-search,
+.po-toolbar-search,
+.production-toolbar-search,
+.qc-toolbar-search,
+.delivery-toolbar-search,
+.invoice-toolbar-search,
+.reports-toolbar-search {
+  min-width: 0;
+  max-width: 100%;
+  flex: 1 1 12rem;
+}
+
+@media (min-width: 640px) {
+  .customer-toolbar-search,
+  .po-toolbar-search,
+  .production-toolbar-search,
+  .qc-toolbar-search,
+  .delivery-toolbar-search,
+  .invoice-toolbar-search,
+  .reports-toolbar-search {
+    flex: 0 1 240px;
+  }
+}
