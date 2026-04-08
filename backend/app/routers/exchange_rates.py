@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import ExchangeRate
+from app.routers.auth import get_current_user, require_roles
 
 router = APIRouter(tags=["exchange-rates"])
 
@@ -38,14 +39,21 @@ class ExchangeRateOut(BaseModel):
 
 
 @router.get("/exchange-rates", response_model=list[ExchangeRateOut])
-def list_rates(db: Session = Depends(get_db)) -> list[ExchangeRate]:
+def list_rates(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> list[ExchangeRate]:
     return list(
         db.scalars(select(ExchangeRate).order_by(ExchangeRate.effective_date.desc())).all()
     )
 
 
 @router.post("/exchange-rates", response_model=ExchangeRateOut)
-def create_rate(body: ExchangeRateIn, db: Session = Depends(get_db)) -> ExchangeRate:
+def create_rate(
+    body: ExchangeRateIn,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "exim", "finance", "marketing")),
+) -> ExchangeRate:
     row = ExchangeRate(
         idr_per_usd=body.idr_per_usd,
         effective_date=body.effective_date,
@@ -59,7 +67,10 @@ def create_rate(body: ExchangeRateIn, db: Session = Depends(get_db)) -> Exchange
 
 
 @router.get("/exchange-rates/latest", response_model=ExchangeRateOut)
-def latest_rate(db: Session = Depends(get_db)) -> ExchangeRate:
+def latest_rate(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> ExchangeRate:
     row = db.scalars(
         select(ExchangeRate).order_by(ExchangeRate.effective_date.desc()).limit(1)
     ).first()

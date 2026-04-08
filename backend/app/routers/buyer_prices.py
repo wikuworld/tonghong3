@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import BuyerPriceList, BuyerPriceSheetRow
+from app.routers.auth import get_current_user, require_roles
 from app.schemas import BuyerPriceListCreate, BuyerPriceListUpdate, BuyerPriceSheetSave
 from app.services.buyer_price_import import list_to_api_dict, persist_buyer_folder
 
@@ -53,13 +54,20 @@ def _row_to_summary(r: BuyerPriceList) -> BuyerPriceSummaryOut:
 
 
 @router.get("/buyer-prices/lists", response_model=list[BuyerPriceSummaryOut])
-def list_buyer_prices(db: Session = Depends(get_db)) -> list[BuyerPriceSummaryOut]:
+def list_buyer_prices(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> list[BuyerPriceSummaryOut]:
     rows = db.scalars(select(BuyerPriceList).order_by(BuyerPriceList.buyer_code)).all()
     return [_row_to_summary(r) for r in rows]
 
 
 @router.post("/buyer-prices/lists", response_model=BuyerPriceSummaryOut)
-def create_buyer_price_list(body: BuyerPriceListCreate, db: Session = Depends(get_db)) -> BuyerPriceSummaryOut:
+def create_buyer_price_list(
+    body: BuyerPriceListCreate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+) -> BuyerPriceSummaryOut:
     code = body.buyer_code.strip().upper()
     if not code:
         raise HTTPException(status_code=400, detail="Kode buyer wajib diisi")
@@ -82,7 +90,10 @@ def create_buyer_price_list(body: BuyerPriceListCreate, db: Session = Depends(ge
 
 @router.put("/buyer-prices/lists/{list_id}", response_model=BuyerPriceSummaryOut)
 def update_buyer_price_list(
-    list_id: int, body: BuyerPriceListUpdate, db: Session = Depends(get_db)
+    list_id: int,
+    body: BuyerPriceListUpdate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
 ) -> BuyerPriceSummaryOut:
     row = db.get(BuyerPriceList, list_id)
     if not row:
@@ -96,7 +107,11 @@ def update_buyer_price_list(
 
 
 @router.get("/buyer-prices/lists/{list_id}")
-def get_buyer_price_list(list_id: int, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_buyer_price_list(
+    list_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> dict[str, Any]:
     data = list_to_api_dict(db, list_id)
     if not data:
         raise HTTPException(status_code=404, detail="List harga tidak ditemukan")
@@ -105,7 +120,10 @@ def get_buyer_price_list(list_id: int, db: Session = Depends(get_db)) -> dict[st
 
 @router.put("/buyer-prices/lists/{list_id}/sheet")
 def save_buyer_price_sheet(
-    list_id: int, body: BuyerPriceSheetSave, db: Session = Depends(get_db)
+    list_id: int,
+    body: BuyerPriceSheetSave,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
 ) -> dict[str, Any]:
     """Ganti seluruh baris sheet + simpan urutan kolom di `meta_json.column_keys`."""
     lst = db.get(BuyerPriceList, list_id)
@@ -143,7 +161,11 @@ def save_buyer_price_sheet(
 
 
 @router.get("/buyer-prices/by-buyer/{buyer_code}")
-def get_by_buyer(buyer_code: str, db: Session = Depends(get_db)) -> dict[str, Any]:
+def get_by_buyer(
+    buyer_code: str,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> dict[str, Any]:
     row = db.scalars(
         select(BuyerPriceList).where(BuyerPriceList.buyer_code == buyer_code.upper())
     ).first()
@@ -153,7 +175,11 @@ def get_by_buyer(buyer_code: str, db: Session = Depends(get_db)) -> dict[str, An
 
 
 @router.delete("/buyer-prices/lists/{list_id}")
-def delete_buyer_price_list(list_id: int, db: Session = Depends(get_db)) -> dict[str, str]:
+def delete_buyer_price_list(
+    list_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> dict[str, str]:
     row = db.get(BuyerPriceList, list_id)
     if not row:
         raise HTTPException(status_code=404, detail="List harga tidak ditemukan")
@@ -167,6 +193,7 @@ async def import_upload(
     db: Session = Depends(get_db),
     files: list[UploadFile] = File(...),
     source_label: Optional[str] = Form(None),
+    _user=Depends(require_roles("admin", "marketing")),
 ) -> list[dict[str, Any]]:
     if not files:
         raise HTTPException(status_code=400, detail="Tidak ada file")
@@ -189,6 +216,7 @@ async def import_zip(
     db: Session = Depends(get_db),
     file: UploadFile = File(...),
     source_label: Optional[str] = Form(None),
+    _user=Depends(require_roles("admin", "marketing")),
 ) -> list[dict[str, Any]]:
     raw = await file.read()
     if not raw:
