@@ -1,0 +1,25 @@
+DATE,THI ORDER,CUSTOMER NAME,BRAND,ORDER TYPE,NO PO,MATERIAL NAME,THICKNESS,EMBOSS,SOFTNESS TYPE,COLOR,SOFTNESS,"QTY (S/F)
+","PRICE
+",COLOR S/W,BACKING ,MODEL,ARTICLE,RTA,REPLY ETD,STOCK WH,BALANCE,SYSTEM NO,REMARK,1st,Unnamed: 25,2nd,Unnamed: 27,3rd,Unnamed: 29,4th,Unnamed: 31,5th,Unnamed: 33,6th,Unnamed: 35
+,,,,,,,,,,,,,,,,,,,,,,,,Qty,Date,Qty,Date,Qty,Date,Qty,Date,Qty,Date,Qty,Date
+2026-02-26 00:00:00,PS26022601,GLOSTAR,N.B,PROD,4004365389,Split Suede,1.2-1.4,,SOFT,BLACK CEMENT (008-24-00)        ,2.0-3.0,253.0,1.33,COLOR WINDOW,-,,,3/30,2026-03-30,35.8,0.0,MYCGS009260226001,,217.2,2026-04-06 00:00:00,,,,,,,,,,
+2026-02-26 00:00:00,PS26022602,METRO NB,N.B,PROD,N2026025361NB/140151104C,Split Suede,1.4-1.6,,SOFT,BLACK CEMENT (008-24-00)      ,2.0-3.0,810.0,1.33,COLOR WINDOW,-,,UN480HGB-2E,3/30,2026-03-30,810.0,0.0,MYCMP033260226001,,,,,,,,,,,,,
+2026-03-16 00:00:00,S26031601,PT SUKSES ABADI INDONESIA,N.B,SAMPLE,SAIDEV-26-0001113 ERP 0657/PO-SAI/III/2026,Split Suede,1.2-1.4,,SOFT,BLACK (145-17-00)          ,2.0-3.0,30.0,1.33,COLOR WINDOW,-,,W51580S,4/6,2026-04-06,,30.0,SYCSD047260316003,,,,,,,,,,,,,
+2026-04-02 00:00:00,S26040201,PT SUKSES ABADI INDONESIA,N.B,SAMPLE,SAIDEV-26-0001339 ERP 0045/PO-SAI/IV/2026,Split Suede,1.2-1.4,,SOFT,BLACK (145-17-00)    ,2.0-3.0,60.0,1.33,COLOR WINDOW,-,,G880R5X4,4/14,2026-04-14,,60.0,SYCSD047260402001,,,,,,,,,,,,,
+2026-03-13 00:00:00,PS26031304,METRO NB,N.B,REPRO,N2026036955NBREPRO/135010034C,Split Suede,1.2-1.4,,SOFT,BLACK (145-17-00)        ,2.0-3.0,225.0,1.33,COLOR WINDOW,,U90604U4-D,,4/1,2026-04-01,225.6,-0.5999999999999943,MYCMP033260313002,,,,,,,,,,,,,
+2026-03-17 00:00:00,PS26031707,METRO NB,N.B,REPRO,N2026037261NBREPRO/135010233C,Split Suede,1.2-1.4,,SOFT,NEW STONEWARE (034-62-06)       ,2.0-3.0,100.0,1.33,COLOR WINDOW,-,,,3/31,2026-03-31,,100.0,MYCMP033260317001,,,,,,,,,,,,,
+2026-03-31 00:00:00,PSC26033103,ULTIMATE NOBLE,N.B,CLAIM,U2026010722NBFOC/135010132C,Split Suede,1.2-1.4,,SOFT,SLATE GREY (000-55-00)      ,2.0-3.0,220.0,1.33,COLOR WINDOW,-,,,4/14,2026-04-14,,220.0,BYCMP034260331001,,,,,,,,,,,,,
+2026-04-02 00:00:00,PSC26040201,ULTIMATE NOBLE,N.B,CLAIM,U2026021736NBFOC/135010233C,Split Suede,1.2-1.4,,SOFT,NEW STONEWARE (034-62-06)         ,2.0-3.0,100.0,1.33,COLOR WINDOW,-,,,4/24,2026-04-24,,100.0,BYCMP034260402001,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Request marketing,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+1,"Sesuai dengan meeting kemarin bahwa outstanding akan secara otomatis muncul di sistem, maka munculkan filter di setiap kolom judul",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+2,Munculkan fitur download excel supaya memudahkan kami apabila akan berkomunikasi dengan customer mengenai data outstanding order disesuaikan dengan kebutuhan kami,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+3,Munculkan fitur ceklis untuk membuat schedule delivery material yang sudah jadi ataupun yang belum jadi,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+4,Schedule material yang belum jadi harus muncul di gudang untuk memudahkan QC mengecek material mana yang harus dikirim tapi belum packing,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+5,Schedule material yang sudah jadi harus muncul di fitur delivery marketing agar memudahkan Tim delivery membuat surat jalan dan print invoice,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+6,Schedule material yang sudah jadi dibuatkan sesuai dengan qty yang sudah jadi dan bisa dipilih oleh kita karena terkadang customer request tidak semua material dikirim,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+7,"Schedule material yang belum jadi dan muncul di fitur qc, akan dicek dan di konfirmasi oleh qc apabila material tersebut sudah selesai packing.",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+8,"Munculkan fitur sudah kirim, belum kirim dan all untuk memudahkan pengecekan",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+9,"Munculkan fitur search, agar memudahkan kami dalam melakukan pencarian PO",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+10,"Munculkan dua kolom remark yang 1 untuk otomatis remark dari sistem dan tidak bisa direvisi kecuali ada penggantian di input po, remark 1 lagi untuk catatan marketing",,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+11,Munculkan status material berdasarkan scan terakhir dari produksi,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
