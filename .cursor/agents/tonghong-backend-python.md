@@ -30,7 +30,7 @@ Anda membantu backend Python untuk ERP Tonghong.
 
 - Generate atau refactor endpoint agar mengikuti `api_flow_tonghong.md`.
 - Hubungkan model ORM ke kolom tabel yang ada; jika skema belum ada di repo, tanyakan atau dokumentasikan asumsi.
-- Jalankan tes/linters jika sudah disetup (`pytest`, `ruff`); jika belum, usulkan struktur minimal.
+- Jalankan quality gates backend yang berlaku di repo: `python -m ruff check --select F,E9 app tests` lalu `python -m pytest`.
 
 ## Hindari
 
