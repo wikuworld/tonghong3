@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import (
+    audit,
     auth,
     buyer_prices,
     customs,
@@ -14,6 +15,7 @@ from app.routers import (
     invoice,
     marketing,
     masters,
+    permissions,
     packing,
     po,
     production,
@@ -36,6 +38,7 @@ app.add_middleware(
 
 _PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=_PREFIX)
+app.include_router(audit.router, prefix=_PREFIX)
 app.include_router(customers.router, prefix=_PREFIX)
 app.include_router(wilayah.router, prefix=_PREFIX)
 app.include_router(sales_orders.router, prefix=_PREFIX)
@@ -49,10 +52,30 @@ app.include_router(invoice.router, prefix=_PREFIX)
 app.include_router(dashboard.router, prefix=_PREFIX)
 app.include_router(exchange_rates.router, prefix=_PREFIX)
 app.include_router(masters.router, prefix=_PREFIX)
+app.include_router(permissions.router, prefix=_PREFIX)
 app.include_router(reports.router, prefix=_PREFIX)
 app.include_router(documents.router, prefix=_PREFIX)
 app.include_router(customs.router, prefix=_PREFIX)
 app.include_router(buyer_prices.router, prefix=_PREFIX)
+
+
+@app.on_event("startup")
+def _bootstrap_admin() -> None:
+    # buat user admin default jika belum ada (lihat `settings.admin_*`)
+    try:
+        from app.routers.auth import ensure_bootstrap_admin
+        from app.routers.permissions import ensure_default_permissions
+        from app.db import SessionLocal
+
+        ensure_bootstrap_admin()
+        db = SessionLocal()
+        try:
+            ensure_default_permissions(db)
+        finally:
+            db.close()
+    except Exception:
+        # jangan gagal startup hanya karena bootstrap (mis. DB belum siap)
+        return
 
 
 @app.get("/health")

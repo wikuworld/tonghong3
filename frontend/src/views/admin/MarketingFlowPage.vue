@@ -45,7 +45,7 @@
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="200" fixed="right">
             <template #default="{ row }">
-              <el-button type="primary" link size="small" :loading="advancing === row.id" @click="advance(row)">
+              <el-button v-if="canAdvance" type="primary" link size="small" :loading="advancing === row.id" @click="advance(row)">
                 {{ t('pages.marketingFlow.advance') }}
               </el-button>
               <el-button link size="small" @click="goPo(row.id)">{{ t('pages.marketingFlow.openPo') }}</el-button>
@@ -194,8 +194,10 @@ import {
   marketingOutstandingCsvUrl,
   reportPoDailyRecapUrl,
 } from '../../api/client'
+import { can } from '../../security/permissions'
 
 const { t } = useI18n()
+const canAdvance = can('po', 'advance')
 const router = useRouter()
 const mainTab = ref('flow')
 const loading = ref(false)
@@ -262,6 +264,7 @@ async function loadOutstanding() {
   try {
     outstandingRows.value = await listMarketingOutstandingLines({
       balance_filter: balanceFilter.value,
+      computed_balance: true,
     })
   } catch (e) {
     ElMessage.error(e.message || 'Error')
@@ -323,7 +326,7 @@ function downloadRekap() {
 }
 
 function downloadOutstanding() {
-  window.open(marketingOutstandingCsvUrl({ balance_filter: balanceFilter.value }), '_blank')
+  window.open(marketingOutstandingCsvUrl({ balance_filter: balanceFilter.value, computed_balance: true }), '_blank')
 }
 
 function downloadDelivery() {

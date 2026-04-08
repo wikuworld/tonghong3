@@ -429,6 +429,40 @@ class InvoiceCreate(BaseModel):
     bank_phone: Optional[str] = None
     total_amount: Optional[Decimal] = None
     total_in_words: Optional[str] = None
+    due_date: Optional[date] = None
+    tax_invoice_no: Optional[str] = None
+    tax_invoice_date: Optional[date] = None
+    receipt_no: Optional[str] = None
+    received_by: Optional[str] = None
+    received_date: Optional[date] = None
+    nopen: Optional[str] = None
+    nomor_aju: Optional[str] = None
+
+
+class InvoiceUpdate(BaseModel):
+    invoice_number: Optional[str] = None
+    packing_list_number: Optional[str] = None
+    po_number: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_address: Optional[str] = None
+    customer_phone: Optional[str] = None
+    invoice_date: Optional[date] = None
+    description: Optional[str] = None
+    term_of_payment: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    bank_address: Optional[str] = None
+    bank_phone: Optional[str] = None
+    total_amount: Optional[Decimal] = None
+    total_in_words: Optional[str] = None
+    due_date: Optional[date] = None
+    tax_invoice_no: Optional[str] = None
+    tax_invoice_date: Optional[date] = None
+    receipt_no: Optional[str] = None
+    received_by: Optional[str] = None
+    received_date: Optional[date] = None
+    nopen: Optional[str] = None
+    nomor_aju: Optional[str] = None
 
 
 class InvoiceDetailCreate(BaseModel):
@@ -489,6 +523,26 @@ class LoginIn(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class UserOut(ORMBase):
+    id: int
+    username: str
+    role: str
+    is_active: bool
+
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    role: str
+    is_active: bool = True
+
+
+class UserUpdate(BaseModel):
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = None
 
 
 def row_to_dict(obj: Any) -> dict[str, Any]:

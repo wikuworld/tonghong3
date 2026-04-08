@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,8 @@ from app.schemas import (
     ProductionDetailUpdate,
     row_to_dict,
 )
+from app.routers.auth import get_current_user, require_roles
+from app.services.audit import log_change
 
 router = APIRouter(tags=["production"])
 
@@ -28,7 +32,11 @@ def _require_po_confirmed(po: PoHeader | None) -> None:
 
 
 @router.post("/production")
-def create_production(body: ProductionCreate, db: Session = Depends(get_db)) -> dict:
+def create_production(
+    body: ProductionCreate,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "production", "ppic")),
+) -> dict:
     if body.po_id is None:
         raise HTTPException(status_code=400, detail="po_id wajib")
     po = db.get(PoHeader, body.po_id)
@@ -40,19 +48,40 @@ def create_production(body: ProductionCreate, db: Session = Depends(get_db)) -> 
     db.add(row)
     if po and po.status == "confirmed":
         po.status = "production"
+    db.flush()
+    log_change(
+        db,
+        entity_type="production",
+        entity_id=row.id,
+        action="create",
+        after={"production_number": row.production_number, "po_id": row.po_id, "status": row.status},
+        actor=user.username,
+    )
     db.commit()
     db.refresh(row)
     return row_to_dict(row)
 
 
 @router.get("/production")
-def list_production(db: Session = Depends(get_db)) -> list[dict]:
-    rows = db.scalars(select(ProductionOrder).order_by(ProductionOrder.id.desc())).all()
+def list_production(
+    db: Session = Depends(get_db),
+    q: Optional[str] = Query(None, description="Search production no/po id"),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    _user=Depends(get_current_user),
+) -> list[dict]:
+    stmt = select(ProductionOrder).order_by(ProductionOrder.id.desc()).limit(limit).offset(offset)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(ProductionOrder.production_number.ilike(like))
+    rows = db.scalars(stmt).all()
     return [row_to_dict(r) for r in rows]
 
 
 @router.get("/production/{production_id}")
-def get_production(production_id: int, db: Session = Depends(get_db)) -> dict:
+def get_production(
+    production_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> dict:
     row = db.get(ProductionOrder, production_id)
     if not row:
         raise HTTPException(status_code=404, detail="Production tidak ditemukan")
@@ -60,7 +89,9 @@ def get_production(production_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/production/{production_id}/details")
-def list_production_details(production_id: int, db: Session = Depends(get_db)) -> list[dict]:
+def list_production_details(
+    production_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> list[dict]:
     if not db.get(ProductionOrder, production_id):
         raise HTTPException(status_code=404, detail="Production tidak ditemukan")
     rows = db.scalars(
@@ -73,7 +104,10 @@ def list_production_details(production_id: int, db: Session = Depends(get_db)) -
 
 @router.post("/production/{production_id}/details")
 def add_production_detail(
-    production_id: int, body: ProductionDetailCreate, db: Session = Depends(get_db)
+    production_id: int,
+    body: ProductionDetailCreate,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "production")),
 ) -> dict:
     pr = db.get(ProductionOrder, production_id)
     if not pr:
@@ -82,6 +116,15 @@ def add_production_detail(
         production_id=production_id, **body.model_dump(exclude_unset=True)
     )
     db.add(row)
+    db.flush()
+    log_change(
+        db,
+        entity_type="production_line",
+        entity_id=row.id,
+        action="create",
+        after={"production_id": production_id, "po_detail_id": row.po_detail_id, "lot_number": row.lot_number},
+        actor=user.username,
+    )
     db.commit()
     db.refresh(row)
     return row_to_dict(row)
@@ -89,13 +132,26 @@ def add_production_detail(
 
 @router.put("/production-detail/{detail_id}")
 def update_production_detail(
-    detail_id: int, body: ProductionDetailUpdate, db: Session = Depends(get_db)
+    detail_id: int,
+    body: ProductionDetailUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "production")),
 ) -> dict:
     row = db.get(ProductionDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail production tidak ditemukan")
+    before = {"qty_planned": row.qty_planned, "qty_actual": row.qty_actual, "status": row.status, "lot_number": row.lot_number}
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(row, k, v)
+    log_change(
+        db,
+        entity_type="production_line",
+        entity_id=row.id,
+        action="update",
+        before=before,
+        after={"qty_planned": row.qty_planned, "qty_actual": row.qty_actual, "status": row.status, "lot_number": row.lot_number},
+        actor=user.username,
+    )
     db.commit()
     db.refresh(row)
     return row_to_dict(row)

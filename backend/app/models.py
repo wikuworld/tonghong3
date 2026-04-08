@@ -448,6 +448,14 @@ class Invoice(Base):
     bank_phone: Mapped[Optional[str]] = mapped_column(String(50))
     total_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
     total_in_words: Mapped[Optional[str]] = mapped_column(Text)
+    due_date: Mapped[Optional[date]] = mapped_column(Date)
+    tax_invoice_no: Mapped[Optional[str]] = mapped_column(String(80))
+    tax_invoice_date: Mapped[Optional[date]] = mapped_column(Date)
+    receipt_no: Mapped[Optional[str]] = mapped_column(String(80))
+    received_by: Mapped[Optional[str]] = mapped_column(String(120))
+    received_date: Mapped[Optional[date]] = mapped_column(Date)
+    nopen: Mapped[Optional[str]] = mapped_column(String(80))
+    nomor_aju: Mapped[Optional[str]] = mapped_column(String(80))
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
     )
@@ -510,3 +518,33 @@ class DocumentSequence(Base):
     doc_type: Mapped[str] = mapped_column(String(20))
     period: Mapped[str] = mapped_column(String(10))
     last_value: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(32), default="admin")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    __table_args__ = (
+        UniqueConstraint("role", "module_key", "action", name="uq_role_permissions_key"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    role: Mapped[str] = mapped_column(String(32))
+    module_key: Mapped[str] = mapped_column(String(80))
+    action: Mapped[str] = mapped_column(String(32))
+    allowed: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )

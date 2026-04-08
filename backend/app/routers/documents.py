@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from html import escape
+import io
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
+from openpyxl import Workbook
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Customer, DeliveryDetail, DeliveryHeader, PackingDetail, PackingHeader
+from app.routers.auth import get_current_user
 
 router = APIRouter(tags=["documents"])
 
@@ -39,7 +45,9 @@ def _html_page(title: str, body: str) -> str:
 
 
 @router.get("/documents/surat-jalan/{delivery_id}")
-def document_surat_jalan(delivery_id: int, db: Session = Depends(get_db)) -> HTMLResponse:
+def document_surat_jalan(
+    delivery_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> HTMLResponse:
     dh = db.get(DeliveryHeader, delivery_id)
     if not dh:
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
@@ -72,8 +80,109 @@ def document_surat_jalan(delivery_id: int, db: Session = Depends(get_db)) -> HTM
     return HTMLResponse(_html_page("Surat Jalan", body))
 
 
+@router.get("/documents/surat-jalan/{delivery_id}.xlsx")
+def document_surat_jalan_xlsx(
+    delivery_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> Response:
+    dh = db.get(DeliveryHeader, delivery_id)
+    if not dh:
+        raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
+    cust = db.get(Customer, dh.customer_id) if dh.customer_id else None
+    details = db.scalars(
+        select(DeliveryDetail)
+        .where(DeliveryDetail.delivery_id == delivery_id)
+        .order_by(DeliveryDetail.id.asc())
+    ).all()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Surat Jalan"
+    ws.append(["No SJ", dh.delivery_number or dh.id])
+    ws.append(["Tanggal", str(dh.delivery_date or "")])
+    ws.append(["Customer", cust.name if cust else ""])
+    ws.append(["Tujuan", dh.destination or ""])
+    ws.append([])
+    ws.append(["#", "Production detail", "Qty", "Roll", "Pcs", "Berat"])
+    for i, d in enumerate(details, 1):
+        ws.append([i, d.production_detail_id or "", float(d.qty or 0), d.qty_roll or 0, d.qty_pcs or 0, float(d.weight or 0)])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fn = f"surat_jalan_{dh.delivery_number or dh.id}.xlsx"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
+
+
+@router.get("/documents/surat-jalan/{delivery_id}.pdf")
+def document_surat_jalan_pdf(
+    delivery_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> Response:
+    dh = db.get(DeliveryHeader, delivery_id)
+    if not dh:
+        raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
+    cust = db.get(Customer, dh.customer_id) if dh.customer_id else None
+    details = db.scalars(
+        select(DeliveryDetail)
+        .where(DeliveryDetail.delivery_id == delivery_id)
+        .order_by(DeliveryDetail.id.asc())
+    ).all()
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    w, h = A4
+    y = h - 18 * mm
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(18 * mm, y, "SURAT JALAN")
+    y -= 10 * mm
+    c.setFont("Helvetica", 10)
+    c.drawString(18 * mm, y, f"No: {dh.delivery_number or dh.id}")
+    y -= 6 * mm
+    c.drawString(18 * mm, y, f"Tanggal: {dh.delivery_date or ''}")
+    y -= 6 * mm
+    c.drawString(18 * mm, y, f"Customer: {(cust.name if cust else '')}")
+    y -= 6 * mm
+    c.drawString(18 * mm, y, f"Tujuan: {(dh.destination or '')[:90]}")
+    y -= 10 * mm
+
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(18 * mm, y, "#")
+    c.drawString(26 * mm, y, "Prod. detail")
+    c.drawString(70 * mm, y, "Qty")
+    c.drawString(90 * mm, y, "Roll")
+    c.drawString(105 * mm, y, "Pcs")
+    c.drawString(120 * mm, y, "Berat")
+    y -= 5 * mm
+    c.setFont("Helvetica", 9)
+    for i, d in enumerate(details, 1):
+        if y < 20 * mm:
+            c.showPage()
+            y = h - 18 * mm
+            c.setFont("Helvetica", 9)
+        c.drawString(18 * mm, y, str(i))
+        c.drawString(26 * mm, y, str(d.production_detail_id or ""))
+        c.drawRightString(85 * mm, y, str(d.qty or ""))
+        c.drawRightString(102 * mm, y, str(d.qty_roll or ""))
+        c.drawRightString(117 * mm, y, str(d.qty_pcs or ""))
+        c.drawRightString(140 * mm, y, str(d.weight or ""))
+        y -= 5 * mm
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    fn = f"surat_jalan_{dh.delivery_number or dh.id}.pdf"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
+
 @router.get("/documents/invpl/{packing_id}")
-def document_invpl(packing_id: int, db: Session = Depends(get_db)) -> HTMLResponse:
+def document_invpl(
+    packing_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> HTMLResponse:
     ph = db.get(PackingHeader, packing_id)
     if not ph:
         raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
@@ -98,3 +207,93 @@ def document_invpl(packing_id: int, db: Session = Depends(get_db)) -> HTMLRespon
 <p class="meta" style="margin-top:24px;">Dibuat dari sistem Tonghong — cetak dari browser (Ctrl+P).</p>
 """
     return HTMLResponse(_html_page("INVPL", body))
+
+
+@router.get("/documents/invpl/{packing_id}.xlsx")
+def document_invpl_xlsx(
+    packing_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> Response:
+    ph = db.get(PackingHeader, packing_id)
+    if not ph:
+        raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
+    details = db.scalars(
+        select(PackingDetail)
+        .where(PackingDetail.packing_id == packing_id)
+        .order_by(PackingDetail.id.asc())
+    ).all()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "INVPL"
+    ws.append(["No Packing", ph.packing_number or ph.id])
+    ws.append(["Production ID", ph.production_id or ""])
+    ws.append(["QC ID", ph.qc_header_id or ""])
+    ws.append(["Status", ph.status or ""])
+    ws.append([])
+    ws.append(["#", "Production detail", "Qty packed"])
+    for i, d in enumerate(details, 1):
+        ws.append([i, d.production_detail_id or "", float(d.qty_packed or 0)])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fn = f"invpl_{ph.packing_number or ph.id}.xlsx"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
+
+
+@router.get("/documents/invpl/{packing_id}.pdf")
+def document_invpl_pdf(
+    packing_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> Response:
+    ph = db.get(PackingHeader, packing_id)
+    if not ph:
+        raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
+    details = db.scalars(
+        select(PackingDetail)
+        .where(PackingDetail.packing_id == packing_id)
+        .order_by(PackingDetail.id.asc())
+    ).all()
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    w, h = A4
+    y = h - 18 * mm
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(18 * mm, y, "INVOICE PACKING LIST (INVPL)")
+    y -= 10 * mm
+    c.setFont("Helvetica", 10)
+    c.drawString(18 * mm, y, f"No Packing: {ph.packing_number or ph.id}")
+    y -= 6 * mm
+    c.drawString(18 * mm, y, f"Production ID: {ph.production_id or ''}   QC ID: {ph.qc_header_id or ''}")
+    y -= 6 * mm
+    c.drawString(18 * mm, y, f"Status: {ph.status or ''}")
+    y -= 10 * mm
+
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(18 * mm, y, "#")
+    c.drawString(26 * mm, y, "Prod. detail")
+    c.drawString(80 * mm, y, "Qty packed")
+    y -= 5 * mm
+    c.setFont("Helvetica", 9)
+    for i, d in enumerate(details, 1):
+        if y < 20 * mm:
+            c.showPage()
+            y = h - 18 * mm
+            c.setFont("Helvetica", 9)
+        c.drawString(18 * mm, y, str(i))
+        c.drawString(26 * mm, y, str(d.production_detail_id or ""))
+        c.drawRightString(110 * mm, y, str(d.qty_packed or ""))
+        y -= 5 * mm
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    fn = f"invpl_{ph.packing_number or ph.id}.pdf"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )

@@ -7,7 +7,7 @@
         clearable
         class="production-toolbar-search"
       />
-      <el-button type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
+      <el-button v-if="canManage" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
     <div class="filter-panel mb-4">
@@ -186,7 +186,7 @@
       <template #footer>
         <div class="production-dialog-footer">
           <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-          <el-button type="primary" :loading="formSubmitting" @click="submitForm">{{ t('common.save') }}</el-button>
+          <el-button v-if="canManage" type="primary" :loading="formSubmitting" @click="submitForm">{{ t('common.save') }}</el-button>
         </div>
       </template>
     </el-dialog>
@@ -199,6 +199,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Plus, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
+import { canWrite } from '../../security/permissions'
 import {
   createProduction,
   getProduction,
@@ -209,6 +210,7 @@ import {
 } from '../../api/client'
 
 const { t, te } = useI18n()
+const canManage = canWrite('production')
 
 const loading = ref(false)
 const keyword = ref('')

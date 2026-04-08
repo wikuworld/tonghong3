@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,6 +16,8 @@ from app.models import PackingDetail, PackingHeader
 from app.schemas import row_to_dict
 from app.services.numbering import next_number
 from app.services.business_rules import validate_packing_links
+from app.routers.auth import get_current_user, require_roles
+from app.services.audit import log_change
 
 router = APIRouter(tags=["packing"])
 
@@ -42,24 +44,52 @@ class PackingDetailCreate(BaseModel):
 
 
 @router.get("/packing")
-def list_packing(db: Session = Depends(get_db)) -> list[dict]:
-    rows = db.scalars(select(PackingHeader).order_by(PackingHeader.id.desc())).all()
+def list_packing(
+    db: Session = Depends(get_db),
+    q: Optional[str] = Query(None, description="Search packing number"),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    _user=Depends(get_current_user),
+) -> list[dict]:
+    stmt = select(PackingHeader).order_by(PackingHeader.id.desc()).limit(limit).offset(offset)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(PackingHeader.packing_number.ilike(like))
+    rows = db.scalars(stmt).all()
     return [row_to_dict(r) for r in rows]
 
 
 @router.post("/packing/{packing_id}/mark-invpl-printed")
-def mark_invpl_printed(packing_id: int, db: Session = Depends(get_db)) -> dict:
+def mark_invpl_printed(
+    packing_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "warehouse")),
+) -> dict:
     row = db.get(PackingHeader, packing_id)
     if not row:
         raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
+    before = {"invpl_printed_at": row.invpl_printed_at}
     row.invpl_printed_at = datetime.utcnow()
+    log_change(
+        db,
+        entity_type="packing",
+        entity_id=row.id,
+        action="mark_invpl_printed",
+        before=before,
+        after={"invpl_printed_at": row.invpl_printed_at},
+        actor=user.username,
+    )
     db.commit()
     db.refresh(row)
     return row_to_dict(row)
 
 
 @router.post("/packing")
-def create_packing(body: PackingCreate, db: Session = Depends(get_db)) -> dict:
+def create_packing(
+    body: PackingCreate,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "warehouse")),
+) -> dict:
     validate_packing_links(db, body.production_id, body.qc_header_id)
     num = next_number(db, "PACK", "PACK")
     row = PackingHeader(
@@ -69,6 +99,15 @@ def create_packing(body: PackingCreate, db: Session = Depends(get_db)) -> dict:
         status=body.status,
     )
     db.add(row)
+    db.flush()
+    log_change(
+        db,
+        entity_type="packing",
+        entity_id=row.id,
+        action="create",
+        after={"packing_number": row.packing_number, "production_id": row.production_id, "qc_header_id": row.qc_header_id, "status": row.status},
+        actor=user.username,
+    )
     db.commit()
     db.refresh(row)
     return row_to_dict(row)
@@ -76,11 +115,15 @@ def create_packing(body: PackingCreate, db: Session = Depends(get_db)) -> dict:
 
 @router.put("/packing/{packing_id}")
 def update_packing(
-    packing_id: int, body: PackingHeaderUpdate, db: Session = Depends(get_db)
+    packing_id: int,
+    body: PackingHeaderUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "warehouse")),
 ) -> dict:
     row = db.get(PackingHeader, packing_id)
     if not row:
         raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
+    before = {"status": row.status, "production_id": row.production_id, "qc_header_id": row.qc_header_id}
     data = body.model_dump(exclude_unset=True)
     if "production_id" in data and "qc_header_id" in data:
         validate_packing_links(db, data["production_id"], data["qc_header_id"])
@@ -91,13 +134,24 @@ def update_packing(
             validate_packing_links(db, int(pid), int(qid))
     for k, v in data.items():
         setattr(row, k, v)
+    log_change(
+        db,
+        entity_type="packing",
+        entity_id=row.id,
+        action="update",
+        before=before,
+        after={"status": row.status, "production_id": row.production_id, "qc_header_id": row.qc_header_id},
+        actor=user.username,
+    )
     db.commit()
     db.refresh(row)
     return row_to_dict(row)
 
 
 @router.get("/packing/{packing_id}")
-def get_packing(packing_id: int, db: Session = Depends(get_db)) -> dict:
+def get_packing(
+    packing_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> dict:
     row = db.get(PackingHeader, packing_id)
     if not row:
         raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
@@ -106,7 +160,10 @@ def get_packing(packing_id: int, db: Session = Depends(get_db)) -> dict:
 
 @router.post("/packing/{packing_id}/details")
 def add_packing_detail(
-    packing_id: int, body: PackingDetailCreate, db: Session = Depends(get_db)
+    packing_id: int,
+    body: PackingDetailCreate,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "warehouse")),
 ) -> dict:
     hdr = db.get(PackingHeader, packing_id)
     if not hdr:
@@ -117,6 +174,15 @@ def add_packing_detail(
         qty_packed=body.qty_packed,
     )
     db.add(d)
+    db.flush()
+    log_change(
+        db,
+        entity_type="packing_line",
+        entity_id=d.id,
+        action="create",
+        after={"packing_id": packing_id, "production_detail_id": d.production_detail_id, "qty_packed": d.qty_packed},
+        actor=user.username,
+    )
     db.commit()
     db.refresh(d)
     return row_to_dict(d)

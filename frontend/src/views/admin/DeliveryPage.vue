@@ -4,7 +4,7 @@
       <el-input v-model="keyword" :placeholder="t('pages.delivery.searchPlaceholder')" clearable class="delivery-toolbar-search" />
       <el-button :icon="Van" @click="ElMessage.info('Alur: QC OK → Packing done → Delivery + detail → status sent → Invoice.')">{{ t('menu.deliveryPull') }}</el-button>
       <el-button :icon="Document" @click="ElMessage.info('Surat jalan: cetak dari detail delivery.')">{{ t('menu.suratJalan') }}</el-button>
-      <el-button type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
     <p class="mb-3 text-sm text-slate-600">
@@ -66,7 +66,7 @@
       </el-form>
       <template #footer>
         <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
+        <el-button v-if="canCreate" type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -83,6 +83,7 @@
 
         <div class="mb-2 flex flex-wrap items-center gap-2">
           <el-button
+            v-if="canUpdate"
             type="primary"
             :disabled="(detailRow.status || '').toLowerCase() === 'sent' || detailLines.length === 0"
             :loading="markingSent"
@@ -90,8 +91,10 @@
           >
             Tandai terkirim (sent)
           </el-button>
-          <el-button @click="openSjPrint">Cetak Surat Jalan</el-button>
-          <el-button type="success" plain :loading="markingSj" @click="markSjPrinted">Tandai SJ dicetak</el-button>
+          <el-button v-if="canPrint" @click="openSjPrint">Cetak Surat Jalan</el-button>
+          <el-button v-if="canPrint" @click="downloadSjPdf">Unduh PDF</el-button>
+          <el-button v-if="canPrint" @click="downloadSjExcel">Unduh Excel</el-button>
+          <el-button v-if="canUpdate" type="success" plain :loading="markingSj" @click="markSjPrinted">Tandai SJ dicetak</el-button>
           <span v-if="detailLines.length === 0" class="text-xs text-amber-600">Tambah minimal satu baris detail dulu.</span>
         </div>
 
@@ -102,7 +105,7 @@
           <el-table-column prop="qty" label="Qty" width="100" align="right" />
         </el-table>
 
-        <el-form v-if="candidateProdDetails.length" label-position="top" class="border-t border-slate-100 pt-3">
+        <el-form v-if="canUpdate && candidateProdDetails.length" label-position="top" class="border-t border-slate-100 pt-3">
           <el-form-item label="Tambah baris (hanya QC OK — validasi server)">
             <el-select v-model="lineForm.production_detail_id" filterable clearable class="w-full" placeholder="Production detail">
               <el-option
@@ -136,6 +139,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, View, Van, Document } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
+import { can } from '../../security/permissions'
 import {
   addDeliveryDetail,
   createDelivery,
@@ -151,6 +155,9 @@ import {
 } from '../../api/client'
 
 const { t } = useI18n()
+const canCreate = can('delivery', 'create')
+const canUpdate = can('delivery', 'update')
+const canPrint = can('delivery', 'print')
 const route = useRoute()
 const loading = ref(false)
 const saving = ref(false)
@@ -293,6 +300,16 @@ async function openDetail(row) {
 function openSjPrint() {
   if (!detailRow.value?.id) return
   window.open(`${window.location.origin}/api/v1/documents/surat-jalan/${detailRow.value.id}`, '_blank')
+}
+
+function downloadSjPdf() {
+  if (!detailRow.value?.id) return
+  window.open(`${window.location.origin}/api/v1/documents/surat-jalan/${detailRow.value.id}.pdf`, '_blank')
+}
+
+function downloadSjExcel() {
+  if (!detailRow.value?.id) return
+  window.open(`${window.location.origin}/api/v1/documents/surat-jalan/${detailRow.value.id}.xlsx`, '_blank')
 }
 
 async function markSjPrinted() {

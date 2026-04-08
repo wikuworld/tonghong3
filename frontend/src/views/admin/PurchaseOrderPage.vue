@@ -8,7 +8,7 @@
         class="po-toolbar-search"
       />
       <el-button :icon="Download" @click="openExportHint">{{ t('common.export') }}</el-button>
-      <el-button type="primary" :icon="Plus" :loading="loading" @click="openCreateDialog">{{ t('common.create') }}</el-button>
+      <el-button v-if="canManage" type="primary" :icon="Plus" :loading="loading" @click="openCreateDialog">{{ t('common.create') }}</el-button>
     </template>
 
     <div class="filter-panel mb-4">
@@ -88,13 +88,13 @@
             <el-tooltip :content="t('common.detail')" placement="top">
               <el-button :icon="View" link type="primary" @click="openDetailDialog(row)" />
             </el-tooltip>
-            <el-tooltip :content="t('common.edit')" placement="top">
+            <el-tooltip v-if="canManage" :content="t('common.edit')" placement="top">
               <el-button :icon="EditPen" link type="warning" @click="openEditDialog(row)" />
             </el-tooltip>
             <el-tooltip :content="t('common.print')" placement="top">
               <el-button :icon="Printer" link @click="openPrintDialog(row)" />
             </el-tooltip>
-            <el-tooltip :content="t('common.delete')" placement="top">
+            <el-tooltip v-if="canManage" :content="t('common.delete')" placement="top">
               <el-button :icon="Delete" link type="danger" @click="removeRow(row)" />
             </el-tooltip>
           </div>
@@ -299,7 +299,7 @@
       <template #footer>
         <div class="po-dialog-footer">
           <el-button @click="formDialogVisible = false">{{ t('common.cancel') }}</el-button>
-          <el-button type="primary" :loading="saving" @click="submitForm">{{ t('common.savePo') }}</el-button>
+          <el-button v-if="canManage" type="primary" :loading="saving" @click="submitForm">{{ t('common.savePo') }}</el-button>
         </div>
       </template>
     </el-dialog>
@@ -326,6 +326,24 @@
         <el-table-column prop="color" :label="t('common.color')" width="100" />
         <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="100" />
       </el-table>
+      <div v-if="detailAudit.length" class="mt-4 rounded border border-slate-200 bg-white p-3">
+        <div class="mb-2 text-sm font-semibold text-slate-700">{{ t('pages.poDetail.revisionHistory') }}</div>
+        <el-timeline>
+          <el-timeline-item
+            v-for="a in detailAudit"
+            :key="a.id"
+            :timestamp="a.created_at ? String(a.created_at).replace('T', ' ').slice(0, 19) : ''"
+          >
+            <div class="text-sm">
+              <b>{{ a.action }}</b>
+              <span class="text-slate-500"> — {{ a.actor || 'system' }}</span>
+            </div>
+            <div v-if="a.before || a.after" class="mt-1 text-xs text-slate-600">
+              <pre class="whitespace-pre-wrap break-words">{{ prettyAudit(a) }}</pre>
+            </div>
+          </el-timeline-item>
+        </el-timeline>
+      </div>
       <template #footer>
         <el-button type="primary" @click="detailDialogVisible = false">{{ t('pages.customers.closeDetail') }}</el-button>
       </template>
@@ -363,6 +381,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download, View, EditPen, Delete, Printer } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
+import { canWrite } from '../../security/permissions'
 import {
   addPoDetail,
   createPo,
@@ -374,12 +393,14 @@ import {
   listMasterItems,
   listPo,
   listPoDetails,
+  listAuditLogs,
   toIsoDate,
   updatePo,
   updatePoDetail,
 } from '../../api/client'
 
 const { t } = useI18n()
+const canManage = canWrite('po')
 
 const loading = ref(false)
 const saving = ref(false)
@@ -644,16 +665,30 @@ const submitForm = async () => {
 const detailDialogVisible = ref(false)
 const detailView = ref(null)
 const detailLines = ref([])
+const detailAudit = ref([])
 
 const openDetailDialog = async (row) => {
   detailView.value = { ...row, customerName: row.customerName }
   detailLines.value = []
+  detailAudit.value = []
   try {
     detailLines.value = await listPoDetails(row.id)
   } catch {
     detailLines.value = []
   }
+  try {
+    detailAudit.value = await listAuditLogs({ entity_type: 'sales_order', entity_id: row.id, limit: 100 })
+  } catch {
+    detailAudit.value = []
+  }
   detailDialogVisible.value = true
+}
+
+function prettyAudit(a) {
+  const b = a.before ? JSON.stringify(a.before, null, 2) : ''
+  const af = a.after ? JSON.stringify(a.after, null, 2) : ''
+  if (b && af) return `before:\\n${b}\\n\\nafter:\\n${af}`
+  return b || af || ''
 }
 
 const printDialogVisible = ref(false)

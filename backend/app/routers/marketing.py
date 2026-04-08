@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
@@ -22,6 +22,7 @@ from app.models import (
     PoHeader,
     ProductionDetail,
 )
+from app.routers.auth import get_current_user
 
 router = APIRouter(tags=["marketing"])
 
@@ -36,6 +37,21 @@ class BalanceFilter(str, Enum):
 
 def _passes_balance_filter(ln: PoDetail, mode: BalanceFilter) -> bool:
     b = ln.balance_qty
+    if mode == BalanceFilter.all:
+        return True
+    if mode == BalanceFilter.exclude_zero:
+        if b is None:
+            return True
+        return b != 0
+    if mode == BalanceFilter.positive_only:
+        if b is None:
+            return False
+        return b > 0
+    return True
+
+
+def _passes_balance_value(balance: Decimal | None, mode: BalanceFilter) -> bool:
+    b = balance
     if mode == BalanceFilter.all:
         return True
     if mode == BalanceFilter.exclude_zero:
@@ -114,7 +130,9 @@ def _line_to_row(h: PoHeader, ln: PoDetail) -> dict[str, Any]:
 
 
 def _query_outstanding_rows(
-    db: Session, balance_filter: BalanceFilter = BalanceFilter.exclude_zero
+    db: Session,
+    balance_filter: BalanceFilter = BalanceFilter.exclude_zero,
+    computed_balance: bool = True,
 ) -> list[dict[str, Any]]:
     """Baris dari PO yang belum completed (aliran outstanding marketing)."""
     headers = db.scalars(
@@ -122,14 +140,41 @@ def _query_outstanding_rows(
         .options(selectinload(PoHeader.details))
         .order_by(PoHeader.id.desc())
     ).all()
+
+    delivered_by_po_detail: dict[int, Decimal] = {}
+    if computed_balance:
+        # Sum qty terkirim per po_detail_id melalui production_detail_id
+        from app.models import ProductionDetail
+
+        rows = db.execute(
+            select(ProductionDetail.po_detail_id, func.sum(DeliveryDetail.qty))
+            .join(DeliveryDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
+            .group_by(ProductionDetail.po_detail_id)
+        ).all()
+        for pod_id, total in rows:
+            if pod_id is None:
+                continue
+            delivered_by_po_detail[int(pod_id)] = total or Decimal(0)
+
     out: list[dict[str, Any]] = []
     for h in headers:
         if (h.status or "").lower() == "completed":
             continue
         for ln in h.details or []:
-            if not _passes_balance_filter(ln, balance_filter):
-                continue
-            out.append(_line_to_row(h, ln))
+            if computed_balance:
+                delivered = delivered_by_po_detail.get(int(ln.id), Decimal(0))
+                qty = ln.quantity_order or Decimal(0)
+                bal = qty - delivered
+                if not _passes_balance_value(bal, balance_filter):
+                    continue
+                row = _line_to_row(h, ln)
+                row["balance_qty"] = _dec_str(bal)
+                row["delivered_qty"] = _dec_str(delivered)
+                out.append(row)
+            else:
+                if not _passes_balance_filter(ln, balance_filter):
+                    continue
+                out.append(_line_to_row(h, ln))
     return out
 
 
@@ -233,16 +278,20 @@ def marketing_outstanding_lines(
         default=BalanceFilter.exclude_zero,
         description="all: semua baris; exclude_zero: sembunyikan balance tepat 0; positive_only: hanya balance > 0",
     ),
+    computed_balance: bool = Query(True, description="Hitung balance dari qty_order - qty_terkirim (delivery)"),
+    _user=Depends(get_current_user),
 ) -> list[dict[str, Any]]:
-    return _query_outstanding_rows(db, balance_filter)
+    return _query_outstanding_rows(db, balance_filter, computed_balance)
 
 
 @router.get("/marketing/outstanding-lines.csv")
 def marketing_outstanding_lines_csv(
     db: Session = Depends(get_db),
     balance_filter: BalanceFilter = Query(default=BalanceFilter.exclude_zero),
+    computed_balance: bool = Query(True),
+    _user=Depends(get_current_user),
 ) -> Response:
-    rows = _query_outstanding_rows(db, balance_filter)
+    rows = _query_outstanding_rows(db, balance_filter, computed_balance)
     buf = io.StringIO()
     if not rows:
         w = csv.writer(buf)
@@ -260,12 +309,16 @@ def marketing_outstanding_lines_csv(
 
 
 @router.get("/marketing/delivery-lines")
-def marketing_delivery_lines(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+def marketing_delivery_lines(
+    db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> list[dict[str, Any]]:
     return _query_delivery_lines_rows(db)
 
 
 @router.get("/marketing/delivery-lines.csv")
-def marketing_delivery_lines_csv(db: Session = Depends(get_db)) -> Response:
+def marketing_delivery_lines_csv(
+    db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> Response:
     rows = _query_delivery_lines_rows(db)
     buf = io.StringIO()
     if not rows:

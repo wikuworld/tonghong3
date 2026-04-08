@@ -6,6 +6,10 @@ const messages = {
     appSubtitle: 'PT. Tong Hong Tannery',
     common: {
       language: 'Bahasa',
+      nav: {
+        erp: 'ERP',
+        mrp: 'MRP',
+      },
       languageOptions: {
         id: 'Indonesia',
         en: 'English',
@@ -116,7 +120,7 @@ const messages = {
       invoiceNo: 'No Invoice',
       qcNo: 'No QC',
       sjNo: 'S.J No',
-      poNo: 'No PO',
+      poNo: 'No SO',
       deliveryNo: 'No Delivery',
       productionNo: 'No Produksi',
       startDate: 'Tanggal Mulai',
@@ -152,6 +156,8 @@ const messages = {
       reports: 'Reports',
       buyerPrices: 'List Harga Buyer',
       customs: 'Pabean (AJU)',
+      masterImport: 'Import Master Data',
+      userAccess: 'User & Role Access',
     },
     mktStage: {
       input_system: 'PO & input sistem',
@@ -182,6 +188,17 @@ const messages = {
       hold: 'Tahan',
     },
     pages: {
+      login: {
+        title: 'Masuk',
+        subtitle: 'Gunakan akun yang diberikan admin',
+        username: 'Username',
+        password: 'Password',
+        signIn: 'Masuk',
+      },
+      userAccess: {
+        title: 'User & Role Access',
+        subtitle: 'Kelola user login, role, dan status aktif',
+      },
       customers: {
         title: 'Master Customer',
         subtitle: 'Data pembeli / consignee untuk SO, invoice, dan surat jalan',
@@ -324,6 +341,7 @@ const messages = {
       poDetail: {
         title: 'Order Detail After Input',
         subtitle: 'Detail lot setelah input order',
+        revisionHistory: 'Riwayat revisi',
       },
       production: {
         title: 'Production Orders',
@@ -449,6 +467,22 @@ const messages = {
         ruleInvoiceNo: 'Nomor invoice wajib diisi',
         ruleCustomer: 'Customer wajib diisi',
         rulePoNo: 'Nomor PO wajib diisi',
+        tabList: 'Daftar',
+        tabOutstanding: 'Outstanding',
+        dueDate: 'Jatuh tempo',
+        filter: 'Filter',
+        modeAll: 'Semua',
+        modeDue7d: 'Due ≤ 7 hari',
+        modeOverdue: 'Overdue',
+        hidePo: 'Sembunyikan PO',
+        editOutstanding: 'Edit outstanding invoice',
+        taxInvoiceNo: 'Faktur pajak',
+        taxInvoiceDate: 'Faktur date',
+        receiptNo: 'Tanda terima',
+        receivedBy: 'Received by',
+        receivedDate: 'Received date',
+        nopen: 'Nopen',
+        nomorAju: 'No AJU',
       },
       reports: {
         title: 'Reports',
@@ -470,6 +504,12 @@ const messages = {
         totalProductionOrder: 'Total Production Order',
         totalSample: 'Total Sample',
         reviseThickness: 'Revise Thickness',
+      },
+      masterImport: {
+        title: 'Import Master Data',
+        subtitle: 'Upload ZIP berisi master customer, item, dan harga',
+        uploadZip: 'Upload ZIP',
+        result: 'Hasil import',
       },
       customs: {
         title: 'Dokumen Pabean (AJU)',
@@ -612,6 +652,10 @@ const messages = {
     appSubtitle: 'PT. Tong Hong Tannery',
     common: {
       language: 'Language',
+      nav: {
+        erp: 'ERP',
+        mrp: 'MRP',
+      },
       languageOptions: {
         id: 'Indonesian',
         en: 'English',
@@ -722,7 +766,7 @@ const messages = {
       invoiceNo: 'Invoice No',
       qcNo: 'QC No',
       sjNo: 'S.J No',
-      poNo: 'PO Number',
+      poNo: 'SO Number',
       deliveryNo: 'Delivery No',
       productionNo: 'Production No',
       startDate: 'Start Date',
@@ -758,6 +802,8 @@ const messages = {
       reports: 'Reports',
       buyerPrices: 'Buyer price lists',
       customs: 'Customs (AJU)',
+      masterImport: 'Master data import',
+      userAccess: 'User & Role Access',
     },
     mktStage: {
       input_system: 'PO & system entry',
@@ -788,6 +834,17 @@ const messages = {
       hold: 'Hold',
     },
     pages: {
+      login: {
+        title: 'Sign in',
+        subtitle: 'Use the account provided by admin',
+        username: 'Username',
+        password: 'Password',
+        signIn: 'Sign in',
+      },
+      userAccess: {
+        title: 'User & Role Access',
+        subtitle: 'Manage login users, roles, and active status',
+      },
       customers: {
         title: 'Customer Master',
         subtitle: 'Buyer / consignee master for sales orders, invoices, and delivery notes',
@@ -930,6 +987,7 @@ const messages = {
       poDetail: {
         title: 'Order Detail After Input',
         subtitle: 'Lot detail after order input',
+        revisionHistory: 'Revision history',
       },
       production: {
         title: 'Production Orders',
@@ -1055,6 +1113,22 @@ const messages = {
         ruleInvoiceNo: 'Invoice number is required',
         ruleCustomer: 'Customer is required',
         rulePoNo: 'PO number is required',
+        tabList: 'List',
+        tabOutstanding: 'Outstanding',
+        dueDate: 'Due date',
+        filter: 'Filter',
+        modeAll: 'All',
+        modeDue7d: 'Due ≤ 7 days',
+        modeOverdue: 'Overdue',
+        hidePo: 'Hide PO',
+        editOutstanding: 'Edit outstanding invoice',
+        taxInvoiceNo: 'Tax invoice no.',
+        taxInvoiceDate: 'Tax invoice date',
+        receiptNo: 'Receipt no.',
+        receivedBy: 'Received by',
+        receivedDate: 'Received date',
+        nopen: 'Nopen',
+        nomorAju: 'AJU no.',
       },
       reports: {
         title: 'Reports',
@@ -1076,6 +1150,12 @@ const messages = {
         totalProductionOrder: 'Total Production Order',
         totalSample: 'Total Sample',
         reviseThickness: 'Revise Thickness',
+      },
+      masterImport: {
+        title: 'Master data import',
+        subtitle: 'Upload ZIP containing customers, items, and prices',
+        uploadZip: 'Upload ZIP',
+        result: 'Import result',
       },
       customs: {
         title: 'Customs declaration (AJU)',
@@ -1218,6 +1298,10 @@ const messages = {
     appSubtitle: 'PT. Tong Hong Tannery',
     common: {
       language: '语言',
+      nav: {
+        erp: 'ERP',
+        mrp: 'MRP',
+      },
       languageOptions: {
         id: '印度尼西亚语',
         en: '英语',
@@ -1328,7 +1412,7 @@ const messages = {
       invoiceNo: '发票号',
       qcNo: 'QC 编号',
       sjNo: '送货单号',
-      poNo: 'PO 编号',
+      poNo: 'SO 编号',
       deliveryNo: '发货号',
       productionNo: '生产号',
       startDate: '开始日期',
@@ -1364,6 +1448,8 @@ const messages = {
       reports: '报表',
       buyerPrices: '买方价格表',
       customs: '海关 (AJU)',
+      masterImport: '导入主数据',
+      userAccess: '用户与角色权限',
     },
     mktStage: {
       input_system: 'PO 与系统录入',
@@ -1394,6 +1480,17 @@ const messages = {
       hold: '暂缓',
     },
     pages: {
+      login: {
+        title: '登录',
+        subtitle: '使用管理员提供的账号',
+        username: '用户名',
+        password: '密码',
+        signIn: '登录',
+      },
+      userAccess: {
+        title: '用户与角色权限',
+        subtitle: '管理登录用户、角色与启用状态',
+      },
       customers: {
         title: '客户主数据',
         subtitle: '买方 / 收货人主数据（用于订单、发票、送货单）',
@@ -1529,6 +1626,7 @@ const messages = {
       poDetail: {
         title: '录入后订单明细',
         subtitle: '订单录入后的批次明细',
+        revisionHistory: '修订记录',
       },
       production: {
         title: '生产订单',
@@ -1653,6 +1751,22 @@ const messages = {
         ruleInvoiceNo: '请填写发票号',
         ruleCustomer: '请填写客户',
         rulePoNo: '请填写 PO 编号',
+        tabList: '列表',
+        tabOutstanding: '未结',
+        dueDate: '到期日',
+        filter: '筛选',
+        modeAll: '全部',
+        modeDue7d: '7 天内到期',
+        modeOverdue: '逾期',
+        hidePo: '隐藏 PO',
+        editOutstanding: '编辑未结发票',
+        taxInvoiceNo: '税票号',
+        taxInvoiceDate: '税票日期',
+        receiptNo: '收据号',
+        receivedBy: '签收人',
+        receivedDate: '签收日期',
+        nopen: 'Nopen',
+        nomorAju: 'AJU 号',
       },
       reports: {
         title: '报表',
@@ -1674,6 +1788,12 @@ const messages = {
         totalProductionOrder: '生产订单总数',
         totalSample: '样品总数',
         reviseThickness: '厚度修订',
+      },
+      masterImport: {
+        title: '导入主数据',
+        subtitle: '上传包含客户、物料、价格的 ZIP',
+        uploadZip: '上传 ZIP',
+        result: '导入结果',
       },
       customs: {
         title: '海关申报 (AJU)',

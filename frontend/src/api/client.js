@@ -4,11 +4,13 @@
 export async function apiFetch(path, options = {}) {
   const url = path.startsWith('/') ? `/api/v1${path}` : `/api/v1/${path}`
   const isForm = typeof FormData !== 'undefined' && options.body instanceof FormData
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
+  const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
   const r = await fetch(url, {
     ...options,
     headers: isForm
-      ? { ...options.headers }
-      : { 'Content-Type': 'application/json', ...options.headers },
+      ? { ...authHeader, ...options.headers }
+      : { 'Content-Type': 'application/json', ...authHeader, ...options.headers },
   })
   if (!r.ok) {
     const text = await r.text()
@@ -18,6 +20,44 @@ export async function apiFetch(path, options = {}) {
   const ct = r.headers.get('content-type') || ''
   if (ct.includes('application/json')) return r.json()
   return r.text()
+}
+
+// --- Auth ---
+export function login(username, password) {
+  return apiFetch('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
+}
+
+export function me() {
+  return apiFetch('/auth/me')
+}
+
+export function listUsers() {
+  return apiFetch('/auth/users')
+}
+
+export function createUser(body) {
+  return apiFetch('/auth/users', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateUser(id, body) {
+  return apiFetch(`/auth/users/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function getPermissionMatrix() {
+  return apiFetch('/permissions/matrix')
+}
+
+export function savePermissionMatrix(matrix) {
+  return apiFetch('/permissions/matrix', { method: 'PUT', body: JSON.stringify({ matrix }) })
+}
+
+export function listAuditLogs(params = {}) {
+  const q = new URLSearchParams()
+  if (params.entity_type) q.set('entity_type', params.entity_type)
+  if (params.entity_id != null) q.set('entity_id', String(params.entity_id))
+  if (params.limit != null) q.set('limit', String(params.limit))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/audit/logs${suffix}`)
 }
 
 /** Date dari el-date-picker / string → 'YYYY-MM-DD' untuk body JSON */
@@ -95,6 +135,7 @@ export function listPoMktStages() {
 export function listMarketingOutstandingLines(params = {}) {
   const q = new URLSearchParams()
   if (params.balance_filter) q.set('balance_filter', params.balance_filter)
+  if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/marketing/outstanding-lines${suffix}`)
 }
@@ -102,6 +143,7 @@ export function listMarketingOutstandingLines(params = {}) {
 export function marketingOutstandingCsvUrl(params = {}) {
   const q = new URLSearchParams()
   if (params.balance_filter) q.set('balance_filter', params.balance_filter)
+  if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
   const suffix = q.toString() ? `?${q}` : ''
   return `/api/v1/marketing/outstanding-lines.csv${suffix}`
 }
@@ -279,6 +321,25 @@ export function addPackingDetail(packingId, body) {
 // --- Invoice ---
 export function listInvoice() {
   return apiFetch('/invoice')
+}
+
+export function listOutstandingInvoice(params = {}) {
+  const q = new URLSearchParams()
+  if (params.overdue_only) q.set('overdue_only', 'true')
+  if (params.due_within_days != null) q.set('due_within_days', String(params.due_within_days))
+  if (params.hide_po) q.set('hide_po', 'true')
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/invoice/outstanding${suffix}`)
+}
+
+export function updateInvoice(id, body) {
+  return apiFetch(`/invoice/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export async function importMasterZip(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/masters/import-zip', { method: 'POST', body: fd })
 }
 
 export function getInvoice(id) {

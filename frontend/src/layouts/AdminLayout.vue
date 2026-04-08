@@ -17,10 +17,18 @@
         active-text-color="#ffffff"
         @select="goTo"
       >
-        <el-menu-item v-for="item in menus" :key="item.path" :index="item.path">
-          <el-icon><component :is="item.icon" /></el-icon>
-          <span>{{ t(item.labelKey) }}</span>
-        </el-menu-item>
+        <el-menu-item-group :title="t('common.nav.erp')">
+          <el-menu-item v-for="item in filteredErpMenus" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ t(item.labelKey) }}</span>
+          </el-menu-item>
+        </el-menu-item-group>
+        <el-menu-item-group :title="t('common.nav.mrp')">
+          <el-menu-item v-for="item in filteredMrpMenus" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ t(item.labelKey) }}</span>
+          </el-menu-item>
+        </el-menu-item-group>
       </el-menu>
     </el-aside>
 
@@ -56,9 +64,10 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import { ElMessage } from 'element-plus'
 import {
   DataAnalysis,
   User,
@@ -74,6 +83,9 @@ import {
   Sell,
   Guide,
 } from '@element-plus/icons-vue'
+import { getPermissionMatrix, me } from '../api/client'
+import { roleAllowsMenu } from '../security/rbac'
+import { setRuntimePermissionMatrix } from '../security/permissions'
 
 const route = useRoute()
 const router = useRouter()
@@ -92,21 +104,36 @@ const localeOptions = computed(() => [
   { value: 'zh', label: t('common.languageOptions.zh') },
 ])
 
-const menus = [
+const currentUser = ref(null)
+const currentRole = computed(() => currentUser.value?.role || 'guest')
+
+const erpMenus = [
   { path: '/admin/dashboard', labelKey: 'menu.dashboard', icon: DataAnalysis },
   { path: '/admin/customers', labelKey: 'menu.customers', icon: User },
   { path: '/admin/exchange-rates', labelKey: 'menu.exchangeRate', icon: Coin },
   { path: '/admin/po', labelKey: 'menu.po', icon: ShoppingCart },
   { path: '/admin/marketing-flow', labelKey: 'menu.marketingFlow', icon: Guide },
-  { path: '/admin/production', labelKey: 'menu.production', icon: Operation },
-  { path: '/admin/qc', labelKey: 'menu.qc', icon: CircleCheck },
-  { path: '/admin/packing', labelKey: 'menu.packing', icon: Box },
   { path: '/admin/delivery', labelKey: 'menu.delivery', icon: Van },
   { path: '/admin/invoice', labelKey: 'menu.invoice', icon: Tickets },
   { path: '/admin/reports', labelKey: 'menu.reports', icon: Document },
   { path: '/admin/buyer-prices', labelKey: 'menu.buyerPrices', icon: Sell },
   { path: '/admin/customs', labelKey: 'menu.customs', icon: FolderOpened },
+  { path: '/admin/master-import', labelKey: 'menu.masterImport', icon: FolderOpened },
+  { path: '/admin/user-access', labelKey: 'menu.userAccess', icon: User },
 ]
+
+const mrpMenus = [
+  { path: '/admin/production', labelKey: 'menu.production', icon: Operation },
+  { path: '/admin/qc', labelKey: 'menu.qc', icon: CircleCheck },
+  { path: '/admin/packing', labelKey: 'menu.packing', icon: Box },
+]
+
+const filteredErpMenus = computed(() =>
+  erpMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
+)
+const filteredMrpMenus = computed(() =>
+  mrpMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
+)
 
 const goTo = (path) => {
   router.push(path)
@@ -115,6 +142,18 @@ const goTo = (path) => {
 const onChangeLocale = (value) => {
   locale.value = value
 }
+
+onMounted(async () => {
+  try {
+    currentUser.value = await me()
+    const pm = await getPermissionMatrix().catch(() => null)
+    if (pm?.matrix) setRuntimePermissionMatrix(pm.matrix)
+  } catch (e) {
+    localStorage.removeItem('auth_token')
+    ElMessage.error(e.message || 'Sesi habis, silakan login lagi')
+    router.replace({ path: '/login', query: { next: route.fullPath } })
+  }
+})
 </script>
 
 <style scoped>

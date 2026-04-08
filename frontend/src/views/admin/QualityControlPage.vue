@@ -7,7 +7,7 @@
         clearable
         class="qc-toolbar-search"
       />
-      <el-button type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
+      <el-button v-if="canManage" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
     <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.qc.tableEmpty')">
@@ -94,7 +94,7 @@
       </el-form>
       <template #footer>
         <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
+        <el-button v-if="canManage" type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -106,6 +106,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Plus, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
+import { canWrite } from '../../security/permissions'
 import {
   addQcDetail,
   createQc,
@@ -117,6 +118,7 @@ import {
 } from '../../api/client'
 
 const { t } = useI18n()
+const canManage = canWrite('qc')
 const loading = ref(false)
 const saving = ref(false)
 const keyword = ref('')

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
 from app.models import PoDetail, PoHeader
+from app.routers.auth import get_current_user
 
 router = APIRouter(tags=["reports"])
 
@@ -64,6 +65,7 @@ def report_po_order_description(
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     customer: Optional[str] = Query(None, description="Nama / kode customer (snapshot)"),
+    _user=Depends(get_current_user),
 ) -> dict[str, Any]:
     """Data untuk layar Reports: revisi ketebalan, order produksi, sample — dari PO aktual."""
     headers = db.scalars(
@@ -119,6 +121,7 @@ def report_po_order_description(
 def export_po_daily_recap_csv(
     report_date: Optional[date] = Query(None, alias="date"),
     db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
 ) -> Response:
     """Rekap laporan PO hari ini (filter tanggal order atau tanggal input = hari tersebut)."""
     d = report_date or date.today()
@@ -179,7 +182,10 @@ def _delivery_flat_columns(ln: PoDetail) -> list:
 
 
 @router.get("/reports/sales-orders-export.csv")
-def export_sales_orders_csv(db: Session = Depends(get_db)) -> Response:
+def export_sales_orders_csv(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> Response:
     headers = db.scalars(select(PoHeader).order_by(PoHeader.id.desc())).all()
     buf = io.StringIO()
     w = csv.writer(buf)
@@ -228,7 +234,10 @@ def export_sales_orders_csv(db: Session = Depends(get_db)) -> Response:
 
 
 @router.get("/reports/sales-order-lines-export.csv")
-def export_so_lines_csv(db: Session = Depends(get_db)) -> Response:
+def export_so_lines_csv(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> Response:
     lines = db.scalars(
         select(PoDetail)
         .options(selectinload(PoDetail.delivery_schedules))

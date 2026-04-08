@@ -1,8 +1,10 @@
 <template>
   <AdminSection :title="t('pages.invoice.title')" :subtitle="t('pages.invoice.subtitle')">
     <template #actions>
-      <el-input v-model="keyword" :placeholder="t('pages.invoice.searchPlaceholder')" clearable class="invoice-toolbar-search" />
-      <el-button type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
+      <template v-if="tab === 'list'">
+        <el-input v-model="keyword" :placeholder="t('pages.invoice.searchPlaceholder')" clearable class="invoice-toolbar-search" />
+        <el-button v-if="canCreate" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
+      </template>
     </template>
 
     <p class="mb-3 text-sm text-slate-600">
@@ -10,22 +12,58 @@
       Alur: Packing <code class="rounded bg-slate-100 px-1">done</code> → Delivery + detail → tandai terkirim → buat invoice.
     </p>
 
-    <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.invoice.tableEmpty')">
-      <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
-      <el-table-column prop="invoice_number" :label="t('common.invoiceNo')" min-width="150" />
-      <el-table-column prop="delivery_id" label="Delivery ID" width="100" align="center" />
-      <el-table-column prop="po_number" :label="t('common.poNo')" min-width="150" />
-      <el-table-column prop="customer_name" :label="t('common.customer')" min-width="200" />
-      <el-table-column prop="invoice_date" :label="t('common.date')" width="120" />
-      <el-table-column :label="`${t('common.total')} (USD)`" min-width="120" align="right">
-        <template #default="{ row }">{{ formatNum(row.total_amount) }}</template>
-      </el-table-column>
-      <el-table-column :label="t('common.actions')" width="100" fixed="right">
-        <template #default="{ row }">
-          <el-button :icon="View" link type="primary" @click="openDetail(row)" />
-        </template>
-      </el-table-column>
-    </el-table>
+    <el-tabs v-model="tab">
+      <el-tab-pane :label="t('pages.invoice.tabList')" name="list">
+        <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.invoice.tableEmpty')">
+          <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
+          <el-table-column prop="invoice_number" :label="t('common.invoiceNo')" min-width="150" />
+          <el-table-column prop="delivery_id" label="Delivery ID" width="100" align="center" />
+          <el-table-column prop="po_number" :label="t('common.poNo')" min-width="150" />
+          <el-table-column prop="customer_name" :label="t('common.customer')" min-width="200" />
+          <el-table-column prop="invoice_date" :label="t('common.date')" width="120" />
+          <el-table-column prop="due_date" :label="t('pages.invoice.dueDate')" width="120" />
+          <el-table-column :label="`${t('common.total')} (USD)`" min-width="120" align="right">
+            <template #default="{ row }">{{ formatNum(row.total_amount) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('common.actions')" width="100" fixed="right">
+            <template #default="{ row }">
+              <el-button :icon="View" link type="primary" @click="openDetail(row)" />
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <el-tab-pane :label="t('pages.invoice.tabOutstanding')" name="outstanding">
+        <div class="mb-3 flex flex-wrap items-end gap-3">
+          <el-form-item :label="t('pages.invoice.filter')" class="mb-0">
+            <el-select v-model="outstandingMode" class="w-[220px]" @change="loadOutstanding">
+              <el-option :label="t('pages.invoice.modeAll')" value="all" />
+              <el-option :label="t('pages.invoice.modeDue7d')" value="due7" />
+              <el-option :label="t('pages.invoice.modeOverdue')" value="overdue" />
+            </el-select>
+          </el-form-item>
+          <el-checkbox v-model="hidePo" @change="loadOutstanding">{{ t('pages.invoice.hidePo') }}</el-checkbox>
+          <el-button :loading="outstandingLoading" @click="loadOutstanding">{{ t('common.search') }}</el-button>
+        </div>
+
+        <el-table :data="outstandingRows" v-loading="outstandingLoading" border stripe size="small" class="admin-table" :empty-text="t('pages.invoice.tableEmpty')">
+          <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
+          <el-table-column prop="invoice_number" :label="t('common.invoiceNo')" min-width="150" />
+          <el-table-column prop="po_number" :label="t('common.poNo')" min-width="150" />
+          <el-table-column prop="customer_name" :label="t('common.customer')" min-width="200" />
+          <el-table-column prop="invoice_date" :label="t('common.date')" width="120" />
+          <el-table-column prop="due_date" :label="t('pages.invoice.dueDate')" width="120" />
+          <el-table-column prop="tax_invoice_no" :label="t('pages.invoice.taxInvoiceNo')" min-width="140" />
+          <el-table-column prop="receipt_no" :label="t('pages.invoice.receiptNo')" min-width="140" />
+          <el-table-column prop="nomor_aju" :label="t('pages.invoice.nomorAju')" min-width="140" />
+          <el-table-column :label="t('common.actions')" width="120" fixed="right">
+            <template #default="{ row }">
+              <el-button v-if="canUpdate" link type="primary" size="small" @click="openEditOutstanding(row)">{{ t('common.edit') }}</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </el-tab-pane>
+    </el-tabs>
 
     <el-dialog v-model="detailVisible" :title="t('pages.invoice.dialogDetail')" width="560px" destroy-on-close>
       <el-descriptions v-if="detailRow" :column="1" border size="small">
@@ -34,6 +72,7 @@
         <el-descriptions-item :label="t('common.poNo')">{{ detailRow.po_number }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.customer')">{{ detailRow.customer_name }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.date')">{{ detailRow.invoice_date }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.invoice.dueDate')">{{ detailRow.due_date || '—' }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.total')">{{ formatNum(detailRow.total_amount) }}</el-descriptions-item>
       </el-descriptions>
       <template #footer>
@@ -68,6 +107,9 @@
         <el-form-item :label="t('common.date')">
           <el-date-picker v-model="form.invoice_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
         </el-form-item>
+        <el-form-item :label="t('pages.invoice.dueDate')">
+          <el-date-picker v-model="form.due_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
+        </el-form-item>
         <el-form-item :label="t('common.total') + ' (USD)'">
           <el-input v-model="form.total_amount" type="number" step="0.01" />
         </el-form-item>
@@ -77,7 +119,40 @@
       </el-form>
       <template #footer>
         <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
+        <el-button v-if="canCreate" type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="outstandingEditVisible" :title="t('pages.invoice.editOutstanding')" width="560px" destroy-on-close>
+      <el-form label-position="top">
+        <el-form-item :label="t('pages.invoice.dueDate')">
+          <el-date-picker v-model="outstandingEdit.due_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.taxInvoiceNo')">
+          <el-input v-model="outstandingEdit.tax_invoice_no" />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.taxInvoiceDate')">
+          <el-date-picker v-model="outstandingEdit.tax_invoice_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.receiptNo')">
+          <el-input v-model="outstandingEdit.receipt_no" />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.receivedBy')">
+          <el-input v-model="outstandingEdit.received_by" />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.receivedDate')">
+          <el-date-picker v-model="outstandingEdit.received_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.nopen')">
+          <el-input v-model="outstandingEdit.nopen" />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.nomorAju')">
+          <el-input v-model="outstandingEdit.nomor_aju" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="outstandingEditVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button v-if="canUpdate" type="primary" :loading="outstandingSaving" @click="saveOutstanding">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -89,20 +164,43 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Plus, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
+import { can } from '../../security/permissions'
 import {
   createInvoice,
   listCustomers,
   listDelivery,
   listInvoice,
+  listOutstandingInvoice,
   listPo,
   toIsoDate,
+  updateInvoice,
 } from '../../api/client'
 
 const { t } = useI18n()
+const canCreate = can('invoice', 'create')
+const canUpdate = can('invoice', 'update')
 const loading = ref(false)
 const saving = ref(false)
 const keyword = ref('')
 const rows = ref([])
+const tab = ref('list')
+const outstandingRows = ref([])
+const outstandingLoading = ref(false)
+const outstandingMode = ref('overdue')
+const hidePo = ref(false)
+const outstandingEditVisible = ref(false)
+const outstandingSaving = ref(false)
+const outstandingEdit = reactive({
+  id: null,
+  due_date: '',
+  tax_invoice_no: '',
+  tax_invoice_date: '',
+  receipt_no: '',
+  received_by: '',
+  received_date: '',
+  nopen: '',
+  nomor_aju: '',
+})
 const poList = ref([])
 const customers = ref([])
 const deliveries = ref([])
@@ -140,6 +238,57 @@ async function load() {
 }
 
 onMounted(load)
+
+async function loadOutstanding() {
+  outstandingLoading.value = true
+  try {
+    const params = { hide_po: hidePo.value }
+    if (outstandingMode.value === 'overdue') params.overdue_only = true
+    if (outstandingMode.value === 'due7') params.due_within_days = 7
+    outstandingRows.value = await listOutstandingInvoice(params)
+  } catch (e) {
+    ElMessage.error(e.message || 'Error')
+  } finally {
+    outstandingLoading.value = false
+  }
+}
+
+function openEditOutstanding(row) {
+  outstandingEdit.id = row.id
+  outstandingEdit.due_date = row.due_date || ''
+  outstandingEdit.tax_invoice_no = row.tax_invoice_no || ''
+  outstandingEdit.tax_invoice_date = row.tax_invoice_date || ''
+  outstandingEdit.receipt_no = row.receipt_no || ''
+  outstandingEdit.received_by = row.received_by || ''
+  outstandingEdit.received_date = row.received_date || ''
+  outstandingEdit.nopen = row.nopen || ''
+  outstandingEdit.nomor_aju = row.nomor_aju || ''
+  outstandingEditVisible.value = true
+}
+
+async function saveOutstanding() {
+  if (!outstandingEdit.id) return
+  outstandingSaving.value = true
+  try {
+    await updateInvoice(outstandingEdit.id, {
+      due_date: toIsoDate(outstandingEdit.due_date) || undefined,
+      tax_invoice_no: outstandingEdit.tax_invoice_no || undefined,
+      tax_invoice_date: toIsoDate(outstandingEdit.tax_invoice_date) || undefined,
+      receipt_no: outstandingEdit.receipt_no || undefined,
+      received_by: outstandingEdit.received_by || undefined,
+      received_date: toIsoDate(outstandingEdit.received_date) || undefined,
+      nopen: outstandingEdit.nopen || undefined,
+      nomor_aju: outstandingEdit.nomor_aju || undefined,
+    })
+    ElMessage.success(t('common.save'))
+    outstandingEditVisible.value = false
+    await loadOutstanding()
+  } catch (e) {
+    ElMessage.error(e.message || 'Error')
+  } finally {
+    outstandingSaving.value = false
+  }
+}
 
 const filteredRows = computed(() => {
   const q = keyword.value.trim().toLowerCase()

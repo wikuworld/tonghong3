@@ -2,7 +2,7 @@
   <div class="space-y-4">
     <AdminSection title="Packing (QC → Packing → Delivery)">
       <template #actions>
-        <el-button type="primary" :loading="loading" @click="openCreate">Tambah packing</el-button>
+        <el-button v-if="canCreate" type="primary" :loading="loading" @click="openCreate">Tambah packing</el-button>
       </template>
       <p class="mb-3 text-sm text-slate-600">
         Header packing menghubungkan <b>Production</b> dan <b>QC</b>. Baris isi pakai
@@ -20,10 +20,12 @@
         <el-table-column prop="created_at" label="Dibuat" min-width="160" />
         <el-table-column label="INVPL / done" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link size="small" @click="openInvpl(row.id)">Cetak INVPL</el-button>
-            <el-button link size="small" :loading="markInvplId === row.id" @click="markInvpl(row)">Tandai INVPL</el-button>
+            <el-button v-if="canPrint" type="primary" link size="small" @click="openInvpl(row.id)">Cetak INVPL</el-button>
+            <el-button v-if="canPrint" link size="small" @click="downloadInvplPdf(row.id)">PDF</el-button>
+            <el-button v-if="canPrint" link size="small" @click="downloadInvplExcel(row.id)">Excel</el-button>
+            <el-button v-if="canUpdate" link size="small" :loading="markInvplId === row.id" @click="markInvpl(row)">Tandai INVPL</el-button>
             <el-button
-              v-if="(row.status || '').toLowerCase() !== 'done'"
+              v-if="canUpdate && (row.status || '').toLowerCase() !== 'done'"
               type="warning"
               link
               size="small"
@@ -68,7 +70,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dlg = false">Batal</el-button>
-        <el-button type="primary" :loading="saving" @click="submit">Simpan</el-button>
+        <el-button v-if="canCreate" type="primary" :loading="saving" @click="submit">Simpan</el-button>
       </template>
     </el-dialog>
   </div>
@@ -78,6 +80,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import AdminSection from '../../components/AdminSection.vue'
+import { can } from '../../security/permissions'
 import {
   createPacking,
   listPacking,
@@ -89,6 +92,9 @@ import {
 } from '../../api/client'
 
 const rows = ref([])
+const canCreate = can('packing', 'create')
+const canUpdate = can('packing', 'update')
+const canPrint = can('packing', 'print')
 const productions = ref([])
 const poList = ref([])
 const qcs = ref([])
@@ -181,6 +187,14 @@ async function submit() {
 
 function openInvpl(id) {
   window.open(`${window.location.origin}/api/v1/documents/invpl/${id}`, '_blank')
+}
+
+function downloadInvplPdf(id) {
+  window.open(`${window.location.origin}/api/v1/documents/invpl/${id}.pdf`, '_blank')
+}
+
+function downloadInvplExcel(id) {
+  window.open(`${window.location.origin}/api/v1/documents/invpl/${id}.xlsx`, '_blank')
 }
 
 async function markInvpl(row) {

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,8 @@ from app.models import (
     QcHeader,
 )
 from app.schemas import QcDetailCreate, QcDetailUpdate, QcHeaderCreate, row_to_dict
+from app.routers.auth import get_current_user, require_roles
+from app.services.audit import log_change
 
 router = APIRouter(tags=["qc"])
 
@@ -27,26 +30,49 @@ def _eval_thickness_ok(
 
 
 @router.post("/qc")
-def create_qc_header(body: QcHeaderCreate, db: Session = Depends(get_db)) -> dict:
+def create_qc_header(
+    body: QcHeaderCreate,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "qc")),
+) -> dict:
     if body.production_id:
         pr = db.get(ProductionOrder, body.production_id)
         if not pr:
             raise HTTPException(status_code=404, detail="Production tidak ditemukan")
     row = QcHeader(**body.model_dump(exclude_unset=True))
     db.add(row)
+    db.flush()
+    log_change(
+        db,
+        entity_type="qc",
+        entity_id=row.id,
+        action="create",
+        after={"qc_number": row.qc_number, "production_id": row.production_id, "qc_date": row.qc_date},
+        actor=user.username,
+    )
     db.commit()
     db.refresh(row)
     return row_to_dict(row)
 
 
 @router.get("/qc")
-def list_qc(db: Session = Depends(get_db)) -> list[dict]:
-    rows = db.scalars(select(QcHeader).order_by(QcHeader.id.desc())).all()
+def list_qc(
+    db: Session = Depends(get_db),
+    q: Optional[str] = Query(None, description="Search qc number"),
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    _user=Depends(get_current_user),
+) -> list[dict]:
+    stmt = select(QcHeader).order_by(QcHeader.id.desc()).limit(limit).offset(offset)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(QcHeader.qc_number.ilike(like))
+    rows = db.scalars(stmt).all()
     return [row_to_dict(r) for r in rows]
 
 
 @router.get("/qc/{qc_id}")
-def get_qc(qc_id: int, db: Session = Depends(get_db)) -> dict:
+def get_qc(qc_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)) -> dict:
     row = db.get(QcHeader, qc_id)
     if not row:
         raise HTTPException(status_code=404, detail="QC tidak ditemukan")
@@ -54,7 +80,9 @@ def get_qc(qc_id: int, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/qc/{qc_id}/details")
-def list_qc_details(qc_id: int, db: Session = Depends(get_db)) -> list[dict]:
+def list_qc_details(
+    qc_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> list[dict]:
     if not db.get(QcHeader, qc_id):
         raise HTTPException(status_code=404, detail="QC tidak ditemukan")
     rows = db.scalars(
@@ -64,7 +92,12 @@ def list_qc_details(qc_id: int, db: Session = Depends(get_db)) -> list[dict]:
 
 
 @router.post("/qc/{qc_id}/details")
-def add_qc_detail(qc_id: int, body: QcDetailCreate, db: Session = Depends(get_db)) -> dict:
+def add_qc_detail(
+    qc_id: int,
+    body: QcDetailCreate,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "qc")),
+) -> dict:
     hdr = db.get(QcHeader, qc_id)
     if not hdr:
         raise HTTPException(status_code=404, detail="QC header tidak ditemukan")
@@ -85,6 +118,15 @@ def add_qc_detail(qc_id: int, body: QcDetailCreate, db: Session = Depends(get_db
 
     row = QcDetail(qc_id=qc_id, **{k: v for k, v in data.items() if k != "qc_id"})
     db.add(row)
+    db.flush()
+    log_change(
+        db,
+        entity_type="qc_line",
+        entity_id=row.id,
+        action="create",
+        after={"qc_id": qc_id, "production_detail_id": row.production_detail_id, "result": row.result, "is_ok": row.is_ok},
+        actor=user.username,
+    )
     db.commit()
     db.refresh(row)
     return row_to_dict(row)
@@ -92,11 +134,15 @@ def add_qc_detail(qc_id: int, body: QcDetailCreate, db: Session = Depends(get_db
 
 @router.put("/qc-detail/{detail_id}")
 def update_qc_detail(
-    detail_id: int, body: QcDetailUpdate, db: Session = Depends(get_db)
+    detail_id: int,
+    body: QcDetailUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "qc")),
 ) -> dict:
     row = db.get(QcDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail QC tidak ditemukan")
+    before = {"thickness_actual": row.thickness_actual, "result": row.result, "is_ok": row.is_ok, "remark": row.remark}
     data = body.model_dump(exclude_unset=True)
     thickness_ok = _eval_thickness_ok(
         data.get("thickness_actual", row.thickness_actual),
@@ -108,6 +154,15 @@ def update_qc_detail(
         data["result"] = "ok" if thickness_ok else "ng"
     for k, v in data.items():
         setattr(row, k, v)
+    log_change(
+        db,
+        entity_type="qc_line",
+        entity_id=row.id,
+        action="update",
+        before=before,
+        after={"thickness_actual": row.thickness_actual, "result": row.result, "is_ok": row.is_ok, "remark": row.remark},
+        actor=user.username,
+    )
     db.commit()
     db.refresh(row)
     return row_to_dict(row)

@@ -16,6 +16,12 @@ Sistem ERP ringan untuk alur **Sales/PO → Produksi → QC → Packing → Deli
 - **Reports (CSV)**: rekap PO harian, export sales orders & lines.
 - **Customs (AJU)**: simpan data per sheet sebagai JSON cells (tidak ada kolom hilang).
 
+## Terminologi: PO vs SO
+
+- Di backend endpoint dan tabel masih menggunakan istilah **PO** (mis. `/po`, `po_headers`, `po_details`) untuk kompatibilitas historis.
+- Secara proses bisnis, dokumen tersebut adalah **Sales Order (SO)** dari customer. Karena itu di UI label ditampilkan sebagai **SO** (mis. *No SO*).
+- Jika suatu saat ada **Purchase Order vendor**, sebaiknya dibuat modul terpisah agar tidak rancu.
+
 ## Struktur repo
 
 - `backend/`: FastAPI + SQLAlchemy + Alembic (MariaDB/MySQL)

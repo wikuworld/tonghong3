@@ -7,7 +7,7 @@
         clearable
         class="customer-toolbar-search"
       />
-      <el-button type="primary" :icon="Plus" :loading="loading" @click="openCreate">
+      <el-button v-if="canCreate" type="primary" :icon="Plus" :loading="loading" @click="openCreate">
         {{ t('common.create') }}
       </el-button>
     </template>
@@ -43,10 +43,10 @@
             <el-tooltip :content="t('common.detail')" placement="top">
               <el-button :icon="View" link type="primary" @click="openDetail(row)" />
             </el-tooltip>
-            <el-tooltip :content="t('common.edit')" placement="top">
+            <el-tooltip v-if="canUpdate" :content="t('common.edit')" placement="top">
               <el-button :icon="EditPen" link type="warning" @click="openEdit(row)" />
             </el-tooltip>
-            <el-tooltip :content="t('common.delete')" placement="top">
+            <el-tooltip v-if="canDelete" :content="t('common.delete')" placement="top">
               <el-button :icon="Delete" link type="danger" @click="confirmDelete(row)" />
             </el-tooltip>
           </div>
@@ -280,6 +280,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, View, EditPen, Delete } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
+import { can } from '../../security/permissions'
 import {
   createCustomer,
   deleteCustomer,
@@ -292,6 +293,9 @@ import {
 } from '../../api/client'
 
 const { t } = useI18n()
+const canCreate = can('customers', 'create')
+const canUpdate = can('customers', 'update')
+const canDelete = can('customers', 'delete')
 
 const keyword = ref('')
 const loading = ref(false)
