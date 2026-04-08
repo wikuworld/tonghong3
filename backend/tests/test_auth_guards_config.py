@@ -4,7 +4,6 @@ from fastapi.params import Query
 from fastapi.routing import APIRoute
 
 from app import main
-from app.routers.auth import get_current_user
 from app.routers import buyer_prices, customs, exchange_rates, sales_orders
 
 
