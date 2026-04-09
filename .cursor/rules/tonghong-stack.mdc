@@ -9,6 +9,7 @@ alwaysApply: true
 - **Struktur**: workspace root `package.json` memanggil skrip di `frontend/`; halaman admin di `frontend/src/views/admin/`, layout `AdminLayout.vue`, router `/admin/*`.
 - **Docker**: `docker-compose.yml` — service **`web`** (build statis + Nginx, port **8080**), profile **`dev`** + **`frontend-dev`** untuk Vite + HMR (port **5173**). Setelah ubah kode frontend untuk image production, perlu **`docker compose build`** / **`up --build`**.
 - **Quality gates CI**: frontend wajib `npm run lint` + `npm run build`; backend wajib `python -m ruff check --select F,E9 app tests` + `python -m pytest`; workflow GitHub Actions divalidasi dengan `actionlint`.
+- **Terminal Cursor / PATH (npm, nvm)**: (1) `.vscode/settings.json` — profil default **zsh `-il`** (macOS) / **bash `-l`** (Linux) untuk terminal terpadu. (2) **`tools/nvm-load.sh`** — sebelum menjalankan `npm`/`node` dari **agen Cursor** atau shell minimal, jalankan dari root repo: `source tools/nvm-load.sh` (atau satu baris: `bash -c 'source tools/nvm-load.sh && cd frontend && npm run lint'`). Skrip root `package.json` (`npm run build`, `dev`, dll.) sudah mem-`source` file ini lewat `bash -c`. Pastikan nvm terpasang di `~/.nvm` atau path Homebrew di skrip tersebut.
 
 Saat menyentuh halaman admin baru atau mengubah UI, ikuti rule **`tonghong-admin-vue`** (file di folder yang sama, glob `frontend/src/views/admin/**/*.vue`).
 Untuk konsistensi UI/UX, ikuti rule **`tonghong-element-plus-ui`** agar tetap memakai komponen + theming Element Plus tanpa custom CSS/hardcode per halaman.

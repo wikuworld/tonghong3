@@ -25,8 +25,9 @@ pnpm-debug.log*
 dist/
 build/
 
-# local editor config
-.vscode/
+# local editor config (keep rekomendasi PATH terminal untuk tim)
+.vscode/*
+!.vscode/settings.json
 
 # misc
 .coverage

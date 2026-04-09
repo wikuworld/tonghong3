@@ -15,22 +15,63 @@
         </el-table-column>
         <el-table-column prop="status" :label="t('common.status')" width="100" />
         <el-table-column prop="created_at" :label="t('pages.packing.createdAt')" min-width="160" />
-        <el-table-column :label="t('pages.packing.actionsInvpl')" width="220" fixed="right">
+        <el-table-column :label="t('pages.packing.actionsInvpl')" width="200" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button v-if="canPrint" type="primary" link size="small" @click="openInvpl(row.id)">{{ t('pages.packing.printInvpl') }}</el-button>
-            <el-button v-if="canPrint" link size="small" @click="downloadInvplPdf(row.id)">{{ t('pages.packing.pdf') }}</el-button>
-            <el-button v-if="canPrint" link size="small" @click="downloadInvplExcel(row.id)">{{ t('pages.packing.excel') }}</el-button>
-            <el-button v-if="canUpdate" link size="small" :loading="markInvplId === row.id" @click="markInvpl(row)">{{ t('pages.packing.markInvpl') }}</el-button>
-            <el-button
-              v-if="canUpdate && (row.status || '').toLowerCase() !== 'done'"
-              type="warning"
-              link
-              size="small"
-              :loading="markingId === row.id"
-              @click="markDone(row)"
-            >
-              {{ t('status.done') }}
-            </el-button>
+            <div class="flex flex-wrap items-center justify-center gap-0">
+              <el-tooltip v-if="canPrint" :content="t('pages.packing.printInvpl')" placement="top">
+                <el-button
+                  :icon="Printer"
+                  type="primary"
+                  link
+                  size="small"
+                  :aria-label="t('pages.packing.printInvpl')"
+                  @click="openInvpl(row.id)"
+                />
+              </el-tooltip>
+              <el-tooltip v-if="canPrint" :content="t('pages.packing.pdf')" placement="top">
+                <el-button
+                  :icon="Document"
+                  link
+                  size="small"
+                  :aria-label="t('pages.packing.pdf')"
+                  @click="downloadInvplPdf(row.id)"
+                />
+              </el-tooltip>
+              <el-tooltip v-if="canPrint" :content="t('pages.packing.excel')" placement="top">
+                <el-button
+                  :icon="Grid"
+                  link
+                  size="small"
+                  :aria-label="t('pages.packing.excel')"
+                  @click="downloadInvplExcel(row.id)"
+                />
+              </el-tooltip>
+              <el-tooltip v-if="canUpdate" :content="t('pages.packing.markInvpl')" placement="top">
+                <el-button
+                  :icon="Stamp"
+                  link
+                  size="small"
+                  :loading="markInvplId === row.id"
+                  :aria-label="t('pages.packing.markInvpl')"
+                  @click="markInvpl(row)"
+                />
+              </el-tooltip>
+              <el-tooltip
+                v-if="canUpdate && (row.status || '').toLowerCase() !== 'done'"
+                :content="t('status.done')"
+                placement="top"
+              >
+                <el-button
+                  :icon="Select"
+                  type="warning"
+                  link
+                  size="small"
+                  :loading="markingId === row.id"
+                  :aria-label="t('status.done')"
+                  @click="markDone(row)"
+                />
+              </el-tooltip>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -79,10 +120,12 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { Document, Grid, Printer, Select, Stamp } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { can } from '../../security/permissions'
 import {
   createPacking,
+  fetchAuthenticatedDocument,
   listPacking,
   listProduction,
   listPo,
@@ -186,16 +229,31 @@ async function submit() {
   }
 }
 
-function openInvpl(id) {
-  window.open(`${window.location.origin}/api/v1/documents/invpl/${id}`, '_blank')
+async function openInvpl(id) {
+  try {
+    await fetchAuthenticatedDocument(`/documents/invpl/${id}`, { mode: 'open' })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 
-function downloadInvplPdf(id) {
-  window.open(`${window.location.origin}/api/v1/documents/invpl/${id}.pdf`, '_blank')
+async function downloadInvplPdf(id) {
+  try {
+    await fetchAuthenticatedDocument(`/documents/invpl/${id}/pdf`, { mode: 'open' })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 
-function downloadInvplExcel(id) {
-  window.open(`${window.location.origin}/api/v1/documents/invpl/${id}.xlsx`, '_blank')
+async function downloadInvplExcel(id) {
+  try {
+    await fetchAuthenticatedDocument(`/documents/invpl/${id}/xlsx`, {
+      mode: 'download',
+      downloadFallbackName: `invpl_${id}.xlsx`,
+    })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 
 async function markInvpl(row) {

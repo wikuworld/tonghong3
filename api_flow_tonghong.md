@@ -125,7 +125,10 @@ Tahapan berurutan di `po_headers.mkt_workflow_stage` (naik satu per satu lewat A
 - **POST /po/{id}/mkt-workflow/advance** — maju ke tahap berikut (dengan validasi)
 - **GET /reports/po-daily-recap.csv?date=YYYY-MM-DD** — rekap PO hari ini (order_date atau tanggal input)
 - **GET /documents/surat-jalan/{delivery_id}** — HTML cetak Surat Jalan
+- **GET /documents/surat-jalan/{delivery_id}/pdf** — unduh PDF Surat Jalan
 - **GET /documents/invpl/{packing_id}** — HTML cetak INVPL
+- **GET /documents/invpl/{packing_id}/pdf** — unduh PDF INVPL
+- **GET /documents/invpl/{packing_id}/xlsx** — unduh Excel INVPL
 - **POST /delivery/{id}/mark-surat-jalan-printed** — tandai SJ sudah dicetak
 - **POST /packing/{id}/mark-invpl-printed** — tandai INVPL sudah dicetak
 - **PUT /po/{id}** — `material_followup_remark`, `material_followup_done` (wajib sebelum ke *delivery_arranged*)

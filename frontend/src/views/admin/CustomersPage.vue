@@ -49,13 +49,13 @@
         <template #default="{ row }">
           <div class="customer-row-actions">
             <el-tooltip :content="t('common.detail')" placement="top">
-              <el-button :icon="View" link type="primary" @click="openDetail(row)" />
+              <el-button :icon="View" link type="primary" :aria-label="t('common.detail')" @click="openDetail(row)" />
             </el-tooltip>
             <el-tooltip v-if="canUpdate" :content="t('common.edit')" placement="top">
-              <el-button :icon="EditPen" link type="warning" @click="openEdit(row)" />
+              <el-button :icon="EditPen" link type="warning" :aria-label="t('common.edit')" @click="openEdit(row)" />
             </el-tooltip>
             <el-tooltip v-if="canDelete" :content="t('common.delete')" placement="top">
-              <el-button :icon="Delete" link type="danger" @click="confirmDelete(row)" />
+              <el-button :icon="Delete" link type="danger" :aria-label="t('common.delete')" @click="confirmDelete(row)" />
             </el-tooltip>
           </div>
         </template>
@@ -111,6 +111,12 @@
           </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldRemark')" :span="2">
             {{ detailRow.remark || t('common.emptyValue') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.customers.fieldExportCustomer')" :span="1">
+            {{ detailRow.is_export_customer ? t('common.yes') : t('common.no') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.customers.fieldBillTo')" :span="2">
+            {{ detailRow.bill_to || t('common.emptyValue') }}
           </el-descriptions-item>
         </el-descriptions>
       </template>
@@ -284,6 +290,23 @@
               <el-input v-model="formModel.remark" type="textarea" :rows="2" maxlength="2000" show-word-limit />
             </el-form-item>
           </el-col>
+          <el-col :xs="24">
+            <el-form-item :label="t('pages.customers.fieldExportCustomer')">
+              <el-switch v-model="formModel.is_export_customer" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24">
+            <el-form-item :label="t('pages.customers.fieldBillTo')">
+              <el-input
+                v-model="formModel.bill_to"
+                type="textarea"
+                :rows="3"
+                maxlength="2000"
+                show-word-limit
+                :placeholder="t('pages.customers.billToPlaceholder')"
+              />
+            </el-form-item>
+          </el-col>
         </el-row>
       </el-form>
       <template #footer>
@@ -441,6 +464,8 @@ const formModel = reactive({
   customs_office_code: '',
   address: '',
   remark: '',
+  is_export_customer: false,
+  bill_to: '',
   wilayah_province_code: '',
   wilayah_regency_code: '',
   wilayah_district_code: '',
@@ -466,6 +491,8 @@ function resetFormModel() {
   formModel.customs_office_code = ''
   formModel.address = ''
   formModel.remark = ''
+  formModel.is_export_customer = false
+  formModel.bill_to = ''
   formModel.wilayah_province_code = ''
   formModel.wilayah_regency_code = ''
   formModel.wilayah_district_code = ''
@@ -605,6 +632,8 @@ async function openEdit(row) {
   formModel.customs_office_code = row.customs_office_code || ''
   formModel.address = row.address || ''
   formModel.remark = row.remark || ''
+  formModel.is_export_customer = Boolean(row.is_export_customer)
+  formModel.bill_to = row.bill_to || ''
   formModel.wilayah_province_code = row.wilayah_province_code || ''
   formModel.wilayah_regency_code = row.wilayah_regency_code || ''
   formModel.wilayah_district_code = row.wilayah_district_code || ''
@@ -635,6 +664,8 @@ async function submitForm() {
       customs_office_code: formModel.customs_office_code.trim() || undefined,
       address: formModel.address.trim() || undefined,
       remark: formModel.remark.trim() || undefined,
+      is_export_customer: formModel.is_export_customer,
+      bill_to: formModel.bill_to.trim() || undefined,
       wilayah_province_code: formModel.wilayah_province_code || undefined,
       wilayah_regency_code: formModel.wilayah_regency_code || undefined,
       wilayah_district_code: formModel.wilayah_district_code || undefined,

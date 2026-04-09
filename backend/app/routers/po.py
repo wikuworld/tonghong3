@@ -1,7 +1,9 @@
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
@@ -27,6 +29,44 @@ from app.services.notifications import create_notification_for_roles
 from app.routers.auth import get_current_user, require_roles
 
 router = APIRouter(tags=["po"])
+log = logging.getLogger(__name__)
+
+_ALLOWED_PO_CATEGORY_DUP = frozenset(
+    {"production", "sample", "claim", "return", "subcont", "suede"},
+)
+
+
+def _normalize_po_category_duplicate(raw: Optional[str]) -> str:
+    v = (raw or "production").strip().lower()
+    return v if v in _ALLOWED_PO_CATEGORY_DUP else "production"
+
+
+# Field skalar PoDetail yang disalin saat duplikasi PO (tanpa jadwal kirim).
+_PO_DETAIL_DUPLICATE_FIELDS = (
+    "master_item_id",
+    "material_name",
+    "color",
+    "color_family",
+    "thickness_min",
+    "thickness_max",
+    "thickness_text",
+    "emboss",
+    "vir_softness_type",
+    "softness",
+    "color_reference",
+    "backing",
+    "quantity_order",
+    "style_article",
+    "model",
+    "line_etd",
+    "rtd_text",
+    "etd_excel_serial",
+    "stock_wh_qty",
+    "balance_qty",
+    "system_reference",
+    "detail_remark",
+    "unit_price",
+)
 
 
 def _detail_loaded(db: Session, detail_id: int) -> Optional[PoDetail]:
@@ -88,7 +128,10 @@ def list_po(
             or_(
                 PoHeader.po_number.ilike(like),
                 PoHeader.buyer.ilike(like),
-                PoHeader.model.ilike(like),
+                PoHeader.remark.ilike(like),
+                PoHeader.po_customer_ref.ilike(like),
+                PoHeader.customer_name_snapshot.ilike(like),
+                PoHeader.customer_code.ilike(like),
             )
         )
     return list(db.scalars(stmt).all())
@@ -159,6 +202,130 @@ def create_po(
     db.commit()
     db.refresh(row)
     return row
+
+
+@router.post("/po/{po_id}/duplicate", response_model=PoHeaderOut)
+def duplicate_po(
+    po_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "marketing", "sales")),
+) -> PoHeader:
+    """Salin header + semua baris ke PO baru (draft, nomor lot baris dikosongkan)."""
+    src = db.get(PoHeader, po_id)
+    if not src:
+        raise HTTPException(status_code=404, detail="PO tidak ditemukan")
+
+    details_src = list(
+        db.scalars(
+            select(PoDetail).where(PoDetail.po_id == po_id).order_by(PoDetail.id.asc())
+        ).all()
+    )
+
+    merged = {
+        "customer_id": src.customer_id,
+        "brand_id": src.brand_id,
+        "buyer": (src.buyer or "").strip() or None,
+    }
+    _validate_customer_brand_buyer(db, merged)
+
+    po_category = _normalize_po_category_duplicate(getattr(src, "po_category", None))
+
+    try:
+        new_po = PoHeader(
+            po_number=next_number(db, "SO", "SO"),
+            customer_id=src.customer_id,
+            customer_code=src.customer_code,
+            po_category=po_category,
+            buyer=src.buyer,
+            order_date=src.order_date,
+            etd=src.etd,
+            remark=src.remark,
+            status="draft",
+            billing_address=src.billing_address,
+            delivery_address=src.delivery_address,
+            brand_id=src.brand_id,
+            marketing_excel_date_serial=None,
+            po_customer_ref=src.po_customer_ref,
+            order_type_label=src.order_type_label,
+            brand_name_snapshot=src.brand_name_snapshot,
+            customer_name_snapshot=src.customer_name_snapshot,
+            customs_declaration_id=src.customs_declaration_id,
+            mkt_workflow_stage="input_system",
+            mkt_workflow_updated_at=None,
+            rekap_printed_at=None,
+            material_followup_remark=None,
+            material_followup_done=False,
+        )
+        db.add(new_po)
+        db.flush()
+
+        for d in details_src:
+            kwargs = {k: getattr(d, k) for k in _PO_DETAIL_DUPLICATE_FIELDS}
+            db.add(
+                PoDetail(
+                    po_id=new_po.id,
+                    thi_line_ref=None,
+                    copied_from_detail_id=d.id,
+                    **kwargs,
+                )
+            )
+
+        # Pakai action "create" agar kompatibel dengan filter/ENUM audit di DB lama.
+        log_change(
+            db,
+            entity_type="sales_order",
+            entity_id=new_po.id,
+            action="create",
+            after={
+                "po_number": new_po.po_number,
+                "status": new_po.status,
+                "duplicated_from_po_id": po_id,
+                "line_count": len(details_src),
+                "via": "duplicate_po",
+            },
+            actor=user.username,
+        )
+        create_notification_for_roles(
+            db,
+            ("admin", "marketing", "ppic"),
+            title=f"PO salinan {new_po.po_number}",
+            message=f"Duplikat dari PO {src.po_number or po_id} oleh {user.username}",
+            category="po",
+            entity_type="sales_order",
+            entity_id=new_po.id,
+            route_path="/admin/po",
+            route_query={"po_id": new_po.id},
+        )
+        db.commit()
+        db.refresh(new_po)
+    except HTTPException:
+        db.rollback()
+        raise
+    except IntegrityError as e:
+        db.rollback()
+        log.warning("duplicate_po integrity_error po_id=%s: %s", po_id, e)
+        raise HTTPException(
+            status_code=409,
+            detail="Duplikasi gagal (konflik data, misalnya nomor PO unik).",
+        ) from e
+    except SQLAlchemyError as e:
+        db.rollback()
+        log.exception("duplicate_po failed po_id=%s", po_id)
+        orig_msg = ""
+        if getattr(e, "orig", None) is not None:
+            orig_msg = str(e.orig)
+        low = f"{e} {orig_msg}".lower()
+        if "unknown column" in low or "doesn't exist" in low or "does not exist" in low:
+            raise HTTPException(
+                status_code=503,
+                detail="Skema database belum selaras dengan kode. Jalankan migrasi: alembic upgrade head (folder backend).",
+            ) from e
+        raise HTTPException(
+            status_code=500,
+            detail="Duplikasi PO gagal (database). Cek log server untuk detail.",
+        ) from e
+
+    return new_po
 
 
 @router.get("/po/{po_id}", response_model=PoHeaderOut)
@@ -266,13 +433,29 @@ def add_po_detail(
     po_id: int,
     body: PoDetailCreate,
     db: Session = Depends(get_db),
-    _user=Depends(require_roles("admin", "marketing", "sales")),
+    user=Depends(require_roles("admin", "marketing", "sales")),
 ) -> PoDetail:
     po = db.get(PoHeader, po_id)
     if not po:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
     row = PoDetail(po_id=po_id, **body.model_dump(exclude_unset=True))
     db.add(row)
+    db.flush()
+    log_change(
+        db,
+        entity_type="sales_order_line",
+        entity_id=row.id,
+        action="create",
+        after={
+            "po_id": po_id,
+            "material_name": row.material_name,
+            "color": row.color,
+            "color_family": row.color_family,
+            "quantity_order": row.quantity_order,
+            "unit_price": row.unit_price,
+        },
+        actor=user.username,
+    )
     db.commit()
     out = _detail_loaded(db, row.id)
     return out or row
@@ -297,6 +480,8 @@ def update_po_detail(
     before = {
         "material_name": row.material_name,
         "color": row.color,
+        "color_family": row.color_family,
+        "color_reference": row.color_reference,
         "thickness_text": row.thickness_text,
         "thickness_min": row.thickness_min,
         "thickness_max": row.thickness_max,
@@ -316,6 +501,8 @@ def update_po_detail(
         after={
             "material_name": row.material_name,
             "color": row.color,
+            "color_family": row.color_family,
+            "color_reference": row.color_reference,
             "thickness_text": row.thickness_text,
             "thickness_min": row.thickness_min,
             "thickness_max": row.thickness_max,

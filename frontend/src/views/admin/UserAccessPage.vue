@@ -1,11 +1,18 @@
 <template>
   <AdminSection :title="t('pages.userAccess.title')" :subtitle="t('pages.userAccess.subtitle')">
     <template #actions>
-      <el-button v-if="activeTab === 'users' && canCreate" type="primary" @click="openCreate">{{ t('common.create') }}</el-button>
+      <el-button v-if="activeTab === 'users' && canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
       <template v-if="activeTab === 'matrix'">
         <el-tag v-if="hasMatrixChanges" type="warning" effect="dark">{{ t('pages.userAccess.unsavedChanges') }}</el-tag>
-        <el-button :disabled="!hasMatrixChanges" @click="resetMatrix">{{ t('common.reset') }}</el-button>
-        <el-button v-if="canUpdate" type="primary" :loading="savingMatrix" :disabled="!hasMatrixChanges" @click="saveMatrix">
+        <el-button :icon="RefreshLeft" :disabled="!hasMatrixChanges" @click="resetMatrix">{{ t('common.reset') }}</el-button>
+        <el-button
+          v-if="canUpdate"
+          type="primary"
+          :icon="DocumentChecked"
+          :loading="savingMatrix"
+          :disabled="!hasMatrixChanges"
+          @click="saveMatrix"
+        >
           {{ t('pages.userAccess.saveMatrix') }}
         </el-button>
       </template>
@@ -25,12 +32,16 @@
           <el-table-column prop="role" :label="t('pages.userAccess.roleLabel')" width="140" />
           <el-table-column :label="t('common.status')" width="120" align="center">
             <template #default="{ row }">
-              <el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? 'active' : 'inactive' }}</el-tag>
+              <el-tag :type="row.is_active ? 'success' : 'info'">
+                {{ row.is_active ? t('status.active') : t('status.inactive') }}
+              </el-tag>
             </template>
           </el-table-column>
-          <el-table-column :label="t('common.actions')" width="120" align="center">
+          <el-table-column :label="t('common.actions')" width="88" align="center">
             <template #default="{ row }">
-              <el-button v-if="canUpdate" link type="primary" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
+              <el-tooltip v-if="canUpdate" :content="t('common.edit')" placement="top">
+                <el-button :icon="EditPen" link type="primary" :aria-label="t('common.edit')" @click="openEdit(row)" />
+              </el-tooltip>
             </template>
           </el-table-column>
         </el-table>
@@ -48,10 +59,10 @@
           <table class="matrix-table">
             <thead>
               <tr>
-                <th class="sticky-col">Module</th>
-                <th>Action</th>
+                <th class="sticky-col">{{ t('pages.userAccess.matrixModule') }}</th>
+                <th>{{ t('pages.userAccess.matrixAction') }}</th>
                 <th v-for="r in roles" :key="`h-${r}`">{{ r }}</th>
-                <th>Bulk</th>
+                <th>{{ t('pages.userAccess.matrixBulk') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -64,9 +75,29 @@
                     @change="(v) => toggleRole(row.module, row.action, r, v)"
                   />
                 </td>
-                <td class="text-nowrap">
-                  <el-button link size="small" @click="setAllRoles(row.module, row.action, true)">All</el-button>
-                  <el-button link size="small" @click="setAllRoles(row.module, row.action, false)">None</el-button>
+                <td class="text-nowrap text-center">
+                  <div class="flex flex-wrap items-center justify-center gap-0">
+                    <el-tooltip :content="t('pages.userAccess.matrixSelectAllRoles')" placement="top">
+                      <el-button
+                        link
+                        type="primary"
+                        size="small"
+                        :icon="CircleCheck"
+                        :aria-label="t('pages.userAccess.matrixSelectAllRoles')"
+                        @click="setAllRoles(row.module, row.action, true)"
+                      />
+                    </el-tooltip>
+                    <el-tooltip :content="t('pages.userAccess.matrixClearAllRoles')" placement="top">
+                      <el-button
+                        link
+                        type="danger"
+                        size="small"
+                        :icon="CircleClose"
+                        :aria-label="t('pages.userAccess.matrixClearAllRoles')"
+                        @click="setAllRoles(row.module, row.action, false)"
+                      />
+                    </el-tooltip>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -104,6 +135,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
+import { CircleCheck, CircleClose, DocumentChecked, EditPen, Plus, RefreshLeft } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { createUser, getPermissionMatrix, listUsers, savePermissionMatrix, updateUser } from '../../api/client'
 import { ACTION_MATRIX, can, setRuntimePermissionMatrix } from '../../security/permissions'

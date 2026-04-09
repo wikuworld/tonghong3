@@ -1,12 +1,14 @@
 <template>
   <AdminSection :title="t('pages.delivery.title')" :subtitle="t('pages.delivery.subtitle')">
     <template #actions>
-      <el-input v-model="keyword" :placeholder="t('pages.delivery.searchPlaceholder')" clearable class="delivery-toolbar-search" />
+      <el-input v-model="keyword" :placeholder="t('pages.delivery.listSearchPlaceholder')" clearable class="delivery-toolbar-search" />
+      <el-button :icon="Download" :loading="exporting" @click="downloadDeliveryExcel">{{ t('pages.delivery.downloadExcel') }}</el-button>
       <el-button :icon="Van" @click="ElMessage.info(t('pages.delivery.flowInfo'))">{{ t('menu.deliveryPull') }}</el-button>
       <el-button :icon="Document" @click="ElMessage.info(t('pages.delivery.sjInfo'))">{{ t('menu.suratJalan') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
+    <p class="mb-2 text-sm font-medium text-slate-700">{{ t('pages.delivery.listSheetTitle') }}</p>
     <el-alert :title="t('pages.delivery.deliveryGuide')" type="info" show-icon :closable="false" class="mb-3" />
 
     <el-table
@@ -19,17 +21,46 @@
       table-layout="auto"
       :empty-text="t('pages.delivery.tableEmpty')"
     >
-      <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
-      <el-table-column prop="delivery_number" :label="t('common.deliveryNo')" min-width="160" />
-      <el-table-column prop="customer_name" :label="t('common.customer')" min-width="200" />
-      <el-table-column prop="delivery_date" :label="t('common.date')" width="120" />
-      <el-table-column prop="vehicle_number" :label="t('common.vehicle')" min-width="120" />
-      <el-table-column prop="driver_name" :label="t('common.driver')" min-width="120" />
-      <el-table-column prop="status" :label="t('common.status')" width="100" />
-      <el-table-column :label="t('common.actions')" width="100" fixed="right">
+      <el-table-column type="index" :label="t('common.noLabel')" width="52" align="center" fixed="left" />
+      <el-table-column prop="surat_jalan_no" :label="t('pages.delivery.columns.noSj')" min-width="132" show-overflow-tooltip />
+      <el-table-column prop="delivery_date" :label="t('pages.delivery.columns.shipDate')" width="112" />
+      <el-table-column prop="factory_name" :label="t('pages.delivery.columns.factory')" min-width="140" show-overflow-tooltip />
+      <el-table-column prop="system_no" :label="t('pages.delivery.columns.systemNo')" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="po_date" :label="t('pages.delivery.columns.poDate')" width="112" />
+      <el-table-column prop="po_number" :label="t('pages.delivery.columns.poNumber')" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="lot_no" :label="t('pages.delivery.columns.lotNo')" min-width="100" show-overflow-tooltip />
+      <el-table-column prop="thickness" :label="t('pages.delivery.columns.thickness')" width="100" show-overflow-tooltip />
+      <el-table-column prop="color" :label="t('pages.delivery.columns.color')" min-width="100" show-overflow-tooltip />
+      <el-table-column prop="material_type" :label="t('pages.delivery.columns.materialType')" min-width="100" show-overflow-tooltip />
+      <el-table-column prop="material_name" :label="t('pages.delivery.columns.materialName')" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="qty_po" :label="t('pages.delivery.columns.qtyPo')" width="88" align="right" />
+      <el-table-column prop="unit_price" :label="t('pages.delivery.columns.unitPrice')" width="88" align="right" />
+      <el-table-column prop="qty_roll" :label="t('pages.delivery.columns.roll')" width="72" align="right" />
+      <el-table-column prop="qty_pcs" :label="t('pages.delivery.columns.pcs')" width="72" align="right" />
+      <el-table-column prop="qty_sf" :label="t('pages.delivery.columns.sf')" width="88" align="right" />
+      <el-table-column prop="gross_weight" :label="t('pages.delivery.columns.gw')" width="80" align="right" />
+      <el-table-column prop="net_weight" :label="t('pages.delivery.columns.nw')" width="80" align="right" />
+      <el-table-column prop="amount" :label="t('pages.delivery.columns.amount')" width="96" align="right" />
+      <el-table-column prop="color_std" :label="t('pages.delivery.columns.colorStd')" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="emboss" :label="t('pages.delivery.columns.emboss')" min-width="88" show-overflow-tooltip />
+      <el-table-column prop="buyer" :label="t('pages.delivery.columns.buyer')" width="96" show-overflow-tooltip />
+      <el-table-column prop="style_article" :label="t('pages.delivery.columns.style')" min-width="110" show-overflow-tooltip />
+      <el-table-column prop="model" :label="t('pages.delivery.columns.model')" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="invoice_number" :label="t('pages.delivery.columns.invNumber')" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="pi_no" :label="t('pages.delivery.columns.piNo')" min-width="100" show-overflow-tooltip />
+      <el-table-column prop="remark" :label="t('pages.delivery.columns.remark')" min-width="100" show-overflow-tooltip />
+      <el-table-column prop="order_type" :label="t('pages.delivery.columns.orderType')" width="100" show-overflow-tooltip />
+      <el-table-column prop="delivery_status" :label="t('pages.delivery.columns.status')" width="88" />
+      <el-table-column :label="t('common.actions')" width="72" fixed="right" align="center">
         <template #default="{ row }">
           <el-tooltip :content="t('common.detail')" placement="top">
-            <el-button :icon="View" link type="primary" @click="openDetail(row)" />
+            <el-button
+              :icon="View"
+              link
+              type="primary"
+              :aria-label="t('common.detail')"
+              @click="openDetailFromLine(row)"
+            />
           </el-tooltip>
         </template>
       </el-table-column>
@@ -96,8 +127,22 @@
           <el-descriptions-item :label="t('common.date')">{{ detailRow.delivery_date }}</el-descriptions-item>
           <el-descriptions-item :label="t('common.vehicle')">{{ detailRow.vehicle_number }}</el-descriptions-item>
           <el-descriptions-item :label="t('common.driver')">{{ detailRow.driver_name }}</el-descriptions-item>
+          <el-descriptions-item :label="t('pages.delivery.bcNumber')">{{ detailRow.bc_number || t('common.emptyValue') }}</el-descriptions-item>
+          <el-descriptions-item :label="t('pages.delivery.bcDate')">
+            {{ detailRow.bc_date ? String(detailRow.bc_date).slice(0, 10) : t('common.emptyValue') }}
+          </el-descriptions-item>
           <el-descriptions-item :label="t('common.status')">{{ detailRow.status }}</el-descriptions-item>
         </el-descriptions>
+
+        <el-form v-if="canUpdate && detailRow" label-position="top" class="mb-4 border-t border-slate-100 pt-3">
+          <el-form-item :label="t('pages.delivery.bcNumberEdit')">
+            <el-input v-model="bcForm.bc_number" clearable maxlength="80" />
+          </el-form-item>
+          <el-form-item :label="t('pages.delivery.bcDateEdit')">
+            <el-date-picker v-model="bcForm.bc_date" type="date" value-format="YYYY-MM-DD" class="w-full" clearable />
+          </el-form-item>
+          <el-button type="primary" plain :loading="bcSaving" @click="saveBcFields">{{ t('pages.delivery.saveBcFields') }}</el-button>
+        </el-form>
 
         <div class="delivery-detail-actions">
           <el-button
@@ -111,7 +156,6 @@
           </el-button>
           <el-button v-if="canPrint" @click="openSjPrint">{{ t('pages.delivery.printSj') }}</el-button>
           <el-button v-if="canPrint" @click="downloadSjPdf">{{ t('pages.delivery.downloadPdf') }}</el-button>
-          <el-button v-if="canPrint" @click="downloadSjExcel">{{ t('pages.delivery.downloadExcel') }}</el-button>
           <el-button v-if="canUpdate" type="success" plain :loading="markingSj" @click="markSjPrinted">{{ t('pages.delivery.markSjPrinted') }}</el-button>
           <span v-if="detailLines.length === 0" class="text-xs text-amber-600">{{ t('pages.delivery.needAtLeastOneLine') }}</span>
         </div>
@@ -157,19 +201,22 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, View, Van, Document } from '@element-plus/icons-vue'
+import { Plus, View, Van, Document, Download } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { can } from '../../security/permissions'
 import {
   addDeliveryDetail,
   createDelivery,
+  fetchAuthenticatedDocument,
+  getDelivery,
   getPacking,
   listCustomers,
-  listDelivery,
   listDeliveryDetails,
+  listMarketingDeliveryLines,
   listPacking,
   listProductionDetails,
   markSuratJalanPrinted,
+  marketingDeliveryXlsxPath,
   toIsoDate,
   updateDelivery,
 } from '../../api/client'
@@ -181,8 +228,9 @@ const canPrint = can('delivery', 'print')
 const route = useRoute()
 const loading = ref(false)
 const saving = ref(false)
+const exporting = ref(false)
 const keyword = ref('')
-const rows = ref([])
+const lineRows = ref([])
 const customers = ref([])
 const packings = ref([])
 
@@ -204,13 +252,17 @@ function customerOptionLabel(c) {
 async function load() {
   loading.value = true
   try {
-    const [del, cust, pack] = await Promise.all([listDelivery(), listCustomers(), listPacking()])
+    const [lines, cust, pack] = await Promise.all([
+      listMarketingDeliveryLines(),
+      listCustomers(),
+      listPacking(),
+    ])
     customers.value = cust
     packings.value = pack
-    rows.value = del.map((r) => ({
+    lineRows.value = (lines || []).map((r) => ({
       ...r,
-      customer_name: custName(r.customer_id),
       delivery_date: r.delivery_date ? String(r.delivery_date).slice(0, 10) : '',
+      po_date: r.po_date ? String(r.po_date).slice(0, 10) : '',
     }))
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
@@ -226,17 +278,32 @@ onMounted(() => {
     const deliveryIdRaw = route.query.delivery_id
     const deliveryId = Number(deliveryIdRaw)
     if (!Number.isNaN(deliveryId) && deliveryId > 0) {
-      const target = rows.value.find((r) => Number(r.id) === deliveryId)
-      if (target) openDetail(target)
+      const target = lineRows.value.find((r) => Number(r.delivery_id) === deliveryId)
+      if (target) openDetailFromLine(target)
     }
   })
 })
 
 const filteredRows = computed(() => {
   const q = keyword.value.trim().toLowerCase()
-  if (!q) return rows.value
-  return rows.value.filter((r) => JSON.stringify(r).toLowerCase().includes(q))
+  if (!q) return lineRows.value
+  return lineRows.value.filter((r) => JSON.stringify(r).toLowerCase().includes(q))
 })
+
+async function downloadDeliveryExcel() {
+  exporting.value = true
+  try {
+    const q = keyword.value.trim() || undefined
+    await fetchAuthenticatedDocument(marketingDeliveryXlsxPath({ q }), {
+      mode: 'download',
+      downloadFallbackName: 'delivery_list_sistem.xlsx',
+    })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    exporting.value = false
+  }
+}
 
 const formVisible = ref(false)
 const form = reactive({
@@ -301,23 +368,39 @@ const lineForm = reactive({
   qty: '',
 })
 
+const bcForm = reactive({
+  bc_number: '',
+  bc_date: '',
+})
+const bcSaving = ref(false)
+
 function resetDetail() {
   detailLines.value = []
   candidateProdDetails.value = []
   lineForm.production_detail_id = null
   lineForm.qty = ''
+  bcForm.bc_number = ''
+  bcForm.bc_date = ''
 }
 
-async function openDetail(row) {
-  detailRow.value = { ...row, customer_name: custName(row.customer_id) }
+function openDetailFromLine(row) {
+  if (row?.delivery_id == null) return
+  openDetailById(row.delivery_id)
+}
+
+async function openDetailById(deliveryId) {
   detailVisible.value = true
   detailLoading.value = true
   resetDetail()
   try {
-    const lines = await listDeliveryDetails(row.id)
+    const full = await getDelivery(deliveryId)
+    detailRow.value = { ...full, customer_name: custName(full.customer_id) }
+    bcForm.bc_number = full.bc_number || ''
+    bcForm.bc_date = full.bc_date ? String(full.bc_date).slice(0, 10) : ''
+    const lines = await listDeliveryDetails(deliveryId)
     detailLines.value = lines
-    if (row.packing_id) {
-      const pk = await getPacking(row.packing_id)
+    if (full.packing_id) {
+      const pk = await getPacking(full.packing_id)
       if (pk?.production_id) {
         const pds = await listProductionDetails(pk.production_id)
         candidateProdDetails.value = pds
@@ -330,19 +413,43 @@ async function openDetail(row) {
   }
 }
 
-function openSjPrint() {
+async function openSjPrint() {
   if (!detailRow.value?.id) return
-  window.open(`${window.location.origin}/api/v1/documents/surat-jalan/${detailRow.value.id}`, '_blank')
+  try {
+    await fetchAuthenticatedDocument(`/documents/surat-jalan/${detailRow.value.id}`, { mode: 'open' })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 
-function downloadSjPdf() {
+async function downloadSjPdf() {
   if (!detailRow.value?.id) return
-  window.open(`${window.location.origin}/api/v1/documents/surat-jalan/${detailRow.value.id}.pdf`, '_blank')
+  try {
+    await fetchAuthenticatedDocument(`/documents/surat-jalan/${detailRow.value.id}/pdf`, { mode: 'open' })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 
-function downloadSjExcel() {
+async function saveBcFields() {
   if (!detailRow.value?.id) return
-  window.open(`${window.location.origin}/api/v1/documents/surat-jalan/${detailRow.value.id}.xlsx`, '_blank')
+  bcSaving.value = true
+  try {
+    await updateDelivery(detailRow.value.id, {
+      bc_number: bcForm.bc_number?.trim() || undefined,
+      bc_date: bcForm.bc_date || undefined,
+    })
+    ElMessage.success(t('pages.delivery.bcSaved'))
+    await load()
+    const full = await getDelivery(detailRow.value.id)
+    detailRow.value = { ...full, customer_name: custName(full.customer_id) }
+    bcForm.bc_number = full.bc_number || ''
+    bcForm.bc_date = full.bc_date ? String(full.bc_date).slice(0, 10) : ''
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    bcSaving.value = false
+  }
 }
 
 async function markSjPrinted() {

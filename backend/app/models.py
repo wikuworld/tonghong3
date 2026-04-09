@@ -42,6 +42,8 @@ class Customer(Base):
     customs_office_code: Mapped[Optional[str]] = mapped_column(String(32))
     address: Mapped[Optional[str]] = mapped_column(Text)
     remark: Mapped[Optional[str]] = mapped_column(Text)
+    is_export_customer: Mapped[bool] = mapped_column(Boolean, default=False)
+    bill_to: Mapped[Optional[str]] = mapped_column(Text)
     wilayah_province_code: Mapped[Optional[str]] = mapped_column(String(8))
     wilayah_regency_code: Mapped[Optional[str]] = mapped_column(String(16))
     wilayah_district_code: Mapped[Optional[str]] = mapped_column(String(24))
@@ -70,6 +72,7 @@ class MasterItem(Base):
     style_article: Mapped[Optional[str]] = mapped_column(String(100))
     model: Mapped[Optional[str]] = mapped_column(String(100))
     category: Mapped[Optional[str]] = mapped_column(String(100))
+    exim_material_code: Mapped[Optional[str]] = mapped_column(String(80))
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
     )
@@ -263,6 +266,7 @@ class PoDetail(Base):
     thi_line_ref: Mapped[Optional[str]] = mapped_column(String(100))
     material_name: Mapped[Optional[str]] = mapped_column(String(255))
     color: Mapped[Optional[str]] = mapped_column(String(100))
+    color_family: Mapped[Optional[str]] = mapped_column(String(32))
     thickness_min: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 3))
     thickness_max: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 3))
     thickness_text: Mapped[Optional[str]] = mapped_column(String(80))
@@ -284,6 +288,7 @@ class PoDetail(Base):
     balance_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
     system_reference: Mapped[Optional[str]] = mapped_column(String(120))
     detail_remark: Mapped[Optional[str]] = mapped_column(Text)
+    marketing_outstanding_remark: Mapped[Optional[str]] = mapped_column(Text)
     unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
     copied_from_detail_id: Mapped[Optional[int]] = mapped_column(BigInteger)
 
@@ -423,6 +428,8 @@ class DeliveryHeader(Base):
     driver_name: Mapped[Optional[str]] = mapped_column(String(100))
     vehicle_number: Mapped[Optional[str]] = mapped_column(String(50))
     destination: Mapped[Optional[str]] = mapped_column(Text)
+    bc_number: Mapped[Optional[str]] = mapped_column(String(80))
+    bc_date: Mapped[Optional[date]] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(32), default="draft")
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()

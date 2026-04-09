@@ -59,7 +59,7 @@
       <el-table-column :label="t('common.actions')" width="80" align="center" fixed="right">
         <template #default="{ row }">
           <el-tooltip :content="t('common.detail')" placement="top">
-            <el-button :icon="View" link type="primary" @click="openDetail(row)" />
+            <el-button :icon="View" link type="primary" :aria-label="t('common.detail')" @click="openDetail(row)" />
           </el-tooltip>
         </template>
       </el-table-column>

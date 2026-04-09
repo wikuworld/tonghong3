@@ -1,0 +1,26 @@
+{
+  "terminal.integrated.profiles.osx": {
+    "zsh (login + interactive)": {
+      "path": "/bin/zsh",
+      "args": ["-il"],
+      "icon": "terminal"
+    }
+  },
+  "terminal.integrated.defaultProfile.osx": "zsh (login + interactive)",
+  "terminal.integrated.automationProfile.osx": {
+    "path": "/bin/zsh",
+    "args": ["-il"]
+  },
+  "terminal.integrated.profiles.linux": {
+    "bash (login)": {
+      "path": "/bin/bash",
+      "args": ["-l"],
+      "icon": "terminal"
+    }
+  },
+  "terminal.integrated.defaultProfile.linux": "bash (login)",
+  "terminal.integrated.automationProfile.linux": {
+    "path": "/bin/bash",
+    "args": ["-l"]
+  }
+}

@@ -26,9 +26,11 @@
           <el-table-column :label="`${t('common.total')} (USD)`" min-width="120" align="right">
             <template #default="{ row }">{{ formatNum(row.total_amount) }}</template>
           </el-table-column>
-          <el-table-column :label="t('common.actions')" width="100" fixed="right">
+          <el-table-column :label="t('common.actions')" width="88" fixed="right" align="center">
             <template #default="{ row }">
-              <el-button :icon="View" link type="primary" @click="openDetail(row)" />
+              <el-tooltip :content="t('common.detail')" placement="top">
+                <el-button :icon="View" link type="primary" :aria-label="t('common.detail')" @click="openDetail(row)" />
+              </el-tooltip>
             </template>
           </el-table-column>
         </el-table>
@@ -57,9 +59,18 @@
           <el-table-column prop="tax_invoice_no" :label="t('pages.invoice.taxInvoiceNo')" min-width="140" />
           <el-table-column prop="receipt_no" :label="t('pages.invoice.receiptNo')" min-width="140" />
           <el-table-column prop="nomor_aju" :label="t('pages.invoice.nomorAju')" min-width="140" />
-          <el-table-column :label="t('common.actions')" width="120" fixed="right">
+          <el-table-column :label="t('common.actions')" width="88" fixed="right" align="center">
             <template #default="{ row }">
-              <el-button v-if="canUpdate" link type="primary" size="small" @click="openEditOutstanding(row)">{{ t('common.edit') }}</el-button>
+              <el-tooltip v-if="canUpdate" :content="t('common.edit')" placement="top">
+                <el-button
+                  :icon="EditPen"
+                  link
+                  type="primary"
+                  size="small"
+                  :aria-label="t('common.edit')"
+                  @click="openEditOutstanding(row)"
+                />
+              </el-tooltip>
             </template>
           </el-table-column>
         </el-table>
@@ -164,7 +175,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, View } from '@element-plus/icons-vue'
+import { EditPen, Plus, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { can } from '../../security/permissions'
 import {

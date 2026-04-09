@@ -37,12 +37,26 @@
           <span v-else class="text-slate-500">{{ t('common.emptyValue') }}</span>
         </template>
       </el-table-column>
-      <el-table-column :label="t('common.actions')" width="168" align="center" fixed="right">
+      <el-table-column :label="t('common.actions')" width="132" align="center" fixed="right">
         <template #default="{ row }">
           <template v-if="!row.actions_disabled">
-            <el-button link @click="openBuyerMap(row)">{{ t('pages.brandMaster.manageBuyerMap') }}</el-button>
-            <el-button :icon="EditPen" link type="primary" @click="openEdit(row)" />
-            <el-button :icon="Delete" link type="danger" @click="removeRow(row)" />
+            <div class="flex flex-wrap items-center justify-center gap-0">
+              <el-tooltip :content="t('pages.brandMaster.manageBuyerMap')" placement="top">
+                <el-button
+                  :icon="Connection"
+                  link
+                  type="primary"
+                  :aria-label="t('pages.brandMaster.manageBuyerMap')"
+                  @click="openBuyerMap(row)"
+                />
+              </el-tooltip>
+              <el-tooltip :content="t('common.edit')" placement="top">
+                <el-button :icon="EditPen" link type="warning" :aria-label="t('common.edit')" @click="openEdit(row)" />
+              </el-tooltip>
+              <el-tooltip :content="t('common.delete')" placement="top">
+                <el-button :icon="Delete" link type="danger" :aria-label="t('common.delete')" @click="removeRow(row)" />
+              </el-tooltip>
+            </div>
           </template>
         </template>
       </el-table-column>
@@ -104,7 +118,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, EditPen, Plus } from '@element-plus/icons-vue'
+import { Connection, Delete, EditPen, Plus } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import {
   createBrand,

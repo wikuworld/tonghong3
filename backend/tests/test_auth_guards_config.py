@@ -61,6 +61,9 @@ def test_buyer_prices_require_auth_and_role_guards():
         route = _get_route(buyer_prices.router, path, method)
         assert _has_dep(route, "get_current_user"), f"{method} {path} harus pakai get_current_user"
 
+    route = _get_route(buyer_prices.router, "/buyer-prices/resolve-unit-price", "POST")
+    assert _has_dep(route, "get_current_user"), "POST /buyer-prices/resolve-unit-price harus pakai get_current_user"
+
     for path, method in [
         ("/buyer-prices/lists", "POST"),
         ("/buyer-prices/lists/{list_id}", "PUT"),

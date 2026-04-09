@@ -63,7 +63,7 @@ def _has_qc_ok(db: Session, production_detail_id: int | None) -> bool:
 def mark_surat_jalan_printed(
     delivery_id: int,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin", "warehouse")),
+    user=Depends(require_roles("admin", "warehouse", "marketing")),
 ) -> dict:
     row = db.get(DeliveryHeader, delivery_id)
     if not row:

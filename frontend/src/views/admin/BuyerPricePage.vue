@@ -8,7 +8,8 @@
           clearable
           class="buyer-price-toolbar-search"
         />
-        <el-button type="primary" :icon="Plus" :loading="loading" @click="openCreateDialog">
+        <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
+        <el-button type="primary" :icon="Plus" @click="openCreateDialog">
           {{ t('common.create') }}
         </el-button>
       </template>
@@ -32,10 +33,22 @@
           <template #default="{ row }">
             <div class="flex flex-wrap items-center justify-center gap-0">
               <el-tooltip :content="t('pages.buyerPrices.manageData')" placement="top">
-                <el-button :icon="EditPen" link type="primary" @click="openMaster(row.id)" />
+                <el-button
+                  :icon="EditPen"
+                  link
+                  type="primary"
+                  :aria-label="t('pages.buyerPrices.manageData')"
+                  @click="openMaster(row.id)"
+                />
               </el-tooltip>
               <el-tooltip :content="t('common.delete')" placement="top">
-                <el-button :icon="Delete" link type="danger" @click="confirmDelete(row)" />
+                <el-button
+                  :icon="Delete"
+                  link
+                  type="danger"
+                  :aria-label="t('common.delete')"
+                  @click="confirmDelete(row)"
+                />
               </el-tooltip>
             </div>
           </template>
@@ -138,11 +151,18 @@
               <el-input v-model="row[key]" size="small" clearable />
             </template>
           </el-table-column>
-          <el-table-column :label="t('common.actions')" width="88" align="center" fixed="right">
+          <el-table-column :label="t('common.actions')" width="72" align="center" fixed="right">
             <template #default="{ $index }">
-              <el-button link type="danger" size="small" @click="removeSheetRow($index)">
-                {{ t('pages.buyerPrices.removeRow') }}
-              </el-button>
+              <el-tooltip :content="t('pages.buyerPrices.removeRow')" placement="top">
+                <el-button
+                  link
+                  type="danger"
+                  size="small"
+                  :icon="Delete"
+                  :aria-label="t('pages.buyerPrices.removeRow')"
+                  @click="removeSheetRow($index)"
+                />
+              </el-tooltip>
             </template>
           </el-table-column>
         </el-table>

@@ -15,8 +15,15 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import BuyerPriceList, BuyerPriceSheetRow
 from app.routers.auth import get_current_user, require_roles
-from app.schemas import BuyerPriceListCreate, BuyerPriceListUpdate, BuyerPriceSheetSave
+from app.schemas import (
+    BuyerPriceListCreate,
+    BuyerPriceListUpdate,
+    BuyerPriceResolveIn,
+    BuyerPriceResolveOut,
+    BuyerPriceSheetSave,
+)
 from app.services.buyer_price_import import list_to_api_dict, persist_buyer_folder
+from app.services.buyer_price_resolve import resolve_unit_price_for_buyer
 
 router = APIRouter(tags=["buyer-prices"])
 
@@ -172,6 +179,25 @@ def get_by_buyer(
     if not row:
         raise HTTPException(status_code=404, detail="Buyer tidak ditemukan")
     return list_to_api_dict(db, row.id)
+
+
+@router.post("/buyer-prices/resolve-unit-price", response_model=BuyerPriceResolveOut)
+def resolve_unit_price(
+    body: BuyerPriceResolveIn,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> BuyerPriceResolveOut:
+    """Harga satuan dari sheet list harga buyer (logika pencocokan di server)."""
+    r = resolve_unit_price_for_buyer(
+        db,
+        body.buyer_code,
+        material_name=body.material_name,
+        color=body.color,
+        style_article=body.style_article,
+        thickness_text=body.thickness_text,
+        color_family=body.color_family,
+    )
+    return BuyerPriceResolveOut(**r)
 
 
 @router.delete("/buyer-prices/lists/{list_id}")

@@ -55,7 +55,7 @@ def po_has_delivery_for_po(db: "Session", po_id: int) -> bool:
 
 def po_has_sj_invpl_prints(db: "Session", po_id: int) -> bool:
     """Minimal satu delivery untuk PO ini: SJ + INVPL (packing terkait) sudah dicetak."""
-    from app.models import DeliveryDetail, DeliveryHeader, PackingHeader, PoDetail, ProductionDetail
+    from app.models import Customer, DeliveryDetail, DeliveryHeader, PackingHeader, PoDetail, ProductionDetail
 
     rows = db.scalars(
         select(DeliveryHeader)
@@ -67,12 +67,16 @@ def po_has_sj_invpl_prints(db: "Session", po_id: int) -> bool:
     if not rows:
         return False
     for dh in rows:
-        if dh.surat_jalan_printed_at is None:
-            continue
         if not dh.packing_id:
             continue
         pk = db.get(PackingHeader, dh.packing_id)
-        if pk and pk.invpl_printed_at is not None:
+        if not pk or pk.invpl_printed_at is None:
+            continue
+        cust = db.get(Customer, dh.customer_id) if dh.customer_id else None
+        export = bool(cust and getattr(cust, "is_export_customer", False))
+        if export:
+            return True
+        if dh.surat_jalan_printed_at is not None:
             return True
     return False
 
@@ -129,7 +133,10 @@ def validate_mkt_advance(
         if not po_has_sj_invpl_prints(db, po_id):
             raise HTTPException(
                 status_code=400,
-                detail="Cetak Surat Jalan & INVPL lalu tandai dicetak pada delivery/packing terkait",
+                detail=(
+                    "Cetak INVPL lalu tandai dicetak di packing; untuk customer non-ekspor cetak Surat Jalan "
+                    "lalu tandai di delivery. Customer ekspor: INVPL saja cukup (SJ opsional)."
+                ),
             )
 
     if target == "invoice_billing":

@@ -15,10 +15,17 @@
       <el-table-column prop="backing" :label="t('common.backing')" min-width="110" />
       <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="130" />
       <el-table-column prop="model" :label="t('common.model')" min-width="130" />
-      <el-table-column :label="t('common.actions')" width="120" align="center" fixed="right">
+      <el-table-column prop="exim_material_code" :label="t('pages.masterItems.eximMaterialCode')" min-width="120" show-overflow-tooltip />
+      <el-table-column :label="t('common.actions')" width="100" align="center" fixed="right">
         <template #default="{ row }">
-          <el-button :icon="EditPen" link type="primary" @click="openEdit(row)" />
-          <el-button :icon="Delete" link type="danger" @click="removeRow(row)" />
+          <div class="flex flex-wrap items-center justify-center gap-0">
+            <el-tooltip :content="t('common.edit')" placement="top">
+              <el-button :icon="EditPen" link type="primary" :aria-label="t('common.edit')" @click="openEdit(row)" />
+            </el-tooltip>
+            <el-tooltip :content="t('common.delete')" placement="top">
+              <el-button :icon="Delete" link type="danger" :aria-label="t('common.delete')" @click="removeRow(row)" />
+            </el-tooltip>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -86,6 +93,11 @@
               <el-input v-model="form.category" maxlength="100" />
             </el-form-item>
           </el-col>
+          <el-col :xs="24" :md="12">
+            <el-form-item :label="t('pages.masterItems.eximMaterialCode')">
+              <el-input v-model="form.exim_material_code" maxlength="80" clearable />
+            </el-form-item>
+          </el-col>
         </el-row>
       </el-form>
       <template #footer>
@@ -128,6 +140,7 @@ const form = reactive({
   style_article: '',
   model: '',
   category: '',
+  exim_material_code: '',
 })
 
 async function load() {
@@ -154,6 +167,7 @@ function resetForm() {
   form.style_article = ''
   form.model = ''
   form.category = ''
+  form.exim_material_code = ''
 }
 
 function openCreate() {
@@ -178,6 +192,7 @@ function openEdit(row) {
   form.style_article = row.style_article || ''
   form.model = row.model || ''
   form.category = row.category || ''
+  form.exim_material_code = row.exim_material_code || ''
   formVisible.value = true
 }
 
@@ -202,6 +217,7 @@ async function submit() {
       style_article: form.style_article || undefined,
       model: form.model || undefined,
       category: form.category || undefined,
+      exim_material_code: form.exim_material_code?.trim() || undefined,
     }
     if (isEdit.value && editingId.value) {
       await updateMasterItem(editingId.value, payload)

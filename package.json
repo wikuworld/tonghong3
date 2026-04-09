@@ -3,9 +3,9 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "dev": "npm --prefix frontend run dev",
-    "build": "npm --prefix frontend run build",
-    "preview": "npm --prefix frontend run preview",
-    "install:frontend": "npm --prefix frontend install"
+    "dev": "bash -c 'source ./tools/nvm-load.sh; exec npm --prefix frontend run dev'",
+    "build": "bash -c 'source ./tools/nvm-load.sh; exec npm --prefix frontend run build'",
+    "preview": "bash -c 'source ./tools/nvm-load.sh; exec npm --prefix frontend run preview'",
+    "install:frontend": "bash -c 'source ./tools/nvm-load.sh; exec npm --prefix frontend install'"
   }
 }

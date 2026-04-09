@@ -61,11 +61,19 @@
       <el-table-column prop="deliveredQty" :label="t('common.actual')" min-width="120" align="right" />
       <el-table-column prop="roll" :label="t('common.roll')" min-width="90" align="center" />
       <el-table-column prop="pcs" :label="t('common.pieces')" min-width="90" align="center" />
-      <el-table-column :label="t('common.actions')" min-width="200" align="center">
+      <el-table-column :label="t('common.actions')" width="132" align="center" fixed="right">
         <template #default>
-          <el-button size="small" type="primary">{{ t('common.detail') }}</el-button>
-          <el-button size="small">{{ t('common.edit') }}</el-button>
-          <el-button size="small" type="danger">{{ t('common.delete') }}</el-button>
+          <div class="flex flex-wrap items-center justify-center gap-0">
+            <el-tooltip :content="t('common.detail')" placement="top">
+              <el-button size="small" type="primary" :icon="View" :aria-label="t('common.detail')" />
+            </el-tooltip>
+            <el-tooltip :content="t('common.edit')" placement="top">
+              <el-button size="small" :icon="EditPen" :aria-label="t('common.edit')" />
+            </el-tooltip>
+            <el-tooltip :content="t('common.delete')" placement="top">
+              <el-button size="small" type="danger" :icon="Delete" :aria-label="t('common.delete')" />
+            </el-tooltip>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -80,6 +88,7 @@
 <script setup>
 import { reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Delete, EditPen, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 
 const { t } = useI18n()

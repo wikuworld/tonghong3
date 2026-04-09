@@ -28,6 +28,8 @@ class CustomerCreate(BaseModel):
     customs_office_code: Optional[str] = None
     address: Optional[str] = None
     remark: Optional[str] = None
+    is_export_customer: bool = False
+    bill_to: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
@@ -47,6 +49,8 @@ class CustomerUpdate(BaseModel):
     customs_office_code: Optional[str] = None
     address: Optional[str] = None
     remark: Optional[str] = None
+    is_export_customer: Optional[bool] = None
+    bill_to: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
@@ -67,6 +71,8 @@ class CustomerOut(ORMBase):
     customs_office_code: Optional[str] = None
     address: Optional[str] = None
     remark: Optional[str] = None
+    is_export_customer: bool = False
+    bill_to: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
@@ -98,6 +104,35 @@ class BuyerPriceSheetSave(BaseModel):
 
     column_keys: list[str] = Field(default_factory=list)
     rows: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class BuyerPriceResolveIn(BaseModel):
+    """Kriteria pencocokan baris di sheet list harga buyer (harga di server)."""
+
+    buyer_code: str
+    material_name: Optional[str] = None
+    color: Optional[str] = None
+    style_article: Optional[str] = None
+    thickness_text: Optional[str] = None
+    color_family: Optional[str] = None
+
+    @field_validator("color_family")
+    @classmethod
+    def validate_color_family(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        raw = str(v).strip().lower()
+        if raw not in {"black", "color", "fluorescent"}:
+            raise ValueError("color_family harus black, color, atau fluorescent")
+        return raw
+
+
+class BuyerPriceResolveOut(BaseModel):
+    unit_price: Optional[Decimal] = None
+    matched: bool = False
+    price_column: Optional[str] = None
+    score: int = 0
+    detail: str = ""
 
 
 # --- Customs (AJU) ---
@@ -158,9 +193,10 @@ class PoHeaderCreate(BaseModel):
             "subkon": "subcont",
             "subcont": "subcont",
             "subcontract": "subcont",
+            "suede": "suede",
         }
         out = alias.get(raw, raw)
-        if out not in {"production", "sample", "claim", "return", "subcont"}:
+        if out not in {"production", "sample", "claim", "return", "subcont", "suede"}:
             raise ValueError("po_category tidak valid")
         return out
 
@@ -201,9 +237,10 @@ class PoHeaderUpdate(BaseModel):
             "subkon": "subcont",
             "subcont": "subcont",
             "subcontract": "subcont",
+            "suede": "suede",
         }
         out = alias.get(raw, raw)
-        if out not in {"production", "sample", "claim", "return", "subcont"}:
+        if out not in {"production", "sample", "claim", "return", "subcont", "suede"}:
             raise ValueError("po_category tidak valid")
         return out
 
@@ -213,6 +250,7 @@ class PoDetailCreate(BaseModel):
     thi_line_ref: Optional[str] = None
     material_name: Optional[str] = None
     color: Optional[str] = None
+    color_family: Optional[str] = None
     thickness_min: Optional[Decimal] = None
     thickness_max: Optional[Decimal] = None
     thickness_text: Optional[str] = None
@@ -231,8 +269,19 @@ class PoDetailCreate(BaseModel):
     balance_qty: Optional[Decimal] = None
     system_reference: Optional[str] = None
     detail_remark: Optional[str] = None
+    marketing_outstanding_remark: Optional[str] = None
     unit_price: Optional[Decimal] = None
     copied_from_detail_id: Optional[int] = None
+
+    @field_validator("color_family")
+    @classmethod
+    def validate_detail_color_family(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or (isinstance(v, str) and not str(v).strip()):
+            return None
+        raw = str(v).strip().lower()
+        if raw not in {"black", "color", "fluorescent"}:
+            raise ValueError("color_family tidak valid")
+        return raw
 
 
 class PoDetailUpdate(BaseModel):
@@ -240,6 +289,7 @@ class PoDetailUpdate(BaseModel):
     thi_line_ref: Optional[str] = None
     material_name: Optional[str] = None
     color: Optional[str] = None
+    color_family: Optional[str] = None
     thickness_min: Optional[Decimal] = None
     thickness_max: Optional[Decimal] = None
     thickness_text: Optional[str] = None
@@ -258,8 +308,19 @@ class PoDetailUpdate(BaseModel):
     balance_qty: Optional[Decimal] = None
     system_reference: Optional[str] = None
     detail_remark: Optional[str] = None
+    marketing_outstanding_remark: Optional[str] = None
     unit_price: Optional[Decimal] = None
     copied_from_detail_id: Optional[int] = None
+
+    @field_validator("color_family")
+    @classmethod
+    def validate_detail_color_family_upd(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or (isinstance(v, str) and not str(v).strip()):
+            return None
+        raw = str(v).strip().lower()
+        if raw not in {"black", "color", "fluorescent"}:
+            raise ValueError("color_family tidak valid")
+        return raw
 
 
 class PoHeaderOut(ORMBase):
@@ -311,6 +372,7 @@ class PoDetailOut(ORMBase):
     thi_line_ref: Optional[str] = None
     material_name: Optional[str] = None
     color: Optional[str] = None
+    color_family: Optional[str] = None
     thickness_min: Optional[Decimal] = None
     thickness_max: Optional[Decimal] = None
     thickness_text: Optional[str] = None
@@ -330,6 +392,7 @@ class PoDetailOut(ORMBase):
     balance_qty: Optional[Decimal] = None
     system_reference: Optional[str] = None
     detail_remark: Optional[str] = None
+    marketing_outstanding_remark: Optional[str] = None
     unit_price: Optional[Decimal] = None
     copied_from_detail_id: Optional[int] = None
     delivery_schedules: list[PoDetailDeliveryOut] = Field(default_factory=list)
@@ -424,6 +487,8 @@ class DeliveryHeaderCreate(BaseModel):
     driver_name: Optional[str] = None
     vehicle_number: Optional[str] = None
     destination: Optional[str] = None
+    bc_number: Optional[str] = None
+    bc_date: Optional[date] = None
     status: str = "draft"
 
 
@@ -434,6 +499,8 @@ class DeliveryHeaderUpdate(BaseModel):
     driver_name: Optional[str] = None
     vehicle_number: Optional[str] = None
     destination: Optional[str] = None
+    bc_number: Optional[str] = None
+    bc_date: Optional[date] = None
     status: Optional[str] = None
     packing_id: Optional[int] = None
 
@@ -537,6 +604,7 @@ class MasterItemCreate(BaseModel):
     style_article: Optional[str] = None
     model: Optional[str] = None
     category: Optional[str] = None
+    exim_material_code: Optional[str] = None
 
 
 class MasterItemOut(ORMBase):
@@ -553,6 +621,7 @@ class MasterItemOut(ORMBase):
     style_article: Optional[str] = None
     model: Optional[str] = None
     category: Optional[str] = None
+    exim_material_code: Optional[str] = None
     created_at: Optional[datetime] = None
 
 

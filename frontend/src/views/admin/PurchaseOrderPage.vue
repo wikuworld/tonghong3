@@ -83,20 +83,29 @@
           <el-tag :type="statusType(row.status)" size="small">{{ t(`status.${row.status}`) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="t('common.actions')" width="168" align="center" fixed="right">
+      <el-table-column :label="t('common.actions')" width="200" align="center" fixed="right">
         <template #default="{ row }">
           <div class="po-row-actions">
             <el-tooltip :content="t('common.detail')" placement="top">
-              <el-button :icon="View" link type="primary" @click="openDetailDialog(row)" />
+              <el-button :icon="View" link type="primary" :aria-label="t('common.detail')" @click="openDetailDialog(row)" />
             </el-tooltip>
             <el-tooltip v-if="canManage" :content="t('common.edit')" placement="top">
-              <el-button :icon="EditPen" link type="warning" @click="openEditDialog(row)" />
+              <el-button :icon="EditPen" link type="warning" :aria-label="t('common.edit')" @click="openEditDialog(row)" />
+            </el-tooltip>
+            <el-tooltip v-if="canManage" :content="t('pages.po.duplicatePo')" placement="top">
+              <el-button
+                :icon="CopyDocument"
+                link
+                type="primary"
+                :aria-label="t('pages.po.duplicatePo')"
+                @click="onDuplicatePo(row)"
+              />
             </el-tooltip>
             <el-tooltip :content="t('common.print')" placement="top">
-              <el-button :icon="Printer" link @click="openPrintDialog(row)" />
+              <el-button :icon="Printer" link :aria-label="t('common.print')" @click="openPrintDialog(row)" />
             </el-tooltip>
             <el-tooltip v-if="canManage" :content="t('common.delete')" placement="top">
-              <el-button :icon="Delete" link type="danger" @click="removeRow(row)" />
+              <el-button :icon="Delete" link type="danger" :aria-label="t('common.delete')" @click="removeRow(row)" />
             </el-tooltip>
           </div>
         </template>
@@ -141,6 +150,11 @@
                 disabled
               />
               <span class="text-xs text-slate-500">{{ t('pages.po.autoGenerateHint') }}</span>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="12">
+            <el-form-item :label="t('pages.po.poCustomerRef')">
+              <el-input v-model="formModel.po_customer_ref" clearable maxlength="255" />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
@@ -193,6 +207,7 @@
                 <el-option :label="t('status.claim')" value="claim" />
                 <el-option :label="t('status.return')" value="return" />
                 <el-option :label="t('status.subcont')" value="subcont" />
+                <el-option :label="t('status.suede')" value="suede" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -214,7 +229,7 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
-            <el-form-item :label="t('common.etd')">
+            <el-form-item :label="t('pages.po.headerEtd')">
               <el-date-picker v-model="formModel.etd" type="date" class="w-full" value-format="YYYY-MM-DD" />
             </el-form-item>
           </el-col>
@@ -253,6 +268,7 @@
         </el-row>
 
         <el-divider content-position="left">{{ t('pages.po.materialLineOne') }}</el-divider>
+        <p class="mb-2 text-xs text-slate-500">{{ t('pages.po.materialEditableHint') }}</p>
         <el-row :gutter="12">
           <el-col :xs="24" :md="12">
             <el-form-item :label="`${t('common.material')} (${t('common.masterLabel')})`">
@@ -275,7 +291,7 @@
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.material')">
-              <el-input v-model="formModel.material_name" :placeholder="t('common.placeholder.material')" readonly />
+              <el-input v-model="formModel.material_name" :placeholder="t('common.placeholder.material')" clearable />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
@@ -289,8 +305,30 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
+            <el-form-item :label="t('pages.po.colorFamily')">
+              <el-select v-model="formModel.color_family" clearable class="w-full">
+                <el-option :label="t('pages.po.colorFamilyBlack')" value="black" />
+                <el-option :label="t('pages.po.colorFamilyColor')" value="color" />
+                <el-option :label="t('pages.po.colorFamilyFluorescent')" value="fluorescent" />
+              </el-select>
+              <span class="mt-1 block text-xs text-slate-500">{{ t('pages.po.colorFamilyHint') }}</span>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="12">
+            <el-form-item :label="t('pages.po.emboss')">
+              <el-input v-model="formModel.emboss" clearable />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="12">
+            <el-form-item :label="t('pages.po.virSoftnessType')">
+              <el-input v-model="formModel.vir_softness_type" clearable />
+              <span class="mt-1 block text-xs text-slate-500">{{ t('pages.po.suggestVirSoft') }}</span>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.softness')">
               <el-input v-model="formModel.softness" />
+              <span class="mt-1 block text-xs text-slate-500">{{ t('pages.po.softnessRangesHint') }}</span>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
@@ -318,10 +356,35 @@
               <el-input v-model="formModel.model" />
             </el-form-item>
           </el-col>
+          <el-col :xs="24" :md="12">
+            <el-form-item :label="t('pages.po.lineEtd')">
+              <el-date-picker v-model="formModel.line_etd" type="date" class="w-full" value-format="YYYY-MM-DD" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="12">
+            <el-form-item :label="t('pages.po.thiLineRef')">
+              <div class="flex flex-wrap items-center gap-2">
+                <el-input v-model="formModel.thi_line_ref" class="min-w-[200px] flex-1" clearable />
+                <el-button size="small" @click="applyLotPrefix">{{ t('pages.po.applyLotPrefix') }}</el-button>
+              </div>
+              <span class="mt-1 block text-xs text-slate-500">{{ t('pages.po.lotPrefixHint') }}</span>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24">
+            <el-form-item :label="t('pages.po.detailRemark')">
+              <el-input v-model="formModel.detail_remark" type="textarea" :rows="2" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="12">
+            <el-form-item :label="t('pages.po.unitPriceUsd')">
+              <el-input :model-value="displayResolvedUnitPrice" readonly class="po-price-readonly" />
+              <span class="mt-1 block text-xs text-slate-500">{{ t('pages.po.unitPriceAutoHint') }}</span>
+            </el-form-item>
+          </el-col>
         </el-row>
         <div class="po-line-actions">
           <el-button :icon="Plus" @click="pushCurrentLine(false)">{{ t('common.add') }} Line</el-button>
-          <el-button @click="pushCurrentLine(true)">Copy Line</el-button>
+          <el-button :icon="DocumentCopy" @click="pushCurrentLine(true)">{{ t('pages.po.copyLine') }}</el-button>
         </div>
         <el-table
           v-if="draftLines.length"
@@ -333,14 +396,30 @@
           table-layout="auto"
         >
           <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
-          <el-table-column prop="material_name" :label="t('common.material')" min-width="180" />
-          <el-table-column prop="thickness_text" :label="t('common.thickness')" width="120" />
-          <el-table-column prop="color" :label="t('common.color')" width="120" />
-          <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="130" />
-          <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="140" />
+          <el-table-column prop="material_name" :label="t('common.material')" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="thickness_text" :label="t('common.thickness')" width="100" />
+          <el-table-column prop="color" :label="t('common.color')" width="88" />
+          <el-table-column prop="color_family" :label="t('pages.po.colorFamily')" width="120" show-overflow-tooltip>
+            <template #default="{ row }">{{ colorFamilyLabel(row.color_family) }}</template>
+          </el-table-column>
+          <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="96" />
+          <el-table-column prop="unit_price" :label="t('pages.po.unitPriceUsd')" width="100" align="right">
+            <template #default="{ row }">{{ row.unit_price != null ? row.unit_price : '—' }}</template>
+          </el-table-column>
+          <el-table-column prop="line_etd" :label="t('pages.po.lineEtd')" width="112" />
+          <el-table-column prop="thi_line_ref" :label="t('pages.po.thiLineRef')" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="120" show-overflow-tooltip />
           <el-table-column :label="t('common.actions')" width="90" align="center">
             <template #default="{ $index }">
-              <el-button link type="danger" :icon="Delete" @click="removeDraftLine($index)" />
+              <el-tooltip :content="t('common.delete')" placement="top">
+                <el-button
+                  link
+                  type="danger"
+                  :icon="Delete"
+                  :aria-label="t('common.delete')"
+                  @click="removeDraftLine($index)"
+                />
+              </el-tooltip>
             </template>
           </el-table-column>
         </el-table>
@@ -364,11 +443,13 @@
       <el-descriptions v-if="detailView" :column="2" border size="small">
         <el-descriptions-item :label="t('common.poNo')">{{ detailView.po_number }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.status')">{{ statusLabel(detailView.status) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.po.poCustomerRef')">{{ detailView.po_customer_ref || t('common.emptyValue') }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.customer')">{{ detailView.customerName }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.buyer')">{{ detailView.buyer || t('common.emptyValue') }}</el-descriptions-item>
-        <el-descriptions-item :label="t('common.etd')">{{ detailView.etd || t('common.emptyValue') }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.po.headerEtd')">{{ detailView.etd || t('common.emptyValue') }}</el-descriptions-item>
         <el-descriptions-item :label="t('menu.customs')">{{ detailView.customs_declaration_id || t('common.emptyValue') }}</el-descriptions-item>
       </el-descriptions>
+      <p class="mt-2 text-xs text-slate-500">{{ t('pages.poDetail.lineRevisionHint') }}</p>
       <el-table
         v-if="detailLines.length"
         :data="detailLines"
@@ -378,13 +459,24 @@
         table-layout="auto"
         max-height="360"
       >
-        <el-table-column prop="material_name" :label="t('common.material')" min-width="140" />
-        <el-table-column prop="thickness_text" :label="t('common.thickness')" width="120" />
-        <el-table-column prop="color" :label="t('common.color')" width="100" />
-        <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="100" />
+        <el-table-column prop="material_name" :label="t('common.material')" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="thickness_text" :label="t('common.thickness')" width="100" />
+        <el-table-column prop="color" :label="t('common.color')" width="88" />
+        <el-table-column prop="color_family" :label="t('pages.po.colorFamily')" width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ colorFamilyLabel(row.color_family) }}</template>
+        </el-table-column>
+        <el-table-column prop="emboss" :label="t('pages.po.emboss')" width="88" show-overflow-tooltip />
+        <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="96" />
+        <el-table-column prop="unit_price" :label="t('pages.po.unitPriceUsd')" width="100" align="right">
+          <template #default="{ row }">{{ row.unit_price != null ? row.unit_price : t('common.emptyValue') }}</template>
+        </el-table-column>
+        <el-table-column prop="line_etd" :label="t('pages.po.lineEtd')" width="112" />
+        <el-table-column prop="thi_line_ref" :label="t('pages.po.thiLineRef')" min-width="110" show-overflow-tooltip />
+        <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="model" :label="t('common.model')" width="96" show-overflow-tooltip />
       </el-table>
       <div v-if="detailAudit.length" class="mt-4 rounded border border-slate-200 bg-white p-3">
-        <div class="mb-2 text-sm font-semibold text-slate-700">{{ t('pages.poDetail.revisionHistory') }}</div>
+        <div class="mb-2 text-sm font-semibold text-slate-700">{{ t('pages.po.lineRevisionHistory') }}</div>
         <el-timeline>
           <el-timeline-item
             v-for="a in detailAudit"
@@ -393,6 +485,7 @@
           >
             <div class="text-sm">
               <b>{{ a.action }}</b>
+              <span v-if="a.entity_type === 'sales_order_line'" class="text-slate-400"> ({{ t('pages.poDetail.auditLine') }} #{{ a.entity_id }})</span>
               <span class="text-slate-500"> {{ t('common.dashSeparator') }} {{ a.actor || t('common.system') }}</span>
             </div>
             <div v-if="a.before || a.after" class="mt-1 text-xs text-slate-600">
@@ -456,11 +549,20 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Download, View, EditPen, Delete, Printer } from '@element-plus/icons-vue'
+import {
+  Plus,
+  Download,
+  View,
+  EditPen,
+  Delete,
+  Printer,
+  DocumentCopy,
+  CopyDocument,
+} from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { canWrite } from '../../security/permissions'
 import {
@@ -469,6 +571,7 @@ import {
   createPo,
   deletePoDetail,
   deletePo,
+  duplicatePo,
   listBrands,
   listBrandBuyers,
   listBuyerPriceLists,
@@ -478,6 +581,7 @@ import {
   listPo,
   listPoDetails,
   listAuditLogs,
+  resolveBuyerUnitPrice,
   toIsoDate,
   updatePo,
   updatePoDetail,
@@ -624,21 +728,132 @@ const formModel = reactive({
   order_date: '',
   buyer: '',
   etd: '',
+  po_customer_ref: '',
   remark: '',
   status: 'draft',
   master_item_id: null,
   material_name: '',
   thickness_text: '',
   color: '',
+  color_family: null,
+  emboss: '',
+  vir_softness_type: '',
   softness: '',
   color_reference: '',
   backing: '',
   quantity_order: '',
   style_article: '',
   model: '',
+  line_etd: '',
+  detail_remark: '',
+  thi_line_ref: '',
   material_followup_remark: '',
   material_followup_done: false,
 })
+
+const pricePreviewLoading = ref(false)
+const previewResolvedUnitPrice = ref(null)
+
+let pricePreviewTimer = null
+function schedulePricePreview() {
+  clearTimeout(pricePreviewTimer)
+  pricePreviewTimer = setTimeout(() => {
+    fetchResolvedUnitPricePreview()
+  }, 400)
+}
+
+async function fetchResolvedUnitPricePreview() {
+  const b = (formModel.buyer || '').trim()
+  if (!b) {
+    previewResolvedUnitPrice.value = null
+    return
+  }
+  pricePreviewLoading.value = true
+  try {
+    const r = await resolveBuyerUnitPrice({
+      buyer_code: b,
+      material_name: formModel.material_name || null,
+      color: formModel.color || null,
+      style_article: formModel.style_article || null,
+      thickness_text: formModel.thickness_text || null,
+      color_family: formModel.color_family || null,
+    })
+    previewResolvedUnitPrice.value = r.unit_price != null ? Number(r.unit_price) : null
+  } catch {
+    previewResolvedUnitPrice.value = null
+  } finally {
+    pricePreviewLoading.value = false
+  }
+}
+
+const displayResolvedUnitPrice = computed(() => {
+  if (pricePreviewLoading.value) return '…'
+  if (previewResolvedUnitPrice.value != null) return String(previewResolvedUnitPrice.value)
+  return '—'
+})
+
+function colorFamilyLabel(v) {
+  if (!v) return t('common.emptyValue')
+  const k = String(v).toLowerCase()
+  if (k === 'black') return t('pages.po.colorFamilyBlack')
+  if (k === 'color') return t('pages.po.colorFamilyColor')
+  if (k === 'fluorescent') return t('pages.po.colorFamilyFluorescent')
+  return String(v)
+}
+
+function applyVirSoftDefault() {
+  const b = (formModel.buyer || '').toUpperCase()
+  if (!b) return
+  if (b.includes('NIKE')) {
+    if (!formModel.vir_softness_type) formModel.vir_softness_type = 'Vir Soft'
+  } else if (!formModel.vir_softness_type) {
+    formModel.vir_softness_type = 'Soft'
+  }
+}
+
+function applyLotPrefix() {
+  const cat = formModel.po_category
+  let p = ''
+  if (cat === 'subcont') p = 'SC-'
+  else if (cat === 'return') p = 'RTN-'
+  else if (cat === 'claim') p = 'CLM-'
+  else if (cat === 'sample') p = 'SMP-'
+  else if (cat === 'suede') p = 'SDE-'
+  else if (cat === 'production') {
+    const vt = (formModel.vir_softness_type || '').toLowerCase()
+    if (vt.includes('vir') || vt.includes('pu')) p = 'PU-'
+    else p = 'THI-'
+  }
+  if (!p) return
+  const cur = (formModel.thi_line_ref || '').trim()
+  if (!cur) {
+    formModel.thi_line_ref = p
+    return
+  }
+  if (cur.startsWith(p)) return
+  formModel.thi_line_ref = p + cur
+}
+
+watch(
+  () => formModel.buyer,
+  () => {
+    formModel.vir_softness_type = ''
+    previewResolvedUnitPrice.value = null
+    schedulePricePreview()
+    applyVirSoftDefault()
+  },
+)
+
+watch(
+  () => [
+    formModel.material_name,
+    formModel.color,
+    formModel.style_article,
+    formModel.thickness_text,
+    formModel.color_family,
+  ],
+  () => schedulePricePreview(),
+)
 
 function resetForm() {
   formModel.po_number = ''
@@ -649,24 +864,32 @@ function resetForm() {
   formModel.order_date = ''
   formModel.buyer = ''
   formModel.etd = ''
+  formModel.po_customer_ref = ''
   formModel.remark = ''
   formModel.status = 'draft'
   formModel.master_item_id = null
   formModel.material_name = ''
   formModel.thickness_text = ''
   formModel.color = ''
+  formModel.color_family = null
+  formModel.emboss = ''
+  formModel.vir_softness_type = ''
   formModel.softness = ''
   formModel.color_reference = ''
   formModel.backing = ''
   formModel.quantity_order = ''
   formModel.style_article = ''
   formModel.model = ''
+  formModel.line_etd = ''
+  formModel.detail_remark = ''
+  formModel.thi_line_ref = ''
   formModel.material_followup_remark = ''
   formModel.material_followup_done = false
   editingPoId.value = null
   editingDetailIds.value = []
   draftLines.value = []
   brandLockedCustomerId.value = null
+  previewResolvedUnitPrice.value = null
 }
 
 function onCustomerChange() {
@@ -705,6 +928,7 @@ function onMasterItemChange(masterItemId) {
     formModel.material_name = ''
     formModel.thickness_text = ''
     formModel.color = ''
+    formModel.color_family = null
     formModel.emboss = ''
     formModel.softness = ''
     formModel.color_reference = ''
@@ -712,6 +936,9 @@ function onMasterItemChange(masterItemId) {
     formModel.quantity_order = ''
     formModel.style_article = ''
     formModel.model = ''
+    formModel.line_etd = ''
+    formModel.detail_remark = ''
+    formModel.thi_line_ref = ''
     return
   }
   formModel.material_name = item.material_name || ''
@@ -733,27 +960,66 @@ const openCreateDialog = () => {
   formDialogVisible.value = true
 }
 
-function buildCurrentDetailBody() {
-  return {
+async function buildCurrentDetailBody() {
+  const body = {
     master_item_id: formModel.master_item_id || undefined,
     material_name: formModel.material_name || undefined,
     thickness_text: formModel.thickness_text || undefined,
     color: formModel.color || undefined,
+    color_family: formModel.color_family || undefined,
+    emboss: formModel.emboss || undefined,
+    vir_softness_type: formModel.vir_softness_type || undefined,
     softness: formModel.softness || undefined,
     color_reference: formModel.color_reference || undefined,
     backing: formModel.backing || undefined,
     quantity_order: formModel.quantity_order ? Number(formModel.quantity_order) : undefined,
     style_article: formModel.style_article || undefined,
     model: formModel.model || undefined,
-    line_etd: toIsoDate(formModel.etd) || undefined,
+    line_etd: toIsoDate(formModel.line_etd) || undefined,
+    detail_remark: formModel.detail_remark || undefined,
+    thi_line_ref: formModel.thi_line_ref || undefined,
   }
+  const b = (formModel.buyer || '').trim()
+  if (b) {
+    try {
+      const r = await resolveBuyerUnitPrice({
+        buyer_code: b,
+        material_name: formModel.material_name || null,
+        color: formModel.color || null,
+        style_article: formModel.style_article || null,
+        thickness_text: formModel.thickness_text || null,
+        color_family: formModel.color_family || null,
+      })
+      if (r.unit_price != null) body.unit_price = Number(r.unit_price)
+    } catch {
+      /* tanpa unit_price */
+    }
+  }
+  return body
 }
 
-function pushCurrentLine(copyCurrent = false) {
-  const line = buildCurrentDetailBody()
+/** Update baris: jangan kirim ulang unit_price (kunci harga di server untuk non-finance). */
+function detailPayloadForUpdate(body) {
+  const o = { ...body }
+  delete o.unit_price
+  delete o.id
+  return o
+}
+
+function sanitizeNewDetailBody(body) {
+  const o = { ...body }
+  delete o.id
+  return o
+}
+
+async function pushCurrentLine(copyCurrent = false) {
+  const line = await buildCurrentDetailBody()
   if (!line.material_name && !line.master_item_id) {
     ElMessage.warning(t('common.material'))
     return
+  }
+  if (formModel.buyer?.trim() && line.unit_price == null) {
+    ElMessage.warning(t('pages.po.priceNotFound'))
   }
   draftLines.value.push({ ...line })
   if (!copyCurrent) {
@@ -761,12 +1027,18 @@ function pushCurrentLine(copyCurrent = false) {
     formModel.material_name = ''
     formModel.thickness_text = ''
     formModel.color = ''
+    formModel.color_family = null
+    formModel.emboss = ''
+    formModel.vir_softness_type = ''
     formModel.softness = ''
     formModel.color_reference = ''
     formModel.backing = ''
     formModel.quantity_order = ''
     formModel.style_article = ''
     formModel.model = ''
+    formModel.line_etd = ''
+    formModel.detail_remark = ''
+    formModel.thi_line_ref = ''
   }
 }
 
@@ -815,11 +1087,13 @@ const openEditDialog = async (row) => {
   formModel.order_date = row.order_date ? String(row.order_date).slice(0, 10) : ''
   formModel.buyer = row.buyer || ''
   formModel.etd = row.etd ? String(row.etd).slice(0, 10) : ''
+  formModel.po_customer_ref = row.po_customer_ref || ''
   formModel.remark = row.remark || ''
   formModel.status = row.status || 'draft'
   formModel.material_followup_remark = row.material_followup_remark || ''
   formModel.material_followup_done = Boolean(row.material_followup_done)
   await onBrandChange(formModel.brand_id)
+  schedulePricePreview()
   try {
     const details = await listPoDetails(row.id)
     draftLines.value = details.map((d) => ({
@@ -828,6 +1102,9 @@ const openEditDialog = async (row) => {
       material_name: d.material_name || undefined,
       thickness_text: d.thickness_text || undefined,
       color: d.color || undefined,
+      color_family: d.color_family || undefined,
+      emboss: d.emboss || undefined,
+      vir_softness_type: d.vir_softness_type || undefined,
       softness: d.softness || undefined,
       color_reference: d.color_reference || undefined,
       backing: d.backing || undefined,
@@ -835,6 +1112,9 @@ const openEditDialog = async (row) => {
       style_article: d.style_article || undefined,
       model: d.model || undefined,
       line_etd: d.line_etd ? String(d.line_etd).slice(0, 10) : undefined,
+      detail_remark: d.detail_remark || undefined,
+      thi_line_ref: d.thi_line_ref || undefined,
+      unit_price: d.unit_price != null ? Number(d.unit_price) : undefined,
     }))
     editingDetailIds.value = details.map((d) => d.id)
     const d0 = details[0]
@@ -843,12 +1123,18 @@ const openEditDialog = async (row) => {
       formModel.material_name = d0.material_name || ''
       formModel.thickness_text = d0.thickness_text || ''
       formModel.color = d0.color || ''
+      formModel.color_family = d0.color_family || null
+      formModel.emboss = d0.emboss || ''
+      formModel.vir_softness_type = d0.vir_softness_type || ''
       formModel.softness = d0.softness || ''
       formModel.color_reference = d0.color_reference || ''
       formModel.backing = d0.backing || ''
       formModel.quantity_order = d0.quantity_order != null ? String(d0.quantity_order) : ''
       formModel.style_article = d0.style_article || ''
       formModel.model = d0.model || ''
+      formModel.line_etd = d0.line_etd ? String(d0.line_etd).slice(0, 10) : ''
+      formModel.detail_remark = d0.detail_remark || ''
+      formModel.thi_line_ref = d0.thi_line_ref || ''
     }
   } catch {
     editingDetailIds.value = []
@@ -873,21 +1159,22 @@ const submitForm = async () => {
       po_category: formModel.po_category,
       order_date: toIsoDate(formModel.order_date) || undefined,
       etd: toIsoDate(formModel.etd) || undefined,
+      po_customer_ref: formModel.po_customer_ref?.trim() || undefined,
       remark: formModel.remark || undefined,
       status: formModel.status,
       material_followup_remark: formModel.material_followup_remark || undefined,
       material_followup_done: formModel.material_followup_done,
     }
-    const detailBodies = draftLines.value.length ? draftLines.value : [buildCurrentDetailBody()]
+    const detailBodies = draftLines.value.length ? draftLines.value : [await buildCurrentDetailBody()]
 
     if (isEditMode.value && editingPoId.value) {
       await updatePo(editingPoId.value, header)
       const keepIds = []
       for (let i = 0; i < detailBodies.length; i += 1) {
-        const rowBody = detailBodies[i]
+        const rowBody = sanitizeNewDetailBody(detailBodies[i])
         const existingId = editingDetailIds.value[i]
         if (existingId) {
-          await updatePoDetail(existingId, rowBody)
+          await updatePoDetail(existingId, detailPayloadForUpdate(rowBody))
           keepIds.push(existingId)
         } else {
           const createdDetail = await addPoDetail(editingPoId.value, rowBody)
@@ -900,8 +1187,8 @@ const submitForm = async () => {
       }
     } else {
       const created = await createPo(header)
-      for (const rowBody of detailBodies) {
-        await addPoDetail(created.id, rowBody)
+      for (const raw of detailBodies) {
+        await addPoDetail(created.id, sanitizeNewDetailBody(raw))
       }
     }
     ElMessage.success(t('pages.customers.saved'))
@@ -929,7 +1216,15 @@ const openDetailDialog = async (row) => {
     detailLines.value = []
   }
   try {
-    detailAudit.value = await listAuditLogs({ entity_type: 'sales_order', entity_id: row.id, limit: 100 })
+    const logsHeader = await listAuditLogs({ entity_type: 'sales_order', entity_id: row.id, limit: 120 })
+    const lineLogsLists = await Promise.all(
+      detailLines.value.map((d) =>
+        listAuditLogs({ entity_type: 'sales_order_line', entity_id: d.id, limit: 60 }).catch(() => []),
+      ),
+    )
+    const merged = [...logsHeader, ...lineLogsLists.flat()]
+    merged.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+    detailAudit.value = merged
   } catch {
     detailAudit.value = []
   }
@@ -976,6 +1271,34 @@ const removeRow = async (row) => {
 function openExportHint() {
   ElMessage.info(t('pages.po.exportHint'))
 }
+
+async function onDuplicatePo(row) {
+  const poNo = row.po_number || `#${row.id}`
+  try {
+    await ElMessageBox.confirm(
+      t('pages.po.duplicatePoConfirm', { poNumber: poNo }),
+      t('pages.po.duplicatePo'),
+      {
+        type: 'info',
+        distinguishCancelAndClose: true,
+        confirmButtonText: t('common.confirm'),
+        cancelButtonText: t('common.cancel'),
+      },
+    )
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.message || t('common.errorGeneric'))
+    return
+  }
+  try {
+    const created = await duplicatePo(row.id)
+    await load()
+    const nr = rows.value.find((r) => Number(r.id) === Number(created.id))
+    ElMessage.success(t('pages.po.duplicatePoSuccess', { poNumber: created.po_number || created.id }))
+    if (nr) await openEditDialog(nr)
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
 </script>
 
 <style scoped>
@@ -995,6 +1318,10 @@ function openExportHint() {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.po-price-readonly :deep(.el-input__wrapper) {
+  background-color: var(--el-fill-color-light);
 }
 
 </style>

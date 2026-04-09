@@ -32,10 +32,16 @@
           <template #default="{ row }">
             <div class="flex flex-wrap items-center justify-center gap-0">
               <el-tooltip :content="t('pages.customs.manageData')" placement="top">
-                <el-button :icon="EditPen" link type="primary" @click="openMaster(row.id)" />
+                <el-button
+                  :icon="EditPen"
+                  link
+                  type="primary"
+                  :aria-label="t('pages.customs.manageData')"
+                  @click="openMaster(row.id)"
+                />
               </el-tooltip>
               <el-tooltip :content="t('common.delete')" placement="top">
-                <el-button :icon="Delete" link type="danger" @click="confirmDelete(row)" />
+                <el-button :icon="Delete" link type="danger" :aria-label="t('common.delete')" @click="confirmDelete(row)" />
               </el-tooltip>
             </div>
           </template>
@@ -145,11 +151,18 @@
                   <el-input v-model="row[key]" size="small" clearable />
                 </template>
               </el-table-column>
-              <el-table-column :label="t('common.actions')" width="88" align="center" fixed="right">
+              <el-table-column :label="t('common.actions')" width="72" align="center" fixed="right">
                 <template #default="{ $index }">
-                  <el-button link type="danger" size="small" @click="removeSheetRow(code, $index)">
-                    {{ t('pages.customs.removeRow') }}
-                  </el-button>
+                  <el-tooltip :content="t('pages.customs.removeRow')" placement="top">
+                    <el-button
+                      link
+                      type="danger"
+                      size="small"
+                      :icon="Delete"
+                      :aria-label="t('pages.customs.removeRow')"
+                      @click="removeSheetRow(code, $index)"
+                    />
+                  </el-tooltip>
                 </template>
               </el-table-column>
             </el-table>

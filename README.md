@@ -125,9 +125,9 @@ Base: `/api/v1`
   - `GET /marketing/delivery-lines.csv`
 - **Reports**
   - `GET /reports/po-daily-recap.csv?date=YYYY-MM-DD`
-- **Documents**
-  - `GET /documents/surat-jalan/{delivery_id}`
-  - `GET /documents/invpl/{packing_id}`
+- **Documents** (format marketing Tong Hong)
+  - Surat jalan: `GET /documents/surat-jalan/{delivery_id}` (HTML), `GET /documents/surat-jalan/{delivery_id}/pdf`
+  - INVPL: `GET /documents/invpl/{packing_id}` (HTML), `GET /documents/invpl/{packing_id}/pdf`, `GET /documents/invpl/{packing_id}/xlsx`
 
 ## Catatan pengembangan
 

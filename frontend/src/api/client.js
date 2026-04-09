@@ -22,6 +22,55 @@ export async function apiFetch(path, options = {}) {
   return r.text()
 }
 
+/**
+ * GET file dokumen dengan Bearer (HTML/PDF/Excel). Tab baru lewat window.open tidak mengirim token.
+ * @param {string} apiPath path setelah /api/v1, mis. `/documents/surat-jalan/12` atau `.../12/pdf`
+ * @param {{ mode?: 'open'|'download', downloadFallbackName?: string }} opts
+ */
+export async function fetchAuthenticatedDocument(apiPath, opts = {}) {
+  const { mode = 'open', downloadFallbackName = 'download' } = opts
+  const path = apiPath.startsWith('/') ? apiPath : `/${apiPath}`
+  const url = `/api/v1${path}`
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
+  const r = await fetch(url, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!r.ok) {
+    const text = await r.text()
+    let msg = text || r.statusText
+    try {
+      const j = JSON.parse(text)
+      if (j?.detail != null) {
+        msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)
+      }
+    } catch {
+      /* gunakan text mentah */
+    }
+    throw new Error(msg)
+  }
+  const blob = await r.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  if (mode === 'open') {
+    const w = window.open(blobUrl, '_blank', 'noopener,noreferrer')
+    if (!w) {
+      URL.revokeObjectURL(blobUrl)
+      throw new Error(
+        'Pop-up diblokir browser — izinkan pop-up untuk situs ini agar dokumen terbuka di tab baru.',
+      )
+    }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000)
+    return
+  }
+  const dispo = r.headers.get('content-disposition') || ''
+  const m = dispo.match(/filename="?([^";]+)"?/i)
+  const name = m ? m[1] : downloadFallbackName
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = name
+  a.click()
+  URL.revokeObjectURL(blobUrl)
+}
+
 // --- Auth ---
 export function login(username, password) {
   return apiFetch('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
@@ -153,11 +202,13 @@ export function listPoMktStages() {
   return apiFetch('/po/mkt-workflow-stages')
 }
 
-/** Baris outstanding format marketing (join PO header + detail). @param {{ balance_filter?: 'all'|'exclude_zero'|'positive_only' }} params */
+/** Baris outstanding format marketing (join PO header + detail). @param {{ balance_filter?: 'all'|'exclude_zero'|'positive_only', po_q?: string, shipment_status?: 'all'|'sent'|'not_sent' }} params */
 export function listMarketingOutstandingLines(params = {}) {
   const q = new URLSearchParams()
   if (params.balance_filter) q.set('balance_filter', params.balance_filter)
   if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
+  if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
+  if (params.shipment_status) q.set('shipment_status', params.shipment_status)
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/marketing/outstanding-lines${suffix}`)
 }
@@ -166,17 +217,44 @@ export function marketingOutstandingCsvUrl(params = {}) {
   const q = new URLSearchParams()
   if (params.balance_filter) q.set('balance_filter', params.balance_filter)
   if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
+  if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
+  if (params.shipment_status) q.set('shipment_status', params.shipment_status)
   const suffix = q.toString() ? `?${q}` : ''
   return `/api/v1/marketing/outstanding-lines.csv${suffix}`
 }
 
-/** Baris delivery list (join surat jalan + produksi + PO) — format lembar marketing. */
-export function listMarketingDeliveryLines() {
-  return apiFetch('/marketing/delivery-lines')
+/** Path unduhan Excel outstanding (Bearer di frontend saat fetch). */
+export function marketingOutstandingXlsxPath(params = {}) {
+  const q = new URLSearchParams()
+  if (params.balance_filter) q.set('balance_filter', params.balance_filter)
+  if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
+  if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
+  if (params.shipment_status) q.set('shipment_status', params.shipment_status)
+  const suffix = q.toString() ? `?${q}` : ''
+  return `/api/v1/marketing/outstanding-lines.xlsx${suffix}`
 }
 
-export function marketingDeliveryCsvUrl() {
-  return '/api/v1/marketing/delivery-lines.csv'
+/** Baris delivery list (join surat jalan + produksi + PO) — format lembar marketing. */
+export function listMarketingDeliveryLines(params = {}) {
+  const q = new URLSearchParams()
+  if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/marketing/delivery-lines${suffix}`)
+}
+
+export function marketingDeliveryCsvUrl(params = {}) {
+  const q = new URLSearchParams()
+  if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  const suffix = q.toString() ? `?${q}` : ''
+  return `/api/v1/marketing/delivery-lines.csv${suffix}`
+}
+
+/** Path unduhan Excel delivery list (Bearer lewat fetchAuthenticatedDocument). */
+export function marketingDeliveryXlsxPath(params = {}) {
+  const q = new URLSearchParams()
+  if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  const suffix = q.toString() ? `?${q}` : ''
+  return `/api/v1/marketing/delivery-lines.xlsx${suffix}`
 }
 
 export function advanceMktWorkflow(poId) {
@@ -193,6 +271,11 @@ export function listPoDetails(poId) {
 
 export function createPo(body) {
   return apiFetch('/po', { method: 'POST', body: JSON.stringify(body) })
+}
+
+/** Salin PO (header + baris) ke nomor PO baru; baris dapat nomor lot kosong. */
+export function duplicatePo(poId) {
+  return apiFetch(`/po/${poId}/duplicate`, { method: 'POST' })
 }
 
 export function updatePo(id, body) {
@@ -470,6 +553,20 @@ export function getBuyerPriceList(id) {
   return apiFetch(`/buyer-prices/lists/${id}`)
 }
 
+/** Sheet list harga untuk buyer (sama struktur dengan GET lists/:id). */
+export function getBuyerPriceByBuyer(buyerCode) {
+  const code = encodeURIComponent(String(buyerCode || '').trim().toUpperCase())
+  return apiFetch(`/buyer-prices/by-buyer/${code}`)
+}
+
+/**
+ * Resolusi harga satuan dari sheet list harga buyer (logika di server).
+ * @param {object} body - buyer_code, material_name?, color?, style_article?, thickness_text?, color_family?
+ */
+export function resolveBuyerUnitPrice(body) {
+  return apiFetch('/buyer-prices/resolve-unit-price', { method: 'POST', body: JSON.stringify(body) })
+}
+
 export function deleteBuyerPriceList(id) {
   return apiFetch(`/buyer-prices/lists/${id}`, { method: 'DELETE' })
 }
@@ -516,8 +613,20 @@ export function fetchReportPoOrderDescription(params = {}) {
   if (params.date_from) q.set('date_from', params.date_from)
   if (params.date_to) q.set('date_to', params.date_to)
   if (params.customer) q.set('customer', params.customer)
+  if (params.date_field) q.set('date_field', params.date_field)
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/reports/po-order-description${suffix}`)
+}
+
+/** CSV LAPORAN PO HARIAN MARKETING (UTF-8 BOM); path relatif untuk fetch + Authorization. */
+export function reportPoDailyMarketingCsvPath(params = {}) {
+  const q = new URLSearchParams()
+  if (params.date_from) q.set('date_from', params.date_from)
+  if (params.date_to) q.set('date_to', params.date_to)
+  if (params.customer) q.set('customer', params.customer)
+  if (params.date_field) q.set('date_field', params.date_field)
+  const suffix = q.toString() ? `?${q}` : ''
+  return `/api/v1/reports/po-daily-marketing.csv${suffix}`
 }
 
 /** Rekap laporan PO (filter tanggal order atau input) */
