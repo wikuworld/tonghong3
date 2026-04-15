@@ -807,3 +807,63 @@ export function listPpicUsers() {
 export function getPoPpicAssignment(poId) {
   return apiFetch(`/workflow/po/${poId}/ppic-assignment`)
 }
+
+// --- Outstanding Materials ---
+export function listOutstandingMaterials(params = {}) {
+  const q = new URLSearchParams()
+  if (params.customer_id) q.set('customer_id', String(params.customer_id))
+  if (params.status) q.set('status', params.status)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/workflow/outstanding-materials${suffix}`)
+}
+
+export function createOutstandingMaterial(body) {
+  return apiFetch('/workflow/outstanding-materials', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateOutstandingMaterial(materialId, body) {
+  return apiFetch(`/workflow/outstanding-materials/${materialId}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteOutstandingMaterial(materialId) {
+  return apiFetch(`/workflow/outstanding-materials/${materialId}`, { method: 'DELETE' })
+}
+
+export function generateOutstandingMaterialsFromPo(poId) {
+  return apiFetch(`/workflow/outstanding-materials/generate-from-po/${poId}`, { method: 'POST' })
+}
+
+export function deliverOutstandingMaterial(materialId, deliveredQty) {
+  return apiFetch(`/workflow/outstanding-materials/${materialId}/deliver`, {
+    method: 'PUT',
+    body: JSON.stringify({ delivered_qty: deliveredQty }),
+  })
+}
+
+// --- Accounting Mappings ---
+export function listAccountingMappings(params = {}) {
+  const q = new URLSearchParams()
+  if (params.transaction_type) q.set('transaction_type', params.transaction_type)
+  if (params.status) q.set('status', params.status)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/accounting/mappings${suffix}`)
+}
+
+export function createAccountingMapping(body) {
+  return apiFetch('/accounting/mappings', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateAccountingMapping(id, body) {
+  return apiFetch(`/accounting/mappings/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteAccountingMapping(id) {
+  return apiFetch(`/accounting/mappings/${id}`, { method: 'DELETE' })
+}
+
+export function resolveAccountingMapping(transaction_type, status = null) {
+  const q = new URLSearchParams()
+  q.set('transaction_type', transaction_type)
+  if (status) q.set('status', status)
+  return apiFetch(`/accounting/mappings/resolve?${q}`)
+}

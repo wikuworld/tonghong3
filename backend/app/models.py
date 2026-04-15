@@ -720,3 +720,35 @@ class PpicsAssignment(Base):
 
     po: Mapped[Optional["PoHeader"]] = relationship("PoHeader", back_populates="ppic_assignments")
     ppic_user: Mapped[Optional["User"]] = relationship("User")
+
+
+class OutstandingMaterial(Base):
+    """Track outstanding materials per PO detail."""
+
+    __tablename__ = "outstanding_materials"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    po_detail_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("po_details.id"))
+    material_name: Mapped[Optional[str]] = mapped_column(String(255))
+    total_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    delivered_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    balance_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    po_detail: Mapped[Optional["PoDetail"]] = relationship("PoDetail")
+
+
+class AccountingMapping(Base):
+    """Mapping transaksi ke Chart of Accounts."""
+
+    __tablename__ = "accounting_mappings"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    transaction_type: Mapped[str] = mapped_column(String(50))
+    status: Mapped[Optional[str]] = mapped_column(String(50))
+    coa_code: Mapped[str] = mapped_column(String(20))
+    coa_name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)

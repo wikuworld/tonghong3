@@ -23,6 +23,8 @@ import UserAccessPage from '../views/admin/UserAccessPage.vue'
 import CustomerBrandMappingPage from '../views/admin/CustomerBrandMappingPage.vue'
 import SubconInvoicePage from '../views/admin/SubconInvoicePage.vue'
 import PpicsDashboardPage from '../views/admin/PpicsDashboardPage.vue'
+import OutstandingMaterialsPage from '../views/admin/OutstandingMaterialsPage.vue'
+import AccountingMappingsPage from '../views/admin/AccountingMappingsPage.vue'
 import LoginPage from '../views/LoginPage.vue'
 import { ROUTE_ROLES } from '../security/rbac'
 
@@ -78,6 +80,8 @@ const router = createRouter({
         { path: 'customer-brand-mapping', component: CustomerBrandMappingPage, meta: { titleKey: 'menu.customerBrandMapping', roles: ROUTE_ROLES.customerBrandMapping } },
         { path: 'subcon-invoices', component: SubconInvoicePage, meta: { titleKey: 'menu.subconInvoice', roles: ROUTE_ROLES.subconInvoice } },
         { path: 'ppic-dashboard', component: PpicsDashboardPage, meta: { titleKey: 'menu.ppicDashboard', roles: ROUTE_ROLES.ppicDashboard } },
+        { path: 'outstanding-materials', component: OutstandingMaterialsPage, meta: { titleKey: 'menu.outstandingMaterials', roles: ROUTE_ROLES.outstandingMaterials } },
+        { path: 'accounting-mappings', component: AccountingMappingsPage, meta: { titleKey: 'menu.accountingMappings', roles: ROUTE_ROLES.accountingMappings } },
       ],
     },
   ],

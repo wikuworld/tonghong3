@@ -894,3 +894,68 @@ class PpicsAssignmentOut(ORMBase):
     po_number: Optional[str] = None
     customer_name: Optional[str] = None
     ppic_username: Optional[str] = None
+
+
+# --- Outstanding Materials ---
+class OutstandingMaterialCreate(BaseModel):
+    po_detail_id: int
+    material_name: Optional[str] = None
+    total_qty: Optional[Decimal] = None
+    delivered_qty: Optional[Decimal] = None
+    balance_qty: Optional[Decimal] = None
+    status: str = "pending"
+
+
+class OutstandingMaterialUpdate(BaseModel):
+    material_name: Optional[str] = None
+    total_qty: Optional[Decimal] = None
+    delivered_qty: Optional[Decimal] = None
+    balance_qty: Optional[Decimal] = None
+    status: Optional[str] = None
+
+
+class OutstandingMaterialOut(ORMBase):
+    id: int
+    po_detail_id: int
+    material_name: Optional[str] = None
+    total_qty: Optional[Decimal] = None
+    delivered_qty: Optional[Decimal] = None
+    balance_qty: Optional[Decimal] = None
+    status: str
+    updated_at: Optional[datetime] = None
+    po_number: Optional[str] = None
+    customer_id: Optional[int] = None
+    customer_name: Optional[str] = None
+
+
+class AccountingMappingCreate(BaseModel):
+    transaction_type: str
+    status: Optional[str] = None
+    coa_code: str
+    coa_name: str
+    description: Optional[str] = None
+
+
+class AccountingMappingUpdate(BaseModel):
+    transaction_type: Optional[str] = None
+    status: Optional[str] = None
+    coa_code: Optional[str] = None
+    coa_name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class AccountingMappingOut(ORMBase):
+    id: int
+    transaction_type: str
+    status: Optional[str] = None
+    coa_code: str
+    coa_name: str
+    description: Optional[str] = None
+    is_active: bool
+    created_at: Optional[datetime] = None
+
+
+class AccountingMappingResolveOut(BaseModel):
+    coa_code: Optional[str] = None
+    coa_name: Optional[str] = None
+    found: bool = False

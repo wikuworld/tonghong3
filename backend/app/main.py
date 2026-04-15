@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import (
+    accounting,
     audit,
     auth,
     buyer_prices,
@@ -65,6 +66,7 @@ app.include_router(customs.router, prefix=_PREFIX)
 app.include_router(buyer_prices.router, prefix=_PREFIX)
 app.include_router(pricing.router, prefix=_PREFIX)
 app.include_router(workflow.router, prefix=_PREFIX)
+app.include_router(accounting.router, prefix=_PREFIX)
 
 
 @app.on_event("startup")
