@@ -1,7 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from decimal import Decimal
+import csv
+import io
 from app.db import get_db
-from app.models import SpecialPrice, CustomerSpecialPrice
+from app.models import SpecialPrice, CustomerSpecialPrice, BuyerPriceList, BuyerPriceSheetRow
 from app.schemas import SpecialPriceCreate, SpecialPriceUpdate, SpecialPriceOut, CustomerSpecialPriceCreate, CustomerSpecialPriceUpdate, CustomerSpecialPriceOut
 
 router = APIRouter(prefix="/pricing", tags=["pricing"])
@@ -83,3 +87,77 @@ def delete_customer_price(price_id: int, db: Session = Depends(get_db)):
     row.is_active = False
     db.commit()
     return {"status": "deleted"}
+
+
+class PriceUpdateItem(BaseModel):
+    buyer_code: str
+    material_pattern: str
+    new_price: Decimal
+
+
+class BulkPriceUpdate(BaseModel):
+    updates: list[PriceUpdateItem]
+
+
+@router.post("/bulk-update", response_model=dict)
+def bulk_update_prices(body: BulkPriceUpdate, db: Session = Depends(get_db)):
+    """Update multiple prices at once."""
+    updated = 0
+    for item in body.updates:
+        buyer_list = db.query(BuyerPriceList).filter(
+            BuyerPriceList.buyer_code == item.buyer_code
+        ).first()
+        
+        if buyer_list and buyer_list.rows:
+            for row in buyer_list.rows:
+                cells = row.cells or {}
+                material = cells.get('ITEM', '') or cells.get('MATERIAL', '')
+                if item.material_pattern.lower() in material.lower():
+                    for price_col in ['PRICE', 'UOM', 'PRICE USD']:
+                        if price_col in cells:
+                            cells[price_col] = str(item.new_price)
+                    row.cells = cells
+                    updated += 1
+    
+    db.commit()
+    return {"updated": updated}
+
+
+@router.post("/bulk-update-csv")
+async def bulk_update_prices_csv(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Bulk update from CSV file."""
+    content = await file.read()
+    decoded = content.decode('utf-8')
+    reader = csv.DictReader(io.StringIO(decoded))
+    
+    updated = 0
+    for row in reader:
+        buyer_code = row.get('buyer_code', '').strip()
+        material_pattern = row.get('material_pattern', '').strip()
+        new_price = row.get('new_price', '').strip()
+        
+        if not buyer_code or not material_pattern or not new_price:
+            continue
+        
+        try:
+            new_price_dec = Decimal(new_price)
+        except:
+            continue
+        
+        buyer_list = db.query(BuyerPriceList).filter(
+            BuyerPriceList.buyer_code == buyer_code
+        ).first()
+        
+        if buyer_list and buyer_list.rows:
+            for bprow in buyer_list.rows:
+                cells = bprow.cells or {}
+                material = cells.get('ITEM', '') or cells.get('MATERIAL', '')
+                if material_pattern.lower() in material.lower():
+                    for price_col in ['PRICE', 'UOM', 'PRICE USD']:
+                        if price_col in cells:
+                            cells[price_col] = str(new_price_dec)
+                    bprow.cells = cells
+                    updated += 1
+    
+    db.commit()
+    return {"updated": updated}

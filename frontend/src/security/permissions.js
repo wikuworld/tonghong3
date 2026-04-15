@@ -64,6 +64,10 @@ export const ACTION_MATRIX = {
     update: ['admin', 'marketing'],
     delete: ['admin'],
   },
+  bulkPriceUpdate: {
+    view: ['admin', 'marketing'],
+    update: ['admin', 'marketing'],
+  },
 }
 
 let runtimeMatrix = null

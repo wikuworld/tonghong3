@@ -713,3 +713,13 @@ export async function updateCustomerPrice(id, body) {
 export async function deleteCustomerPrice(id) {
   return apiFetch(`/pricing/customer-prices/${id}`, { method: 'DELETE' })
 }
+
+export async function bulkUpdatePrices(updates) {
+  return apiFetch('/pricing/bulk-update', { method: 'POST', body: JSON.stringify({ updates }) })
+}
+
+export async function bulkUpdatePricesCsv(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/pricing/bulk-update-csv', { method: 'POST', body: fd })
+}
