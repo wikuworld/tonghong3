@@ -66,6 +66,7 @@
     >
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
       <el-table-column prop="po_number" :label="t('common.poNo')" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="po_customer_ref" :label="t('pages.po.poCustomerRef')" min-width="140" show-overflow-tooltip />
       <el-table-column prop="customerName" :label="t('common.customer')" min-width="200" show-overflow-tooltip />
       <el-table-column prop="buyer" :label="t('common.buyer')" min-width="120" show-overflow-tooltip />
       <el-table-column prop="material_hint" :label="t('common.material')" min-width="140" show-overflow-tooltip />
@@ -182,31 +183,13 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
-            <el-form-item :label="`${t('menu.customs')} (${t('common.aju')})`">
-              <el-select
-                v-model="formModel.customs_declaration_id"
-                clearable
-                filterable
-                class="w-full"
-                :placeholder="t('pages.po.customsPlaceholder')"
-              >
-                <el-option
-                  v-for="d in customsList"
-                  :key="d.id"
-                  :label="`${d.nomor_aju || d.id} · ${d.kode_dokumen || ''}`"
-                  :value="d.id"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.poCategory')">
               <el-select v-model="formModel.po_category" class="w-full" :placeholder="t('common.category')">
                 <el-option :label="t('status.production')" value="production" />
+                <el-option :label="t('status.subkon')" value="subcont" />
+                <el-option :label="t('status.retur')" value="return" />
                 <el-option :label="t('status.sample')" value="sample" />
                 <el-option :label="t('status.claim')" value="claim" />
-                <el-option :label="t('status.return')" value="return" />
-                <el-option :label="t('status.subcont')" value="subcont" />
                 <el-option :label="t('status.suede')" value="suede" />
               </el-select>
             </el-form-item>
@@ -245,6 +228,16 @@
           <el-col :xs="24">
             <el-form-item :label="t('common.remark')">
               <el-input v-model="formModel.remark" type="textarea" :rows="2" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="12">
+            <el-form-item :label="t('pages.po.billingAddress')">
+              <el-input v-model="formModel.billing_address" type="textarea" :rows="2" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="12">
+            <el-form-item :label="t('pages.po.deliveryAddress')">
+              <el-input v-model="formModel.delivery_address" type="textarea" :rows="2" />
             </el-form-item>
           </el-col>
           <el-col :xs="24">
@@ -296,7 +289,19 @@
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.thickness')">
-              <el-input v-model="formModel.thickness_text" :placeholder="t('common.placeholder.thickness')" />
+              <el-select
+                v-model="formModel.thickness_text"
+                clearable
+                filterable
+                allow-create
+                class="w-full"
+                :placeholder="t('common.placeholder.thickness')"
+              >
+                <el-option label="1.0-1.2" value="1.0-1.2" />
+                <el-option label="1.2-1.4" value="1.2-1.4" />
+                <el-option label="1.4-1.6" value="1.4-1.6" />
+                <el-option label="1.6-1.8" value="1.6-1.8" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
@@ -327,7 +332,13 @@
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.softness')">
-              <el-input v-model="formModel.softness" />
+              <el-select v-model="formModel.softness" clearable filterable allow-create class="w-full">
+                <el-option label="Soft" value="Soft" />
+                <el-option label="Medium" value="Medium" />
+                <el-option label="Hard" value="Hard" />
+                <el-option label="Extra Soft" value="Extra Soft" />
+                <el-option label="Super Soft" value="Super Soft" />
+              </el-select>
               <span class="mt-1 block text-xs text-slate-500">{{ t('pages.po.softnessRangesHint') }}</span>
             </el-form-item>
           </el-col>
@@ -377,14 +388,63 @@
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('pages.po.unitPriceUsd')">
-              <el-input :model-value="displayResolvedUnitPrice" readonly class="po-price-readonly" />
-              <span class="mt-1 block text-xs text-slate-500">{{ t('pages.po.unitPriceAutoHint') }}</span>
+              <el-input
+                v-model.number="formModel.unit_price_input"
+                type="number"
+                :step="0.01"
+                :controls="false"
+                class="w-full"
+              />
+              <div class="mt-1 flex items-center gap-2">
+                <span v-if="previewResolvedUnitPrice.value != null" class="text-xs text-slate-500">
+                  {{ t('pages.po.autoResolved') }}: {{ previewResolvedUnitPrice.value }}
+                </span>
+                <el-tag v-if="formModel.unit_price_input && previewResolvedUnitPrice.value != null && formModel.unit_price_input !== previewResolvedUnitPrice.value" size="small" type="warning">
+                  {{ t('pages.po.overridden') }}
+                </el-tag>
+              </div>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24">
+            <el-form-item :label="t('pages.po.etdSchedule')">
+              <el-table :data="etdScheduleRows" border size="small" class="etd-schedule-table">
+                <el-table-column :label="t('common.noLabel')" width="60" align="center">
+                  <template #default="{ $index }">{{ $index + 1 }}{{ ordinalSuffix($index + 1) }}</template>
+                </el-table-column>
+                <el-table-column :label="t('pages.po.etdQty')" width="120">
+                  <template #default="{ $index }">
+                    <el-input-number
+                      v-model="etdScheduleRows[$index].qty"
+                      :min="0"
+                      :controls="false"
+                      size="small"
+                      class="w-full"
+                    />
+                  </template>
+                </el-table-column>
+                <el-table-column :label="t('pages.po.etdDate')">
+                  <template #default="{ $index }">
+                    <el-date-picker
+                      v-model="etdScheduleRows[$index].date"
+                      type="date"
+                      size="small"
+                      class="w-full"
+                      value-format="YYYY-MM-DD"
+                    />
+                  </template>
+                </el-table-column>
+              </el-table>
+              <div class="mt-2">
+                <el-button size="small" @click="clearEtdSchedule">{{ t('common.clear') }}</el-button>
+                <el-button size="small" type="primary" @click="autoFillEtdSchedule">{{ t('pages.po.autoFillFromEtd') }}</el-button>
+              </div>
             </el-form-item>
           </el-col>
         </el-row>
         <div class="po-line-actions">
           <el-button :icon="Plus" @click="pushCurrentLine(false)">{{ t('common.add') }} Line</el-button>
           <el-button :icon="DocumentCopy" @click="pushCurrentLine(true)">{{ t('pages.po.copyLine') }}</el-button>
+          <el-button :icon="DocumentCopy" @click="openCopyItemDialog">{{ t('pages.po.copyItemFromOtherPo') }}</el-button>
         </div>
         <el-table
           v-if="draftLines.length"
@@ -447,7 +507,6 @@
         <el-descriptions-item :label="t('common.customer')">{{ detailView.customerName }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.buyer')">{{ detailView.buyer || t('common.emptyValue') }}</el-descriptions-item>
         <el-descriptions-item :label="t('pages.po.headerEtd')">{{ detailView.etd || t('common.emptyValue') }}</el-descriptions-item>
-        <el-descriptions-item :label="t('menu.customs')">{{ detailView.customs_declaration_id || t('common.emptyValue') }}</el-descriptions-item>
       </el-descriptions>
       <p class="mt-2 text-xs text-slate-500">{{ t('pages.poDetail.lineRevisionHint') }}</p>
       <el-table
@@ -545,6 +604,61 @@
         </div>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="copyItemDialogVisible"
+      :title="t('pages.po.copyItemFromOtherPo')"
+      width="900px"
+      destroy-on-close
+      align-center
+    >
+      <el-form label-position="top">
+        <el-form-item :label="t('common.customer')">
+          <el-select
+            v-model="copyItemCustomerId"
+            clearable
+            filterable
+            class="w-full"
+            :placeholder="t('common.placeholder.customer')"
+            @change="onCopyItemCustomerChange"
+          >
+            <el-option
+              v-for="c in customers"
+              :key="c.id"
+              :label="customerOptionLabel(c)"
+              :value="c.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      
+      <el-table
+        v-if="copyItemSourcePo.length"
+        :data="copyItemSourcePo"
+        border
+        size="small"
+        max-height="300"
+        @selection-change="onCopyItemSelectionChange"
+      >
+        <el-table-column type="selection" width="55" />
+        <el-table-column prop="source_po_number" :label="t('common.poNo')" width="150" />
+        <el-table-column prop="material_name" :label="t('common.material')" min-width="160" />
+        <el-table-column prop="thickness_text" :label="t('common.thickness')" width="100" />
+        <el-table-column prop="color" :label="t('common.color')" width="100" />
+        <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="100" />
+      </el-table>
+      <div v-else class="text-center text-slate-500 py-8">
+        {{ t('pages.po.selectCustomerToSeeItems') }}
+      </div>
+      <template #footer>
+        <div class="po-dialog-footer">
+          <el-button @click="copyItemDialogVisible = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :disabled="!copyItemSelected.length" @click="addCopiedItems">
+            {{ t('pages.po.addSelectedItems') }} ({{ copyItemSelected.length }})
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -572,16 +686,18 @@ import {
   deletePoDetail,
   deletePo,
   duplicatePo,
+  getAllowedBrands,
   listBrands,
   listBrandBuyers,
   listBuyerPriceLists,
-  listCustomsDeclarations,
   listCustomers,
   listMasterItems,
   listPo,
   listPoDetails,
+  listPoForCopy,
   listAuditLogs,
   resolveBuyerUnitPrice,
+  setPoDetailDeliverySchedules,
   toIsoDate,
   updatePo,
   updatePoDetail,
@@ -598,11 +714,11 @@ const filterCustomerId = ref(null)
 const filterStatus = ref('')
 const customers = ref([])
 const brands = ref([])
-const customsList = ref([])
 const masterItems = ref([])
 const buyerCodes = ref(['NB', 'ADIDAS', 'NIKE', 'UA'])
 const brandBuyerCodes = ref([])
 const brandLockedCustomerId = ref(null)
+const allowedBrandIds = ref([])
 
 const rows = ref([])
 const brandDialogVisible = ref(false)
@@ -641,17 +757,15 @@ async function enrichPoRows(headers) {
 async function load() {
   loading.value = true
   try {
-    const [cust, br, cu, mi, bpl, pos] = await Promise.all([
+    const [cust, br, mi, bpl, pos] = await Promise.all([
       listCustomers(),
       listBrands(),
-      listCustomsDeclarations(),
       listMasterItems(),
       listBuyerPriceLists().catch(() => []),
       listPo(),
     ])
     customers.value = cust
     brands.value = br
-    customsList.value = cu
     masterItems.value = mi
     const extraBuyers = [...new Set(bpl.map((x) => x.buyer_code).filter(Boolean))]
     buyerCodes.value = [...new Set([...buyerCodes.value, ...extraBuyers])]
@@ -675,8 +789,14 @@ onMounted(async () => {
 
 const brandsFiltered = computed(() => {
   const cid = formModel.customer_id
-  if (!cid) return brands.value
-  return brands.value.filter((b) => !b.customer_id || b.customer_id === cid)
+  let filtered = brands.value
+  if (cid) {
+    filtered = brands.value.filter((b) => !b.customer_id || b.customer_id === cid)
+  }
+  if (allowedBrandIds.value.length > 0) {
+    filtered = filtered.filter((b) => allowedBrandIds.value.includes(b.id))
+  }
+  return filtered
 })
 
 const buyerCodesFiltered = computed(() => {
@@ -719,17 +839,67 @@ const editingPoId = ref(null)
 const editingDetailIds = ref([])
 const draftLines = ref([])
 
+const copyItemDialogVisible = ref(false)
+const copyItemCustomerId = ref(null)
+const copyItemSourcePo = ref([])
+const copyItemSelected = ref([])
+
+const etdScheduleRows = ref([
+  { qty: null, date: '' },
+  { qty: null, date: '' },
+  { qty: null, date: '' },
+  { qty: null, date: '' },
+  { qty: null, date: '' },
+  { qty: null, date: '' },
+  { qty: null, date: '' },
+  { qty: null, date: '' },
+  { qty: null, date: '' },
+  { qty: null, date: '' },
+  { qty: null, date: '' },
+  { qty: null, date: '' },
+])
+
+function ordinalSuffix(index) {
+  const j = index % 10
+  const k = index % 100
+  if (j === 1 && k !== 11) return 'st'
+  if (j === 2 && k !== 12) return 'nd'
+  if (j === 3 && k !== 13) return 'rd'
+  return 'th'
+}
+
+function clearEtdSchedule() {
+  etdScheduleRows.value = Array.from({ length: 12 }, () => ({ qty: null, date: '' }))
+}
+
+function autoFillEtdSchedule() {
+  const qty = formModel.quantity_order ? Number(formModel.quantity_order) : 0
+  if (!qty) return
+  const eachQty = Math.floor(qty / 12)
+  const remainder = qty % 12
+  const baseDate = formModel.line_etd ? new Date(formModel.line_etd) : new Date()
+  etdScheduleRows.value = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(baseDate)
+    d.setDate(d.getDate() + i * 7)
+    return {
+      qty: i < remainder ? eachQty + 1 : eachQty,
+      date: i < remainder && i === 0 ? formModel.line_etd : d.toISOString().slice(0, 10),
+    }
+  })
+}
+
 const formModel = reactive({
   po_number: '',
   customer_id: null,
   brand_id: null,
-  customs_declaration_id: null,
   po_category: 'production',
   order_date: '',
   buyer: '',
   etd: '',
   po_customer_ref: '',
   remark: '',
+  billing_address: '',
+  delivery_address: '',
   status: 'draft',
   master_item_id: null,
   material_name: '',
@@ -749,6 +919,8 @@ const formModel = reactive({
   thi_line_ref: '',
   material_followup_remark: '',
   material_followup_done: false,
+  unit_price_input: null,
+  autoPricingEnabled: true,
 })
 
 const pricePreviewLoading = ref(false)
@@ -855,17 +1027,29 @@ watch(
   () => schedulePricePreview(),
 )
 
+watch(
+  () => formModel.po_category,
+  (newCategory) => {
+    const isSubkonOrRetur = newCategory === 'subcont' || newCategory === 'return'
+    formModel.autoPricingEnabled = !isSubkonOrRetur
+    if (isSubkonOrRetur) {
+      formModel.unit_price_input = null
+    }
+  },
+)
+
 function resetForm() {
   formModel.po_number = ''
   formModel.customer_id = null
   formModel.brand_id = null
-  formModel.customs_declaration_id = null
   formModel.po_category = 'production'
   formModel.order_date = ''
   formModel.buyer = ''
   formModel.etd = ''
   formModel.po_customer_ref = ''
   formModel.remark = ''
+  formModel.billing_address = ''
+  formModel.delivery_address = ''
   formModel.status = 'draft'
   formModel.master_item_id = null
   formModel.material_name = ''
@@ -885,14 +1069,16 @@ function resetForm() {
   formModel.thi_line_ref = ''
   formModel.material_followup_remark = ''
   formModel.material_followup_done = false
+  formModel.autoPricingEnabled = true
   editingPoId.value = null
   editingDetailIds.value = []
   draftLines.value = []
   brandLockedCustomerId.value = null
   previewResolvedUnitPrice.value = null
+  clearEtdSchedule()
 }
 
-function onCustomerChange() {
+async function onCustomerChange() {
   if (brandLockedCustomerId.value) {
     formModel.customer_id = brandLockedCustomerId.value
     return
@@ -900,6 +1086,16 @@ function onCustomerChange() {
   formModel.brand_id = null
   brandBuyerCodes.value = []
   formModel.buyer = ''
+  allowedBrandIds.value = []
+  const cid = formModel.customer_id
+  if (cid) {
+    try {
+      const allowed = await getAllowedBrands(cid)
+      allowedBrandIds.value = allowed.map((b) => b.id)
+    } catch {
+      allowedBrandIds.value = []
+    }
+  }
 }
 
 async function onBrandChange(brandId) {
@@ -951,6 +1147,11 @@ function onMasterItemChange(masterItemId) {
   formModel.quantity_order = item.quantity_order_default != null ? String(item.quantity_order_default) : ''
   formModel.style_article = item.style_article || ''
   formModel.model = item.model || ''
+  if (item && previewResolvedUnitPrice.value != null) {
+    formModel.unit_price_input = previewResolvedUnitPrice.value
+  } else {
+    formModel.unit_price_input = null
+  }
 }
 
 const openCreateDialog = () => {
@@ -979,22 +1180,40 @@ async function buildCurrentDetailBody() {
     detail_remark: formModel.detail_remark || undefined,
     thi_line_ref: formModel.thi_line_ref || undefined,
   }
-  const b = (formModel.buyer || '').trim()
-  if (b) {
-    try {
-      const r = await resolveBuyerUnitPrice({
-        buyer_code: b,
-        material_name: formModel.material_name || null,
-        color: formModel.color || null,
-        style_article: formModel.style_article || null,
-        thickness_text: formModel.thickness_text || null,
-        color_family: formModel.color_family || null,
-      })
-      if (r.unit_price != null) body.unit_price = Number(r.unit_price)
-    } catch {
-      /* tanpa unit_price */
+  const isFreePrice = formModel.po_category === 'subcont' || formModel.po_category === 'return'
+  if (isFreePrice) {
+    if (formModel.unit_price_input != null) {
+      body.unit_price = Number(formModel.unit_price_input)
+    }
+  } else {
+    const b = (formModel.buyer || '').trim()
+    if (b) {
+      try {
+        const r = await resolveBuyerUnitPrice({
+          buyer_code: b,
+          material_name: formModel.material_name || null,
+          color: formModel.color || null,
+          style_article: formModel.style_article || null,
+          thickness_text: formModel.thickness_text || null,
+          color_family: formModel.color_family || null,
+        })
+        if (formModel.unit_price_input != null) {
+          body.unit_price = Number(formModel.unit_price_input)
+        } else if (r.unit_price != null) {
+          body.unit_price = Number(r.unit_price)
+        }
+      } catch {
+        if (formModel.unit_price_input != null) {
+          body.unit_price = Number(formModel.unit_price_input)
+        }
+      }
+    } else if (formModel.unit_price_input != null) {
+      body.unit_price = Number(formModel.unit_price_input)
     }
   }
+  body.delivery_schedules = etdScheduleRows.value
+    .filter((r) => r.qty != null || r.date)
+    .map((r, i) => ({ sequence_no: i + 1, qty: r.qty, delivery_date: r.date }))
   return body
 }
 
@@ -1082,19 +1301,20 @@ const openEditDialog = async (row) => {
   formModel.po_number = row.po_number || ''
   formModel.customer_id = row.customer_id
   formModel.brand_id = row.brand_id ?? null
-  formModel.customs_declaration_id = row.customs_declaration_id ?? null
   formModel.po_category = row.po_category || 'production'
   formModel.order_date = row.order_date ? String(row.order_date).slice(0, 10) : ''
   formModel.buyer = row.buyer || ''
   formModel.etd = row.etd ? String(row.etd).slice(0, 10) : ''
   formModel.po_customer_ref = row.po_customer_ref || ''
   formModel.remark = row.remark || ''
+  formModel.billing_address = row.billing_address || ''
+  formModel.delivery_address = row.delivery_address || ''
   formModel.status = row.status || 'draft'
   formModel.material_followup_remark = row.material_followup_remark || ''
   formModel.material_followup_done = Boolean(row.material_followup_done)
   await onBrandChange(formModel.brand_id)
   schedulePricePreview()
-  try {
+    try {
     const details = await listPoDetails(row.id)
     draftLines.value = details.map((d) => ({
       id: d.id,
@@ -1115,6 +1335,7 @@ const openEditDialog = async (row) => {
       detail_remark: d.detail_remark || undefined,
       thi_line_ref: d.thi_line_ref || undefined,
       unit_price: d.unit_price != null ? Number(d.unit_price) : undefined,
+      delivery_schedules: d.delivery_schedules || [],
     }))
     editingDetailIds.value = details.map((d) => d.id)
     const d0 = details[0]
@@ -1135,6 +1356,18 @@ const openEditDialog = async (row) => {
       formModel.line_etd = d0.line_etd ? String(d0.line_etd).slice(0, 10) : ''
       formModel.detail_remark = d0.detail_remark || ''
       formModel.thi_line_ref = d0.thi_line_ref || ''
+      if (d0.delivery_schedules && d0.delivery_schedules.length) {
+        const rows = Array.from({ length: 12 }, () => ({ qty: null, date: '' }))
+        d0.delivery_schedules.forEach((s, idx) => {
+          if (idx < 12) {
+            rows[idx].qty = s.qty != null ? Number(s.qty) : null
+            rows[idx].date = s.delivery_date ? String(s.delivery_date).slice(0, 10) : ''
+          }
+        })
+        etdScheduleRows.value = rows
+      } else {
+        clearEtdSchedule()
+      }
     }
   } catch {
     editingDetailIds.value = []
@@ -1154,13 +1387,14 @@ const submitForm = async () => {
       po_number: isEditMode.value ? formModel.po_number?.trim() || undefined : undefined,
       customer_id: formModel.customer_id,
       brand_id: formModel.brand_id || undefined,
-      customs_declaration_id: formModel.customs_declaration_id || undefined,
       buyer: formModel.buyer || undefined,
       po_category: formModel.po_category,
       order_date: toIsoDate(formModel.order_date) || undefined,
       etd: toIsoDate(formModel.etd) || undefined,
       po_customer_ref: formModel.po_customer_ref?.trim() || undefined,
       remark: formModel.remark || undefined,
+      billing_address: formModel.billing_address?.trim() || undefined,
+      delivery_address: formModel.delivery_address?.trim() || undefined,
       status: formModel.status,
       material_followup_remark: formModel.material_followup_remark || undefined,
       material_followup_done: formModel.material_followup_done,
@@ -1171,13 +1405,21 @@ const submitForm = async () => {
       await updatePo(editingPoId.value, header)
       const keepIds = []
       for (let i = 0; i < detailBodies.length; i += 1) {
-        const rowBody = sanitizeNewDetailBody(detailBodies[i])
+        const rowBody = { ...sanitizeNewDetailBody(detailBodies[i]) }
+        const schedules = rowBody.delivery_schedules || []
+        delete rowBody.delivery_schedules
         const existingId = editingDetailIds.value[i]
         if (existingId) {
           await updatePoDetail(existingId, detailPayloadForUpdate(rowBody))
+          if (schedules.length) {
+            await setPoDetailDeliverySchedules(existingId, { schedules })
+          }
           keepIds.push(existingId)
         } else {
           const createdDetail = await addPoDetail(editingPoId.value, rowBody)
+          if (schedules.length) {
+            await setPoDetailDeliverySchedules(createdDetail.id, { schedules })
+          }
           keepIds.push(createdDetail.id)
         }
       }
@@ -1188,7 +1430,13 @@ const submitForm = async () => {
     } else {
       const created = await createPo(header)
       for (const raw of detailBodies) {
-        await addPoDetail(created.id, sanitizeNewDetailBody(raw))
+        const rowBody = { ...sanitizeNewDetailBody(raw) }
+        const schedules = rowBody.delivery_schedules || []
+        delete rowBody.delivery_schedules
+        const createdDetail = await addPoDetail(created.id, rowBody)
+        if (schedules.length) {
+          await setPoDetailDeliverySchedules(createdDetail.id, { schedules })
+        }
       }
     }
     ElMessage.success(t('pages.customers.saved'))
@@ -1299,6 +1547,70 @@ async function onDuplicatePo(row) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
+
+async function openCopyItemDialog() {
+  copyItemCustomerId.value = formModel.customer_id
+  copyItemSelected.value = []
+  copyItemSourcePo.value = []
+  if (copyItemCustomerId.value) {
+    await loadCopyItemSourcePos()
+  }
+  copyItemDialogVisible.value = true
+}
+
+async function loadCopyItemSourcePos() {
+  if (!copyItemCustomerId.value) {
+    copyItemSourcePo.value = []
+    return
+  }
+  try {
+    const pos = await listPoForCopy({ customer_id: copyItemCustomerId.value })
+    const otherPos = pos.filter(p => p.id !== editingPoId.value)
+    const allDetails = await Promise.all(
+      otherPos.map(p => listPoDetails(p.id).catch(() => []))
+    )
+    copyItemSourcePo.value = allDetails.flat().map(d => ({
+      ...d,
+      source_po_number: otherPos.find(p => p.id === d.po_id)?.po_number
+    }))
+  } catch {
+    copyItemSourcePo.value = []
+  }
+}
+
+async function onCopyItemCustomerChange() {
+  await loadCopyItemSourcePos()
+}
+
+function onCopyItemSelectionChange(selection) {
+  copyItemSelected.value = selection
+}
+
+function addCopiedItems() {
+  const newLines = copyItemSelected.value.map(d => ({
+    master_item_id: d.master_item_id,
+    material_name: d.material_name,
+    thickness_text: d.thickness_text,
+    color: d.color,
+    color_family: d.color_family,
+    emboss: d.emboss,
+    vir_softness_type: d.vir_softness_type,
+    softness: d.softness,
+    color_reference: d.color_reference,
+    backing: d.backing,
+    quantity_order: d.quantity_order,
+    style_article: d.style_article,
+    model: d.model,
+    line_etd: d.line_etd,
+    detail_remark: d.detail_remark,
+    thi_line_ref: d.thi_line_ref,
+    unit_price: d.unit_price,
+    copied_from_detail_id: d.id
+  }))
+  draftLines.value.push(...newLines)
+  copyItemDialogVisible.value = false
+  ElMessage.success(t('pages.po.itemsCopied', { count: newLines.length }))
+}
 </script>
 
 <style scoped>
@@ -1322,6 +1634,14 @@ async function onDuplicatePo(row) {
 
 .po-price-readonly :deep(.el-input__wrapper) {
   background-color: var(--el-fill-color-light);
+}
+
+.etd-schedule-table {
+  width: 100%;
+}
+
+.etd-schedule-table :deep(.el-table__header-wrapper) {
+  display: none;
 }
 
 </style>

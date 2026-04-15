@@ -16,6 +16,7 @@ const MENU_ROLES = {
   'menu.masterImport': ['admin'],
   'menu.masterItems': ['admin'],
   'menu.userAccess': ['admin'],
+  'menu.customerBrandMapping': ['admin', 'marketing', 'sales'],
   'menu.production': ['admin', 'production', 'ppic', 'qc'],
   'menu.qc': ['admin', 'qc', 'warehouse'],
   'menu.packing': ['admin', 'warehouse'],
@@ -48,5 +49,6 @@ export const ROUTE_ROLES = {
   masterImport: MENU_ROLES['menu.masterImport'],
   masterItems: MENU_ROLES['menu.masterItems'],
   userAccess: MENU_ROLES['menu.userAccess'],
+  customerBrandMapping: MENU_ROLES['menu.customerBrandMapping'],
 }
 

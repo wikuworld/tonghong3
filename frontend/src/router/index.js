@@ -20,6 +20,7 @@ import MarketingFlowPage from '../views/admin/MarketingFlowPage.vue'
 import MasterImportPage from '../views/admin/MasterImportPage.vue'
 import MasterItemsPage from '../views/admin/MasterItemsPage.vue'
 import UserAccessPage from '../views/admin/UserAccessPage.vue'
+import CustomerBrandMappingPage from '../views/admin/CustomerBrandMappingPage.vue'
 import LoginPage from '../views/LoginPage.vue'
 import { ROUTE_ROLES } from '../security/rbac'
 
@@ -72,6 +73,7 @@ const router = createRouter({
         { path: 'master-import', component: MasterImportPage, meta: { titleKey: 'menu.masterImport', roles: ROUTE_ROLES.masterImport } },
         { path: 'master-items', component: MasterItemsPage, meta: { titleKey: 'menu.masterItems', roles: ROUTE_ROLES.masterItems } },
         { path: 'user-access', component: UserAccessPage, meta: { titleKey: 'menu.userAccess', roles: ROUTE_ROLES.userAccess } },
+        { path: 'customer-brand-mapping', component: CustomerBrandMappingPage, meta: { titleKey: 'menu.customerBrandMapping', roles: ROUTE_ROLES.customerBrandMapping } },
       ],
     },
   ],

@@ -786,6 +786,46 @@ class CustomerSpecialPriceOut(ORMBase):
     customer: Optional[CustomerOut] = None
 
 
+class BrandOut(ORMBase):
+    id: int
+    customer_id: Optional[int] = None
+    code: Optional[str] = None
+    name: Optional[str] = None
+
+
+class CustomerBrandMappingCreate(BaseModel):
+    brand_id: int
+    is_default: bool = False
+
+
+class CustomerBrandMappingUpdate(BaseModel):
+    is_default: Optional[bool] = None
+
+
+class CustomerBrandMappingOut(ORMBase):
+    id: int
+    customer_id: int
+    brand_id: int
+    is_default: bool
+    created_at: Optional[datetime] = None
+    brand: Optional[BrandOut] = None
+
+
+class BrandConstraintCreate(BaseModel):
+    allowed_brand_ids: list[int]
+
+
+class BrandConstraintUpdate(BaseModel):
+    allowed_brand_ids: Optional[list[int]] = None
+
+
+class BrandConstraintOut(ORMBase):
+    id: int
+    customer_id: int
+    allowed_brand_ids: list[int]
+    created_at: Optional[datetime] = None
+
+
 def row_to_dict(obj: Any) -> dict[str, Any]:
     """Serialisasi sederhana untuk respons fleksibel."""
     if obj is None:

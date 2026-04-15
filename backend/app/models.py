@@ -54,6 +54,10 @@ class Customer(Base):
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    brand_mappings: Mapped[list["CustomerBrandMapping"]] = relationship(
+        "CustomerBrandMapping", back_populates="customer", cascade="all, delete-orphan"
+    )
+
 
 class MasterItem(Base):
     """Master FG / barang jadi (sheet Master Item)."""
@@ -190,6 +194,35 @@ class Brand(Base):
     customer_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("customers.id"))
     code: Mapped[Optional[str]] = mapped_column(String(50))
     name: Mapped[Optional[str]] = mapped_column(String(255))
+
+    customer_mappings: Mapped[list["CustomerBrandMapping"]] = relationship(
+        "CustomerBrandMapping", back_populates="brand"
+    )
+
+
+class CustomerBrandMapping(Base):
+    __tablename__ = "customer_brand_mappings"
+    __table_args__ = (
+        UniqueConstraint("customer_id", "brand_id", name="uq_customer_brand"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    customer_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("customers.id"))
+    brand_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("brands.id"))
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+
+    customer: Mapped[Optional["Customer"]] = relationship("Customer", back_populates="brand_mappings")
+    brand: Mapped[Optional["Brand"]] = relationship("Brand", back_populates="customer_mappings")
+
+
+class BrandConstraint(Base):
+    __tablename__ = "brand_constraints"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    customer_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("customers.id"))
+    allowed_brand_ids: Mapped[list] = mapped_column(JSON)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
 
 
 class BrandBuyerMap(Base):

@@ -723,3 +723,32 @@ export async function bulkUpdatePricesCsv(file) {
   fd.append('file', file)
   return apiFetch('/pricing/bulk-update-csv', { method: 'POST', body: fd })
 }
+
+// --- Customer Brand Mappings ---
+export function listCustomerBrandMappings(customerId) {
+  return apiFetch(`/customers/${customerId}/brand-mappings`)
+}
+
+export function createCustomerBrandMapping(customerId, body) {
+  return apiFetch(`/customers/${customerId}/brand-mappings`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateCustomerBrandMapping(customerId, mappingId, body) {
+  return apiFetch(`/customers/${customerId}/brand-mappings/${mappingId}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteCustomerBrandMapping(customerId, mappingId) {
+  return apiFetch(`/customers/${customerId}/brand-mappings/${mappingId}`, { method: 'DELETE' })
+}
+
+export function getAllowedBrands(customerId) {
+  return apiFetch(`/customers/${customerId}/allowed-brands`)
+}
+
+export function getBrandConstraint(customerId) {
+  return apiFetch(`/customers/${customerId}/brand-constraint`)
+}
+
+export function upsertBrandConstraint(customerId, body) {
+  return apiFetch(`/customers/${customerId}/brand-constraint`, { method: 'PUT', body: JSON.stringify(body) })
+}
