@@ -198,6 +198,14 @@ export function listPo(params = {}) {
   return apiFetch(`/po${suffix}`)
 }
 
+export function listPoForCopy(params = {}) {
+  const q = new URLSearchParams()
+  if (params.customer_id) q.set('customer_id', params.customer_id)
+  q.set('limit', '100')
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/po${suffix}`)
+}
+
 export function listPoMktStages() {
   return apiFetch('/po/mkt-workflow-stages')
 }
@@ -298,6 +306,17 @@ export function deletePoDetail(detailId) {
   return apiFetch(`/po-detail/${detailId}`, { method: 'DELETE' })
 }
 
+export function setPoDetailDeliverySchedules(detailId, schedules) {
+  return apiFetch(`/po-detail/${detailId}/delivery-schedules`, {
+    method: 'PUT',
+    body: JSON.stringify({ schedules }),
+  })
+}
+
+export function listPoDetailDeliverySchedules(detailId) {
+  return apiFetch(`/po-detail/${detailId}/delivery-schedules`)
+}
+
 // --- Masters ---
 export function listBrands() {
   return apiFetch('/masters/brands')
@@ -344,6 +363,27 @@ export function updateMasterItem(id, body) {
 
 export function deleteMasterItem(id) {
   return apiFetch(`/masters/items/${id}`, { method: 'DELETE' })
+}
+
+export async function exportMasterItems() {
+  const url = marketingOutstandingXlsxPath()
+  const r = await fetch(`/api/v1/masters/items/export`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+  })
+  if (!r.ok) throw new Error(r.statusText)
+  const blob = await r.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = 'master_items.xlsx'
+  a.click()
+  URL.revokeObjectURL(blobUrl)
+}
+
+export async function importMasterItems(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/masters/items/import', { method: 'POST', body: fd })
 }
 
 export function listMasterPrices() {
@@ -633,4 +673,43 @@ export function reportPoDailyMarketingCsvPath(params = {}) {
 export function reportPoDailyRecapUrl(dateStr) {
   const q = dateStr ? `?date=${encodeURIComponent(dateStr)}` : ''
   return `/api/v1/reports/po-daily-recap.csv${q}`
+}
+
+// --- Special Prices ---
+export async function listSpecialPrices(params = {}) {
+  const q = new URLSearchParams()
+  if (params.buyer_code) q.set('buyer_code', params.buyer_code)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/pricing/special-prices${suffix}`)
+}
+
+export async function createSpecialPrice(body) {
+  return apiFetch('/pricing/special-prices', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export async function updateSpecialPrice(id, body) {
+  return apiFetch(`/pricing/special-prices/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export async function deleteSpecialPrice(id) {
+  return apiFetch(`/pricing/special-prices/${id}`, { method: 'DELETE' })
+}
+
+export async function listCustomerPrices(params = {}) {
+  const q = new URLSearchParams()
+  if (params.customer_id) q.set('customer_id', params.customer_id)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/pricing/customer-prices${suffix}`)
+}
+
+export async function createCustomerPrice(body) {
+  return apiFetch('/pricing/customer-prices', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export async function updateCustomerPrice(id, body) {
+  return apiFetch(`/pricing/customer-prices/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export async function deleteCustomerPrice(id) {
+  return apiFetch(`/pricing/customer-prices/${id}`, { method: 'DELETE' })
 }

@@ -52,6 +52,18 @@ export const ACTION_MATRIX = {
     create: ['admin'],
     update: ['admin'],
   },
+  specialPrices: {
+    view: ['admin', 'marketing', 'sales'],
+    create: ['admin', 'marketing'],
+    update: ['admin', 'marketing'],
+    delete: ['admin'],
+  },
+  customerPrices: {
+    view: ['admin', 'marketing', 'sales'],
+    create: ['admin', 'marketing'],
+    update: ['admin', 'marketing'],
+    delete: ['admin'],
+  },
 }
 
 let runtimeMatrix = null

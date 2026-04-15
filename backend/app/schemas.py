@@ -89,6 +89,7 @@ class BuyerPriceListCreate(BaseModel):
     period_start: Optional[date] = None
     period_end: Optional[date] = None
     source_label: Optional[str] = None
+    currency: str = "USD"
 
 
 class BuyerPriceListUpdate(BaseModel):
@@ -97,6 +98,7 @@ class BuyerPriceListUpdate(BaseModel):
     period_start: Optional[date] = None
     period_end: Optional[date] = None
     source_label: Optional[str] = None
+    currency: Optional[str] = None
 
 
 class BuyerPriceSheetSave(BaseModel):
@@ -365,6 +367,16 @@ class PoDetailDeliveryOut(ORMBase):
     delivery_date: Optional[date] = None
 
 
+class DeliveryScheduleItem(BaseModel):
+    sequence_no: int
+    qty: Optional[Decimal] = None
+    delivery_date: Optional[date] = None
+
+
+class DeliverySchedulesPayload(BaseModel):
+    schedules: list[DeliveryScheduleItem] = Field(default_factory=list)
+
+
 class PoDetailOut(ORMBase):
     id: int
     po_id: Optional[int] = None
@@ -549,6 +561,10 @@ class InvoiceCreate(BaseModel):
     received_date: Optional[date] = None
     nopen: Optional[str] = None
     nomor_aju: Optional[str] = None
+    payment_date: Optional[date] = None
+    payment_bank_account: Optional[str] = None
+    payment_proof_url: Optional[str] = None
+    payment_status: str = "unpaid"
 
 
 class InvoiceUpdate(BaseModel):
@@ -575,6 +591,10 @@ class InvoiceUpdate(BaseModel):
     received_date: Optional[date] = None
     nopen: Optional[str] = None
     nomor_aju: Optional[str] = None
+    payment_date: Optional[date] = None
+    payment_bank_account: Optional[str] = None
+    payment_proof_url: Optional[str] = None
+    payment_status: Optional[str] = None
 
 
 class InvoiceDetailCreate(BaseModel):
@@ -594,6 +614,7 @@ class InvoiceDetailCreate(BaseModel):
 class MasterItemCreate(BaseModel):
     item_code: str
     thickness_mm: Optional[Decimal] = None
+    thickness_range: Optional[str] = None
     material_name: Optional[str] = None
     emboss: Optional[str] = None
     color: Optional[str] = None
@@ -605,12 +626,15 @@ class MasterItemCreate(BaseModel):
     model: Optional[str] = None
     category: Optional[str] = None
     exim_material_code: Optional[str] = None
+    color_standard: Optional[str] = None
+    model_takedown: Optional[str] = None
 
 
 class MasterItemOut(ORMBase):
     id: int
     item_code: str
     thickness_mm: Optional[Decimal] = None
+    thickness_range: Optional[str] = None
     material_name: Optional[str] = None
     emboss: Optional[str] = None
     color: Optional[str] = None
@@ -622,6 +646,8 @@ class MasterItemOut(ORMBase):
     model: Optional[str] = None
     category: Optional[str] = None
     exim_material_code: Optional[str] = None
+    color_standard: Optional[str] = None
+    model_takedown: Optional[str] = None
     created_at: Optional[datetime] = None
 
 
@@ -684,6 +710,80 @@ class NotificationOut(ORMBase):
     is_read: bool
     created_at: Optional[datetime] = None
     read_at: Optional[datetime] = None
+
+
+class SpecialPriceCreate(BaseModel):
+    buyer_code: str
+    material_pattern: Optional[str] = None
+    emboss_pattern: Optional[str] = None
+    color_pattern: Optional[str] = None
+    discount_type: str = "percentage"
+    discount_value: Decimal
+    valid_from: Optional[date] = None
+    valid_to: Optional[date] = None
+    is_active: bool = True
+
+
+class SpecialPriceUpdate(BaseModel):
+    buyer_code: Optional[str] = None
+    material_pattern: Optional[str] = None
+    emboss_pattern: Optional[str] = None
+    color_pattern: Optional[str] = None
+    discount_type: Optional[str] = None
+    discount_value: Optional[Decimal] = None
+    valid_from: Optional[date] = None
+    valid_to: Optional[date] = None
+    is_active: Optional[bool] = None
+
+
+class SpecialPriceOut(ORMBase):
+    id: int
+    buyer_code: str
+    material_pattern: Optional[str] = None
+    emboss_pattern: Optional[str] = None
+    color_pattern: Optional[str] = None
+    discount_type: str
+    discount_value: Decimal
+    valid_from: Optional[date] = None
+    valid_to: Optional[date] = None
+    is_active: bool
+    created_at: Optional[datetime] = None
+
+
+class CustomerSpecialPriceCreate(BaseModel):
+    customer_id: int
+    buyer_code: str
+    material_pattern: Optional[str] = None
+    price_override: Optional[Decimal] = None
+    discount_percentage: Optional[Decimal] = None
+    valid_from: Optional[date] = None
+    valid_to: Optional[date] = None
+    is_active: bool = True
+
+
+class CustomerSpecialPriceUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    buyer_code: Optional[str] = None
+    material_pattern: Optional[str] = None
+    price_override: Optional[Decimal] = None
+    discount_percentage: Optional[Decimal] = None
+    valid_from: Optional[date] = None
+    valid_to: Optional[date] = None
+    is_active: Optional[bool] = None
+
+
+class CustomerSpecialPriceOut(ORMBase):
+    id: int
+    customer_id: int
+    buyer_code: str
+    material_pattern: Optional[str] = None
+    price_override: Optional[Decimal] = None
+    discount_percentage: Optional[Decimal] = None
+    valid_from: Optional[date] = None
+    valid_to: Optional[date] = None
+    is_active: bool
+    created_at: Optional[datetime] = None
+    customer: Optional[CustomerOut] = None
 
 
 def row_to_dict(obj: Any) -> dict[str, Any]:

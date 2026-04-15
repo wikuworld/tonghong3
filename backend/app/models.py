@@ -33,6 +33,7 @@ class Customer(Base):
     code: Mapped[Optional[str]] = mapped_column(String(50), unique=True)
     name: Mapped[Optional[str]] = mapped_column(String(255))
     contact_person: Mapped[Optional[str]] = mapped_column(String(255))
+    position: Mapped[Optional[str]] = mapped_column(String(120))
     email: Mapped[Optional[str]] = mapped_column(String(255))
     phone: Mapped[Optional[str]] = mapped_column(String(50))
     city: Mapped[Optional[str]] = mapped_column(String(120))
@@ -62,11 +63,14 @@ class MasterItem(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     item_code: Mapped[str] = mapped_column(String(50), unique=True)
     thickness_mm: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 3))
+    thickness_range: Mapped[Optional[str]] = mapped_column(String(80))
     material_name: Mapped[Optional[str]] = mapped_column(String(500))
     emboss: Mapped[Optional[str]] = mapped_column(String(500))
     color: Mapped[Optional[str]] = mapped_column(String(500))
     softness: Mapped[Optional[str]] = mapped_column(String(100))
     color_reference: Mapped[Optional[str]] = mapped_column(String(255))
+    color_standard: Mapped[Optional[str]] = mapped_column(String(255))
+    model_takedown: Mapped[Optional[str]] = mapped_column(String(100))
     backing: Mapped[Optional[str]] = mapped_column(String(255))
     quantity_order_default: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
     style_article: Mapped[Optional[str]] = mapped_column(String(100))
@@ -150,6 +154,7 @@ class BuyerPriceList(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     buyer_code: Mapped[str] = mapped_column(String(32), unique=True)
+    currency: Mapped[str] = mapped_column(String(3), default="USD")
     title: Mapped[Optional[str]] = mapped_column(Text)
     period_label: Mapped[Optional[str]] = mapped_column(Text)
     period_start: Mapped[Optional[date]] = mapped_column(Date)
@@ -211,6 +216,43 @@ class CustomerPic(Base):
     phone: Mapped[Optional[str]] = mapped_column(String(50))
     email: Mapped[Optional[str]] = mapped_column(String(255))
     title: Mapped[Optional[str]] = mapped_column(String(120))
+
+
+class SpecialPrice(Base):
+    """Harga khusus/diskon per buyer untuk material tertentu."""
+
+    __tablename__ = "special_prices"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    buyer_code: Mapped[str] = mapped_column(String(32))
+    material_pattern: Mapped[Optional[str]] = mapped_column(String(255))
+    emboss_pattern: Mapped[Optional[str]] = mapped_column(String(100))
+    color_pattern: Mapped[Optional[str]] = mapped_column(String(100))
+    discount_type: Mapped[str] = mapped_column(String(20))
+    discount_value: Mapped[Decimal] = mapped_column(Numeric(14, 4))
+    valid_from: Mapped[Optional[date]] = mapped_column(Date)
+    valid_to: Mapped[Optional[date]] = mapped_column(Date)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+
+
+class CustomerSpecialPrice(Base):
+    """Harga khusus per customer dengan buyer_code dan material pattern."""
+
+    __tablename__ = "customer_special_prices"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    customer_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("customers.id"))
+    buyer_code: Mapped[str] = mapped_column(String(32))
+    material_pattern: Mapped[Optional[str]] = mapped_column(String(255))
+    price_override: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    discount_percentage: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2))
+    valid_from: Mapped[Optional[date]] = mapped_column(Date)
+    valid_to: Mapped[Optional[date]] = mapped_column(Date)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+
+    customer: Mapped[Optional["Customer"]] = relationship("Customer")
 
 
 class PoHeader(Base):
@@ -484,6 +526,10 @@ class Invoice(Base):
     received_date: Mapped[Optional[date]] = mapped_column(Date)
     nopen: Mapped[Optional[str]] = mapped_column(String(80))
     nomor_aju: Mapped[Optional[str]] = mapped_column(String(80))
+    payment_date: Mapped[Optional[date]] = mapped_column(Date)
+    payment_bank_account: Mapped[Optional[str]] = mapped_column(String(100))
+    payment_proof_url: Mapped[Optional[str]] = mapped_column(String(500))
+    payment_status: Mapped[str] = mapped_column(String(20), default="unpaid")
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
     )
@@ -514,6 +560,8 @@ class ExchangeRate(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     idr_per_usd: Mapped[Decimal] = mapped_column(Numeric(18, 4))
     effective_date: Mapped[date] = mapped_column(Date)
+    valid_from: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    valid_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(String(100))
     created_at: Mapped[Optional[datetime]] = mapped_column(
