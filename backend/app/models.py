@@ -330,6 +330,9 @@ class PoHeader(Base):
         "CustomsDeclaration",
         foreign_keys=[customs_declaration_id],
     )
+    subcon_invoices: Mapped[list["SubconInvoice"]] = relationship(
+        "SubconInvoice", back_populates="po"
+    )
 
 
 class PoDetail(Base):
@@ -678,3 +681,23 @@ class Notification(Base):
         TIMESTAMP, server_default=func.current_timestamp()
     )
     read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class SubconInvoice(Base):
+    """Invoice untuk PO Subcont - 2 jenis: barang dan jasa."""
+
+    __tablename__ = "subcon_invoices"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    po_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("po_headers.id"))
+    invoice_type: Mapped[str] = mapped_column(String(20))  # "barang" atau "jasa"
+    invoice_number: Mapped[Optional[str]] = mapped_column(String(100))
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="draft")  # draft, sent, paid
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    po: Mapped[Optional["PoHeader"]] = relationship("PoHeader", back_populates="subcon_invoices")

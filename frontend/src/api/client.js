@@ -752,3 +752,33 @@ export function getBrandConstraint(customerId) {
 export function upsertBrandConstraint(customerId, body) {
   return apiFetch(`/customers/${customerId}/brand-constraint`, { method: 'PUT', body: JSON.stringify(body) })
 }
+
+// --- Subcon Invoices ---
+export function listSubconInvoices(params = {}) {
+  const q = new URLSearchParams()
+  if (params.po_id) q.set('po_id', String(params.po_id))
+  if (params.status) q.set('status', params.status)
+  if (params.invoice_type) q.set('invoice_type', params.invoice_type)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/subcon-invoices${suffix}`)
+}
+
+export function getSubconInvoice(id) {
+  return apiFetch(`/subcon-invoices/${id}`)
+}
+
+export function createSubconInvoice(body) {
+  return apiFetch('/subcon-invoices', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateSubconInvoice(id, body) {
+  return apiFetch(`/subcon-invoices/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteSubconInvoice(id) {
+  return apiFetch(`/subcon-invoices/${id}`, { method: 'DELETE' })
+}
+
+export function generateSubconInvoicesFromPo(poId) {
+  return apiFetch(`/subcon-invoices/generate-from-po/${poId}`, { method: 'POST' })
+}

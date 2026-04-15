@@ -837,3 +837,33 @@ def row_to_dict(obj: Any) -> dict[str, Any]:
             v = float(v) if v is not None else None
         out[c.key] = v
     return out
+
+
+class SubconInvoiceCreate(BaseModel):
+    po_id: int
+    invoice_type: str
+    invoice_number: Optional[str] = None
+    amount: Decimal
+    description: Optional[str] = None
+
+
+class SubconInvoiceUpdate(BaseModel):
+    invoice_type: Optional[str] = None
+    invoice_number: Optional[str] = None
+    amount: Optional[Decimal] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+
+
+class SubconInvoiceOut(ORMBase):
+    id: int
+    po_id: int
+    invoice_type: str
+    invoice_number: Optional[str] = None
+    amount: Decimal
+    description: Optional[str] = None
+    status: str
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    po_number: Optional[str] = None
+    customer_name: Optional[str] = None

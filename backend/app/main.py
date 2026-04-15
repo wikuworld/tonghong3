@@ -19,10 +19,12 @@ from app.routers import (
     permissions,
     packing,
     po,
+    pricing,
     production,
     qc,
     reports,
     sales_orders,
+    subcon,
     wilayah,
 )
 
@@ -44,6 +46,7 @@ app.include_router(customers.router, prefix=_PREFIX)
 app.include_router(wilayah.router, prefix=_PREFIX)
 app.include_router(sales_orders.router, prefix=_PREFIX)
 app.include_router(po.router, prefix=_PREFIX)
+app.include_router(subcon.router, prefix=_PREFIX)
 app.include_router(marketing.router, prefix=_PREFIX)
 app.include_router(production.router, prefix=_PREFIX)
 app.include_router(qc.router, prefix=_PREFIX)
@@ -59,6 +62,7 @@ app.include_router(reports.router, prefix=_PREFIX)
 app.include_router(documents.router, prefix=_PREFIX)
 app.include_router(customs.router, prefix=_PREFIX)
 app.include_router(buyer_prices.router, prefix=_PREFIX)
+app.include_router(pricing.router, prefix=_PREFIX)
 
 
 @app.on_event("startup")
