@@ -782,3 +782,28 @@ export function deleteSubconInvoice(id) {
 export function generateSubconInvoicesFromPo(poId) {
   return apiFetch(`/subcon-invoices/generate-from-po/${poId}`, { method: 'POST' })
 }
+
+// --- PPIC Workflow ---
+export function assignPoToPpic(poId, body) {
+  return apiFetch(`/workflow/po/${poId}/assign-to-ppic`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function getPpicDashboard(params = {}) {
+  const q = new URLSearchParams()
+  if (params.user_id) q.set('user_id', String(params.user_id))
+  if (params.status) q.set('status', params.status)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/workflow/ppic/dashboard${suffix}`)
+}
+
+export function updatePpicAssignmentStatus(assignmentId, body) {
+  return apiFetch(`/workflow/ppic/assignments/${assignmentId}/status`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function listPpicUsers() {
+  return apiFetch('/workflow/ppic/users')
+}
+
+export function getPoPpicAssignment(poId) {
+  return apiFetch(`/workflow/po/${poId}/ppic-assignment`)
+}

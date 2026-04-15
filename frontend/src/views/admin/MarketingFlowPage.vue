@@ -46,9 +46,26 @@
           <el-table-column :label="t('pages.marketingFlow.materialDone')" width="120" align="center">
             <template #default="{ row }">{{ row.material_followup_done ? '✓' : t('common.emptyValue') }}</template>
           </el-table-column>
-          <el-table-column :label="t('common.actions')" width="112" fixed="right" align="center">
+          <el-table-column :label="t('ppicWorkflow.status')" width="130" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="ppicAssignments[row.id]" size="small" :type="ppicAssignments[row.id].status === 'completed' ? 'success' : ppicAssignments[row.id].status === 'in_progress' ? 'warning' : 'info'">
+                {{ ppicStatusLabel(ppicAssignments[row.id].status) }}
+              </el-tag>
+              <span v-else class="text-gray-400 text-xs">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('common.actions')" width="140" fixed="right" align="center">
             <template #default="{ row }">
               <div class="flex flex-wrap items-center justify-center gap-0">
+                <el-tooltip :content="t('ppicWorkflow.assignToPpic')" placement="top">
+                  <el-button
+                    type="warning"
+                    link
+                    size="small"
+                    :aria-label="t('ppicWorkflow.assignToPpic')"
+                    @click="openAssignDialog(row)"
+                  />
+                </el-tooltip>
                 <el-tooltip v-if="canAdvance" :content="t('pages.marketingFlow.advance')" placement="top">
                   <el-button
                     :icon="DArrowRight"
@@ -305,6 +322,26 @@
         </el-collapse>
       </el-tab-pane>
     </el-tabs>
+
+    <el-dialog v-model="assignDialogVisible" :title="t('ppicWorkflow.assignToPpic')" width="420px">
+      <el-form label-width="120px">
+        <el-form-item :label="t('common.poNo')">
+          <el-input :model-value="selectedPoForAssignment?.po_number" disabled />
+        </el-form-item>
+        <el-form-item :label="t('ppicWorkflow.ppicUser')" required>
+          <el-select v-model="assignForm.ppic_user_id" class="w-full" clearable :placeholder="t('ppicWorkflow.ppicUser')">
+            <el-option v-for="u in ppicUsers" :key="u.id" :label="u.username" :value="u.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('ppicWorkflow.notes')">
+          <el-input v-model="assignForm.notes" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="assignDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="assigning" @click="submitAssignment">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -317,10 +354,13 @@ import { DArrowRight, Document, Download, Van } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import {
   advanceMktWorkflow,
+  assignPoToPpic,
+  getPoPpicAssignment,
   listMarketingDeliveryLines,
   listMarketingOutstandingLines,
   listPo,
   listPoMktStages,
+  listPpicUsers,
   marketingDeliveryCsvUrl,
   marketingOutstandingCsvUrl,
   marketingOutstandingXlsxPath,
@@ -351,6 +391,13 @@ const outstandingViewMode = ref('all')
 const outstandingTableRef = ref(null)
 const outstandingSelection = ref([])
 const savingRemarkId = ref(null)
+
+const ppicUsers = ref([])
+const ppicAssignments = ref({})
+const assignDialogVisible = ref(false)
+const assignForm = ref({ ppic_user_id: null, notes: '' })
+const selectedPoForAssignment = ref(null)
+const assigning = ref(false)
 
 const OUTSTANDING_TEXT_FILTER_KEYS = [
   'order_date',
@@ -664,8 +711,66 @@ onMounted(async () => {
   } catch {
     stageList.value = []
   }
-  await load()
+  await loadPpicUsers()
+  await loadAssignments()
 })
+
+async function loadPpicUsers() {
+  try {
+    ppicUsers.value = await listPpicUsers()
+  } catch {
+    ppicUsers.value = []
+  }
+}
+
+async function loadAssignments() {
+  try {
+    const data = await getPpicDashboard()
+    const map = {}
+    for (const a of data) {
+      map[a.po_id] = a
+    }
+    ppicAssignments.value = map
+  } catch {
+    ppicAssignments.value = {}
+  }
+}
+
+function openAssignDialog(row) {
+  selectedPoForAssignment.value = row
+  assignForm.value = { ppic_user_id: null, notes: '' }
+  assignDialogVisible.value = true
+}
+
+async function submitAssignment() {
+  if (!assignForm.value.ppic_user_id) {
+    ElMessage.warning(t('ppicWorkflow.ppicUser') + ' ' + t('common.required'))
+    return
+  }
+  assigning.value = true
+  try {
+    await assignPoToPpic(selectedPoForAssignment.value.id, {
+      ppic_user_id: assignForm.value.ppic_user_id,
+      notes: assignForm.value.notes || null,
+    })
+    ElMessage.success(t('common.saveSuccess'))
+    assignDialogVisible.value = false
+    await loadAssignments()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    assigning.value = false
+  }
+}
+
+function ppicStatusLabel(status) {
+  const labels = {
+    pending: t('ppicWorkflow.pending'),
+    in_progress: t('ppicWorkflow.inProgress'),
+    completed: t('ppicWorkflow.completed'),
+  }
+  return labels[status] || status || '—'
+}
 
 async function advance(row) {
   advancing.value = row.id

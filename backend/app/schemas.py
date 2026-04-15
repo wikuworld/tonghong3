@@ -682,6 +682,7 @@ class UserOut(ORMBase):
     username: str
     role: str
     is_active: bool
+    department: Optional[str] = None
 
 
 class UserCreate(BaseModel):
@@ -689,12 +690,14 @@ class UserCreate(BaseModel):
     password: str
     role: str
     is_active: bool = True
+    department: Optional[str] = None
 
 
 class UserUpdate(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
+    department: Optional[str] = None
 
 
 class NotificationOut(ORMBase):
@@ -867,3 +870,27 @@ class SubconInvoiceOut(ORMBase):
     updated_at: Optional[datetime] = None
     po_number: Optional[str] = None
     customer_name: Optional[str] = None
+
+
+class PpicsAssignmentCreate(BaseModel):
+    po_id: int
+    ppic_user_id: int
+    notes: Optional[str] = None
+
+
+class PpicsAssignmentUpdate(BaseModel):
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PpicsAssignmentOut(ORMBase):
+    id: int
+    po_id: int
+    ppic_user_id: int
+    status: str
+    notes: Optional[str] = None
+    assigned_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    po_number: Optional[str] = None
+    customer_name: Optional[str] = None
+    ppic_username: Optional[str] = None

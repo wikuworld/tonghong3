@@ -333,6 +333,9 @@ class PoHeader(Base):
     subcon_invoices: Mapped[list["SubconInvoice"]] = relationship(
         "SubconInvoice", back_populates="po"
     )
+    ppic_assignments: Mapped[list["PpicsAssignment"]] = relationship(
+        "PpicsAssignment", back_populates="po", cascade="all, delete-orphan"
+    )
 
 
 class PoDetail(Base):
@@ -640,6 +643,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(32), default="admin")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    department: Mapped[Optional[str]] = mapped_column(String(50))
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
     )
@@ -701,3 +705,18 @@ class SubconInvoice(Base):
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     po: Mapped[Optional["PoHeader"]] = relationship("PoHeader", back_populates="subcon_invoices")
+
+
+class PpicsAssignment(Base):
+    __tablename__ = "ppic_assignments"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    po_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("po_headers.id"))
+    ppic_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"))
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    assigned_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    po: Mapped[Optional["PoHeader"]] = relationship("PoHeader", back_populates="ppic_assignments")
+    ppic_user: Mapped[Optional["User"]] = relationship("User")
