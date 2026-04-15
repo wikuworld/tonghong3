@@ -584,6 +584,10 @@ export function importCustomsCsvFiles(files, sourceLabel) {
   return apiFetch('/customs/declarations/import-upload', { method: 'POST', body: fd })
 }
 
+export function generateCustomsFromDelivery(deliveryId) {
+  return apiFetch(`/customs/generate-from-delivery/${deliveryId}`, { method: 'POST' })
+}
+
 // --- Buyer prices ---
 export function listBuyerPriceLists() {
   return apiFetch('/buyer-prices/lists')

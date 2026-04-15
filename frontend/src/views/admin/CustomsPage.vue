@@ -13,6 +13,68 @@
         </el-button>
       </template>
 
+      <el-card class="mb-4" shadow="never">
+        <template #header>
+          <span class="font-medium">{{ t('pages.customs.generateFromDelivery') }}</span>
+        </template>
+        <el-row :gutter="16" align="middle">
+          <el-col :xs="24" :sm="12" :md="8">
+            <el-select
+              v-model="selectedDeliveryId"
+              :placeholder="t('pages.customs.selectDelivery')"
+              filterable
+              clearable
+              class="w-full"
+              @visible-change="onDeliveryDropdown"
+            >
+              <el-option
+                v-for="d in deliveryOptions"
+                :key="d.id"
+                :label="`${d.delivery_number} - ${d.customer_name || ''}`"
+                :value="d.id"
+              />
+            </el-select>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8">
+            <el-button
+              type="success"
+              :loading="generating"
+              :disabled="!selectedDeliveryId"
+              @click="handleGenerateAju"
+            >
+              {{ t('pages.customs.generateFromDelivery') }}
+            </el-button>
+          </el-col>
+        </el-row>
+
+        <div v-if="generatedAju" class="mt-4">
+          <el-divider content-position="left">{{ t('pages.customs.ajuData') }}</el-divider>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item :label="t('pages.customs.ajuNumber')">
+              <strong>{{ generatedAju.nomor_aju }}</strong>
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customs.deliveryNumber')">
+              {{ generatedAju.delivery_number }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customs.customerName')">
+              {{ generatedAju.customer_name }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customs.poNumber')">
+              {{ generatedAju.po_number }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customs.totalQty')">
+              {{ generatedAju.total_qty }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customs.totalRoll')">
+              {{ generatedAju.total_roll }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customs.totalPcs')">
+              {{ generatedAju.total_pcs }}
+            </el-descriptions-item>
+          </el-descriptions>
+        </div>
+      </el-card>
+
       <el-table
         :data="filteredRows"
         v-loading="loading"
@@ -183,13 +245,51 @@ import AdminSection from '../../components/AdminSection.vue'
 import {
   createCustomsDeclaration,
   deleteCustomsDeclaration,
+  generateCustomsFromDelivery,
   getCustomsDeclaration,
   listCustomsDeclarations,
+  listDelivery,
   saveCustomsSheetsData,
   updateCustomsDeclaration,
 } from '../../api/client'
 
 const { t } = useI18n()
+
+const selectedDeliveryId = ref(null)
+const deliveryOptions = ref([])
+const generating = ref(false)
+const generatedAju = ref(null)
+
+async function onDeliveryDropdown(open) {
+  if (open && deliveryOptions.value.length === 0) {
+    try {
+      const data = await listDelivery()
+      deliveryOptions.value = data.map((d) => ({
+        id: d.id,
+        delivery_number: d.delivery_number,
+        customer_name: d.customer_name || '',
+      }))
+    } catch {
+      deliveryOptions.value = []
+    }
+  }
+}
+
+async function handleGenerateAju() {
+  if (!selectedDeliveryId.value) {
+    ElMessage.warning(t('pages.customs.noDeliverySelected'))
+    return
+  }
+  generating.value = true
+  try {
+    generatedAju.value = await generateCustomsFromDelivery(selectedDeliveryId.value)
+    ElMessage.success(t('pages.customs.generatedSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    generating.value = false
+  }
+}
 
 /** Selaras urutan tampilan backend `customs_import.SHEET_CODES_ORDER`. */
 const SHEET_CODES_ORDER = [
