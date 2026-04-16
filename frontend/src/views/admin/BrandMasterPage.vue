@@ -19,7 +19,7 @@
       stripe
       size="small"
       class="admin-table"
-      table-layout="auto"
+      table-layout="fixed"
       row-key="id"
       :tree-props="{ children: 'children' }"
       :empty-text="t('pages.brandMaster.tableEmpty')"

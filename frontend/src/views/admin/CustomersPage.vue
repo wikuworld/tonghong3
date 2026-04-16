@@ -20,7 +20,7 @@
       stripe
       size="small"
       class="admin-table"
-      table-layout="auto"
+      table-layout="fixed"
       :empty-text="t('pages.customers.tableEmpty')"
     >
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
@@ -32,8 +32,18 @@
         min-width="130"
         show-overflow-tooltip
       />
-      <el-table-column prop="email" :label="t('pages.customers.fieldEmail')" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="phone" :label="t('common.phone')" min-width="130" show-overflow-tooltip />
+      <el-table-column prop="email" :label="t('pages.customers.fieldEmail')" min-width="160">
+        <template #default="{ row }">
+          <a v-if="row.email" :href="`mailto:${row.email}`" class="text-primary hover:underline" @click.stop>{{ row.email }}</a>
+          <span v-else class="text-slate-400">-</span>
+        </template>
+      </el-table-column>
+      <el-table-column prop="phone" :label="t('common.phone')" min-width="130">
+        <template #default="{ row }">
+          <a v-if="row.phone" :href="`tel:${row.phone}`" class="text-primary hover:underline" @click.stop>{{ row.phone }}</a>
+          <span v-else class="text-slate-400">-</span>
+        </template>
+      </el-table-column>
       <el-table-column :label="t('pages.customers.fieldCityCountry')" min-width="140" show-overflow-tooltip>
         <template #default="{ row }">{{ cityCountry(row) }}</template>
       </el-table-column>
@@ -82,6 +92,9 @@
           <el-descriptions-item :label="t('pages.customers.fieldContactPerson')" :span="1">
             {{ detailRow.contact_person || t('common.emptyValue') }}
           </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.customers.fieldPosition')" :span="1">
+            {{ detailRow.position || t('common.emptyValue') }}
+          </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldEmail')" :span="1">
             {{ detailRow.email || t('common.emptyValue') }}
           </el-descriptions-item>
@@ -128,7 +141,7 @@
     <el-dialog
       v-model="formVisible"
       :title="formIsEdit ? t('pages.customers.dialogEdit') : t('pages.customers.dialogAdd')"
-      width="820px"
+      width="95%" style="max-width: 900px"
       destroy-on-close
       class="customer-dialog"
       align-center
@@ -169,6 +182,47 @@
           <el-col :xs="24" :sm="12">
             <el-form-item :label="t('pages.customers.fieldContactPerson')" prop="contact_person">
               <el-input v-model="formModel.contact_person" maxlength="255" clearable />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12">
+            <el-form-item :label="t('pages.customers.fieldPosition')" prop="position">
+              <el-select
+                v-model="formModel.position"
+                :placeholder="t('pages.customers.fieldPosition')"
+                clearable
+                filterable
+                allow-create
+                default-first-option
+                class="w-full"
+              >
+                <el-option label="Director" value="Director" />
+                <el-option label="General Manager" value="General Manager" />
+                <el-option label="Marketing Director" value="Marketing Director" />
+                <el-option label="Purchasing Manager" value="Purchasing Manager" />
+                <el-option label="Procurement Manager" value="Procurement Manager" />
+                <el-option label="Finance Manager" value="Finance Manager" />
+                <el-option label="QC Manager" value="QC Manager" />
+                <el-option label="Production Manager" value="Production Manager" />
+                <el-option label="Sales Manager" value="Sales Manager" />
+                <el-option label="PPIC Manager" value="PPIC Manager" />
+                <el-option label="Warehouse Manager" value="Warehouse Manager" />
+                <el-option label="Admin" value="Admin" />
+                <el-option label="Staff" value="Staff" />
+                <template #footer>
+                  <div class="p-2 border-t">
+                    <el-input
+                      v-model="customPosition"
+                      size="small"
+                      :placeholder="t('pages.customers.addCustomPosition')"
+                      @keyup.enter="addCustomPosition"
+                    >
+                      <template #append>
+                        <el-button @click="addCustomPosition">{{ t('common.create') }}</el-button>
+                      </template>
+                    </el-input>
+                  </div>
+                </template>
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12">
@@ -328,6 +382,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, View, EditPen, Delete } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { can } from '../../security/permissions'
+import { formatDate } from '../../utils/format'
 import {
   createCustomer,
   deleteCustomer,
@@ -450,11 +505,21 @@ const wilayahLoading = reactive({
   village: false,
 })
 
+const customPosition = ref('')
+
+function addCustomPosition() {
+  if (customPosition.value.trim()) {
+    formModel.position = customPosition.value.trim()
+    customPosition.value = ''
+  }
+}
+
 const formModel = reactive({
   id: null,
   code: '',
   name: '',
   contact_person: '',
+  position: '',
   email: '',
   phone: '',
   city: '',
@@ -482,6 +547,7 @@ function resetFormModel() {
   formModel.code = ''
   formModel.name = ''
   formModel.contact_person = ''
+  formModel.position = ''
   formModel.email = ''
   formModel.phone = ''
   formModel.city = ''
@@ -623,6 +689,7 @@ async function openEdit(row) {
   formModel.code = row.code || ''
   formModel.name = row.name || ''
   formModel.contact_person = row.contact_person || ''
+  formModel.position = row.position || ''
   formModel.email = row.email || ''
   formModel.phone = row.phone || ''
   formModel.city = row.city || ''
@@ -655,6 +722,7 @@ async function submitForm() {
       code: formModel.code.trim(),
       name: formModel.name.trim(),
       contact_person: formModel.contact_person.trim() || undefined,
+      position: formModel.position.trim() || undefined,
       email: formModel.email.trim() || undefined,
       phone: formModel.phone.trim() || undefined,
       city: formModel.city.trim() || undefined,
@@ -712,10 +780,6 @@ function confirmDelete(row) {
 </script>
 
 <style scoped>
-.admin-table {
-  width: 100%;
-}
-
 .customer-row-actions {
   display: inline-flex;
   flex-wrap: wrap;

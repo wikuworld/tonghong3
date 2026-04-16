@@ -15,8 +15,8 @@
       <el-button type="primary" :icon="Printer" @click="printReport">{{ t('common.print') }} {{ t('pages.reports.report') }}</el-button>
     </template>
 
-    <div class="report-card">
-      <div class="report-card__header">
+    <div class="border border-gray-200 rounded-lg bg-slate-50">
+      <div class="bg-slate-900 text-white p-3.5">
         <div class="report-card__header-title">{{ t('pages.reports.poOrderDescription') }}</div>
         <div class="report-card__header-sub">PT. Tong Hong Tannery Indonesia</div>
         <div class="report-card__header-daily">{{ t('pages.reports.dailyMarketingSheet') }}</div>
@@ -117,7 +117,7 @@
             <el-table-column prop="oldThickness" :label="t('pages.reports.oldThickness')" min-width="100" />
             <el-table-column prop="newThickness" :label="t('pages.reports.newThickness')" min-width="100">
               <template #default="{ row }">
-                <span class="report-new-thickness">{{ row.newThickness }}</span>
+                <span class="text-amber-700 font-bold">{{ row.newThickness }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="emboss" :label="t('pages.po.emboss')" min-width="100" show-overflow-tooltip />
@@ -447,136 +447,25 @@ function printReport() {
 </script>
 
 <style scoped>
-.report-card {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: #f8fafc;
-}
-
-.report-card__header {
-  padding: 14px 18px;
-  background: #0f172a;
-  color: #fff;
-}
-
-.report-card__header-title {
-  font-size: 1.125rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.report-card__header-sub {
-  margin-top: 4px;
-  font-size: 0.8125rem;
-  color: #cbd5e1;
-}
-
-.report-card__header-daily {
-  margin-top: 6px;
-  font-size: 0.75rem;
-  color: #94a3b8;
-  font-style: italic;
-}
-
-.report-card__filter {
-  margin: 0;
-  border-radius: 0;
-  border-left: none;
-  border-right: none;
-  border-top: none;
-}
-
-.report-filter-row-2 {
-  margin-top: 4px;
-}
-
-.reports-filter-action {
-  display: flex;
-  align-items: flex-end;
-}
-
-.report-card__body {
-  padding: 16px 16px 8px;
-  background: #fff;
-}
-
-.report-section-title {
-  margin: 20px 0 10px;
-  font-size: 1rem;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-.report-section-title:first-child {
-  margin-top: 0;
-}
-
-.report-table-scroll {
-  width: 100%;
-  overflow-x: auto;
-  margin-bottom: 4px;
-}
-
-.report-table {
-  margin-bottom: 12px;
-}
-
-.report-table--wide {
-  min-width: 2100px;
-}
-
-.report-table :deep(.el-table__header-wrapper th.el-table__cell) {
-  background: #f8fafc;
-  color: #475569;
-  font-weight: 600;
-}
-
-.report-new-thickness {
-  color: #a16207;
-  font-weight: 700;
-}
-
-.report-total-line {
-  margin: 0 0 20px;
-  text-align: right;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: #0f172a;
-}
-
-.report-card__footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid #e2e8f0;
-  background: #f1f5f9;
-}
-
-.w-full {
-  width: 100%;
-}
-
-.reports-toolbar-search {
-  width: 220px;
-  max-width: 100%;
-  margin-right: 8px;
-  vertical-align: middle;
-}
-
+.report-card__header-title { font-size: 1.125rem; font-weight: 700; letter-spacing: 0.02em; }
+.report-card__header-sub { margin-top: 4px; font-size: 0.8125rem; color: #cbd5e1; }
+.report-card__header-daily { margin-top: 6px; font-size: 0.75rem; color: #94a3b8; font-style: italic; }
+.report-card__filter { margin: 0; border-radius: 0; border-left: none; border-right: none; border-top: none; }
+.report-filter-row-2 { margin-top: 4px; }
+.reports-filter-action { display: flex; align-items: flex-end; }
+.report-card__body { padding: 16px 16px 8px; background: #fff; }
+.report-section-title { margin: 20px 0 10px; font-size: 1rem; font-weight: 700; color: #0f172a; }
+.report-section-title:first-child { margin-top: 0; }
+.report-table-scroll { width: 100%; overflow-x: auto; margin-bottom: 4px; }
+.report-table { margin-bottom: 12px; }
+.report-table--wide { min-width: 2100px; }
+.report-table :deep(.el-table__header-wrapper th.el-table__cell) { background: #f8fafc; color: #475569; font-weight: 600; }
+.report-total-line { margin: 0 0 20px; text-align: right; font-size: 0.9375rem; font-weight: 600; color: #0f172a; }
+.report-card__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid #e2e8f0; background: #f1f5f9; }
+.w-full { width: 100%; }
+.reports-toolbar-search { width: 220px; max-width: 100%; margin-right: 8px; vertical-align: middle; }
 @media (max-width: 767px) {
-  .report-card__footer {
-    flex-direction: column;
-  }
-
-  .report-card__footer .el-button {
-    width: 100%;
-    margin: 0;
-  }
+  .report-card__footer { flex-direction: column; }
+  .report-card__footer .el-button { width: 100%; margin: 0; }
 }
 </style>

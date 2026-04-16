@@ -63,7 +63,7 @@
             </div>
           </template>
 
-          <el-table :data="filteredMappings" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.customerBrandMapping.tableEmpty')">
+          <el-table :data="filteredMappings" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.customerBrandMapping.tableEmpty')">
             <el-table-column :label="t('common.noLabel')" width="60" align="center">
               <template #default="{ $index }">{{ $index + 1 }}</template>
             </el-table-column>
@@ -263,7 +263,7 @@ async function addMapping() {
     mappings.value = await loadMappings(selectedCustomerId.value)
   } catch (e) {
     if (e.message?.includes('409')) {
-      ElMessage.warning('Mapping sudah ada')
+      ElMessage.warning(t('pages.customerBrandMapping.mappingExists'))
     } else {
       ElMessage.error(e.message || t('common.errorGeneric'))
     }

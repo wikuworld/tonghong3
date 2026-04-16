@@ -2,19 +2,20 @@
   <AdminSection :title="t('pages.masterItems.title')" :subtitle="t('pages.masterItems.subtitle')">
     <template #actions>
       <el-input v-model="keyword" :placeholder="t('pages.masterItems.searchPlaceholder')" clearable class="master-items-toolbar-search" />
+      <el-button @click="handleExport">{{ t('pages.masterItems.export') }}</el-button>
+      <el-button type="success" @click="openImportDialog">{{ t('pages.masterItems.import') }}</el-button>
       <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
-    <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="auto" :empty-text="t('pages.masterItems.tableEmpty')">
+    <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.masterItems.tableEmpty')">
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
-      <el-table-column prop="item_code" :label="t('common.code')" min-width="120" />
-      <el-table-column prop="material_name" :label="t('common.material')" min-width="180" />
+      <el-table-column prop="item_code" :label="t('common.code')" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="material_name" :label="t('common.material')" min-width="180" show-overflow-tooltip />
       <el-table-column prop="thickness_mm" :label="t('common.thickness')" min-width="100" />
-      <el-table-column prop="color" :label="t('common.color')" min-width="110" />
+      <el-table-column prop="color" :label="t('common.color')" min-width="110" show-overflow-tooltip />
       <el-table-column prop="softness" :label="t('common.softness')" min-width="110" />
       <el-table-column prop="backing" :label="t('common.backing')" min-width="110" />
-      <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="130" />
-      <el-table-column prop="model" :label="t('common.model')" min-width="130" />
+      <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="130" show-overflow-tooltip />
       <el-table-column prop="exim_material_code" :label="t('pages.masterItems.eximMaterialCode')" min-width="120" show-overflow-tooltip />
       <el-table-column :label="t('common.actions')" width="100" align="center" fixed="right">
         <template #default="{ row }">
@@ -45,7 +46,19 @@
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.thickness')">
-              <el-input v-model="form.thickness_mm" type="number" step="0.001" />
+              <el-select
+                v-model="form.thickness_range"
+                :placeholder="t('pages.masterItems.thicknessRangePlaceholder')"
+                clearable
+                filterable
+                allow-create
+                class="w-full"
+              >
+                <el-option label="1.0-1.2" value="1.0-1.2" />
+                <el-option label="1.2-1.4" value="1.2-1.4" />
+                <el-option label="1.4-1.6" value="1.4-1.6" />
+                <el-option label="1.6-1.8" value="1.6-1.8" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
@@ -60,12 +73,30 @@
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.softness')">
-              <el-input v-model="form.softness" maxlength="100" />
+              <el-select
+                v-model="form.softness"
+                :placeholder="t('pages.masterItems.softnessPlaceholder')"
+                clearable
+                filterable
+                allow-create
+                class="w-full"
+              >
+                <el-option label="Soft" value="Soft" />
+                <el-option label="Semi-Soft" value="Semi-Soft" />
+                <el-option label="Medium" value="Medium" />
+                <el-option label="Semi-Hard" value="Semi-Hard" />
+                <el-option label="Hard" value="Hard" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.colorReference')">
               <el-input v-model="form.color_reference" maxlength="255" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :md="12">
+            <el-form-item :label="t('pages.masterItems.colorStandard')">
+              <el-input v-model="form.color_standard" maxlength="255" />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
@@ -81,11 +112,6 @@
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.styleArticle')">
               <el-input v-model="form.style_article" maxlength="100" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('common.model')">
-              <el-input v-model="form.model" maxlength="100" />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
@@ -107,6 +133,24 @@
         </div>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="importDialogVisible" :title="t('pages.masterItems.importTitle')" width="600px" destroy-on-close align-center>
+      <el-upload
+        ref="uploadRef"
+        :auto-upload="false"
+        :limit="1"
+        accept=".xlsx,.xls"
+        :on-change="handleFileChange"
+      >
+        <el-button type="primary">{{ t('pages.masterItems.selectFile') }}</el-button>
+      </el-upload>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :disabled="!importFile" @click="handleImport">
+          {{ t('pages.masterItems.doImport') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -116,7 +160,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, EditPen, Plus } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
-import { createMasterItem, deleteMasterItem, listMasterItems, updateMasterItem } from '../../api/client'
+import { createMasterItem, deleteMasterItem, listMasterItems, updateMasterItem, exportMasterItems, importMasterItems } from '../../api/client'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -126,19 +170,22 @@ const rows = ref([])
 const formVisible = ref(false)
 const isEdit = ref(false)
 const editingId = ref(null)
+const importDialogVisible = ref(false)
+const importFile = ref(null)
+const uploadRef = ref(null)
 
 const form = reactive({
   item_code: '',
   material_name: '',
-  thickness_mm: '',
+  thickness_range: '',
   color: '',
   emboss: '',
   softness: '',
   color_reference: '',
+  color_standard: '',
   backing: '',
   quantity_order_default: '',
   style_article: '',
-  model: '',
   category: '',
   exim_material_code: '',
 })
@@ -157,15 +204,15 @@ async function load() {
 function resetForm() {
   form.item_code = ''
   form.material_name = ''
-  form.thickness_mm = ''
+  form.thickness_range = ''
   form.color = ''
   form.emboss = ''
   form.softness = ''
   form.color_reference = ''
+  form.color_standard = ''
   form.backing = ''
   form.quantity_order_default = ''
   form.style_article = ''
-  form.model = ''
   form.category = ''
   form.exim_material_code = ''
 }
@@ -182,15 +229,15 @@ function openEdit(row) {
   editingId.value = row.id
   form.item_code = row.item_code || ''
   form.material_name = row.material_name || ''
-  form.thickness_mm = row.thickness_mm ?? ''
+  form.thickness_range = row.thickness_range || ''
   form.color = row.color || ''
   form.emboss = row.emboss || ''
   form.softness = row.softness || ''
   form.color_reference = row.color_reference || ''
+  form.color_standard = row.color_standard || ''
   form.backing = row.backing || ''
   form.quantity_order_default = row.quantity_order_default ?? ''
   form.style_article = row.style_article || ''
-  form.model = row.model || ''
   form.category = row.category || ''
   form.exim_material_code = row.exim_material_code || ''
   formVisible.value = true
@@ -206,16 +253,16 @@ async function submit() {
     const payload = {
       item_code: form.item_code.trim(),
       material_name: form.material_name || undefined,
-      thickness_mm: form.thickness_mm !== '' ? Number(form.thickness_mm) : undefined,
+      thickness_range: form.thickness_range || undefined,
       color: form.color || undefined,
       emboss: form.emboss || undefined,
       softness: form.softness || undefined,
       color_reference: form.color_reference || undefined,
+      color_standard: form.color_standard || undefined,
       backing: form.backing || undefined,
       quantity_order_default:
         form.quantity_order_default !== '' ? Number(form.quantity_order_default) : undefined,
       style_article: form.style_article || undefined,
-      model: form.model || undefined,
       category: form.category || undefined,
       exim_material_code: form.exim_material_code?.trim() || undefined,
     }
@@ -250,6 +297,36 @@ async function removeRow(row) {
     await load()
   } catch (e) {
     if (e !== 'cancel') ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+function openImportDialog() {
+  importDialogVisible.value = true
+  importFile.value = null
+}
+
+function handleFileChange(file) {
+  importFile.value = file.raw
+}
+
+async function handleExport() {
+  try {
+    await exportMasterItems()
+    ElMessage.success(t('pages.masterItems.exportSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function handleImport() {
+  if (!importFile.value) return
+  try {
+    const result = await importMasterItems(importFile.value)
+    ElMessage.success(t('pages.masterItems.importSuccess', { count: result.imported }))
+    importDialogVisible.value = false
+    await load()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
 

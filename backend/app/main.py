@@ -14,6 +14,8 @@ from app.routers import (
     documents,
     exchange_rates,
     invoice,
+    inventory,
+    journal,
     marketing,
     masters,
     notifications,
@@ -67,6 +69,8 @@ app.include_router(buyer_prices.router, prefix=_PREFIX)
 app.include_router(pricing.router, prefix=_PREFIX)
 app.include_router(workflow.router, prefix=_PREFIX)
 app.include_router(accounting.router, prefix=_PREFIX)
+app.include_router(inventory.router, prefix=_PREFIX)
+app.include_router(journal.router, prefix=_PREFIX)
 
 
 @app.on_event("startup")

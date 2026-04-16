@@ -1,9 +1,12 @@
 from datetime import date, datetime, timedelta
 from email.message import EmailMessage
+import logging
 import smtplib
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
@@ -26,8 +29,24 @@ def create_invoice(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "finance")),
 ) -> dict:
+    from app.models import DeliveryHeader, PackingHeader, ProductionOrder
+    
     validate_invoice_against_delivery(db, body.delivery_id, body.po_number)
+    
+    delivery = db.get(DeliveryHeader, body.delivery_id)
+    
     data = body.model_dump(exclude_unset=True)
+    
+    if delivery and not data.get("customer_id"):
+        data["customer_id"] = delivery.customer_id
+    
+    if delivery and delivery.packing_id:
+        packing = db.get(PackingHeader, delivery.packing_id)
+        if packing and packing.production_id:
+            production = db.get(ProductionOrder, packing.production_id)
+            if production and not data.get("po_id"):
+                data["po_id"] = production.po_id
+    
     row = Invoice(**data)
     db.add(row)
     db.flush()
@@ -36,7 +55,7 @@ def create_invoice(
         entity_type="invoice",
         entity_id=row.id,
         action="create",
-        after={"invoice_number": row.invoice_number, "delivery_id": row.delivery_id},
+        after={"invoice_number": row.invoice_number, "delivery_id": row.delivery_id, "customer_id": row.customer_id, "po_id": row.po_id},
         actor=user.username,
     )
     create_notification_for_roles(
@@ -60,11 +79,28 @@ def create_invoice(
 def list_invoice(
     db: Session = Depends(get_db),
     q: Optional[str] = Query(None, description="Search invoice no/PO/customer"),
+    customer_id: Optional[int] = Query(None, description="Filter by customer ID"),
+    po_id: Optional[int] = Query(None, description="Filter by PO ID"),
+    delivery_id: Optional[int] = Query(None, description="Filter by delivery ID"),
+    payment_status: Optional[str] = Query(None, description="Filter by payment status"),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     _user=Depends(get_current_user),
 ) -> list[dict]:
     stmt = select(Invoice).order_by(Invoice.id.desc()).limit(limit).offset(offset)
+    
+    if customer_id is not None:
+        stmt = stmt.where(Invoice.customer_id == customer_id)
+    
+    if po_id is not None:
+        stmt = stmt.where(Invoice.po_id == po_id)
+    
+    if delivery_id is not None:
+        stmt = stmt.where(Invoice.delivery_id == delivery_id)
+    
+    if payment_status:
+        stmt = stmt.where(Invoice.payment_status == payment_status)
+    
     if q:
         like = f"%{q}%"
         stmt = stmt.where(
@@ -109,6 +145,53 @@ def list_outstanding_invoice(
             x["po_number"] = None
         out.append(x)
     return out
+
+
+@router.post("/invoice/backfill-fks")
+def backfill_invoice_fks(
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> dict:
+    """Backfill customer_id and po_id for existing invoices based on delivery chain."""
+    from app.models import DeliveryHeader, PackingHeader, ProductionOrder
+    
+    updated = 0
+    skipped = 0
+    
+    invoices = db.query(Invoice).filter(
+        (Invoice.customer_id.is_(None)) | (Invoice.po_id.is_(None))
+    ).all()
+    
+    for inv in invoices:
+        changed = False
+        
+        if inv.delivery_id and inv.customer_id is None:
+            delivery = db.get(DeliveryHeader, inv.delivery_id)
+            if delivery and delivery.customer_id:
+                inv.customer_id = delivery.customer_id
+                changed = True
+        
+        if inv.delivery_id and inv.po_id is None:
+            delivery = db.get(DeliveryHeader, inv.delivery_id)
+            if delivery and delivery.packing_id:
+                packing = db.get(PackingHeader, delivery.packing_id)
+                if packing and packing.production_id:
+                    production = db.get(ProductionOrder, packing.production_id)
+                    if production and production.po_id:
+                        inv.po_id = production.po_id
+                        changed = True
+        
+        if changed:
+            updated += 1
+        else:
+            skipped += 1
+    
+    db.commit()
+    return {
+        "updated": updated,
+        "skipped": skipped,
+        "message": f"Updated {updated} invoices, skipped {skipped} (no FK chain found)"
+    }
 
 
 @router.get("/invoice/{invoice_id}")

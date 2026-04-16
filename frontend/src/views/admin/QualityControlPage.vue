@@ -10,7 +10,7 @@
       <el-button v-if="canManage" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
-    <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="auto" :empty-text="t('pages.qc.tableEmpty')">
+    <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.qc.tableEmpty')">
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
       <el-table-column prop="qc_number" :label="t('common.qcNo')" min-width="130" />
       <el-table-column prop="production_label" :label="t('common.productionNo')" min-width="160" show-overflow-tooltip />
@@ -258,7 +258,4 @@ async function submit() {
 </script>
 
 <style scoped>
-.admin-table {
-  width: 100%;
-}
 </style>

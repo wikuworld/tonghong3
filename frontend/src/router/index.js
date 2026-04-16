@@ -25,6 +25,8 @@ import SubconInvoicePage from '../views/admin/SubconInvoicePage.vue'
 import PpicsDashboardPage from '../views/admin/PpicsDashboardPage.vue'
 import OutstandingMaterialsPage from '../views/admin/OutstandingMaterialsPage.vue'
 import AccountingMappingsPage from '../views/admin/AccountingMappingsPage.vue'
+import JournalEntriesPage from '../views/admin/JournalEntriesPage.vue'
+import InventoryPage from '../views/admin/InventoryPage.vue'
 import LoginPage from '../views/LoginPage.vue'
 import { ROUTE_ROLES } from '../security/rbac'
 
@@ -82,6 +84,8 @@ const router = createRouter({
         { path: 'ppic-dashboard', component: PpicsDashboardPage, meta: { titleKey: 'menu.ppicDashboard', roles: ROUTE_ROLES.ppicDashboard } },
         { path: 'outstanding-materials', component: OutstandingMaterialsPage, meta: { titleKey: 'menu.outstandingMaterials', roles: ROUTE_ROLES.outstandingMaterials } },
         { path: 'accounting-mappings', component: AccountingMappingsPage, meta: { titleKey: 'menu.accountingMappings', roles: ROUTE_ROLES.accountingMappings } },
+        { path: 'journal-entries', component: JournalEntriesPage, meta: { titleKey: 'menu.journalEntries', roles: ROUTE_ROLES.accountingMappings } },
+        { path: 'inventory', component: InventoryPage, meta: { titleKey: 'menu.inventory', roles: ROUTE_ROLES.inventory } },
       ],
     },
   ],

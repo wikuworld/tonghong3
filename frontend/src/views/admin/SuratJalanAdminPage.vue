@@ -51,7 +51,7 @@
       </el-row>
     </el-form>
 
-    <el-table :data="rows" border stripe size="small" class="admin-table mt-3" table-layout="auto">
+    <el-table :data="rows" border stripe size="small" class="admin-table mt-3" table-layout="fixed" :empty-text="t('common.tableEmpty')">
       <el-table-column prop="no" :label="t('common.noLabel')" width="60" />
       <el-table-column prop="orderNo" :label="t('common.orderNo')" min-width="150" />
       <el-table-column prop="material" :label="t('common.material')" min-width="140" />

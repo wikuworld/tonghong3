@@ -39,6 +39,13 @@ def next_mkt_stage(current: str | None) -> str | None:
     return MKT_STAGES_ORDER[i + 1]
 
 
+def prev_mkt_stage(current: str | None) -> str | None:
+    i = mkt_stage_index(current)
+    if i <= 0:
+        return None
+    return MKT_STAGES_ORDER[i - 1]
+
+
 def po_has_delivery_for_po(db: "Session", po_id: int) -> bool:
     from app.models import DeliveryDetail, DeliveryHeader, PoDetail, ProductionDetail
 

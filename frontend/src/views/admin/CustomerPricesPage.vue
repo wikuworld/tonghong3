@@ -8,7 +8,7 @@
       <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
-    <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table">
+    <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.customerPrices.tableEmpty')">
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
       <el-table-column prop="customer" :label="t('pages.customerPrices.customerName')" width="180">
         <template #default="{ row }">
@@ -46,7 +46,7 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="formVisible" :title="isEdit ? t('common.edit') : t('common.create')" width="600px" destroy-on-close>
+    <el-dialog v-model="formVisible" :title="isEdit ? t('common.edit') : t('common.create')" width="600px" destroy-on-close align-center>
       <el-form :model="form" label-position="top">
         <el-row :gutter="16">
           <el-col :xs="24" :md="12">

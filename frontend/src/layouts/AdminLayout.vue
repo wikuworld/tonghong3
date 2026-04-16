@@ -1,10 +1,10 @@
 <template>
   <el-container class="admin-root min-h-screen">
-    <el-aside width="240px" class="admin-sidebar border-r border-slate-200 bg-slate-900 text-white">
-      <div class="border-b border-slate-800 px-5 py-4">
+    <el-aside :width="isSidebarCollapsed ? '64px' : '240px'" class="admin-sidebar border-r border-slate-200 bg-slate-900 text-white">
+      <div class="border-b border-slate-800 px-5 py-4" :class="{ 'px-2': isSidebarCollapsed }">
         <div class="flex items-center gap-3">
-          <img :src="logoPath" alt="CDS Logo" class="h-8 w-auto object-contain" />
-          <div>
+          <img v-show="!isSidebarCollapsed" :src="logoPath" alt="CDS Logo" class="h-8 w-auto object-contain" />
+          <div v-show="!isSidebarCollapsed">
             <div class="text-lg font-semibold leading-tight text-white">
               {{ t('appName') }}
             </div>
@@ -16,6 +16,7 @@
       </div>
       <el-menu
         :default-active="route.path"
+        :collapse="isSidebarCollapsed"
         class="admin-sidebar-menu el-menu-vertical-demo border-none bg-transparent text-white"
         background-color="#0f172a"
         text-color="#cbd5e1"
@@ -69,9 +70,15 @@
       </el-menu>
     </el-aside>
 
-    <el-container class="admin-layout-main min-w-0 flex-1">
-      <el-header class="admin-header flex min-h-[56px] flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white py-2">
-        <div class="min-w-0 flex-1">
+    <el-container class="admin-layout-main min-w-0 flex-1" :style="{ marginLeft: isSidebarCollapsed ? '64px' : '240px' }">
+      <el-header class="admin-header flex min-h-[56px] flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white py-2" :style="{ left: isSidebarCollapsed ? '64px' : '240px' }">
+        <div class="flex items-center gap-3">
+          <el-button text @click="toggleSidebar">
+            <el-icon size="20">
+              <Expand v-if="isSidebarCollapsed" />
+              <Fold v-else />
+            </el-icon>
+          </el-button>
           <h1 class="truncate text-base font-semibold text-slate-800">
             {{ t(route.meta.titleKey || 'menu.dashboard') }}
           </h1>
@@ -149,7 +156,7 @@
       <el-main class="admin-main min-w-0 overflow-x-auto bg-slate-50 p-4">
         <router-view />
       </el-main>
-      <el-footer class="admin-footer">
+      <el-footer class="admin-footer" :style="{ left: isSidebarCollapsed ? '64px' : '240px' }">
         <span>{{ t('common.poweredBy') }} : PT Creative Digital Solutions</span>
       </el-footer>
     </el-container>
@@ -162,14 +169,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import {
-  DataAnalysis,
-  User,
-  ShoppingCart,
-  Operation,
-  CircleCheck,
+  Document,
+  Goods,
   Van,
   Tickets,
-  Document,
   Coin,
   Box,
   FolderOpened,
@@ -181,6 +184,13 @@ import {
   Setting,
   Bell,
   UserFilled,
+  Fold,
+  Expand,
+  DataAnalysis,
+  ShoppingCart,
+  Operation,
+  CircleCheck,
+  User,
 } from '@element-plus/icons-vue'
 import {
   getPermissionMatrix,
@@ -215,7 +225,12 @@ const currentUser = ref(null)
 const currentRole = computed(() => currentUser.value?.role || 'guest')
 const notifications = ref([])
 const unreadCount = ref(0)
+const isSidebarCollapsed = ref(false)
 let unreadTimer = null
+
+function toggleSidebar() {
+  isSidebarCollapsed.value = !isSidebarCollapsed.value
+}
 
 const erpFlowMenus = [
   { path: '/admin/dashboard', labelKey: 'menu.dashboard', icon: DataAnalysis },
@@ -234,6 +249,7 @@ const erpMasterMenus = [
   { path: '/admin/master-items', labelKey: 'menu.masterItems', icon: Box },
   { path: '/admin/exchange-rates', labelKey: 'menu.exchangeRate', icon: Coin },
   { path: '/admin/master-import', labelKey: 'menu.masterImport', icon: FolderOpened },
+  { path: '/admin/inventory', labelKey: 'menu.inventory', icon: Goods },
 ]
 
 const erpSystemMenus = [
@@ -371,6 +387,16 @@ async function handleMarkAllRead() {
   bottom: 0;
   z-index: 30;
   overflow: hidden;
+  transition: width 0.3s;
+}
+
+.admin-sidebar-menu {
+  height: calc(100vh - 82px);
+  overflow-y: auto;
+}
+
+.admin-sidebar-menu:not(.el-menu--collapse) {
+  width: 240px;
 }
 
 .admin-sidebar-menu {
@@ -433,10 +459,14 @@ async function handleMarkAllRead() {
   left: 240px;
   right: 0;
   z-index: 20;
+  transition: left 0.3s ease;
+}
+
+.admin-layout-main {
+  transition: margin-left 0.3s ease;
 }
 
 .admin-main {
-  margin-left: 240px;
   margin-top: 56px;
   margin-bottom: 40px;
   min-height: calc(100vh - 96px);
@@ -457,6 +487,11 @@ async function handleMarkAllRead() {
   background: #ffffff;
   color: #64748b;
   font-size: 12px;
+  transition: left 0.3s ease;
+}
+
+:deep(.admin-root > .el-aside) {
+  transition: width 0.3s ease;
 }
 
 @media (min-width: 640px) {

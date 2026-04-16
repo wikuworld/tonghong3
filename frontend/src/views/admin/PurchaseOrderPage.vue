@@ -61,7 +61,7 @@
       stripe
       size="small"
       class="admin-table"
-      table-layout="auto"
+      table-layout="fixed"
       :empty-text="t('pages.po.tableEmpty')"
     >
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
@@ -116,7 +116,7 @@
     <el-dialog
       v-model="formDialogVisible"
       :title="isEditMode ? `${t('pages.poEntry.title')} ${t('pages.po.editSuffix')}` : t('pages.poEntry.title')"
-      width="1100px"
+      width="95%" style="max-width: 1100px"
       destroy-on-close
       align-center
       class="po-dialog"
@@ -363,11 +363,6 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
-            <el-form-item :label="t('common.model')">
-              <el-input v-model="formModel.model" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :md="12">
             <el-form-item :label="t('pages.po.lineEtd')">
               <el-date-picker v-model="formModel.line_etd" type="date" class="w-full" value-format="YYYY-MM-DD" />
             </el-form-item>
@@ -396,10 +391,10 @@
                 class="w-full"
               />
               <div class="mt-1 flex items-center gap-2">
-                <span v-if="previewResolvedUnitPrice.value != null" class="text-xs text-slate-500">
-                  {{ t('pages.po.autoResolved') }}: {{ previewResolvedUnitPrice.value }}
+                <span v-if="previewResolvedUnitPrice != null" class="text-xs text-slate-500">
+                  {{ t('pages.po.autoResolved') }}: {{ previewResolvedUnitPrice }}
                 </span>
-                <el-tag v-if="formModel.unit_price_input && previewResolvedUnitPrice.value != null && formModel.unit_price_input !== previewResolvedUnitPrice.value" size="small" type="warning">
+                <el-tag v-if="formModel.unit_price_input && previewResolvedUnitPrice != null && formModel.unit_price_input !== previewResolvedUnitPrice" size="small" type="warning">
                   {{ t('pages.po.overridden') }}
                 </el-tag>
               </div>
@@ -495,7 +490,7 @@
     <el-dialog
       v-model="detailDialogVisible"
       :title="t('pages.poDetail.title')"
-      width="900px"
+      width="95%" style="max-width: 900px"
       destroy-on-close
       align-center
       class="po-dialog"
@@ -608,7 +603,7 @@
     <el-dialog
       v-model="copyItemDialogVisible"
       :title="t('pages.po.copyItemFromOtherPo')"
-      width="900px"
+      width="95%" style="max-width: 900px"
       destroy-on-close
       align-center
     >
@@ -679,6 +674,7 @@ import {
 } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { canWrite } from '../../security/permissions'
+import { statusType, statusLabel } from '../../utils/format'
 import {
   addPoDetail,
   createBrand,
@@ -825,14 +821,6 @@ const resetFilter = () => {
   keyword.value = ''
 }
 
-const statusType = (status) => {
-  if (status === 'confirmed') return 'success'
-  if (status === 'production') return 'warning'
-  return 'info'
-}
-
-const statusLabel = (status) => (status ? t(`status.${status}`) : t('common.emptyValue'))
-
 const formDialogVisible = ref(false)
 const isEditMode = ref(false)
 const editingPoId = ref(null)
@@ -913,7 +901,6 @@ const formModel = reactive({
   backing: '',
   quantity_order: '',
   style_article: '',
-  model: '',
   line_etd: '',
   detail_remark: '',
   thi_line_ref: '',
@@ -951,7 +938,8 @@ async function fetchResolvedUnitPricePreview() {
       color_family: formModel.color_family || null,
     })
     previewResolvedUnitPrice.value = r.unit_price != null ? Number(r.unit_price) : null
-  } catch {
+  } catch (e) {
+    console.error('Error resolving unit price:', e)
     previewResolvedUnitPrice.value = null
   } finally {
     pricePreviewLoading.value = false
@@ -1063,7 +1051,6 @@ function resetForm() {
   formModel.backing = ''
   formModel.quantity_order = ''
   formModel.style_article = ''
-  formModel.model = ''
   formModel.line_etd = ''
   formModel.detail_remark = ''
   formModel.thi_line_ref = ''
@@ -1131,23 +1118,35 @@ function onMasterItemChange(masterItemId) {
     formModel.backing = ''
     formModel.quantity_order = ''
     formModel.style_article = ''
-    formModel.model = ''
     formModel.line_etd = ''
     formModel.detail_remark = ''
     formModel.thi_line_ref = ''
     return
   }
+  // Auto-fill dari MasterItem
   formModel.material_name = item.material_name || ''
   formModel.color = item.color || ''
   formModel.emboss = item.emboss || ''
-  formModel.thickness_text = item.thickness_mm != null ? String(item.thickness_mm) : ''
+  // Prioritaskan thickness_range, fallback ke thickness_mm
+  formModel.thickness_text = item.thickness_range || (item.thickness_mm != null ? String(item.thickness_mm) : '')
   formModel.softness = item.softness || ''
   formModel.color_reference = item.color_reference || ''
   formModel.backing = item.backing || ''
   formModel.quantity_order = item.quantity_order_default != null ? String(item.quantity_order_default) : ''
   formModel.style_article = item.style_article || ''
-  formModel.model = item.model || ''
-  if (item && previewResolvedUnitPrice.value != null) {
+  // Auto-detect color_family dari color name
+  if (item.color) {
+    const colorLower = item.color.toLowerCase()
+    if (colorLower.includes('black') || colorLower.includes('hitam')) {
+      formModel.color_family = 'black'
+    } else if (colorLower.includes('fluo') || colorLower.includes('neon')) {
+      formModel.color_family = 'fluorescent'
+    } else {
+      formModel.color_family = 'color'
+    }
+  }
+  // Set unit price dari resolved price jika ada
+  if (previewResolvedUnitPrice.value != null) {
     formModel.unit_price_input = previewResolvedUnitPrice.value
   } else {
     formModel.unit_price_input = null
@@ -1175,7 +1174,6 @@ async function buildCurrentDetailBody() {
     backing: formModel.backing || undefined,
     quantity_order: formModel.quantity_order ? Number(formModel.quantity_order) : undefined,
     style_article: formModel.style_article || undefined,
-    model: formModel.model || undefined,
     line_etd: toIsoDate(formModel.line_etd) || undefined,
     detail_remark: formModel.detail_remark || undefined,
     thi_line_ref: formModel.thi_line_ref || undefined,
@@ -1254,7 +1252,6 @@ async function pushCurrentLine(copyCurrent = false) {
     formModel.backing = ''
     formModel.quantity_order = ''
     formModel.style_article = ''
-    formModel.model = ''
     formModel.line_etd = ''
     formModel.detail_remark = ''
     formModel.thi_line_ref = ''
@@ -1314,7 +1311,7 @@ const openEditDialog = async (row) => {
   formModel.material_followup_done = Boolean(row.material_followup_done)
   await onBrandChange(formModel.brand_id)
   schedulePricePreview()
-    try {
+  try {
     const details = await listPoDetails(row.id)
     draftLines.value = details.map((d) => ({
       id: d.id,
@@ -1330,7 +1327,6 @@ const openEditDialog = async (row) => {
       backing: d.backing || undefined,
       quantity_order: d.quantity_order != null ? Number(d.quantity_order) : undefined,
       style_article: d.style_article || undefined,
-      model: d.model || undefined,
       line_etd: d.line_etd ? String(d.line_etd).slice(0, 10) : undefined,
       detail_remark: d.detail_remark || undefined,
       thi_line_ref: d.thi_line_ref || undefined,
@@ -1352,7 +1348,6 @@ const openEditDialog = async (row) => {
       formModel.backing = d0.backing || ''
       formModel.quantity_order = d0.quantity_order != null ? String(d0.quantity_order) : ''
       formModel.style_article = d0.style_article || ''
-      formModel.model = d0.model || ''
       formModel.line_etd = d0.line_etd ? String(d0.line_etd).slice(0, 10) : ''
       formModel.detail_remark = d0.detail_remark || ''
       formModel.thi_line_ref = d0.thi_line_ref || ''
@@ -1600,7 +1595,6 @@ function addCopiedItems() {
     backing: d.backing,
     quantity_order: d.quantity_order,
     style_article: d.style_article,
-    model: d.model,
     line_etd: d.line_etd,
     detail_remark: d.detail_remark,
     thi_line_ref: d.thi_line_ref,

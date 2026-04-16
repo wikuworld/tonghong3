@@ -24,6 +24,7 @@ const MENU_ROLES = {
   'menu.ppicDashboard': ['admin', 'ppic'],
   'menu.outstandingMaterials': ['admin', 'marketing', 'ppic'],
   'menu.accountingMappings': ['admin', 'finance'],
+  'menu.inventory': ['admin', 'warehouse'],
 }
 
 export function roleAllowsMenu(role, labelKey) {
@@ -58,5 +59,6 @@ export const ROUTE_ROLES = {
   ppicDashboard: MENU_ROLES['menu.ppicDashboard'],
   outstandingMaterials: MENU_ROLES['menu.outstandingMaterials'],
   accountingMappings: MENU_ROLES['menu.accountingMappings'],
+  inventory: MENU_ROLES['menu.inventory'],
 }
 

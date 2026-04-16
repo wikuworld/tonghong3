@@ -39,7 +39,7 @@
       stripe
       size="small"
       class="admin-table"
-      table-layout="auto"
+      table-layout="fixed"
       :empty-text="t('pages.production.tableEmpty')"
     >
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
@@ -419,10 +419,6 @@ async function submitForm() {
 </script>
 
 <style scoped>
-.admin-table {
-  width: 100%;
-}
-
 .production-form :deep(.el-form-item) {
   margin-bottom: 16px;
 }
@@ -430,7 +426,7 @@ async function submitForm() {
 .production-descriptions :deep(.el-descriptions__label) {
   width: 140px;
   font-weight: 600;
-  color: #475569;
+  color: text-slate-600;
 }
 
 .production-dialog-footer {

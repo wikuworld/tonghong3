@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-5">
     <el-alert v-if="apiError" type="warning" :title="apiError" show-icon class="mb-2" />
-    <el-card shadow="never" class="hero-card">
+    <el-card shadow="never" class="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div class="text-xl font-semibold text-slate-800">{{ t('dashboard.title') }}</div>
@@ -17,7 +17,7 @@
 
     <el-row :gutter="12">
       <el-col :md="6" :sm="12" :xs="24" v-for="item in stats" :key="item.label">
-        <el-card shadow="hover" class="kpi-card">
+        <el-card shadow="hover" class="border-indigo-50">
           <div class="flex items-start justify-between">
             <div>
               <div class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ item.label }}</div>
@@ -69,7 +69,7 @@
     </el-row>
 
     <AdminSection :title="t('dashboard.monitoringTitle')">
-      <el-table :data="monitoringRows" border stripe size="small" class="admin-table" table-layout="auto">
+      <el-table :data="monitoringRows" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('common.tableEmpty')">
         <el-table-column prop="process" :label="t('common.process')" min-width="190" show-overflow-tooltip />
         <el-table-column prop="target" :label="t('common.target')" min-width="110" align="right" />
         <el-table-column prop="actual" :label="t('common.actual')" min-width="110" align="right" />
@@ -367,15 +367,6 @@ const monitoringRows = computed(() => {
 </script>
 
 <style scoped>
-.hero-card {
-  background: linear-gradient(135deg, #f8fbff 0%, #eef7ff 100%);
-  border: 1px solid #dbeafe;
-}
-
-.kpi-card {
-  border: 1px solid #eef2ff;
-}
-
 .chart-lg {
   height: 320px;
 }

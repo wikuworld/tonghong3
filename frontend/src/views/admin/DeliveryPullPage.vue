@@ -33,7 +33,7 @@
       </div>
     </div>
 
-    <el-table :data="rows" border stripe size="small" class="admin-table" table-layout="auto">
+    <el-table :data="rows" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('common.tableEmpty')">
       <el-table-column prop="no" :label="t('common.noLabel')" width="60" align="center" />
       <el-table-column prop="sj" :label="t('common.deliveryNo')" min-width="160" />
       <el-table-column prop="customer" :label="t('common.customer')" min-width="180" />

@@ -128,7 +128,7 @@ def resolve_unit_price_for_buyer(
             "matched": False,
             "price_column": None,
             "score": 0,
-            "detail": "no_buyer",
+            "detail": "buyer_code wajib diisi - tidak dapat mencari harga tanpa kode buyer",
         }
 
     lst = db.scalars(select(BuyerPriceList).where(BuyerPriceList.buyer_code == code)).first()
@@ -138,7 +138,7 @@ def resolve_unit_price_for_buyer(
             "matched": False,
             "price_column": None,
             "score": 0,
-            "detail": "no_list",
+            "detail": f"List harga untuk buyer '{code}' tidak ditemukan - pastikan master buyer sudah diimport",
         }
 
     sheet = list_to_api_dict(db, lst.id)
@@ -156,7 +156,7 @@ def resolve_unit_price_for_buyer(
             "matched": False,
             "price_column": None,
             "score": 0,
-            "detail": "no_price_col",
+            "detail": "Kolom harga tidak ditemukan di list buyer - import data gagal atau kolom tidak terdefinisi",
         }
 
     price_col = _pick_price_column(price_keys, color_family)
@@ -184,7 +184,7 @@ def resolve_unit_price_for_buyer(
             "matched": False,
             "price_column": price_col,
             "score": 0,
-            "detail": "no_row",
+            "detail": f"Tidak ada baris yang cocok untuk material '{material_name or '-'}' dengan kriteria yang diberikan - cek nama material atau thickness",
         }
 
     unit: Decimal | None = None
@@ -198,10 +198,19 @@ def resolve_unit_price_for_buyer(
                 chosen_col = pk
                 break
 
+    if unit is None:
+        return {
+            "unit_price": None,
+            "matched": False,
+            "price_column": chosen_col,
+            "score": best_score,
+            "detail": "Baris ditemukan tapi sel harga kosong - harga belum diinput untuk item ini",
+        }
+
     return {
         "unit_price": unit,
-        "matched": unit is not None,
+        "matched": True,
         "price_column": chosen_col,
         "score": best_score,
-        "detail": "ok" if unit is not None else "empty_cell",
+        "detail": "ok",
     }

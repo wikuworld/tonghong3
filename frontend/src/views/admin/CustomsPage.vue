@@ -82,7 +82,7 @@
         stripe
         size="small"
         class="admin-table"
-        table-layout="auto"
+        table-layout="fixed"
         :empty-text="t('pages.customs.tableEmpty')"
       >
         <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />

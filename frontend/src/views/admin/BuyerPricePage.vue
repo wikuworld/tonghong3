@@ -21,7 +21,7 @@
         stripe
         size="small"
         class="admin-table"
-        table-layout="auto"
+        table-layout="fixed"
         :empty-text="t('pages.buyerPrices.tableEmpty')"
       >
         <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
@@ -60,7 +60,7 @@
     <el-dialog
       v-model="createVisible"
       :title="t('pages.buyerPrices.dialogAdd')"
-      width="480px"
+      width="600px"
       destroy-on-close
       align-center
       @closed="resetCreateForm"
@@ -76,6 +76,13 @@
             clearable
           />
         </el-form-item>
+        <el-form-item :label="t('pages.buyerPrices.currency')">
+          <el-select v-model="createForm.currency" class="w-full">
+            <el-option label="USD" value="USD" />
+            <el-option label="IDR" value="IDR" />
+            <el-option label="EUR" value="EUR" />
+          </el-select>
+        </el-form-item>
         <el-form-item :label="t('pages.buyerPrices.listTitle')" prop="title">
           <el-input v-model="createForm.title" maxlength="255" clearable />
         </el-form-item>
@@ -87,7 +94,7 @@
     </el-dialog>
 
     <!-- Drawer: master data (header + grid) -->
-    <el-drawer v-model="masterDrawer" size="92%" :title="masterDrawerTitle" destroy-on-close @closed="onMasterClosed">
+    <el-drawer v-model="masterDrawer" :size="drawerSize" :title="masterDrawerTitle" destroy-on-close @closed="onMasterClosed">
       <div v-loading="masterLoading" class="buyer-master space-y-4">
         <el-divider content-position="left">{{ t('pages.buyerPrices.sectionHeader') }}</el-divider>
         <el-form label-position="top" class="max-w-4xl">
@@ -201,6 +208,7 @@ const createFormRef = ref(null)
 const createForm = reactive({
   buyer_code: '',
   title: '',
+  currency: 'USD',
 })
 const createRules = computed(() => ({
   buyer_code: [{ required: true, message: t('pages.buyerPrices.ruleBuyerCode'), trigger: 'blur' }],
@@ -280,6 +288,7 @@ function normalizeRows(dataRows, keys) {
 function resetCreateForm() {
   createForm.buyer_code = ''
   createForm.title = ''
+  createForm.currency = 'USD'
 }
 
 function openCreateDialog() {
@@ -303,6 +312,7 @@ async function submitCreate() {
   try {
     const created = await createBuyerPriceList({
       buyer_code: createForm.buyer_code.trim(),
+      currency: createForm.currency || 'USD',
       title: emptyToNull(createForm.title),
     })
     ElMessage.success(t('pages.buyerPrices.saved'))
@@ -327,6 +337,13 @@ function onMasterClosed() {
   sheetRows.value = []
   sheetColumnKeys.value = []
 }
+
+const drawerSize = computed(() => {
+  const w = window.innerWidth
+  if (w < 768) return '100%'
+  if (w < 1200) return '80%'
+  return '90%'
+})
 
 async function openMaster(id) {
   activeListId.value = id
@@ -460,5 +477,10 @@ onMounted(load)
 }
 .buyer-master :deep(.el-drawer__body) {
   padding-top: 0;
+}
+@media (max-width: 768px) {
+  :deep(.el-drawer) {
+    width: 100% !important;
+  }
 }
 </style>

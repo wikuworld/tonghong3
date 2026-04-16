@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 import zipfile
 from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+
+logger = logging.getLogger(__name__)
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from app.schemas import MasterItemCreate, MasterItemOut, MasterPriceOut
 from sqlalchemy import select
@@ -25,6 +29,7 @@ from app.models import (
     MasterPrice,
 )
 from app.routers.auth import get_current_user, require_roles
+from app.utils.excel_utils import export_to_excel, import_from_excel
 
 router = APIRouter(tags=["masters"])
 
@@ -32,7 +37,6 @@ router = APIRouter(tags=["masters"])
 class BrandIn(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    customer_id: Optional[int] = None
     code: Optional[str] = None
     name: Optional[str] = None
 
@@ -41,7 +45,6 @@ class BrandOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    customer_id: Optional[int] = None
     code: Optional[str] = None
     name: Optional[str] = None
 
@@ -128,6 +131,25 @@ def delete_brand(
     row = db.get(Brand, brand_id)
     if not row:
         raise HTTPException(status_code=404, detail="Brand tidak ada")
+    
+    from app.models import PoHeader, CustomerBrandMapping
+    
+    errors = []
+    
+    related_pos = db.query(PoHeader).filter(PoHeader.brand_id == brand_id).count()
+    if related_pos > 0:
+        errors.append(f"{related_pos} PO")
+    
+    related_mappings = db.query(CustomerBrandMapping).filter(CustomerBrandMapping.brand_id == brand_id).count()
+    if related_mappings > 0:
+        errors.append(f"{related_mappings} Customer Brand Mapping")
+    
+    if errors:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Brand tidak bisa dihapus karena masih digunakan di: {', '.join(errors)}"
+        )
+    
     db.delete(row)
     db.commit()
     return {"status": "deleted"}
@@ -289,9 +311,74 @@ def delete_master_item(
     row = db.get(MasterItem, item_id)
     if not row:
         raise HTTPException(status_code=404, detail="Master item tidak ditemukan")
+    
+    from app.models import PoDetail
+    
+    related_details = db.query(PoDetail).filter(PoDetail.master_item_id == item_id).count()
+    if related_details > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Master item '{row.item_code}' tidak bisa dihapus karena masih direferensikan di {related_details} PO detail (material_name tetap tersimpan di PO)"
+        )
+    
     db.delete(row)
     db.commit()
     return {"status": "deleted"}
+
+
+@router.get("/masters/items/export")
+async def export_master_items(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    items = db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all()
+    columns = ["item_code", "material_name", "thickness_range", "thickness_mm",
+               "color", "emboss", "softness", "color_reference", "backing",
+               "style_article", "model", "category", "exim_material_code"]
+    data = [{col: getattr(item, col, None) for col in columns} for item in items]
+    excel_content = export_to_excel(data, columns, "Master Items")
+    return StreamingResponse(
+        io.BytesIO(excel_content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=master_items.xlsx"}
+    )
+
+
+@router.post("/masters/items/import")
+async def import_master_items(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+):
+    columns = ["item_code", "material_name", "thickness_range", "thickness_mm",
+               "color", "emboss", "softness", "color_reference", "backing",
+               "style_article", "model", "category", "exim_material_code"]
+    
+    content = await file.read()
+    items = import_from_excel(content, columns)
+    
+    imported = 0
+    for item_data in items:
+        existing = db.scalars(select(MasterItem).where(
+            MasterItem.item_code == item_data.get("item_code")
+        )).first()
+        
+        if existing:
+            for col in columns:
+                val = item_data.get(col)
+                if val and hasattr(existing, col):
+                    setattr(existing, col, val)
+        else:
+            new_item = MasterItem(item_code=item_data.get("item_code"))
+            for col in columns:
+                val = item_data.get(col)
+                if val and hasattr(new_item, col):
+                    setattr(new_item, col, val)
+            db.add(new_item)
+        imported += 1
+    
+    db.commit()
+    return {"imported": imported}
 
 
 # --- Master Harga (matrix USD) ---
@@ -321,6 +408,7 @@ async def import_master_zip(
     try:
         z = zipfile.ZipFile(io.BytesIO(raw))
     except Exception as e:
+        logger.error(f"Error in import_master_zip: {e}")
         raise HTTPException(status_code=400, detail="File harus ZIP") from e
 
     stats = {"customers_upserted": 0, "items_upserted": 0, "prices_upserted": 0, "files": []}

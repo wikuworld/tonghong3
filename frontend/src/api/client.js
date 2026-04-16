@@ -228,7 +228,7 @@ export function marketingOutstandingCsvUrl(params = {}) {
   if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
   if (params.shipment_status) q.set('shipment_status', params.shipment_status)
   const suffix = q.toString() ? `?${q}` : ''
-  return `/api/v1/marketing/outstanding-lines.csv${suffix}`
+  return `/marketing/outstanding-lines.csv${suffix}`
 }
 
 /** Path unduhan Excel outstanding (Bearer di frontend saat fetch). */
@@ -239,7 +239,7 @@ export function marketingOutstandingXlsxPath(params = {}) {
   if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
   if (params.shipment_status) q.set('shipment_status', params.shipment_status)
   const suffix = q.toString() ? `?${q}` : ''
-  return `/api/v1/marketing/outstanding-lines.xlsx${suffix}`
+  return `/marketing/outstanding-lines.xlsx${suffix}`
 }
 
 /** Baris delivery list (join surat jalan + produksi + PO) — format lembar marketing. */
@@ -254,7 +254,7 @@ export function marketingDeliveryCsvUrl(params = {}) {
   const q = new URLSearchParams()
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
   const suffix = q.toString() ? `?${q}` : ''
-  return `/api/v1/marketing/delivery-lines.csv${suffix}`
+  return `/marketing/delivery-lines.csv${suffix}`
 }
 
 /** Path unduhan Excel delivery list (Bearer lewat fetchAuthenticatedDocument). */
@@ -262,7 +262,7 @@ export function marketingDeliveryXlsxPath(params = {}) {
   const q = new URLSearchParams()
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
   const suffix = q.toString() ? `?${q}` : ''
-  return `/api/v1/marketing/delivery-lines.xlsx${suffix}`
+  return `/marketing/delivery-lines.xlsx${suffix}`
 }
 
 export function advanceMktWorkflow(poId) {
@@ -870,4 +870,96 @@ export function resolveAccountingMapping(transaction_type, status = null) {
   q.set('transaction_type', transaction_type)
   if (status) q.set('status', status)
   return apiFetch(`/accounting/mappings/resolve?${q}`)
+}
+
+// --- Inventory - Warehouse ---
+export function listWarehouses() {
+  return apiFetch('/inventory/warehouses')
+}
+
+export function createWarehouse(body) {
+  return apiFetch('/inventory/warehouses', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateWarehouse(id, body) {
+  return apiFetch(`/inventory/warehouses/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteWarehouse(id) {
+  return apiFetch(`/inventory/warehouses/${id}`, { method: 'DELETE' })
+}
+
+// --- Inventory - Materials ---
+export function listMaterials() {
+  return apiFetch('/inventory/materials')
+}
+
+export function createMaterial(body) {
+  return apiFetch('/inventory/materials', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateMaterial(id, body) {
+  return apiFetch(`/inventory/materials/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteMaterial(id) {
+  return apiFetch(`/inventory/materials/${id}`, { method: 'DELETE' })
+}
+
+// --- Inventory - Stock ---
+export function listStocks(params = {}) {
+  const q = new URLSearchParams()
+  if (params.warehouse_id) q.set('warehouse_id', String(params.warehouse_id))
+  if (params.material_id) q.set('material_id', String(params.material_id))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/inventory/stocks${suffix}`)
+}
+
+export function getStockSummary() {
+  return apiFetch('/inventory/stocks/summary')
+}
+
+// --- Inventory - Receipt ---
+export function listReceipts(params = {}) {
+  const q = new URLSearchParams()
+  if (params.status) q.set('status', params.status)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/inventory/receipts${suffix}`)
+}
+
+export function createReceipt(body) {
+  return apiFetch('/inventory/receipts', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateReceipt(id, body) {
+  return apiFetch(`/inventory/receipts/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function confirmReceipt(id) {
+  return apiFetch(`/inventory/receipts/${id}/confirm`, { method: 'POST' })
+}
+
+// --- Journal Entries ---
+export function listJournalEntries(params = {}) {
+  const q = new URLSearchParams()
+  if (params.date_from) q.set('date_from', params.date_from)
+  if (params.date_to) q.set('date_to', params.date_to)
+  if (params.transaction_type) q.set('transaction_type', params.transaction_type)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/journal/entries${suffix}`)
+}
+
+export function generateJournalFromTransaction(transaction_type, transaction_id) {
+  return apiFetch('/journal/entries/generate-from-transaction', {
+    method: 'POST',
+    body: JSON.stringify({ transaction_type, transaction_id }),
+  })
+}
+
+export function getTrialBalance(params = {}) {
+  const q = new URLSearchParams()
+  if (params.date_from) q.set('date_from', params.date_from)
+  if (params.date_to) q.set('date_to', params.date_to)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/journal/entries/trial-balance${suffix}`)
 }

@@ -18,6 +18,7 @@ class ORMBase(BaseModel):
 class CustomerCreate(BaseModel):
     code: Optional[str] = None
     name: Optional[str] = None
+    position: Optional[str] = None
     contact_person: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -39,6 +40,7 @@ class CustomerCreate(BaseModel):
 class CustomerUpdate(BaseModel):
     code: Optional[str] = None
     name: Optional[str] = None
+    position: Optional[str] = None
     contact_person: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -61,6 +63,7 @@ class CustomerOut(ORMBase):
     id: int
     code: Optional[str] = None
     name: Optional[str] = None
+    position: Optional[str] = None
     contact_person: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -284,6 +287,20 @@ class PoDetailCreate(BaseModel):
         if raw not in {"black", "color", "fluorescent"}:
             raise ValueError("color_family tidak valid")
         return raw
+
+    @field_validator("quantity_order")
+    @classmethod
+    def quantity_order_must_be_positive(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v <= 0:
+            raise ValueError("quantity_order must be greater than 0")
+        return v
+
+    @field_validator("unit_price")
+    @classmethod
+    def unit_price_must_be_non_negative(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is not None and v < 0:
+            raise ValueError("unit_price must be greater than or equal to 0")
+        return v
 
 
 class PoDetailUpdate(BaseModel):
@@ -538,6 +555,8 @@ class InvoiceCreate(BaseModel):
     """delivery_id wajib — invoice hanya setelah delivery terkirim (status sent)."""
 
     delivery_id: int
+    customer_id: Optional[int] = None
+    po_id: Optional[int] = None
     invoice_number: Optional[str] = None
     packing_list_number: Optional[str] = None
     po_number: Optional[str] = None
@@ -568,6 +587,8 @@ class InvoiceCreate(BaseModel):
 
 
 class InvoiceUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    po_id: Optional[int] = None
     invoice_number: Optional[str] = None
     packing_list_number: Optional[str] = None
     po_number: Optional[str] = None
@@ -791,7 +812,6 @@ class CustomerSpecialPriceOut(ORMBase):
 
 class BrandOut(ORMBase):
     id: int
-    customer_id: Optional[int] = None
     code: Optional[str] = None
     name: Optional[str] = None
 
@@ -874,11 +894,13 @@ class SubconInvoiceOut(ORMBase):
 
 class PpicsAssignmentCreate(BaseModel):
     po_id: int
+    po_detail_id: Optional[int] = None
     ppic_user_id: int
     notes: Optional[str] = None
 
 
 class PpicsAssignmentUpdate(BaseModel):
+    po_detail_id: Optional[int] = None
     status: Optional[str] = None
     notes: Optional[str] = None
 
@@ -886,6 +908,7 @@ class PpicsAssignmentUpdate(BaseModel):
 class PpicsAssignmentOut(ORMBase):
     id: int
     po_id: int
+    po_detail_id: Optional[int] = None
     ppic_user_id: int
     status: str
     notes: Optional[str] = None
@@ -959,3 +982,158 @@ class AccountingMappingResolveOut(BaseModel):
     coa_code: Optional[str] = None
     coa_name: Optional[str] = None
     found: bool = False
+
+
+class JournalEntryOut(ORMBase):
+    id: int
+    transaction_type: str
+    transaction_id: int
+    coa_code: str
+    coa_name: str
+    debit: Decimal
+    credit: Decimal
+    description: Optional[str] = None
+    entry_date: date
+    created_at: Optional[datetime] = None
+
+
+class JournalEntryGenerate(BaseModel):
+    transaction_type: str
+    transaction_id: int
+
+
+class TrialBalanceRow(BaseModel):
+    coa_code: str
+    coa_name: str
+    total_debit: Decimal
+    total_credit: Decimal
+
+
+class TrialBalanceReport(BaseModel):
+    as_of_date: date
+    rows: list[TrialBalanceRow]
+    total_debit: Decimal
+    total_credit: Decimal
+    is_balanced: bool
+
+
+class WarehouseCreate(BaseModel):
+    code: str
+    name: str
+    location: Optional[str] = None
+    is_active: bool = True
+
+
+class WarehouseUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    location: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class WarehouseOut(ORMBase):
+    id: int
+    code: str
+    name: str
+    location: Optional[str] = None
+    is_active: bool
+    created_at: Optional[datetime] = None
+
+
+class RawMaterialCreate(BaseModel):
+    code: str
+    name: str
+    material_type: str
+    unit: str
+    default_warehouse_id: Optional[int] = None
+    min_stock: Optional[Decimal] = None
+    cost_price: Optional[Decimal] = None
+    is_active: bool = True
+
+
+class RawMaterialUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    material_type: Optional[str] = None
+    unit: Optional[str] = None
+    default_warehouse_id: Optional[int] = None
+    min_stock: Optional[Decimal] = None
+    cost_price: Optional[Decimal] = None
+    is_active: Optional[bool] = None
+
+
+class RawMaterialOut(ORMBase):
+    id: int
+    code: str
+    name: str
+    material_type: str
+    unit: str
+    default_warehouse_id: Optional[int] = None
+    min_stock: Optional[Decimal] = None
+    cost_price: Optional[Decimal] = None
+    is_active: bool
+    created_at: Optional[datetime] = None
+
+
+class MaterialStockOut(ORMBase):
+    id: int
+    material_id: int
+    warehouse_id: int
+    current_stock: Decimal
+    reserved_stock: Decimal
+    updated_at: Optional[datetime] = None
+    material: Optional[RawMaterialOut] = None
+    warehouse: Optional[WarehouseOut] = None
+
+
+class MaterialReceiptDetailCreate(BaseModel):
+    material_id: int
+    quantity: Decimal
+    unit_cost: Optional[Decimal] = None
+    total_cost: Optional[Decimal] = None
+    remark: Optional[str] = None
+
+
+class MaterialReceiptCreate(BaseModel):
+    receipt_number: Optional[str] = None
+    supplier_name: Optional[str] = None
+    receipt_date: date
+    warehouse_id: int
+    total_amount: Optional[Decimal] = None
+    remark: Optional[str] = None
+    status: str = "draft"
+    details: list[MaterialReceiptDetailCreate] = Field(default_factory=list)
+
+
+class MaterialReceiptUpdate(BaseModel):
+    supplier_name: Optional[str] = None
+    receipt_date: Optional[date] = None
+    warehouse_id: Optional[int] = None
+    total_amount: Optional[Decimal] = None
+    remark: Optional[str] = None
+    status: Optional[str] = None
+
+
+class MaterialReceiptDetailOut(ORMBase):
+    id: int
+    receipt_id: int
+    material_id: int
+    quantity: Decimal
+    unit_cost: Optional[Decimal] = None
+    total_cost: Optional[Decimal] = None
+    remark: Optional[str] = None
+    material: Optional[RawMaterialOut] = None
+
+
+class MaterialReceiptOut(ORMBase):
+    id: int
+    receipt_number: str
+    supplier_name: Optional[str] = None
+    receipt_date: date
+    warehouse_id: int
+    total_amount: Optional[Decimal] = None
+    remark: Optional[str] = None
+    status: str
+    created_at: Optional[datetime] = None
+    warehouse: Optional[WarehouseOut] = None
+    details: list[MaterialReceiptDetailOut] = Field(default_factory=list)

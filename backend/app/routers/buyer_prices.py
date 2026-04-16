@@ -209,6 +209,16 @@ def delete_buyer_price_list(
     row = db.get(BuyerPriceList, list_id)
     if not row:
         raise HTTPException(status_code=404, detail="List harga tidak ditemukan")
+    
+    # Check if buyer_code is used in PO headers
+    from app.models import PoHeader
+    related_pos = db.query(PoHeader).filter(PoHeader.buyer == row.buyer_code).count()
+    if related_pos > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Buyer {row.buyer_code} tidak bisa dihapus karena masih digunakan di {related_pos} PO"
+        )
+    
     db.delete(row)
     db.commit()
     return {"status": "deleted"}

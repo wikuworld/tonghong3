@@ -26,7 +26,7 @@
             <el-option v-for="r in roles" :key="r" :label="r" :value="r" />
           </el-select>
         </div>
-        <el-table :data="filteredUsers" v-loading="loading" border stripe size="small" class="admin-table">
+        <el-table :data="filteredUsers" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('common.tableEmpty')">
           <el-table-column prop="id" :label="t('pages.userAccess.idLabel')" width="72" />
           <el-table-column prop="username" :label="t('pages.login.username')" min-width="180" />
           <el-table-column prop="role" :label="t('pages.userAccess.roleLabel')" width="140" />
@@ -55,8 +55,8 @@
           </el-select>
         </div>
 
-        <div class="matrix-scroll rounded border border-slate-200 bg-white">
-          <table class="matrix-table">
+        <div class="matrix-scroll overflow-auto max-h-[66vh] rounded border border-slate-200 bg-white">
+          <table class="matrix-table w-full border-collapse text-sm">
             <thead>
               <tr>
                 <th class="sticky-col">{{ t('pages.userAccess.matrixModule') }}</th>
@@ -106,7 +106,7 @@
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog v-model="dialogVisible" :title="isEdit ? t('common.edit') : t('common.create')" width="520px">
+    <el-dialog v-model="dialogVisible" :title="isEdit ? t('common.edit') : t('common.create')" width="600px" destroy-on-close align-center>
       <el-form label-position="top">
         <el-form-item :label="t('pages.login.username')" required>
           <el-input v-model="form.username" :disabled="isEdit" />
@@ -298,15 +298,6 @@ onMounted(load)
 </script>
 
 <style scoped>
-.matrix-scroll {
-  overflow: auto;
-  max-height: 66vh;
-}
-.matrix-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
 .matrix-table th,
 .matrix-table td {
   border: 1px solid #e2e8f0;

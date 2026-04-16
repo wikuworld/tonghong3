@@ -5,7 +5,7 @@
         <el-button v-if="canCreate" type="primary" :loading="loading" @click="openCreate">{{ t('pages.packing.create') }}</el-button>
       </template>
       <el-alert :title="t('pages.packing.guide')" type="info" show-icon :closable="false" class="mb-3" />
-      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="auto" :empty-text="t('pages.packing.tableEmpty')">
+      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.packing.tableEmpty')">
         <el-table-column prop="packing_number" :label="t('pages.packing.packingNo')" min-width="160" />
         <el-table-column :label="t('pages.packing.production')" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ prodLabel(row.production_id) }}</template>

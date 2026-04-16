@@ -19,7 +19,7 @@
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
-    <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.subconInvoice.tableEmpty')">
+    <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.subconInvoice.tableEmpty')">
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
       <el-table-column prop="invoice_number" :label="t('pages.subconInvoice.invoiceNumber')" min-width="150" />
       <el-table-column prop="po_number" :label="t('pages.subconInvoice.poNumber')" min-width="130" />
@@ -53,7 +53,7 @@
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="formVisible" :title="isEditing ? t('pages.subconInvoice.dialogEdit') : t('pages.subconInvoice.dialogAdd')" width="500px" destroy-on-close>
+    <el-dialog v-model="formVisible" :title="isEditing ? t('pages.subconInvoice.dialogEdit') : t('pages.subconInvoice.dialogAdd')" width="600px" destroy-on-close align-center>
       <el-form label-position="top">
         <el-form-item :label="t('pages.subconInvoice.poNumber')" required>
           <el-select v-model="form.po_id" filterable class="w-full" :placeholder="t('pages.subconInvoice.selectPo')" :disabled="isEditing" @change="onPoChange">
@@ -89,7 +89,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="generateVisible" :title="t('pages.subconInvoice.generateFromPo')" width="400px" destroy-on-close>
+    <el-dialog v-model="generateVisible" :title="t('pages.subconInvoice.generateFromPo')" width="600px" destroy-on-close align-center>
       <el-form label-position="top">
         <el-form-item :label="t('pages.subconInvoice.poNumber')">
           <el-select v-model="generatePoId" filterable class="w-full" :placeholder="t('pages.subconInvoice.selectPo')">
@@ -297,7 +297,4 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.admin-table {
-  width: 100%;
-}
 </style>

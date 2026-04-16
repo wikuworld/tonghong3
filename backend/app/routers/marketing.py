@@ -101,7 +101,7 @@ def _delivery_line_amount(
 ) -> Decimal | None:
     if invd is not None and invd.amount is not None:
         return invd.amount
-    if dd.qty is not None and pod is not None and pod.unit_price is not None:
+    if dd.qty is not None and dd.qty > 0 and pod is not None and pod.unit_price is not None:
         return (dd.qty * pod.unit_price).quantize(Decimal("0.01"))
     return None
 
@@ -557,11 +557,16 @@ def marketing_outstanding_lines(
         default=ShipmentStatusFilter.all,
         description="all | sent (balance 0) | not_sent (balance > 0)",
     ),
+    skip: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(100, ge=1, le=1000, description="Limit for pagination"),
     _user=Depends(get_current_user),
-) -> list[dict[str, Any]]:
-    return _query_outstanding_rows(
+) -> dict:
+    rows = _query_outstanding_rows(
         db, balance_filter, computed_balance, po_q=po_q, shipment_status=shipment_status
     )
+    total = len(rows)
+    paginated = rows[skip : skip + limit]
+    return {"data": paginated, "total": total}
 
 
 @router.get("/marketing/outstanding-lines.csv")
@@ -616,9 +621,14 @@ def marketing_outstanding_lines_xlsx(
 def marketing_delivery_lines(
     db: Session = Depends(get_db),
     q: Optional[str] = Query(None, description="Saring baris (substring, case-insensitive)"),
+    skip: int = Query(0, ge=0, description="Offset for pagination"),
+    limit: int = Query(100, ge=1, le=1000, description="Limit for pagination"),
     _user=Depends(get_current_user),
-) -> list[dict[str, Any]]:
-    return _query_delivery_lines_rows(db, q=q)
+) -> dict:
+    rows = _query_delivery_lines_rows(db, q=q)
+    total = len(rows)
+    paginated = rows[skip : skip + limit]
+    return {"data": paginated, "total": total}
 
 
 @router.get("/marketing/delivery-lines.csv")

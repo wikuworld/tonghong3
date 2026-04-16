@@ -8,21 +8,22 @@
       </template>
     </template>
 
-    <p class="mb-3 text-sm text-slate-600">
-      Invoice membutuhkan <b>delivery</b> berstatus <code class="rounded bg-slate-100 px-1">sent</code> dengan minimal satu baris detail.
-      Alur: Packing <code class="rounded bg-slate-100 px-1">done</code> → Delivery + detail → tandai terkirim → buat invoice.
-    </p>
+    <p class="mb-3 text-sm text-slate-600">{{ t('pages.invoice.deliveryRequiredNote') }}</p>
 
     <el-tabs v-model="tab">
       <el-tab-pane :label="t('pages.invoice.tabList')" name="list">
-        <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.invoice.tableEmpty')">
+        <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.invoice.tableEmpty')">
           <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
           <el-table-column prop="invoice_number" :label="t('common.invoiceNo')" min-width="150" />
           <el-table-column prop="delivery_id" :label="t('pages.invoice.deliveryId')" width="100" align="center" />
           <el-table-column prop="po_number" :label="t('common.poNo')" min-width="150" />
           <el-table-column prop="customer_name" :label="t('common.customer')" min-width="200" />
-          <el-table-column prop="invoice_date" :label="t('common.date')" width="120" />
-          <el-table-column prop="due_date" :label="t('pages.invoice.dueDate')" width="120" />
+          <el-table-column :label="t('common.date')" width="120">
+            <template #default="{ row }">{{ formatDate(row.invoice_date) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('pages.invoice.dueDate')" width="120">
+            <template #default="{ row }">{{ formatDate(row.due_date) }}</template>
+          </el-table-column>
           <el-table-column :label="`${t('common.total')} (USD)`" min-width="120" align="right">
             <template #default="{ row }">{{ formatNum(row.total_amount) }}</template>
           </el-table-column>
@@ -33,6 +34,11 @@
               </el-tooltip>
             </template>
           </el-table-column>
+          <template #footer>
+            <div class="flex justify-end gap-4 text-sm font-medium">
+              <span>{{ t('pages.invoice.totalAmount') }}: {{ formatCurrency(totalAmount, 'USD') }}</span>
+            </div>
+          </template>
         </el-table>
       </el-tab-pane>
 
@@ -49,16 +55,27 @@
           <el-button :loading="outstandingLoading" @click="loadOutstanding">{{ t('common.search') }}</el-button>
         </div>
 
-        <el-table :data="outstandingRows" v-loading="outstandingLoading" border stripe size="small" class="admin-table" :empty-text="t('pages.invoice.tableEmpty')">
+        <el-table :data="outstandingRows" v-loading="outstandingLoading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.invoice.tableEmpty')">
           <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
           <el-table-column prop="invoice_number" :label="t('common.invoiceNo')" min-width="150" />
           <el-table-column prop="po_number" :label="t('common.poNo')" min-width="150" />
           <el-table-column prop="customer_name" :label="t('common.customer')" min-width="200" />
-          <el-table-column prop="invoice_date" :label="t('common.date')" width="120" />
-          <el-table-column prop="due_date" :label="t('pages.invoice.dueDate')" width="120" />
+          <el-table-column :label="t('common.date')" width="120">
+            <template #default="{ row }">{{ formatDate(row.invoice_date) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('pages.invoice.dueDate')" width="120">
+            <template #default="{ row }">{{ formatDate(row.due_date) }}</template>
+          </el-table-column>
           <el-table-column prop="tax_invoice_no" :label="t('pages.invoice.taxInvoiceNo')" min-width="140" />
           <el-table-column prop="receipt_no" :label="t('pages.invoice.receiptNo')" min-width="140" />
           <el-table-column prop="nomor_aju" :label="t('pages.invoice.nomorAju')" min-width="140" />
+          <el-table-column :label="t('pages.invoice.paymentStatus')" width="120">
+            <template #default="{ row }">
+              <el-tag :type="statusType(row.payment_status)">
+                {{ statusLabel(row.payment_status, { paid: t('pages.invoice.paid'), unpaid: t('pages.invoice.unpaid') }) }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column :label="t('common.actions')" width="88" fixed="right" align="center">
             <template #default="{ row }">
               <el-tooltip v-if="canUpdate" :content="t('common.edit')" placement="top">
@@ -77,7 +94,7 @@
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog v-model="detailVisible" :title="t('pages.invoice.dialogDetail')" width="560px" destroy-on-close>
+    <el-dialog v-model="detailVisible" :title="t('pages.invoice.dialogDetail')" width="560px" destroy-on-close align-center>
       <el-descriptions v-if="detailRow" :column="1" border size="small">
         <el-descriptions-item :label="t('common.invoiceNo')">{{ detailRow.invoice_number }}</el-descriptions-item>
         <el-descriptions-item :label="t('pages.invoice.deliveryId')">{{ detailRow.delivery_id }}</el-descriptions-item>
@@ -92,7 +109,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="formVisible" :title="t('pages.invoice.dialogAdd')" width="560px" destroy-on-close>
+    <el-dialog v-model="formVisible" :title="t('pages.invoice.dialogAdd')" width="560px" destroy-on-close align-center>
       <el-form label-position="top">
         <el-form-item :label="t('pages.invoice.deliverySentLabel')" required>
           <el-select v-model="form.delivery_id" filterable clearable class="w-full" :placeholder="t('pages.invoice.pickSentDelivery')" @change="onDeliveryPick">
@@ -108,7 +125,7 @@
           <el-select v-model="form.po_id" filterable clearable class="w-full" @change="onPoPick">
             <el-option v-for="p in poList" :key="p.id" :label="p.po_number" :value="p.id" />
           </el-select>
-          <span class="mt-1 block text-xs text-slate-500">Opsional — harus cocok dengan barang di delivery (validasi server).</span>
+          <span class="mt-1 block text-xs text-slate-500">{{ t('pages.invoice.deliveryValidationHint') }}</span>
         </el-form-item>
         <el-form-item :label="t('common.invoiceNo')">
           <el-input v-model="form.invoice_number" clearable :placeholder="t('pages.invoice.invoiceNoOptionalPlaceholder')" />
@@ -135,7 +152,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="outstandingEditVisible" :title="t('pages.invoice.editOutstanding')" width="560px" destroy-on-close>
+    <el-dialog v-model="outstandingEditVisible" :title="t('pages.invoice.editOutstanding')" width="560px" destroy-on-close align-center>
       <el-form label-position="top">
         <el-form-item :label="t('pages.invoice.dueDate')">
           <el-date-picker v-model="outstandingEdit.due_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
@@ -161,6 +178,21 @@
         <el-form-item :label="t('pages.invoice.nomorAju')">
           <el-input v-model="outstandingEdit.nomor_aju" />
         </el-form-item>
+        <el-form-item :label="t('pages.invoice.paymentStatus')">
+          <el-select v-model="outstandingEdit.payment_status" class="w-full">
+            <el-option :label="t('pages.invoice.unpaid')" value="unpaid" />
+            <el-option :label="t('pages.invoice.paid')" value="paid" />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.paymentDate')">
+          <el-date-picker v-model="outstandingEdit.payment_date" type="date" value-format="YYYY-MM-DD" class="w-full" clearable />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.paymentBankAccount')">
+          <el-input v-model="outstandingEdit.payment_bank_account" maxlength="100" />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.paymentProof')">
+          <el-input v-model="outstandingEdit.payment_proof_url" maxlength="500" placeholder="URL atau path file" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="outstandingEditVisible = false">{{ t('common.cancel') }}</el-button>
@@ -178,6 +210,7 @@ import { ElMessage } from 'element-plus'
 import { EditPen, Plus, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { can } from '../../security/permissions'
+import { formatCurrency, formatDate, statusType, statusLabel } from '../../utils/format'
 import {
   createInvoice,
   listCustomers,
@@ -214,14 +247,17 @@ const outstandingEdit = reactive({
   received_date: '',
   nopen: '',
   nomor_aju: '',
+  payment_status: 'unpaid',
+  payment_date: '',
+  payment_bank_account: '',
+  payment_proof_url: '',
 })
 const poList = ref([])
 const customers = ref([])
 const deliveries = ref([])
 
 function formatNum(v) {
-  if (v == null || v === '') return t('common.emptyValue')
-  return Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })
+  return formatCurrency(v, 'USD')
 }
 
 const deliveriesReady = computed(() =>
@@ -286,6 +322,10 @@ function openEditOutstanding(row) {
   outstandingEdit.received_date = row.received_date || ''
   outstandingEdit.nopen = row.nopen || ''
   outstandingEdit.nomor_aju = row.nomor_aju || ''
+  outstandingEdit.payment_status = row.payment_status || 'unpaid'
+  outstandingEdit.payment_date = row.payment_date || ''
+  outstandingEdit.payment_bank_account = row.payment_bank_account || ''
+  outstandingEdit.payment_proof_url = row.payment_proof_url || ''
   outstandingEditVisible.value = true
 }
 
@@ -302,6 +342,10 @@ async function saveOutstanding() {
       received_date: toIsoDate(outstandingEdit.received_date) || undefined,
       nopen: outstandingEdit.nopen || undefined,
       nomor_aju: outstandingEdit.nomor_aju || undefined,
+      payment_status: outstandingEdit.payment_status || undefined,
+      payment_date: toIsoDate(outstandingEdit.payment_date) || undefined,
+      payment_bank_account: outstandingEdit.payment_bank_account || undefined,
+      payment_proof_url: outstandingEdit.payment_proof_url || undefined,
     })
     ElMessage.success(t('common.save'))
     outstandingEditVisible.value = false
@@ -319,6 +363,10 @@ const filteredRows = computed(() => {
   return rows.value.filter((r) => JSON.stringify(r).toLowerCase().includes(q))
 })
 
+const totalAmount = computed(() => {
+  return rows.value.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0)
+})
+
 const detailVisible = ref(false)
 const detailRow = ref(null)
 
@@ -330,6 +378,7 @@ function openDetail(row) {
 const formVisible = ref(false)
 const form = reactive({
   delivery_id: null,
+  customer_id: null,
   po_id: null,
   invoice_number: '',
   customer_name: '',
@@ -341,23 +390,33 @@ const form = reactive({
 function onPoPick(pid) {
   if (!pid) return
   const p = poList.value.find((x) => x.id === pid)
-  if (!p?.customer_id) return
-  const c = customers.value.find((x) => x.id === p.customer_id)
-  form.customer_name = c?.name || ''
+  if (p?.customer_id) {
+    form.customer_id = p.customer_id
+    const c = customers.value.find((x) => x.id === p.customer_id)
+    form.customer_name = c?.name || ''
+  }
   form.invoice_number = form.invoice_number || `INV-${p.po_number}`
 }
 
 function onDeliveryPick(did) {
-  if (!did) return
+  if (!did) {
+    form.customer_id = null
+    form.customer_name = ''
+    form.po_id = null
+    return
+  }
   const d = deliveries.value.find((x) => x.id === did)
   if (d?.customer_id) {
+    form.customer_id = d.customer_id
     const c = customers.value.find((x) => x.id === d.customer_id)
-    form.customer_name = c?.name || form.customer_name
+    form.customer_name = c?.name || ''
   }
+  form.po_id = null
 }
 
 function openCreate() {
   form.delivery_id = null
+  form.customer_id = null
   form.po_id = null
   form.invoice_number = ''
   form.customer_name = ''
@@ -377,6 +436,8 @@ async function submit() {
   try {
     await createInvoice({
       delivery_id: form.delivery_id,
+      customer_id: form.customer_id || undefined,
+      po_id: form.po_id || undefined,
       invoice_number: form.invoice_number || undefined,
       po_number: p?.po_number || undefined,
       customer_name: form.customer_name || undefined,
@@ -396,7 +457,4 @@ async function submit() {
 </script>
 
 <style scoped>
-.admin-table {
-  width: 100%;
-}
 </style>

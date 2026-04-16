@@ -1,329 +1,242 @@
 <template>
   <AdminSection :title="t('pages.marketingFlow.title')" :subtitle="t('pages.marketingFlow.subtitle')">
     <template #actions>
-      <template v-if="mainTab === 'flow'">
-        <el-date-picker v-model="rekapDate" type="date" value-format="YYYY-MM-DD" class="w-[160px]" />
-        <el-button type="primary" :icon="Download" @click="downloadRekap">{{ t('pages.marketingFlow.rekapToday') }}</el-button>
-      </template>
-      <template v-else-if="mainTab === 'outstanding'">
-        <el-button :icon="Download" @click="downloadOutstanding">{{ t('pages.marketingFlow.outstandingDownloadCsv') }}</el-button>
-        <el-button type="primary" :icon="Download" :loading="outstandingXlsxLoading" @click="downloadOutstandingXlsx">
-          {{ t('pages.marketingFlow.outstandingDownloadXlsx') }}
-        </el-button>
-        <el-button :loading="outstandingLoading" @click="loadOutstanding">{{ t('pages.marketingFlow.outstandingRefresh') }}</el-button>
-      </template>
-      <template v-else-if="mainTab === 'delivery'">
-        <el-button :icon="Download" @click="downloadDelivery">{{ t('pages.marketingFlow.deliveryDownloadCsv') }}</el-button>
-        <el-button :loading="deliveryLoading" @click="loadDelivery">{{ t('pages.marketingFlow.deliveryRefresh') }}</el-button>
-      </template>
+      <el-select v-model="mainTab" class="w-40">
+        <el-option label="Flow" value="flow" />
+        <el-option label="Outstanding" value="outstanding" />
+        <el-option label="Delivery" value="delivery" />
+      </el-select>
     </template>
 
-    <el-tabs v-model="mainTab" class="marketing-tabs">
-      <el-tab-pane :label="t('pages.marketingFlow.tabFlow')" name="flow">
-        <el-steps :active="activeStep" finish-status="success" align-center class="mb-6">
-          <el-step v-for="(s, i) in stageList" :key="s" :title="labelFor(s)" :description="String(i + 1)" />
-        </el-steps>
-
-        <div class="mb-4 flex flex-wrap items-end gap-3">
-          <el-form-item :label="t('pages.marketingFlow.filterStage')" class="mb-0">
-            <el-select v-model="filterStage" clearable class="w-[220px]" :placeholder="t('pages.marketingFlow.allStages')" @change="load">
-              <el-option v-for="s in stageList" :key="s" :label="labelFor(s)" :value="s" />
-            </el-select>
-          </el-form-item>
-          <el-button :loading="loading" @click="load">{{ t('common.search') }}</el-button>
+    <el-card shadow="never" class="mb-4" v-if="mainTab === 'flow'">
+      <template #header>
+        <div class="flex items-center justify-between">
+          <span class="font-semibold">{{ t('pages.marketingFlow.tabFlow') }}</span>
+          <el-date-picker v-model="rekapDate" type="date" value-format="YYYY-MM-DD" size="small" class="w-36" />
         </div>
+      </template>
+      <el-steps :active="activeStep" finish-status="success" align-center class="mb-4">
+        <el-step v-for="(s, i) in stageList" :key="s" :title="labelFor(s)" />
+      </el-steps>
+      <div class="flex flex-wrap items-center gap-3">
+        <el-select v-model="filterStage" clearable size="small" class="w-48" :placeholder="t('pages.marketingFlow.allStages')" @change="load">
+          <el-option v-for="s in stageList" :key="s" :label="labelFor(s)" :value="s" />
+        </el-select>
+        <el-button size="small" @click="load">{{ t('common.search') }}</el-button>
+        <el-button type="primary" size="small" :icon="Download" @click="downloadRekap">{{ t('pages.marketingFlow.rekapToday') }}</el-button>
+      </div>
+    </el-card>
 
-        <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table">
-          <el-table-column type="index" width="50" align="center" />
-          <el-table-column prop="po_number" :label="t('common.poNo')" min-width="140" />
-          <el-table-column prop="mkt_workflow_stage" :label="t('pages.marketingFlow.stage')" min-width="160">
-            <template #default="{ row }">
-              <el-tag size="small">{{ labelFor(row.mkt_workflow_stage) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="status" :label="t('common.status')" width="110" />
-          <el-table-column prop="order_date" :label="t('common.orderDate')" width="120" />
-          <el-table-column :label="t('pages.marketingFlow.materialDone')" width="120" align="center">
-            <template #default="{ row }">{{ row.material_followup_done ? '✓' : t('common.emptyValue') }}</template>
-          </el-table-column>
-          <el-table-column :label="t('ppicWorkflow.status')" width="130" align="center">
-            <template #default="{ row }">
-              <el-tag v-if="ppicAssignments[row.id]" size="small" :type="ppicAssignments[row.id].status === 'completed' ? 'success' : ppicAssignments[row.id].status === 'in_progress' ? 'warning' : 'info'">
-                {{ ppicStatusLabel(ppicAssignments[row.id].status) }}
-              </el-tag>
-              <span v-else class="text-gray-400 text-xs">—</span>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('common.actions')" width="140" fixed="right" align="center">
-            <template #default="{ row }">
-              <div class="flex flex-wrap items-center justify-center gap-0">
-                <el-tooltip :content="t('ppicWorkflow.assignToPpic')" placement="top">
-                  <el-button
-                    type="warning"
-                    link
-                    size="small"
-                    :aria-label="t('ppicWorkflow.assignToPpic')"
-                    @click="openAssignDialog(row)"
-                  />
-                </el-tooltip>
-                <el-tooltip v-if="canAdvance" :content="t('pages.marketingFlow.advance')" placement="top">
-                  <el-button
-                    :icon="DArrowRight"
-                    type="primary"
-                    link
-                    size="small"
-                    :loading="advancing === row.id"
-                    :aria-label="t('pages.marketingFlow.advance')"
-                    @click="advance(row)"
-                  />
-                </el-tooltip>
-                <el-tooltip :content="t('pages.marketingFlow.openPo')" placement="top">
-                  <el-button
-                    :icon="Document"
-                    link
-                    size="small"
-                    :aria-label="t('pages.marketingFlow.openPo')"
-                    @click="goPo(row.id)"
-                  />
-                </el-tooltip>
-              </div>
-            </template>
-          </el-table-column>
-        </el-table>
+    <el-card shadow="never" class="mb-4" v-else-if="mainTab === 'outstanding'">
+      <template #header>
+        <div class="flex items-center justify-between">
+          <span class="font-semibold">{{ t('pages.marketingFlow.tabOutstanding') }}</span>
+          <div class="flex gap-2">
+            <el-button size="small" :loading="outstandingLoading" @click="loadOutstanding">{{ t('pages.marketingFlow.outstandingRefresh') }}</el-button>
+            <el-button size="small" type="primary" :icon="Download" :loading="outstandingXlsxLoading" @click="downloadOutstandingXlsx">
+              Excel
+            </el-button>
+          </div>
+        </div>
+      </template>
+      <div class="flex flex-wrap items-end gap-3">
+        <el-select v-model="balanceFilter" size="small" class="w-40" @change="loadOutstanding">
+          <el-option :label="t('pages.marketingFlow.balanceFilterAll')" value="all" />
+          <el-option :label="t('pages.marketingFlow.balanceFilterExcludeZero')" value="exclude_zero" />
+          <el-option :label="t('pages.marketingFlow.balanceFilterPositiveOnly')" value="positive_only" />
+        </el-select>
+        <el-radio-group v-model="shipmentTab" size="small" @change="loadOutstanding">
+          <el-radio-button label="all">{{ t('pages.marketingFlow.shipmentTabAll') }}</el-radio-button>
+          <el-radio-button label="not_sent">{{ t('pages.marketingFlow.shipmentTabNotSent') }}</el-radio-button>
+          <el-radio-button label="sent">{{ t('pages.marketingFlow.shipmentTabSent') }}</el-radio-button>
+        </el-radio-group>
+        <el-select v-model="outstandingViewMode" size="small" class="w-40">
+          <el-option :label="t('pages.marketingFlow.viewModeAll')" value="all" />
+          <el-option :label="t('pages.marketingFlow.viewModeWarehouse')" value="warehouse_qc" />
+          <el-option :label="t('pages.marketingFlow.viewModeMktDelivery')" value="mkt_delivery" />
+        </el-select>
+        <el-input v-model="poSearch" size="small" clearable class="w-40" :placeholder="t('pages.marketingFlow.searchPoPlaceholder')" @keyup.enter="loadOutstanding" />
+      </div>
+    </el-card>
 
-        <el-alert class="mt-4" type="info" :closable="false" show-icon>
-          <template #title>{{ t('pages.marketingFlow.hintTitle') }}</template>
-          <p class="text-sm">{{ t('pages.marketingFlow.hintBody') }}</p>
-        </el-alert>
-      </el-tab-pane>
+    <el-card shadow="never" class="mb-4" v-else-if="mainTab === 'delivery'">
+      <template #header>
+        <div class="flex items-center justify-between">
+          <span class="font-semibold">{{ t('pages.marketingFlow.tabDelivery') }}</span>
+          <el-button size="small" :loading="deliveryLoading" @click="loadDelivery">{{ t('pages.marketingFlow.deliveryRefresh') }}</el-button>
+        </div>
+      </template>
+    </el-card>
 
-      <el-tab-pane :label="t('pages.marketingFlow.tabOutstanding')" name="outstanding">
-        <p class="mb-3 text-sm text-gray-600 dark:text-gray-400">{{ t('pages.marketingFlow.outstandingSubtitle') }}</p>
-        <div class="mb-3 flex flex-wrap items-end gap-3">
-          <el-form-item :label="t('pages.marketingFlow.balanceFilter')" class="mb-0">
-            <el-select v-model="balanceFilter" class="w-[min(100%,320px)]" @change="loadOutstanding">
-              <el-option :label="t('pages.marketingFlow.balanceFilterAll')" value="all" />
-              <el-option :label="t('pages.marketingFlow.balanceFilterExcludeZero')" value="exclude_zero" />
-              <el-option :label="t('pages.marketingFlow.balanceFilterPositiveOnly')" value="positive_only" />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('pages.marketingFlow.shipmentFilter')" class="mb-0">
-            <el-radio-group v-model="shipmentTab" size="small" @change="loadOutstanding">
-              <el-radio-button label="all">{{ t('pages.marketingFlow.shipmentTabAll') }}</el-radio-button>
-              <el-radio-button label="not_sent">{{ t('pages.marketingFlow.shipmentTabNotSent') }}</el-radio-button>
-              <el-radio-button label="sent">{{ t('pages.marketingFlow.shipmentTabSent') }}</el-radio-button>
-            </el-radio-group>
-          </el-form-item>
-          <el-form-item :label="t('pages.marketingFlow.viewMode')" class="mb-0">
-            <el-select v-model="outstandingViewMode" class="w-[min(100%,280px)]">
-              <el-option :label="t('pages.marketingFlow.viewModeAll')" value="all" />
-              <el-option :label="t('pages.marketingFlow.viewModeWarehouse')" value="warehouse_qc" />
-              <el-option :label="t('pages.marketingFlow.viewModeMktDelivery')" value="mkt_delivery" />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('pages.marketingFlow.searchPo')" class="mb-0">
-            <div class="flex flex-wrap items-center gap-2">
-              <el-input
-                v-model="poSearch"
-                clearable
-                class="w-[200px]"
-                :placeholder="t('pages.marketingFlow.searchPoPlaceholder')"
-                @keyup.enter="loadOutstanding"
-              />
-              <el-button @click="loadOutstanding">{{ t('common.search') }}</el-button>
+    <div v-show="mainTab === 'flow'">
+      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed">
+        <el-table-column type="index" width="50" align="center" fixed="left" />
+        <el-table-column prop="po_number" :label="t('common.poNo')" min-width="140" show-overflow-tooltip />
+        <el-table-column :label="t('pages.marketingFlow.stage')" width="150">
+          <template #default="{ row }">
+            <el-tag size="small">{{ labelFor(row.mkt_workflow_stage) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="status" :label="t('common.status')" width="100" />
+        <el-table-column prop="order_date" :label="t('common.orderDate')" width="110" />
+        <el-table-column :label="t('pages.marketingFlow.materialDone')" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.material_followup_done" type="success" size="small">✓</el-tag>
+            <span v-else class="text-gray-400">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('ppicWorkflow.status')" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="ppicAssignments[row.id]" size="small" :type="ppicAssignments[row.id].status === 'completed' ? 'success' : ppicAssignments[row.id].status === 'in_progress' ? 'warning' : 'info'">
+              {{ ppicStatusLabel(ppicAssignments[row.id].status) }}
+            </el-tag>
+            <span v-else class="text-gray-400 text-xs">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="120" fixed="right" align="center">
+          <template #default="{ row }">
+            <el-button type="warning" link size="small" :aria-label="t('ppicWorkflow.assignToPpic')" @click="openAssignDialog(row)">
+              <el-icon><User /></el-icon>
+            </el-button>
+            <el-button v-if="canAdvance" type="primary" link size="small" :loading="advancing === row.id" @click="advance(row)">
+              <el-icon><DArrowRight /></el-icon>
+            </el-button>
+            <el-button type="default" link size="small" @click="goPo(row.id)">
+              <el-icon><Document /></el-icon>
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-alert class="mt-4" type="info" :closable="false" show-icon>
+        <template #title>{{ t('pages.marketingFlow.hintTitle') }}</template>
+        <p class="text-sm">{{ t('pages.marketingFlow.hintBody') }}</p>
+      </el-alert>
+    </div>
+
+    <div v-show="mainTab === 'outstanding'">
+      <div class="mb-3 flex items-center gap-2">
+        <el-button type="primary" plain size="small" :disabled="!outstandingSelection.length" @click="proposeScheduleFromSelection">
+          {{ t('pages.marketingFlow.scheduleDraftButton') }} ({{ outstandingSelection.length }})
+        </el-button>
+      </div>
+      <el-collapse class="mb-3">
+        <el-collapse-item :title="t('pages.marketingFlow.filterColumnsTitle')" name="filters">
+          <p class="mb-2 text-xs text-gray-500">{{ t('pages.marketingFlow.filterHint') }}</p>
+          <div class="grid max-h-48 grid-cols-2 gap-2 overflow-y-auto md:grid-cols-4 lg:grid-cols-6">
+            <div v-for="f in outstandingTextFilterFields" :key="f.key" class="flex min-w-0 flex-col gap-0.5">
+              <span class="text-xs text-gray-600">{{ f.label }}</span>
+              <el-input v-model="outstandingTextFilters[f.key]" size="small" clearable />
             </div>
-          </el-form-item>
-        </div>
-        <div class="mb-3 flex flex-wrap items-center gap-2">
-          <el-button type="primary" plain :disabled="!outstandingSelection.length" @click="proposeScheduleFromSelection">
-            {{ t('pages.marketingFlow.scheduleDraftButton') }}
-          </el-button>
-          <span v-if="outstandingSelection.length" class="text-sm text-gray-600 dark:text-gray-400">
-            {{ t('pages.marketingFlow.selectedCount', { n: outstandingSelection.length }) }}
-          </span>
-        </div>
-        <el-collapse class="mb-3">
-          <el-collapse-item :title="t('pages.marketingFlow.filterColumnsTitle')" name="filters">
-            <p class="mb-2 text-xs text-gray-500">{{ t('pages.marketingFlow.filterHint') }}</p>
-            <div class="grid max-h-48 grid-cols-2 gap-2 overflow-y-auto md:grid-cols-3 lg:grid-cols-4">
-              <div v-for="f in outstandingTextFilterFields" :key="f.key" class="flex min-w-0 flex-col gap-0.5">
-                <span class="text-xs text-gray-600 dark:text-gray-400">{{ f.label }}</span>
-                <el-input v-model="outstandingTextFilters[f.key]" size="small" clearable />
-              </div>
-            </div>
-          </el-collapse-item>
-        </el-collapse>
-        <el-table
-          ref="outstandingTableRef"
-          :data="outstandingDisplayRows"
-          v-loading="outstandingLoading"
-          border
-          stripe
-          size="small"
-          class="admin-table outstanding-table"
-          max-height="560"
-          :empty-text="t('pages.marketingFlow.outstandingEmpty')"
-          show-summary
-          :summary-method="outstandingSummary"
-          @selection-change="onOutstandingSelectionChange"
-        >
-          <el-table-column type="selection" width="44" fixed />
-          <el-table-column type="index" width="44" fixed />
-          <el-table-column prop="order_date" :label="t('common.orderDate')" width="112" />
-          <el-table-column prop="thi_order" :label="t('pages.marketingFlow.colThiOrder')" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="customer_name" :label="t('common.customerName')" min-width="140" show-overflow-tooltip />
-          <el-table-column prop="brand" :label="t('pages.marketingFlow.colBrand')" width="100" />
-          <el-table-column prop="order_type" :label="t('pages.marketingFlow.colOrderType')" width="100" />
-          <el-table-column prop="no_po" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="material_name" :label="t('common.material')" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="thickness" :label="t('common.thickness')" width="100" />
-          <el-table-column prop="emboss" :label="t('common.emboss')" width="90" show-overflow-tooltip />
-          <el-table-column prop="softness_type" :label="t('pages.marketingFlow.colSoftnessType')" min-width="110" show-overflow-tooltip />
-          <el-table-column prop="color" :label="t('common.color')" min-width="100" show-overflow-tooltip />
-          <el-table-column prop="softness" :label="t('common.softness')" width="90" />
-          <el-table-column prop="qty_sf" :label="t('pages.marketingFlow.colQtySf')" width="100" align="right" />
-          <el-table-column prop="unit_price" :label="t('pages.marketingFlow.colUnitPrice')" width="96" align="right" />
-          <el-table-column prop="color_reference" :label="t('common.colorReference')" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="backing" :label="t('common.backing')" width="100" show-overflow-tooltip />
-          <el-table-column prop="model" :label="t('common.model')" width="100" show-overflow-tooltip />
-          <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="110" show-overflow-tooltip />
-          <el-table-column prop="rtd_text" :label="t('pages.marketingFlow.colRtd')" width="100" show-overflow-tooltip />
-          <el-table-column prop="line_etd" :label="t('pages.marketingFlow.colReplyEtd')" width="120" />
-          <el-table-column prop="stock_wh_qty" :label="t('pages.marketingFlow.colStockWh')" width="100" align="right" />
-          <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="100" align="right" />
-          <el-table-column prop="delivered_qty" :label="t('pages.marketingFlow.colDeliveredQty')" width="100" align="right" />
-          <el-table-column prop="system_reference" :label="t('pages.marketingFlow.colSystemNo')" min-width="130" show-overflow-tooltip />
-          <el-table-column prop="production_status" :label="t('pages.marketingFlow.colProductionStatus')" width="120" show-overflow-tooltip />
-          <el-table-column prop="remark_system" :label="t('pages.marketingFlow.colRemarkSystem')" min-width="160" show-overflow-tooltip />
-          <el-table-column prop="remark_marketing" :label="t('pages.marketingFlow.colRemarkMarketing')" min-width="160">
-            <template #default="{ row }">
-              <el-input
-                v-model="row.remark_marketing"
-                type="textarea"
-                :autosize="{ minRows: 1, maxRows: 3 }"
-                size="small"
-                :disabled="!canEditPoDetail || savingRemarkId === row.po_detail_id"
-                @change="saveMarketingRemark(row)"
-              />
-            </template>
-          </el-table-column>
-          <el-table-column prop="detail_remark" :label="t('pages.marketingFlow.colPoLineRemark')" min-width="120" show-overflow-tooltip />
-          <el-table-column :label="t('pages.marketingFlow.deliveryRound', { n: 1 })" align="center">
-            <el-table-column prop="delivery_1_qty" :label="t('pages.marketingFlow.colShipQty')" width="72" align="right" />
-            <el-table-column prop="delivery_1_date" :label="t('pages.marketingFlow.colShipDateShort')" width="96" />
-          </el-table-column>
-          <el-table-column :label="t('pages.marketingFlow.deliveryRound', { n: 2 })" align="center">
-            <el-table-column prop="delivery_2_qty" :label="t('pages.marketingFlow.colShipQty')" width="72" align="right" />
-            <el-table-column prop="delivery_2_date" :label="t('pages.marketingFlow.colShipDateShort')" width="96" />
-          </el-table-column>
-          <el-table-column :label="t('pages.marketingFlow.deliveryRound', { n: 3 })" align="center">
-            <el-table-column prop="delivery_3_qty" :label="t('pages.marketingFlow.colShipQty')" width="72" align="right" />
-            <el-table-column prop="delivery_3_date" :label="t('pages.marketingFlow.colShipDateShort')" width="96" />
-          </el-table-column>
-          <el-table-column :label="t('pages.marketingFlow.deliveryRound', { n: 4 })" align="center">
-            <el-table-column prop="delivery_4_qty" :label="t('pages.marketingFlow.colShipQty')" width="72" align="right" />
-            <el-table-column prop="delivery_4_date" :label="t('pages.marketingFlow.colShipDateShort')" width="96" />
-          </el-table-column>
-          <el-table-column :label="t('pages.marketingFlow.deliveryRound', { n: 5 })" align="center">
-            <el-table-column prop="delivery_5_qty" :label="t('pages.marketingFlow.colShipQty')" width="72" align="right" />
-            <el-table-column prop="delivery_5_date" :label="t('pages.marketingFlow.colShipDateShort')" width="96" />
-          </el-table-column>
-          <el-table-column :label="t('pages.marketingFlow.deliveryRound', { n: 6 })" align="center">
-            <el-table-column prop="delivery_6_qty" :label="t('pages.marketingFlow.colShipQty')" width="72" align="right" />
-            <el-table-column prop="delivery_6_date" :label="t('pages.marketingFlow.colShipDateShort')" width="96" />
-          </el-table-column>
-          <el-table-column prop="mkt_stage" :label="t('pages.marketingFlow.colMktStage')" min-width="140">
-            <template #default="{ row }">
-              <el-tag size="small">{{ labelFor(row.mkt_stage) }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column :label="t('common.actions')" width="88" fixed="right" align="center">
-            <template #default="{ row }">
-              <el-tooltip :content="t('pages.marketingFlow.openPo')" placement="top">
-                <el-button
-                  :icon="Document"
-                  link
-                  type="primary"
-                  size="small"
-                  :aria-label="t('pages.marketingFlow.openPo')"
-                  @click="goPo(row.po_id)"
-                />
-              </el-tooltip>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-tab-pane>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+      <el-table
+        ref="outstandingTableRef"
+        :data="outstandingDisplayRows"
+        v-loading="outstandingLoading"
+        border
+        stripe
+        size="small"
+        class="admin-table"
+        max-height="480"
+        :empty-text="t('pages.marketingFlow.outstandingEmpty')"
+        show-summary
+        :summary-method="outstandingSummary"
+        @selection-change="onOutstandingSelectionChange"
+      >
+        <el-table-column type="selection" width="44" fixed />
+        <el-table-column type="index" width="44" fixed />
+        <el-table-column prop="order_date" :label="t('common.orderDate')" width="105" />
+        <el-table-column prop="no_po" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="customer_name" :label="t('common.customerName')" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="brand" :label="t('pages.marketingFlow.colBrand')" width="90" />
+        <el-table-column prop="order_type" :label="t('pages.marketingFlow.colOrderType')" width="90" />
+        <el-table-column prop="material_name" :label="t('common.material')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="thickness" :label="t('common.thickness')" width="90" />
+        <el-table-column prop="color" :label="t('common.color')" min-width="90" show-overflow-tooltip />
+        <el-table-column :label="t('pages.marketingFlow.colQtySf')" width="90" align="right">
+          <template #default="{ row }">{{ formatNumber(row.qty_sf, 2) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.marketingFlow.colUnitPrice')" width="85" align="right">
+          <template #default="{ row }">{{ formatNumber(row.unit_price, 2) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.marketingFlow.colBalance')" width="90" align="right">
+          <template #default="{ row }">{{ formatNumber(row.balance_qty, 2) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.marketingFlow.colDeliveredQty')" width="90" align="right">
+          <template #default="{ row }">{{ formatNumber(row.delivered_qty, 2) }}</template>
+        </el-table-column>
+        <el-table-column prop="production_status" :label="t('pages.marketingFlow.colProductionStatus')" width="100" show-overflow-tooltip />
+        <el-table-column prop="remark_marketing" :label="t('pages.marketingFlow.colRemarkMarketing')" min-width="140">
+          <template #default="{ row }">
+            <el-input
+              v-model="row.remark_marketing"
+              type="textarea"
+              :autosize="{ minRows: 1, maxRows: 2 }"
+              size="small"
+              :disabled="!canEditPoDetail || savingRemarkId === row.po_detail_id"
+              @change="saveMarketingRemark(row)"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column prop="mkt_stage" :label="t('pages.marketingFlow.colMktStage')" width="130">
+          <template #default="{ row }">
+            <el-tag size="small">{{ labelFor(row.mkt_stage) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="70" fixed="right" align="center">
+          <template #default="{ row }">
+            <el-button :icon="Document" link type="primary" size="small" @click="goPo(row.po_id)" />
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
 
-      <el-tab-pane :label="t('pages.marketingFlow.tabDelivery')" name="delivery">
-        <p class="mb-3 text-sm text-gray-600 dark:text-gray-400">{{ t('pages.marketingFlow.deliverySubtitle') }}</p>
-        <el-table
-          :data="deliveryRows"
-          v-loading="deliveryLoading"
-          border
-          stripe
-          size="small"
-          class="admin-table outstanding-table"
-          max-height="560"
-          :empty-text="t('pages.marketingFlow.deliveryEmpty')"
-        >
-          <el-table-column type="index" width="48" fixed />
-          <el-table-column prop="surat_jalan_no" :label="t('pages.marketingFlow.colSuratJalan')" min-width="130" show-overflow-tooltip />
-          <el-table-column prop="delivery_date" :label="t('pages.marketingFlow.colShipDate')" width="118" />
-          <el-table-column prop="factory_name" :label="t('pages.marketingFlow.colFactoryName')" min-width="160" show-overflow-tooltip />
-          <el-table-column prop="system_no" :label="t('pages.marketingFlow.colSystemNo')" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="po_date" :label="t('common.orderDate')" width="112" />
-          <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="lot_no" :label="t('pages.marketingFlow.colLotNo')" min-width="110" show-overflow-tooltip />
-          <el-table-column prop="thickness" :label="t('common.thickness')" width="100" />
-          <el-table-column prop="color" :label="t('common.color')" min-width="100" show-overflow-tooltip />
-          <el-table-column prop="material_type" :label="t('pages.marketingFlow.colMaterialType')" min-width="110" show-overflow-tooltip />
-          <el-table-column prop="material_name" :label="t('common.material')" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="qty_po" :label="t('pages.marketingFlow.colQtyPo')" width="96" align="right" />
-          <el-table-column prop="unit_price" :label="t('pages.marketingFlow.colUnitPrice')" width="96" align="right" />
-          <el-table-column prop="qty_roll" :label="t('pages.marketingFlow.colQtyRoll')" width="72" align="right" />
-          <el-table-column prop="qty_pcs" :label="t('pages.marketingFlow.colQtyPcs')" width="72" align="right" />
-          <el-table-column prop="qty_sf" :label="t('pages.marketingFlow.colQtyShip')" width="96" align="right" />
-          <el-table-column prop="gross_weight" :label="t('pages.delivery.columns.gw')" width="80" align="right" />
-          <el-table-column prop="net_weight" :label="t('pages.delivery.columns.nw')" width="80" align="right" />
-          <el-table-column prop="amount" :label="t('pages.delivery.columns.amount')" width="92" align="right" />
-          <el-table-column prop="order_type" :label="t('pages.delivery.columns.orderType')" width="100" show-overflow-tooltip />
-          <el-table-column prop="color_std" :label="t('common.colorStandard')" min-width="110" show-overflow-tooltip />
-          <el-table-column prop="emboss" :label="t('common.emboss')" width="90" show-overflow-tooltip />
-          <el-table-column prop="buyer" :label="t('common.buyer')" width="100" show-overflow-tooltip />
-          <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="110" show-overflow-tooltip />
-          <el-table-column prop="model" :label="t('common.model')" width="100" show-overflow-tooltip />
-          <el-table-column prop="invoice_number" :label="t('common.invoiceNo')" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="pi_no" :label="t('pages.marketingFlow.colPiNo')" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="remark" :label="t('common.remark')" min-width="120" show-overflow-tooltip />
-          <el-table-column prop="delivery_status" :label="t('common.status')" width="100" />
-          <el-table-column :label="t('common.actions')" width="88" fixed="right" align="center">
-            <template #default="{ row }">
-              <el-tooltip :content="t('pages.marketingFlow.openDelivery')" placement="top">
-                <el-button
-                  :icon="Van"
-                  link
-                  type="primary"
-                  size="small"
-                  :aria-label="t('pages.marketingFlow.openDelivery')"
-                  @click="goDelivery(row)"
-                />
-              </el-tooltip>
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-tab-pane>
+    <div v-show="mainTab === 'delivery'">
+      <el-table
+        :data="deliveryRows"
+        v-loading="deliveryLoading"
+        border
+        stripe
+        size="small"
+        class="admin-table"
+        table-layout="fixed"
+        max-height="520"
+        :empty-text="t('pages.marketingFlow.deliveryEmpty')"
+      >
+        <el-table-column type="index" width="50" fixed="left" />
+        <el-table-column prop="surat_jalan_no" :label="t('pages.marketingFlow.colSuratJalan')" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="delivery_date" :label="t('pages.marketingFlow.colShipDate')" width="100" />
+        <el-table-column prop="factory_name" :label="t('pages.marketingFlow.colFactoryName')" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="buyer" :label="t('common.buyer')" width="90" show-overflow-tooltip />
+        <el-table-column prop="lot_no" :label="t('pages.marketingFlow.colLotNo')" width="100" show-overflow-tooltip />
+        <el-table-column prop="material_name" :label="t('common.material')" min-width="120" show-overflow-tooltip />
+        <el-table-column :label="t('pages.marketingFlow.colQtyShip')" width="80" align="right">
+          <template #default="{ row }">{{ formatNumber(row.qty_sf, 2) }}</template>
+        </el-table-column>
+        <el-table-column prop="qty_roll" :label="t('pages.marketingFlow.colQtyRoll')" width="60" align="right" />
+        <el-table-column prop="qty_pcs" :label="t('pages.marketingFlow.colQtyPcs')" width="60" align="right" />
+        <el-table-column :label="t('pages.delivery.columns.nw')" width="70" align="right">
+          <template #default="{ row }">{{ formatNumber(row.net_weight, 2) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.delivery.columns.amount')" width="90" align="right">
+          <template #default="{ row }">{{ formatNumber(row.amount, 0) }}</template>
+        </el-table-column>
+        <el-table-column prop="delivery_status" :label="t('common.status')" width="90">
+          <template #default="{ row }">
+            <el-tag size="small">{{ row.delivery_status || '—' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="70" fixed="right" align="center">
+          <template #default="{ row }">
+            <el-button :icon="Van" link type="primary" size="small" @click="goDelivery(row)" />
+          </template>
+        </el-table-column>
+      </el-table>
+    </div>
 
-      <el-tab-pane :label="t('pages.marketingFlow.tabSpec')" name="spec">
-        <p class="mb-4 text-sm leading-relaxed">{{ t('pages.marketingFlow.specIntro') }}</p>
-        <el-collapse>
-          <el-collapse-item v-for="(item, idx) in specItems" :key="idx" :title="item.title" :name="String(idx)">
-            <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300">{{ t(item.body) }}</p>
-          </el-collapse-item>
-        </el-collapse>
-      </el-tab-pane>
-    </el-tabs>
-
-    <el-dialog v-model="assignDialogVisible" :title="t('ppicWorkflow.assignToPpic')" width="420px">
+    <el-dialog v-model="assignDialogVisible" :title="t('ppicWorkflow.assignToPpic')" width="600px" destroy-on-close align-center>
       <el-form label-width="120px">
         <el-form-item :label="t('common.poNo')">
           <el-input :model-value="selectedPoForAssignment?.po_number" disabled />
@@ -350,7 +263,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DArrowRight, Document, Download, Van } from '@element-plus/icons-vue'
+import { DArrowRight, Document, Download, Van, User } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import {
   advanceMktWorkflow,
@@ -368,6 +281,7 @@ import {
   updatePoDetail,
 } from '../../api/client'
 import { can } from '../../security/permissions'
+import { formatNumber } from '../../utils/format'
 
 const { t } = useI18n()
 const canAdvance = can('po', 'advance')
@@ -416,7 +330,6 @@ const OUTSTANDING_TEXT_FILTER_KEYS = [
   'unit_price',
   'color_reference',
   'backing',
-  'model',
   'style_article',
   'rtd_text',
   'line_etd',
@@ -465,7 +378,6 @@ const outstandingTextFilterFields = computed(() => {
     unit_price: 'pages.marketingFlow.colUnitPrice',
     color_reference: 'common.colorReference',
     backing: 'common.backing',
-    model: 'common.model',
     style_article: 'common.styleArticle',
     rtd_text: 'pages.marketingFlow.colRtd',
     line_etd: 'pages.marketingFlow.colReplyEtd',
@@ -588,12 +500,13 @@ async function saveMarketingRemark(row) {
 async function downloadOutstandingXlsx() {
   outstandingXlsxLoading.value = true
   try {
-    const path = marketingOutstandingXlsxPath({
+    const suffix = marketingOutstandingXlsxPath({
       balance_filter: balanceFilter.value,
       computed_balance: true,
       po_q: poSearch.value,
       shipment_status: shipmentTab.value,
     })
+    const path = `/api/v1${suffix}`
     const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
     const r = await fetch(path, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -686,8 +599,9 @@ async function loadOutstanding() {
 async function loadDelivery() {
   deliveryLoading.value = true
   try {
-    const lines = await listMarketingDeliveryLines()
-    deliveryRows.value = (lines || []).map((r) => ({
+    const linesResp = await listMarketingDeliveryLines()
+    const lines = Array.isArray(linesResp) ? linesResp : (linesResp?.data || [])
+    deliveryRows.value = lines.map((r) => ({
       ...r,
       delivery_date: r.delivery_date ? String(r.delivery_date).slice(0, 10) : '',
       po_date: r.po_date ? String(r.po_date).slice(0, 10) : '',
@@ -711,8 +625,11 @@ onMounted(async () => {
   } catch {
     stageList.value = []
   }
-  await loadPpicUsers()
-  await loadAssignments()
+  await Promise.all([
+    load(),
+    loadPpicUsers(),
+    loadAssignments(),
+  ])
 })
 
 async function loadPpicUsers() {
@@ -795,23 +712,23 @@ function goDelivery(row) {
 }
 
 function downloadRekap() {
-  window.open(reportPoDailyRecapUrl(rekapDate.value), '_blank')
+  const path = reportPoDailyRecapUrl(rekapDate.value)
+  window.open(path.startsWith('/') ? `/api/v1${path}` : path, '_blank')
 }
 
 function downloadOutstanding() {
-  window.open(
-    marketingOutstandingCsvUrl({
-      balance_filter: balanceFilter.value,
-      computed_balance: true,
-      po_q: poSearch.value,
-      shipment_status: shipmentTab.value,
-    }),
-    '_blank',
-  )
+  const suffix = marketingOutstandingCsvUrl({
+    balance_filter: balanceFilter.value,
+    computed_balance: true,
+    po_q: poSearch.value,
+    shipment_status: shipmentTab.value,
+  })
+  window.open(`/api/v1${suffix}`, '_blank')
 }
 
 function downloadDelivery() {
-  window.open(marketingDeliveryCsvUrl(), '_blank')
+  const suffix = marketingDeliveryCsvUrl()
+  window.open(`/api/v1${suffix}`, '_blank')
 }
 </script>
 

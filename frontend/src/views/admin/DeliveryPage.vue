@@ -2,14 +2,30 @@
   <AdminSection :title="t('pages.delivery.title')" :subtitle="t('pages.delivery.subtitle')">
     <template #actions>
       <el-input v-model="keyword" :placeholder="t('pages.delivery.listSearchPlaceholder')" clearable class="delivery-toolbar-search" />
+      <el-select v-model="statusFilter" clearable :placeholder="t('common.status')" class="w-32">
+        <el-option label="Draft" value="draft" />
+        <el-option label="Sent" value="sent" />
+      </el-select>
       <el-button :icon="Download" :loading="exporting" @click="downloadDeliveryExcel">{{ t('pages.delivery.downloadExcel') }}</el-button>
-      <el-button :icon="Van" @click="ElMessage.info(t('pages.delivery.flowInfo'))">{{ t('menu.deliveryPull') }}</el-button>
-      <el-button :icon="Document" @click="ElMessage.info(t('pages.delivery.sjInfo'))">{{ t('menu.suratJalan') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
-    <p class="mb-2 text-sm font-medium text-slate-700">{{ t('pages.delivery.listSheetTitle') }}</p>
-    <el-alert :title="t('pages.delivery.deliveryGuide')" type="info" show-icon :closable="false" class="mb-3" />
+    <el-card shadow="never" class="mb-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-semibold text-slate-800">{{ t('pages.delivery.listSheetTitle') }}</h3>
+          <p class="text-sm text-slate-500 mt-1">
+            {{ t('pages.delivery.flowInfo') }}
+          </p>
+        </div>
+        <div class="flex items-center gap-4">
+          <div class="text-right">
+            <p class="text-2xl font-bold text-slate-700">{{ filteredRows.length }}</p>
+            <p class="text-xs text-slate-500">{{ t('common.total') }}</p>
+          </div>
+        </div>
+      </div>
+    </el-card>
 
     <el-table
       :data="filteredRows"
@@ -18,50 +34,40 @@
       stripe
       size="small"
       class="admin-table"
-      table-layout="auto"
+      table-layout="fixed"
       :empty-text="t('pages.delivery.tableEmpty')"
     >
-      <el-table-column type="index" :label="t('common.noLabel')" width="52" align="center" fixed="left" />
-      <el-table-column prop="surat_jalan_no" :label="t('pages.delivery.columns.noSj')" min-width="132" show-overflow-tooltip />
-      <el-table-column prop="delivery_date" :label="t('pages.delivery.columns.shipDate')" width="112" />
-      <el-table-column prop="factory_name" :label="t('pages.delivery.columns.factory')" min-width="140" show-overflow-tooltip />
-      <el-table-column prop="system_no" :label="t('pages.delivery.columns.systemNo')" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="po_date" :label="t('pages.delivery.columns.poDate')" width="112" />
-      <el-table-column prop="po_number" :label="t('pages.delivery.columns.poNumber')" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="lot_no" :label="t('pages.delivery.columns.lotNo')" min-width="100" show-overflow-tooltip />
-      <el-table-column prop="thickness" :label="t('pages.delivery.columns.thickness')" width="100" show-overflow-tooltip />
-      <el-table-column prop="color" :label="t('pages.delivery.columns.color')" min-width="100" show-overflow-tooltip />
-      <el-table-column prop="material_type" :label="t('pages.delivery.columns.materialType')" min-width="100" show-overflow-tooltip />
-      <el-table-column prop="material_name" :label="t('pages.delivery.columns.materialName')" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="qty_po" :label="t('pages.delivery.columns.qtyPo')" width="88" align="right" />
-      <el-table-column prop="unit_price" :label="t('pages.delivery.columns.unitPrice')" width="88" align="right" />
-      <el-table-column prop="qty_roll" :label="t('pages.delivery.columns.roll')" width="72" align="right" />
-      <el-table-column prop="qty_pcs" :label="t('pages.delivery.columns.pcs')" width="72" align="right" />
-      <el-table-column prop="qty_sf" :label="t('pages.delivery.columns.sf')" width="88" align="right" />
-      <el-table-column prop="gross_weight" :label="t('pages.delivery.columns.gw')" width="80" align="right" />
-      <el-table-column prop="net_weight" :label="t('pages.delivery.columns.nw')" width="80" align="right" />
-      <el-table-column prop="amount" :label="t('pages.delivery.columns.amount')" width="96" align="right" />
-      <el-table-column prop="color_std" :label="t('pages.delivery.columns.colorStd')" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="emboss" :label="t('pages.delivery.columns.emboss')" min-width="88" show-overflow-tooltip />
-      <el-table-column prop="buyer" :label="t('pages.delivery.columns.buyer')" width="96" show-overflow-tooltip />
-      <el-table-column prop="style_article" :label="t('pages.delivery.columns.style')" min-width="110" show-overflow-tooltip />
-      <el-table-column prop="model" :label="t('pages.delivery.columns.model')" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="invoice_number" :label="t('pages.delivery.columns.invNumber')" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="pi_no" :label="t('pages.delivery.columns.piNo')" min-width="100" show-overflow-tooltip />
-      <el-table-column prop="remark" :label="t('pages.delivery.columns.remark')" min-width="100" show-overflow-tooltip />
-      <el-table-column prop="order_type" :label="t('pages.delivery.columns.orderType')" width="100" show-overflow-tooltip />
-      <el-table-column prop="delivery_status" :label="t('pages.delivery.columns.status')" width="88" />
-      <el-table-column :label="t('common.actions')" width="72" fixed="right" align="center">
+      <el-table-column type="index" :label="t('common.noLabel')" width="50" align="center" fixed="left" />
+      <el-table-column prop="surat_jalan_no" :label="t('pages.delivery.columns.noSj')" min-width="130" show-overflow-tooltip />
+      <el-table-column :label="t('pages.delivery.columns.shipDate')" width="100">
+        <template #default="{ row }">{{ formatDate(row.delivery_date) }}</template>
+      </el-table-column>
+      <el-table-column prop="factory_name" :label="t('pages.delivery.columns.factory')" min-width="150" show-overflow-tooltip />
+      <el-table-column prop="po_number" :label="t('pages.delivery.columns.poNumber')" min-width="130" show-overflow-tooltip />
+      <el-table-column prop="buyer" :label="t('pages.delivery.columns.buyer')" width="90" show-overflow-tooltip />
+      <el-table-column prop="lot_no" :label="t('pages.delivery.columns.lotNo')" width="100" show-overflow-tooltip />
+      <el-table-column prop="material_name" :label="t('pages.delivery.columns.materialName')" min-width="140" show-overflow-tooltip />
+      <el-table-column :label="t('pages.delivery.columns.sf')" width="80" align="right">
+        <template #default="{ row }">{{ formatNumber(row.qty_sf, 2) }}</template>
+      </el-table-column>
+      <el-table-column prop="qty_roll" :label="t('pages.delivery.columns.roll')" width="60" align="right" />
+      <el-table-column prop="qty_pcs" :label="t('pages.delivery.columns.pcs')" width="60" align="right" />
+      <el-table-column :label="t('pages.delivery.columns.nw')" width="70" align="right">
+        <template #default="{ row }">{{ formatNumber(row.net_weight, 2) }}</template>
+      </el-table-column>
+      <el-table-column :label="t('pages.delivery.columns.amount')" width="100" align="right">
+        <template #default="{ row }">{{ formatNumber(row.amount, 0) }}</template>
+      </el-table-column>
+      <el-table-column :label="t('pages.delivery.columns.status')" width="90" fixed="right">
         <template #default="{ row }">
-          <el-tooltip :content="t('common.detail')" placement="top">
-            <el-button
-              :icon="View"
-              link
-              type="primary"
-              :aria-label="t('common.detail')"
-              @click="openDetailFromLine(row)"
-            />
-          </el-tooltip>
+          <el-tag :type="statusType(row.delivery_status)" size="small">
+            {{ statusLabel(row.delivery_status) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('common.actions')" width="70" fixed="right" align="center">
+        <template #default="{ row }">
+          <el-button :icon="View" link type="primary" @click="openDetailFromLine(row)" />
         </template>
       </el-table-column>
     </el-table>
@@ -115,82 +121,119 @@
     <el-dialog
       v-model="detailVisible"
       :title="t('pages.delivery.dialogDetail')"
-      width="640px"
+      width="720px"
       destroy-on-close
       align-center
       @closed="resetDetail"
     >
-      <template v-if="detailRow">
-        <el-descriptions :column="1" border size="small" class="mb-4">
-          <el-descriptions-item :label="t('common.deliveryNo')">{{ detailRow.delivery_number }}</el-descriptions-item>
-          <el-descriptions-item :label="t('common.customer')">{{ detailRow.customer_name }}</el-descriptions-item>
-          <el-descriptions-item :label="t('common.date')">{{ detailRow.delivery_date }}</el-descriptions-item>
-          <el-descriptions-item :label="t('common.vehicle')">{{ detailRow.vehicle_number }}</el-descriptions-item>
-          <el-descriptions-item :label="t('common.driver')">{{ detailRow.driver_name }}</el-descriptions-item>
-          <el-descriptions-item :label="t('pages.delivery.bcNumber')">{{ detailRow.bc_number || t('common.emptyValue') }}</el-descriptions-item>
-          <el-descriptions-item :label="t('pages.delivery.bcDate')">
-            {{ detailRow.bc_date ? String(detailRow.bc_date).slice(0, 10) : t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('common.status')">{{ detailRow.status }}</el-descriptions-item>
-        </el-descriptions>
+      <div v-if="detailLoading" class="py-12 text-center">
+        <el-icon class="is-loading text-2xl text-blue-500"><Loading /></el-icon>
+        <p class="mt-2 text-sm text-slate-500">{{ t('common.loading') }}...</p>
+      </div>
+      <template v-else-if="detailRow">
+        <el-card class="mb-4" shadow="never">
+          <template #header>
+            <div class="flex items-center justify-between">
+              <span class="font-semibold">{{ t('pages.delivery.basicInfo') }}</span>
+              <el-tag :type="statusType(detailRow.status)" size="small">{{ statusLabel(detailRow.status) }}</el-tag>
+            </div>
+          </template>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item :label="t('common.deliveryNo')">{{ detailRow.delivery_number || '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('common.customer')">{{ detailRow.customer_name || '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('common.date')">{{ detailRow.delivery_date || '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('common.vehicle')">{{ detailRow.vehicle_number || '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('common.driver')">{{ detailRow.driver_name || '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('common.destination')">{{ detailRow.destination || '—' }}</el-descriptions-item>
+          </el-descriptions>
+        </el-card>
 
-        <el-form v-if="canUpdate && detailRow" label-position="top" class="mb-4 border-t border-slate-100 pt-3">
-          <el-form-item :label="t('pages.delivery.bcNumberEdit')">
-            <el-input v-model="bcForm.bc_number" clearable maxlength="80" />
-          </el-form-item>
-          <el-form-item :label="t('pages.delivery.bcDateEdit')">
-            <el-date-picker v-model="bcForm.bc_date" type="date" value-format="YYYY-MM-DD" class="w-full" clearable />
-          </el-form-item>
-          <el-button type="primary" plain :loading="bcSaving" @click="saveBcFields">{{ t('pages.delivery.saveBcFields') }}</el-button>
-        </el-form>
+        <el-card class="mb-4" shadow="never" v-if="canUpdate">
+          <template #header>
+            <span class="font-semibold">{{ t('pages.delivery.customsInfo') }}</span>
+          </template>
+          <div class="grid grid-cols-2 gap-4">
+            <el-form-item :label="t('pages.delivery.bcNumberEdit')" class="mb-0">
+              <el-input v-model="bcForm.bc_number" clearable maxlength="80" />
+            </el-form-item>
+            <el-form-item :label="t('pages.delivery.bcDateEdit')" class="mb-0">
+              <el-date-picker v-model="bcForm.bc_date" type="date" value-format="YYYY-MM-DD" class="w-full" clearable />
+            </el-form-item>
+          </div>
+          <div class="mt-3">
+            <el-button type="primary" plain :loading="bcSaving" size="small" @click="saveBcFields">{{ t('pages.delivery.saveBcFields') }}</el-button>
+          </div>
+        </el-card>
 
-        <div class="delivery-detail-actions">
-          <el-button
-            v-if="canUpdate"
-            type="primary"
-            :disabled="(detailRow.status || '').toLowerCase() === 'sent' || detailLines.length === 0"
-            :loading="markingSent"
-            @click="markSent"
-          >
-            {{ t('pages.delivery.markSent') }}
-          </el-button>
-          <el-button v-if="canPrint" @click="openSjPrint">{{ t('pages.delivery.printSj') }}</el-button>
-          <el-button v-if="canPrint" @click="downloadSjPdf">{{ t('pages.delivery.downloadPdf') }}</el-button>
-          <el-button v-if="canUpdate" type="success" plain :loading="markingSj" @click="markSjPrinted">{{ t('pages.delivery.markSjPrinted') }}</el-button>
-          <span v-if="detailLines.length === 0" class="text-xs text-amber-600">{{ t('pages.delivery.needAtLeastOneLine') }}</span>
+        <div class="mb-4">
+          <div class="mb-2 flex items-center justify-between">
+            <h4 class="text-sm font-semibold text-slate-700">{{ t('pages.delivery.deliveryLines') }} ({{ detailLines.length }})</h4>
+            <el-button
+              v-if="canUpdate"
+              type="primary"
+              size="small"
+              :disabled="isSentOrCancelled || detailLines.length === 0"
+              :loading="markingSent"
+              @click="markSent"
+            >
+              {{ t('pages.delivery.markSent') }}
+            </el-button>
+          </div>
+          <el-table :data="detailLines" border size="small" :empty-text="t('pages.delivery.linesEmpty')">
+            <el-table-column type="index" :label="t('common.noLabel')" width="50" align="center" />
+            <el-table-column prop="production_detail_id" :label="t('pages.delivery.productionDetailId')" min-width="120">
+              <template #default="{ row }">#{{ row.production_detail_id }}</template>
+            </el-table-column>
+            <el-table-column prop="qty" :label="t('common.quantity')" min-width="100" align="right">
+              <template #default="{ row }">{{ formatNumber(row.qty, 2) }}</template>
+            </el-table-column>
+            <el-table-column prop="qty_roll" :label="t('pages.delivery.roll')" width="80" align="right" />
+            <el-table-column prop="qty_pcs" :label="t('pages.delivery.pcs')" width="80" align="right" />
+            <el-table-column prop="weight" :label="t('pages.delivery.weight')" width="100" align="right">
+              <template #default="{ row }">{{ formatNumber(row.weight, 2) }}</template>
+            </el-table-column>
+          </el-table>
+          <p v-if="detailLines.length === 0" class="mt-2 text-xs text-amber-600">{{ t('pages.delivery.needAtLeastOneLine') }}</p>
         </div>
 
-        <h4 class="mb-2 text-sm font-medium text-slate-700">{{ t('pages.delivery.deliveryLines') }}</h4>
-        <el-table :data="detailLines" border size="small" class="mb-4" table-layout="auto" :empty-text="t('pages.delivery.linesEmpty')">
-          <el-table-column prop="id" :label="t('pages.delivery.lineId')" width="64" />
-          <el-table-column prop="production_detail_id" :label="t('pages.delivery.productionDetailId')" min-width="120" />
-          <el-table-column prop="qty" :label="t('common.quantity')" width="100" align="right" />
-        </el-table>
+        <div class="flex gap-3">
+          <el-button v-if="canPrint" type="default" @click="openSjPrint">{{ t('pages.delivery.printSj') }}</el-button>
+          <el-button v-if="canPrint" type="default" @click="downloadSjPdf">{{ t('pages.delivery.downloadPdf') }}</el-button>
+          <el-button v-if="canUpdate" type="success" plain :loading="markingSj" @click="markSjPrinted">{{ t('pages.delivery.markSjPrinted') }}</el-button>
+        </div>
 
-        <el-form v-if="canUpdate && candidateProdDetails.length" label-position="top" class="border-t border-slate-100 pt-3">
-          <el-form-item :label="t('pages.delivery.addLineLabel')">
-            <el-select v-model="lineForm.production_detail_id" filterable clearable class="w-full" :placeholder="t('pages.delivery.productionDetailPlaceholder')">
-              <el-option
-                v-for="pd in candidateProdDetails"
-                :key="pd.id"
-                :label="`#${pd.id} ${t('common.dotSeparator')} ${t('common.actual').toLowerCase()} ${pd.qty_actual ?? t('common.emptyValue')}`"
-                :value="pd.id"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item :label="t('common.quantity')">
-            <el-input v-model="lineForm.qty" type="number" step="0.01" />
-          </el-form-item>
-          <el-button type="primary" :loading="addingLine" @click="addLine">{{ t('pages.delivery.addToDelivery') }}</el-button>
-        </el-form>
-        <p v-else-if="detailRow && detailLoading === false" class="text-sm text-slate-500">
-          {{ t('pages.delivery.noProductionLines') }}
-        </p>
+        <el-card v-if="canUpdate" class="mt-4" shadow="never">
+          <template #header>
+            <span class="font-semibold">{{ t('pages.delivery.addLineLabel') }}</span>
+          </template>
+          <div v-if="prodDetailsLoading" class="py-4 text-center">
+            <el-icon class="is-loading"><Loading /></el-icon> {{ t('common.loading') }}
+          </div>
+          <template v-else-if="candidateProdDetails.length">
+            <div class="grid grid-cols-2 gap-4">
+              <el-form-item :label="t('pages.delivery.productionDetailPlaceholder')" class="mb-0">
+                <el-select v-model="lineForm.production_detail_id" filterable clearable class="w-full" :placeholder="t('pages.delivery.productionDetailPlaceholder')">
+                  <el-option
+                    v-for="pd in candidateProdDetails"
+                    :key="pd.id"
+                    :label="`#${pd.id} ${t('common.dotSeparator')} ${t('common.actual').toLowerCase()} ${pd.qty_actual ?? t('common.emptyValue')}`"
+                    :value="pd.id"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('common.quantity')" class="mb-0">
+                <el-input v-model="lineForm.qty" type="number" step="0.01" />
+              </el-form-item>
+            </div>
+            <div class="mt-3">
+              <el-button type="primary" :loading="addingLine" @click="addLine">{{ t('pages.delivery.addToDelivery') }}</el-button>
+            </div>
+          </template>
+          <p v-else class="text-sm text-slate-500">{{ t('pages.delivery.noProductionLines') }}</p>
+        </el-card>
       </template>
       <template #footer>
-        <div class="delivery-dialog-footer">
-          <el-button type="primary" @click="detailVisible = false">{{ t('pages.delivery.closeDetail') }}</el-button>
-        </div>
+        <el-button type="primary" @click="detailVisible = false">{{ t('pages.delivery.closeDetail') }}</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -201,9 +244,10 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, View, Van, Document, Download } from '@element-plus/icons-vue'
+import { Plus, View, Van, Document, Download, Loading } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { can } from '../../security/permissions'
+import { formatDate, formatNumber, statusType, statusLabel } from '../../utils/format'
 import {
   addDeliveryDetail,
   createDelivery,
@@ -230,6 +274,7 @@ const loading = ref(false)
 const saving = ref(false)
 const exporting = ref(false)
 const keyword = ref('')
+const statusFilter = ref('')
 const lineRows = ref([])
 const customers = ref([])
 const packings = ref([])
@@ -252,14 +297,15 @@ function customerOptionLabel(c) {
 async function load() {
   loading.value = true
   try {
-    const [lines, cust, pack] = await Promise.all([
+    const [linesResp, cust, pack] = await Promise.all([
       listMarketingDeliveryLines(),
       listCustomers(),
       listPacking(),
     ])
     customers.value = cust
     packings.value = pack
-    lineRows.value = (lines || []).map((r) => ({
+    const lines = Array.isArray(linesResp) ? linesResp : (linesResp?.data || [])
+    lineRows.value = lines.map((r) => ({
       ...r,
       delivery_date: r.delivery_date ? String(r.delivery_date).slice(0, 10) : '',
       po_date: r.po_date ? String(r.po_date).slice(0, 10) : '',
@@ -285,9 +331,30 @@ onMounted(() => {
 })
 
 const filteredRows = computed(() => {
+  let rows = lineRows.value
+  
+  if (statusFilter.value) {
+    const sf = statusFilter.value.toLowerCase()
+    rows = rows.filter(r => (r.delivery_status || '').toLowerCase() === sf)
+  }
+  
   const q = keyword.value.trim().toLowerCase()
-  if (!q) return lineRows.value
-  return lineRows.value.filter((r) => JSON.stringify(r).toLowerCase().includes(q))
+  if (!q) return rows
+  
+  return rows.filter((r) => {
+    const searchableFields = [
+      r.surat_jalan_no, r.factory_name, r.po_number, r.lot_no,
+      r.buyer, r.material_name, r.color, r.delivery_status,
+    ]
+    return searchableFields.some(field => 
+      field != null && String(field).toLowerCase().includes(q)
+    )
+  })
+})
+
+const isSentOrCancelled = computed(() => {
+  const status = (detailRow.value?.status || '').toLowerCase()
+  return status === 'sent' || status === 'cancelled' || status === 'canceled'
 })
 
 async function downloadDeliveryExcel() {
@@ -359,6 +426,7 @@ const detailRow = ref(null)
 const detailLines = ref([])
 const candidateProdDetails = ref([])
 const detailLoading = ref(false)
+const prodDetailsLoading = ref(false)
 const markingSent = ref(false)
 const markingSj = ref(false)
 const addingLine = ref(false)
@@ -388,6 +456,21 @@ function openDetailFromLine(row) {
   openDetailById(row.delivery_id)
 }
 
+async function loadProductionDetails(packingId) {
+  prodDetailsLoading.value = true
+  try {
+    const pk = await getPacking(packingId)
+    if (pk?.production_id) {
+      const pds = await listProductionDetails(pk.production_id)
+      candidateProdDetails.value = pds
+    }
+  } catch (e) {
+    ElMessage.error(t('pages.delivery.loadProductionDetailsError'))
+  } finally {
+    prodDetailsLoading.value = false
+  }
+}
+
 async function openDetailById(deliveryId) {
   detailVisible.value = true
   detailLoading.value = true
@@ -400,11 +483,7 @@ async function openDetailById(deliveryId) {
     const lines = await listDeliveryDetails(deliveryId)
     detailLines.value = lines
     if (full.packing_id) {
-      const pk = await getPacking(full.packing_id)
-      if (pk?.production_id) {
-        const pds = await listProductionDetails(pk.production_id)
-        candidateProdDetails.value = pds
-      }
+      await loadProductionDetails(full.packing_id)
     }
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
@@ -504,21 +583,7 @@ async function addLine() {
 </script>
 
 <style scoped>
-.admin-table {
-  width: 100%;
-}
-
-.delivery-detail-actions {
-  margin-bottom: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.delivery-dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+.delivery-toolbar-search {
+  width: 240px;
 }
 </style>

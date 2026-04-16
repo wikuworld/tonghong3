@@ -99,6 +99,15 @@ class BulkPriceUpdate(BaseModel):
     updates: list[PriceUpdateItem]
 
 
+def _get_price_columns(meta_json: dict | None) -> list[str]:
+    """Extract price-related column keys from BuyerPriceList meta_json."""
+    if not meta_json:
+        return ['PRICE', 'UOM', 'PRICE USD']
+    columns = meta_json.get('columns', [])
+    price_cols = [col.get('key') for col in columns if col.get('is_price') is True]
+    return price_cols if price_cols else ['PRICE', 'UOM', 'PRICE USD']
+
+
 @router.post("/bulk-update", response_model=dict)
 def bulk_update_prices(body: BulkPriceUpdate, db: Session = Depends(get_db)):
     """Update multiple prices at once."""
@@ -109,11 +118,13 @@ def bulk_update_prices(body: BulkPriceUpdate, db: Session = Depends(get_db)):
         ).first()
         
         if buyer_list and buyer_list.rows:
+            meta = buyer_list.meta_json or {}
+            price_columns = _get_price_columns(meta)
             for row in buyer_list.rows:
                 cells = row.cells or {}
                 material = cells.get('ITEM', '') or cells.get('MATERIAL', '')
                 if item.material_pattern.lower() in material.lower():
-                    for price_col in ['PRICE', 'UOM', 'PRICE USD']:
+                    for price_col in price_columns:
                         if price_col in cells:
                             cells[price_col] = str(item.new_price)
                     row.cells = cells
@@ -149,11 +160,13 @@ async def bulk_update_prices_csv(file: UploadFile = File(...), db: Session = Dep
         ).first()
         
         if buyer_list and buyer_list.rows:
+            meta = buyer_list.meta_json or {}
+            price_columns = _get_price_columns(meta)
             for bprow in buyer_list.rows:
                 cells = bprow.cells or {}
                 material = cells.get('ITEM', '') or cells.get('MATERIAL', '')
                 if material_pattern.lower() in material.lower():
-                    for price_col in ['PRICE', 'UOM', 'PRICE USD']:
+                    for price_col in price_columns:
                         if price_col in cells:
                             cells[price_col] = str(new_price_dec)
                     bprow.cells = cells

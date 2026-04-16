@@ -9,7 +9,7 @@
       <el-button :loading="loading" @click="loadAssignments">{{ t('common.search') }}</el-button>
     </template>
 
-    <el-table :data="assignments" v-loading="loading" border stripe size="small" class="admin-table">
+    <el-table :data="assignments" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('common.tableEmpty')">
       <el-table-column type="index" width="50" align="center" />
       <el-table-column prop="po_number" :label="t('ppicWorkflow.poNumber')" min-width="140" />
       <el-table-column prop="customer_name" :label="t('ppicWorkflow.customer')" min-width="140" />
@@ -59,8 +59,6 @@
         </template>
       </el-table-column>
     </el-table>
-
-    <el-empty v-if="!loading && !assignments.length" :description="t('pages.marketingFlow.outstandingEmpty')" />
   </AdminSection>
 </template>
 
@@ -141,7 +139,4 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.admin-table {
-  width: 100%;
-}
 </style>

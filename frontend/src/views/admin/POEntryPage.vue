@@ -35,7 +35,12 @@
         </el-col>
         <el-col :xs="24" :md="12">
           <el-form-item :label="t('common.thickness')">
-            <el-input v-model="form.thickness" :placeholder="t('common.placeholder.thickness')" />
+            <el-select v-model="form.thickness" class="w-full" :placeholder="t('common.placeholder.thickness')">
+              <el-option label="1.0-1.2" value="1.0-1.2" />
+              <el-option label="1.2-1.4" value="1.2-1.4" />
+              <el-option label="1.4-1.6" value="1.4-1.6" />
+              <el-option label="1.6-1.8" value="1.6-1.8" />
+            </el-select>
           </el-form-item>
         </el-col>
         <el-col :xs="24" :md="12">

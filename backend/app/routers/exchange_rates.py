@@ -24,6 +24,8 @@ class ExchangeRateIn(BaseModel):
 
     idr_per_usd: Decimal
     effective_date: date
+    valid_from: Optional[date] = None
+    valid_to: Optional[date] = None
     notes: Optional[str] = None
     created_by: Optional[str] = None
 
@@ -34,6 +36,8 @@ class ExchangeRateOut(BaseModel):
     id: int
     idr_per_usd: Decimal
     effective_date: date
+    valid_from: Optional[date] = None
+    valid_to: Optional[date] = None
     notes: Optional[str] = None
     created_by: Optional[str] = None
 
@@ -57,6 +61,8 @@ def create_rate(
     row = ExchangeRate(
         idr_per_usd=body.idr_per_usd,
         effective_date=body.effective_date,
+        valid_from=body.valid_from,
+        valid_to=body.valid_to,
         notes=body.notes,
         created_by=body.created_by or "exim",
     )

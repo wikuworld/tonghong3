@@ -6,7 +6,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -76,6 +76,82 @@ def _build_activity_feed(db: Session) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+@router.get("/dashboard/invoice-summary")
+def invoice_summary(db: Session = Depends(get_db)) -> dict[str, Any]:
+    """Ringkasan invoice berdasarkan FK relationships."""
+    from app.models import Customer
+    
+    total_invoices = db.scalar(select(func.count()).select_from(Invoice)) or 0
+    total_amount = db.scalar(
+        select(func.coalesce(func.sum(Invoice.total_amount), 0)).select_from(Invoice)
+    ) or 0
+    
+    paid_invoices = db.scalar(
+        select(func.count()).select_from(Invoice).where(Invoice.payment_status == "paid")
+    ) or 0
+    paid_amount = db.scalar(
+        select(func.coalesce(func.sum(Invoice.total_amount), 0))
+        .select_from(Invoice)
+        .where(Invoice.payment_status == "paid")
+    ) or 0
+    
+    unpaid_invoices = db.scalar(
+        select(func.count()).select_from(Invoice).where(Invoice.payment_status == "unpaid")
+    ) or 0
+    unpaid_amount = db.scalar(
+        select(func.coalesce(func.sum(Invoice.total_amount), 0))
+        .select_from(Invoice)
+        .where(Invoice.payment_status == "unpaid")
+    ) or 0
+    
+    overdue_invoices = db.scalar(
+        select(func.count())
+        .select_from(Invoice)
+        .where(
+            and_(
+                Invoice.payment_status == "unpaid",
+                Invoice.due_date < date.today(),
+            )
+        )
+    ) or 0
+    overdue_amount = db.scalar(
+        select(func.coalesce(func.sum(Invoice.total_amount), 0))
+        .select_from(Invoice)
+        .where(
+            and_(
+                Invoice.payment_status == "unpaid",
+                Invoice.due_date < date.today(),
+            )
+        )
+    ) or 0
+    
+    invoices_by_customer = db.execute(
+        select(Customer.name, func.count(Invoice.id), func.coalesce(func.sum(Invoice.total_amount), 0))
+        .join(Invoice, Invoice.customer_id == Customer.id)
+        .group_by(Customer.id, Customer.name)
+        .order_by(func.sum(Invoice.total_amount).desc())
+        .limit(10)
+    ).all()
+    
+    top_customers = [
+        {"customer_name": str(row[0] or "Unknown"), "invoice_count": int(row[1]), "total_amount": float(row[2])}
+        for row in invoices_by_customer
+    ]
+    
+    return {
+        "total_invoices": total_invoices,
+        "total_amount": float(total_amount),
+        "paid_invoices": paid_invoices,
+        "paid_amount": float(paid_amount),
+        "unpaid_invoices": unpaid_invoices,
+        "unpaid_amount": float(unpaid_amount),
+        "overdue_invoices": overdue_invoices,
+        "overdue_amount": float(overdue_amount),
+        "top_customers": top_customers,
+        "as_of": date.today().isoformat(),
+    }
 
 
 @router.get("/dashboard/summary")

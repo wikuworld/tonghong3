@@ -7,10 +7,12 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
-from app.models import Brand, BrandBuyerMap, PoDetail, PoHeader
+from app.models import Brand, BrandBuyerMap, CustomerBrandMapping, PoDetail, PoDetailDelivery, PoHeader, SubconInvoice, PpicsAssignment
 from app.services.audit import log_change
 from app.services.numbering import next_number
 from app.schemas import (
+    DeliverySchedulesPayload,
+    DeliveryScheduleItem,
     PoDetailCreate,
     PoDetailOut,
     PoDetailUpdate,
@@ -23,6 +25,7 @@ from app.services.mkt_workflow import (
     MKT_STAGES_ORDER,
     apply_mkt_stage,
     next_mkt_stage,
+    prev_mkt_stage,
     validate_mkt_advance,
 )
 from app.services.notifications import create_notification_for_roles
@@ -86,8 +89,15 @@ def _validate_customer_brand_buyer(db: Session, data: dict) -> None:
     brand = db.get(Brand, brand_id)
     if not brand:
         raise HTTPException(status_code=400, detail="Brand tidak ditemukan")
-    if customer_id and brand.customer_id and int(brand.customer_id) != int(customer_id):
-        raise HTTPException(status_code=400, detail="Brand tidak terkait customer terpilih")
+    if customer_id:
+        mapping = db.scalars(
+            select(CustomerBrandMapping).where(
+                CustomerBrandMapping.customer_id == customer_id,
+                CustomerBrandMapping.brand_id == brand_id,
+            )
+        ).first()
+        if not mapping:
+            raise HTTPException(status_code=400, detail="Brand tidak terkait customer terpilih")
     if buyer_code:
         allowed = db.scalars(
             select(BrandBuyerMap).where(
@@ -161,6 +171,51 @@ def advance_mkt_workflow(
         entity_id=row.id,
         route_path="/admin/marketing-flow",
         route_query={"po_id": row.id},
+    )
+    log_change(
+        db,
+        entity_type="sales_order",
+        entity_id=row.id,
+        action="workflow_advance",
+        after={"mkt_workflow_stage": nxt},
+        actor=_user.username,
+    )
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.post("/po/{po_id}/mkt-workflow/rollback", response_model=PoHeaderOut)
+def rollback_mkt_workflow(
+    po_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing", "ppic")),
+) -> PoHeader:
+    row = db.get(PoHeader, po_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="PO tidak ditemukan")
+    prev = prev_mkt_stage(row.mkt_workflow_stage)
+    if not prev:
+        raise HTTPException(status_code=400, detail="PO sudah di tahap awal alur MKT")
+    apply_mkt_stage(db, po_id, prev)
+    create_notification_for_roles(
+        db,
+        ("admin", "marketing", "ppic"),
+        title=f"PO {row.po_number or row.id} rollback ke tahap {prev}",
+        message=f"Tahap alur marketing dirollback menjadi: {prev}",
+        category="workflow",
+        entity_type="sales_order",
+        entity_id=row.id,
+        route_path="/admin/marketing-flow",
+        route_query={"po_id": row.id},
+    )
+    log_change(
+        db,
+        entity_type="sales_order",
+        entity_id=row.id,
+        action="workflow_rollback",
+        after={"mkt_workflow_stage": prev},
+        actor=_user.username,
     )
     db.commit()
     db.refresh(row)
@@ -415,6 +470,27 @@ def delete_po(
     row = db.get(PoHeader, po_id)
     if not row:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
+    
+    active_invoices = db.query(SubconInvoice).filter(
+        SubconInvoice.po_id == po_id,
+        SubconInvoice.status.notin_(["cancelled", "paid"])
+    ).count()
+    if active_invoices > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Tidak dapat menghapus PO dengan subcon invoice yang aktif"
+        )
+    
+    active_assignments = db.query(PpicsAssignment).filter(
+        PpicsAssignment.po_id == po_id,
+        PpicsAssignment.status.notin_(["completed", "cancelled"])
+    ).count()
+    if active_assignments > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Tidak dapat menghapus PO dengan PPIC assignment yang aktif"
+        )
+    
     log_change(
         db,
         entity_type="sales_order",
@@ -538,3 +614,40 @@ def delete_po_detail(
     db.delete(row)
     db.commit()
     return {"status": "deleted"}
+
+
+@router.put("/po-detail/{detail_id}/delivery-schedules")
+def set_po_detail_delivery_schedules(
+    detail_id: int,
+    body: DeliverySchedulesPayload,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "marketing")),
+) -> list:
+    row = db.get(PoDetail, detail_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Detail PO tidak ditemukan")
+
+    row.delivery_schedules.clear()
+    for item in body.schedules:
+        delivery = PoDetailDelivery(
+            po_detail_id=detail_id,
+            sequence_no=item.sequence_no,
+            qty=item.qty,
+            delivery_date=item.delivery_date,
+        )
+        row.delivery_schedules.append(delivery)
+
+    db.commit()
+    db.refresh(row)
+    return row.delivery_schedules
+
+
+@router.get("/po-detail/{detail_id}/delivery-schedules")
+def get_po_detail_delivery_schedules(
+    detail_id: int,
+    db: Session = Depends(get_db),
+) -> list:
+    row = db.get(PoDetail, detail_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Detail PO tidak ditemukan")
+    return row.delivery_schedules

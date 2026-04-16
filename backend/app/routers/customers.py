@@ -97,6 +97,29 @@ def delete_customer(
     row = db.get(Customer, customer_id)
     if not row:
         raise HTTPException(status_code=404, detail="Customer tidak ditemukan")
+    
+    from app.models import PoHeader, Invoice, DeliveryHeader, BuyerPriceList
+    
+    errors = []
+    
+    related_pos = db.query(PoHeader).filter(PoHeader.customer_id == customer_id).count()
+    if related_pos > 0:
+        errors.append(f"{related_pos} PO")
+    
+    related_invoices = db.query(Invoice).filter(Invoice.customer_id == customer_id).count()
+    if related_invoices > 0:
+        errors.append(f"{related_invoices} Invoice")
+    
+    related_deliveries = db.query(DeliveryHeader).filter(DeliveryHeader.customer_id == customer_id).count()
+    if related_deliveries > 0:
+        errors.append(f"{related_deliveries} Delivery")
+    
+    if errors:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Customer tidak bisa dihapus karena masih memiliki: {', '.join(errors)}"
+        )
+    
     db.delete(row)
     db.commit()
     return {"status": "deleted"}

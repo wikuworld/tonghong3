@@ -12,6 +12,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     Numeric,
@@ -57,6 +58,7 @@ class Customer(Base):
     brand_mappings: Mapped[list["CustomerBrandMapping"]] = relationship(
         "CustomerBrandMapping", back_populates="customer", cascade="all, delete-orphan"
     )
+    invoices: Mapped[list["Invoice"]] = relationship("Invoice", overlaps="customer")
 
 
 class MasterItem(Base):
@@ -191,7 +193,6 @@ class Brand(Base):
     __tablename__ = "brands"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    customer_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("customers.id"))
     code: Mapped[Optional[str]] = mapped_column(String(50))
     name: Mapped[Optional[str]] = mapped_column(String(255))
 
@@ -290,6 +291,11 @@ class CustomerSpecialPrice(Base):
 
 class PoHeader(Base):
     __tablename__ = "po_headers"
+    __table_args__ = (
+        Index("ix_po_headers_customer_id", "customer_id"),
+        Index("ix_po_headers_status", "status"),
+        Index("ix_po_headers_mkt_workflow_stage", "mkt_workflow_stage"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     po_number: Mapped[Optional[str]] = mapped_column(String(100), unique=True)
@@ -336,10 +342,15 @@ class PoHeader(Base):
     ppic_assignments: Mapped[list["PpicsAssignment"]] = relationship(
         "PpicsAssignment", back_populates="po", cascade="all, delete-orphan"
     )
+    production_orders: Mapped[list["ProductionOrder"]] = relationship("ProductionOrder", back_populates="po")
+    invoices: Mapped[list["Invoice"]] = relationship("Invoice", back_populates="po")
 
 
 class PoDetail(Base):
     __tablename__ = "po_details"
+    __table_args__ = (
+        Index("ix_po_details_po_id", "po_id"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     po_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("po_headers.id", ondelete="CASCADE"))
@@ -411,6 +422,8 @@ class ProductionOrder(Base):
         TIMESTAMP, server_default=func.current_timestamp()
     )
 
+    po: Mapped[Optional["PoHeader"]] = relationship("PoHeader", back_populates="production_orders")
+
 
 class ProductionDetail(Base):
     __tablename__ = "production_details"
@@ -419,7 +432,9 @@ class ProductionDetail(Base):
     production_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("production_orders.id", ondelete="CASCADE")
     )
-    po_detail_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("po_details.id"))
+    po_detail_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("po_details.id", ondelete="CASCADE")
+    )
     qty_planned: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
     qty_actual: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
     lot_number: Mapped[Optional[str]] = mapped_column(String(100))
@@ -501,6 +516,9 @@ class PackingDetail(Base):
 
 class DeliveryHeader(Base):
     __tablename__ = "delivery_headers"
+    __table_args__ = (
+        Index("ix_delivery_headers_customer_id", "customer_id"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     delivery_number: Mapped[Optional[str]] = mapped_column(String(100), unique=True)
@@ -517,6 +535,9 @@ class DeliveryHeader(Base):
     )
     packing_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("packing_headers.id"))
     surat_jalan_printed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    invoices: Mapped[list["Invoice"]] = relationship("Invoice", back_populates="delivery")
+    customer: Mapped[Optional["Customer"]] = relationship("Customer")
 
 
 class DeliveryDetail(Base):
@@ -537,10 +558,21 @@ class DeliveryDetail(Base):
 
 class Invoice(Base):
     __tablename__ = "invoices"
+    __table_args__ = (
+        Index("ix_invoices_delivery_id", "delivery_id"),
+        Index("ix_invoices_customer_id", "customer_id"),
+        Index("ix_invoices_po_id", "po_id"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     delivery_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("delivery_headers.id", ondelete="RESTRICT"), nullable=True
+    )
+    customer_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("customers.id", ondelete="RESTRICT"), nullable=True
+    )
+    po_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("po_headers.id", ondelete="RESTRICT"), nullable=True
     )
     invoice_number: Mapped[Optional[str]] = mapped_column(String(100))
     packing_list_number: Mapped[Optional[str]] = mapped_column(String(100))
@@ -572,6 +604,10 @@ class Invoice(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
     )
+
+    customer: Mapped[Optional["Customer"]] = relationship("Customer")
+    po: Mapped[Optional["PoHeader"]] = relationship("PoHeader")
+    delivery: Mapped[Optional["DeliveryHeader"]] = relationship("DeliveryHeader", back_populates="invoices")
 
 
 class InvoiceDetail(Base):
@@ -712,6 +748,7 @@ class PpicsAssignment(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     po_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("po_headers.id"))
+    po_detail_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("po_details.id"))
     ppic_user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"))
     status: Mapped[str] = mapped_column(String(20), default="pending")
     notes: Mapped[Optional[str]] = mapped_column(Text)
@@ -719,6 +756,7 @@ class PpicsAssignment(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
     po: Mapped[Optional["PoHeader"]] = relationship("PoHeader", back_populates="ppic_assignments")
+    po_detail: Mapped[Optional["PoDetail"]] = relationship("PoDetail")
     ppic_user: Mapped[Optional["User"]] = relationship("User")
 
 
@@ -752,3 +790,110 @@ class AccountingMapping(Base):
     description: Mapped[Optional[str]] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+
+
+class JournalEntry(Base):
+    """Auto-generated GL journal entries from transactions."""
+
+    __tablename__ = "journal_entries"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    transaction_type: Mapped[str] = mapped_column(String(50))
+    transaction_id: Mapped[int] = mapped_column(BigInteger)
+    coa_code: Mapped[str] = mapped_column(String(20))
+    coa_name: Mapped[str] = mapped_column(String(100))
+    debit: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
+    credit: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0"))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    entry_date: Mapped[date] = mapped_column(Date)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+
+
+class Warehouse(Base):
+    """Gudang penyimpanan material."""
+
+    __tablename__ = "warehouses"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True)
+    name: Mapped[str] = mapped_column(String(255))
+    location: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+
+
+class RawMaterial(Base):
+    """Master data bahan baku."""
+
+    __tablename__ = "raw_materials"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_raw_material_code"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(50))
+    name: Mapped[str] = mapped_column(String(255))
+    material_type: Mapped[str] = mapped_column(String(50))
+    unit: Mapped[str] = mapped_column(String(20))
+    default_warehouse_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("warehouses.id"))
+    min_stock: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    cost_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+
+    warehouse: Mapped[Optional["Warehouse"]] = relationship("Warehouse")
+
+
+class MaterialStock(Base):
+    """Stok material per gudang."""
+
+    __tablename__ = "material_stocks"
+    __table_args__ = (
+        UniqueConstraint("material_id", "warehouse_id", name="uq_material_warehouse"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    material_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("raw_materials.id"))
+    warehouse_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("warehouses.id"))
+    current_stock: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    reserved_stock: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0"))
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+
+    material: Mapped[Optional["RawMaterial"]] = relationship("RawMaterial")
+    warehouse: Mapped[Optional["Warehouse"]] = relationship("Warehouse")
+
+
+class MaterialReceipt(Base):
+    """Penerimaan material dari supplier."""
+
+    __tablename__ = "material_receipts"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    receipt_number: Mapped[str] = mapped_column(String(50), unique=True)
+    supplier_name: Mapped[Optional[str]] = mapped_column(String(255))
+    receipt_date: Mapped[date] = mapped_column(Date)
+    warehouse_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("warehouses.id"))
+    total_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    remark: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="draft")
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+
+    warehouse: Mapped[Optional["Warehouse"]] = relationship("Warehouse")
+    details: Mapped[list["MaterialReceiptDetail"]] = relationship("MaterialReceiptDetail", back_populates="receipt", cascade="all, delete-orphan")
+
+
+class MaterialReceiptDetail(Base):
+    """Detail penerimaan material."""
+
+    __tablename__ = "material_receipt_details"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    receipt_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("material_receipts.id"))
+    material_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("raw_materials.id"))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    unit_cost: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    total_cost: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    remark: Mapped[Optional[str]] = mapped_column(Text)
+
+    receipt: Mapped[Optional["MaterialReceipt"]] = relationship("MaterialReceipt", back_populates="details")
+    material: Mapped[Optional["RawMaterial"]] = relationship("RawMaterial")

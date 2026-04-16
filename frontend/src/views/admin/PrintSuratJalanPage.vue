@@ -60,7 +60,7 @@ const printPage = () => window.print()
 
 <style scoped>
 .print-sheet {
-  background: #fff;
+  background: white;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   padding: 24px;
