@@ -20,6 +20,8 @@ from app.services.business_rules import require_packing_ready
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
 from app.services.notifications import create_notification_for_roles
+from app.services.mkt_workflow import auto_advance_if_ready
+from app.services.business_rules import po_numbers_from_delivery
 
 router = APIRouter(tags=["delivery"])
 
@@ -102,6 +104,23 @@ def create_delivery(
         after={"delivery_number": row.delivery_number, "status": row.status},
         actor=user.username,
     )
+
+    po_numbers = po_numbers_from_delivery(db, row.id)
+    for pn in po_numbers:
+        from app.models import PoHeader
+        ph = db.scalars(select(PoHeader).where(PoHeader.po_number == pn).limit(1)).first()
+        if ph:
+            new_stage = auto_advance_if_ready(db, ph.id)
+            if new_stage:
+                log_change(
+                    db,
+                    entity_type="sales_order",
+                    entity_id=ph.id,
+                    action="auto_advance",
+                    after={"mkt_workflow_stage": new_stage},
+                    actor="system",
+                )
+
     db.commit()
     db.refresh(row)
     return row_to_dict(row)

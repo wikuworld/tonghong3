@@ -1,6 +1,16 @@
 <template>
   <div class="space-y-5">
     <el-alert v-if="apiError" type="warning" :title="apiError" show-icon class="mb-2" />
+    <el-row :gutter="12">
+      <el-col :md="6" :sm="12" :xs="24" v-for="card in topDigestCards" :key="card.title">
+        <el-card shadow="hover" class="top-digest-card">
+          <div class="top-digest-title">{{ card.title }}</div>
+          <div class="top-digest-value">{{ card.value }}</div>
+          <div class="top-digest-note">{{ card.note }}</div>
+        </el-card>
+      </el-col>
+    </el-row>
+
     <el-card shadow="never" class="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -20,7 +30,10 @@
         <el-card shadow="hover" class="border-indigo-50">
           <div class="flex items-start justify-between">
             <div>
-              <div class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ item.label }}</div>
+              <div class="flex items-center gap-2">
+                <div class="text-xs font-medium uppercase tracking-wide text-slate-500">{{ item.label }}</div>
+                <el-badge v-if="item.badge > 0" :value="item.badge" :max="99" type="danger" />
+              </div>
               <div class="mt-2 text-3xl font-semibold text-slate-800">{{ item.value }}</div>
             </div>
             <el-icon class="rounded-lg p-2 text-white" :class="item.iconBg">
@@ -41,6 +54,56 @@
       <el-col :md="8" :xs="24">
         <AdminSection :title="t('dashboard.compositionTitle')">
           <VChart class="chart-lg" :option="poCompositionOption" autoresize />
+        </AdminSection>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="12">
+      <el-col :md="12" :xs="24">
+        <AdminSection title="Received PO PU">
+          <div class="rcvd-card-body">
+            <div v-for="group in rcvdPoPu" :key="group.buyer" class="rcvd-group">
+              <div class="rcvd-group-title">{{ group.buyer }}</div>
+              <div v-for="line in group.lines" :key="`${group.buyer}-${line.factory}`" class="rcvd-line">
+                <span>{{ line.factory }}</span>
+                <strong>{{ formatSf(line.sf) }} sf</strong>
+              </div>
+            </div>
+            <el-divider class="rcvd-divider" />
+            <div class="rcvd-total">TOTAL RECEIVED PO PU : {{ formatSf(totalPoPu) }} sf</div>
+          </div>
+        </AdminSection>
+      </el-col>
+      <el-col :md="12" :xs="24">
+        <AdminSection title="Received PO SUEDE">
+          <div class="rcvd-card-body">
+            <div v-for="group in rcvdPoSuede" :key="group.buyer" class="rcvd-group">
+              <div class="rcvd-group-title">{{ group.buyer }}</div>
+              <div v-for="line in group.lines" :key="`${group.buyer}-${line.factory}`" class="rcvd-line">
+                <span>{{ line.factory }}</span>
+                <strong>{{ formatSf(line.sf) }} sf</strong>
+              </div>
+            </div>
+            <el-divider class="rcvd-divider" />
+            <div class="rcvd-total">TOTAL RECEIVED PO SUEDE : {{ formatSf(totalPoSuede) }} sf</div>
+          </div>
+        </AdminSection>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="12">
+      <el-col :md="12" :xs="24" v-for="day in deliveryDays" :key="day.date">
+        <AdminSection title="Delivery">
+          <div class="delivery-subtitle">DOK {{ deliveryDateLabel(day.date) }}</div>
+          <div v-if="day.lines?.length" class="rcvd-card-body">
+            <div v-for="line in day.lines" :key="`${day.date}-${line.customer_code}-${line.status_label}`" class="rcvd-line">
+              <span>{{ line.customer_code }} : {{ formatSf(line.sf) }} sf</span>
+              <strong>{{ line.status_label }}</strong>
+            </div>
+            <el-divider class="rcvd-divider" />
+            <div class="rcvd-total">TOTAL DELIVERY {{ deliveryDateLabel(day.date) }} : {{ formatSf(day.total_sf) }} sf</div>
+          </div>
+          <el-empty v-else description="Belum ada data delivery pada tanggal ini" />
         </AdminSection>
       </el-col>
     </el-row>
@@ -184,6 +247,7 @@ const stats = computed(() => {
     {
       label: t('dashboard.kpiTotalSo'),
       value: c?.sales_orders ?? t('common.emptyValue'),
+      badge: c?.sales_orders_open ?? 0,
       delta: t('dashboard.kpiOpenSoHint', { n: c?.sales_orders_open ?? t('common.emptyValue') }),
       deltaColor: 'text-slate-600',
       icon: Tickets,
@@ -192,6 +256,7 @@ const stats = computed(() => {
     {
       label: t('dashboard.kpiProduction'),
       value: c?.production_orders ?? t('common.emptyValue'),
+      badge: c?.production_in_progress ?? 0,
       delta: t('dashboard.kpiProdInProgress', { n: c?.production_in_progress ?? 0 }),
       deltaColor: 'text-emerald-600',
       icon: TrendCharts,
@@ -200,6 +265,7 @@ const stats = computed(() => {
     {
       label: t('dashboard.kpiQcReject'),
       value: c?.qc_reject_lines ?? t('common.emptyValue'),
+      badge: c?.qc_reject_lines ?? 0,
       delta:
         c?.qc_total_lines != null && c.qc_total_lines > 0
           ? `${t('dashboard.qcPassRate')}: ${Math.round((100 * (c.qc_ok_lines || 0)) / c.qc_total_lines)}%`
@@ -211,6 +277,7 @@ const stats = computed(() => {
     {
       label: t('dashboard.kpiExchange'),
       value: rateLabel,
+      badge: 0,
       delta: t('dashboard.kpiDeliveryHint', { n: c?.deliveries ?? t('common.emptyValue') }),
       deltaColor: 'text-amber-600',
       icon: DataLine,
@@ -227,7 +294,7 @@ const productionTrendOption = computed(() => {
   return {
     tooltip: { trigger: 'axis' },
     legend: { top: 0 },
-    grid: { left: 16, right: 12, top: 36, bottom: 8, containLabel: true },
+    grid: { left: 48, right: 20, top: 36, bottom: 24 },
     xAxis: {
       type: 'category',
       data: labels.length ? labels : [t('dashboard.dayMon')],
@@ -304,7 +371,7 @@ const pipelineStatusOption = computed(() => {
   const colors = ['#334155', '#2563eb', '#16a34a', '#0ea5e9', '#f59e0b']
   return {
     tooltip: { trigger: 'axis' },
-    grid: { left: 16, right: 12, top: 12, bottom: 8, containLabel: true },
+    grid: { left: 48, right: 20, top: 12, bottom: 24 },
     xAxis: {
       type: 'category',
       data: [
@@ -364,6 +431,77 @@ const monitoringRows = computed(() => {
     },
   ]
 })
+
+const rcvdDateLabel = computed(() => {
+  const d = apiSummary.value?.rcvd_po?.as_of
+  if (!d) return '-'
+  const dt = new Date(`${d}T00:00:00`)
+  if (Number.isNaN(dt.getTime())) return d
+  const mm = String(dt.getMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getDate()).padStart(2, '0')
+  return `${mm}/${dd}`
+})
+
+function groupRcvdLines(lines) {
+  const grouped = new Map()
+  for (const line of lines || []) {
+    const buyer = (line?.buyer || '-').toString()
+    if (!grouped.has(buyer)) grouped.set(buyer, [])
+    grouped.get(buyer).push({
+      factory: (line?.factory || '-').toString(),
+      sf: Number(line?.sf || 0),
+    })
+  }
+  return Array.from(grouped.entries()).map(([buyer, buyerLines]) => ({
+    buyer,
+    lines: buyerLines,
+  }))
+}
+
+const rcvdPoPu = computed(() => groupRcvdLines(apiSummary.value?.rcvd_po?.pu_lines || []))
+const rcvdPoSuede = computed(() => groupRcvdLines(apiSummary.value?.rcvd_po?.suede_lines || []))
+const totalPoPu = computed(() => Number(apiSummary.value?.rcvd_po?.total_pu_sf || 0))
+const totalPoSuede = computed(() => Number(apiSummary.value?.rcvd_po?.total_suede_sf || 0))
+const deliveryDays = computed(() => apiSummary.value?.delivery_digest?.days || [])
+const topDigestCards = computed(() => {
+  const firstDay = deliveryDays.value[0]
+  const secondDay = deliveryDays.value[1]
+  return [
+    {
+      title: `Received PO PU ${rcvdDateLabel.value}`,
+      value: `${formatSf(totalPoPu.value)} sf`,
+      note: `${rcvdPoPu.value.reduce((n, g) => n + (g.lines?.length || 0), 0)} baris buyer/factory`,
+    },
+    {
+      title: `Received PO SUEDE ${rcvdDateLabel.value}`,
+      value: `${formatSf(totalPoSuede.value)} sf`,
+      note: `${rcvdPoSuede.value.reduce((n, g) => n + (g.lines?.length || 0), 0)} baris buyer/factory`,
+    },
+    {
+      title: 'Delivery',
+      value: `${formatSf(firstDay?.total_sf || 0)} sf`,
+      note: firstDay?.lines?.length ? `${firstDay.lines.length} baris dok` : 'Belum ada data',
+    },
+    {
+      title: 'Delivery',
+      value: `${formatSf(secondDay?.total_sf || 0)} sf`,
+      note: secondDay?.lines?.length ? `${secondDay.lines.length} baris dok` : 'Belum ada data',
+    },
+  ]
+})
+
+function formatSf(v) {
+  return Number(v || 0).toLocaleString()
+}
+
+function deliveryDateLabel(iso) {
+  if (!iso) return '-'
+  const dt = new Date(`${iso}T00:00:00`)
+  if (Number.isNaN(dt.getTime())) return iso
+  const mm = String(dt.getMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getDate()).padStart(2, '0')
+  return `${mm}/${dd}`
+}
 </script>
 
 <style scoped>
@@ -377,5 +515,73 @@ const monitoringRows = computed(() => {
 
 .admin-table {
   width: 100%;
+}
+
+.top-digest-card {
+  border: 1px solid #e2e8f0;
+}
+
+.top-digest-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+
+.top-digest-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.top-digest-note {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.rcvd-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rcvd-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rcvd-group-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  margin-top: 4px;
+}
+
+.rcvd-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.rcvd-divider {
+  margin: 6px 0 2px;
+}
+
+.rcvd-total {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.delivery-subtitle {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
 }
 </style>

@@ -2,24 +2,25 @@
   <AdminSection :title="t('pages.masterItems.title')" :subtitle="t('pages.masterItems.subtitle')">
     <template #actions>
       <el-input v-model="keyword" :placeholder="t('pages.masterItems.searchPlaceholder')" clearable class="master-items-toolbar-search" />
-      <el-button @click="handleExport">{{ t('pages.masterItems.export') }}</el-button>
-      <el-button type="success" @click="openImportDialog">{{ t('pages.masterItems.import') }}</el-button>
+      <el-button :icon="Download" @click="handleExport">{{ t('pages.masterItems.export') }}</el-button>
+      <el-button type="success" :icon="Upload" @click="openImportDialog">{{ t('pages.masterItems.import') }}</el-button>
       <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
     <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.masterItems.tableEmpty')">
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
-      <el-table-column prop="item_code" :label="t('common.code')" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="material_name" :label="t('common.material')" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="thickness_mm" :label="t('common.thickness')" min-width="100" />
-      <el-table-column prop="color" :label="t('common.color')" min-width="110" show-overflow-tooltip />
-      <el-table-column prop="softness" :label="t('common.softness')" min-width="110" />
-      <el-table-column prop="backing" :label="t('common.backing')" min-width="110" />
-      <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="130" show-overflow-tooltip />
-      <el-table-column prop="exim_material_code" :label="t('pages.masterItems.eximMaterialCode')" min-width="120" show-overflow-tooltip />
-      <el-table-column :label="t('common.actions')" width="100" align="center" fixed="right">
+      <el-table-column prop="category" :label="t('common.category')" width="100" align="center" />
+      <el-table-column prop="item_code" :label="t('common.code')" min-width="90" show-overflow-tooltip />
+      <el-table-column prop="material_name" :label="t('common.material')" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="thickness_range" :label="t('common.thickness')" width="90" align="center" />
+      <el-table-column prop="color" :label="t('common.color')" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="emboss" :label="t('common.emboss')" min-width="120" show-overflow-tooltip />
+      <el-table-column :label="t('common.actions')" width="120" align="center" fixed="right">
         <template #default="{ row }">
-          <div class="flex flex-wrap items-center justify-center gap-0">
+          <div class="flex flex-wrap items-center justify-center gap-1">
+            <el-tooltip :content="t('common.detail')" placement="top">
+              <el-button :icon="View" link type="info" :aria-label="t('common.detail')" @click="openDetail(row)" />
+            </el-tooltip>
             <el-tooltip :content="t('common.edit')" placement="top">
               <el-button :icon="EditPen" link type="primary" :aria-label="t('common.edit')" @click="openEdit(row)" />
             </el-tooltip>
@@ -34,6 +35,15 @@
     <el-dialog v-model="formVisible" :title="isEdit ? t('pages.masterItems.editTitle') : t('pages.masterItems.createTitle')" width="720px" destroy-on-close align-center>
       <el-form label-position="top">
         <el-row :gutter="12">
+          <el-col :xs="24" :md="12">
+            <el-form-item :label="t('common.category')" required>
+              <el-select v-model="form.category" clearable class="w-full">
+                <el-option label="PU" value="PU" />
+                <el-option label="Suide" value="Suide" />
+                <el-option label="SubKon" value="SubKon" />
+              </el-select>
+            </el-form-item>
+          </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.code')" required>
               <el-input v-model="form.item_code" maxlength="50" />
@@ -71,66 +81,27 @@
               <el-input v-model="form.emboss" maxlength="500" />
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('common.softness')">
-              <el-select
-                v-model="form.softness"
-                :placeholder="t('pages.masterItems.softnessPlaceholder')"
-                clearable
-                filterable
-                allow-create
-                class="w-full"
-              >
-                <el-option label="Soft" value="Soft" />
-                <el-option label="Semi-Soft" value="Semi-Soft" />
-                <el-option label="Medium" value="Medium" />
-                <el-option label="Semi-Hard" value="Semi-Hard" />
-                <el-option label="Hard" value="Hard" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('common.colorReference')">
-              <el-input v-model="form.color_reference" maxlength="255" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('pages.masterItems.colorStandard')">
-              <el-input v-model="form.color_standard" maxlength="255" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('common.backing')">
-              <el-input v-model="form.backing" maxlength="255" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('pages.masterItems.qtyDefault')">
-              <el-input v-model="form.quantity_order_default" type="number" step="0.01" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('common.styleArticle')">
-              <el-input v-model="form.style_article" maxlength="100" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('common.category')">
-              <el-input v-model="form.category" maxlength="100" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('pages.masterItems.eximMaterialCode')">
-              <el-input v-model="form.exim_material_code" maxlength="80" clearable />
-            </el-form-item>
-          </el-col>
         </el-row>
       </el-form>
       <template #footer>
         <div class="master-items-dialog-footer">
-          <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-          <el-button type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
+          <el-button :icon="Close" @click="formVisible = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :icon="Check" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
         </div>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="detailVisible" :title="t('pages.masterItems.detailTitle')" width="640px" destroy-on-close align-center>
+      <el-descriptions v-if="detailRow" :column="2" border>
+        <el-descriptions-item :label="t('common.code')">{{ detailRow.item_code }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.category')">{{ detailRow.category || '-' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.material')">{{ detailRow.material_name || '-' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.thickness')">{{ detailRow.thickness_range || detailRow.thickness_mm || '-' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.color')">{{ detailRow.color || '-' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.emboss')">{{ detailRow.emboss || '-' }}</el-descriptions-item>
+      </el-descriptions>
+      <template #footer>
+        <el-button type="primary" :icon="Close" @click="detailVisible = false">{{ t('common.close') }}</el-button>
       </template>
     </el-dialog>
 
@@ -145,8 +116,8 @@
         <el-button type="primary">{{ t('pages.masterItems.selectFile') }}</el-button>
       </el-upload>
       <template #footer>
-        <el-button @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :disabled="!importFile" @click="handleImport">
+        <el-button :icon="Close" @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :icon="Check" :disabled="!importFile" @click="handleImport">
           {{ t('pages.masterItems.doImport') }}
         </el-button>
       </template>
@@ -158,7 +129,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, EditPen, Plus } from '@element-plus/icons-vue'
+import { Delete, EditPen, Plus, Close, Check, Upload, Download, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { createMasterItem, deleteMasterItem, listMasterItems, updateMasterItem, exportMasterItems, importMasterItems } from '../../api/client'
 
@@ -170,6 +141,8 @@ const rows = ref([])
 const formVisible = ref(false)
 const isEdit = ref(false)
 const editingId = ref(null)
+const detailVisible = ref(false)
+const detailRow = ref(null)
 const importDialogVisible = ref(false)
 const importFile = ref(null)
 const uploadRef = ref(null)
@@ -180,14 +153,7 @@ const form = reactive({
   thickness_range: '',
   color: '',
   emboss: '',
-  softness: '',
-  color_reference: '',
-  color_standard: '',
-  backing: '',
-  quantity_order_default: '',
-  style_article: '',
   category: '',
-  exim_material_code: '',
 })
 
 async function load() {
@@ -207,14 +173,12 @@ function resetForm() {
   form.thickness_range = ''
   form.color = ''
   form.emboss = ''
-  form.softness = ''
-  form.color_reference = ''
-  form.color_standard = ''
-  form.backing = ''
-  form.quantity_order_default = ''
-  form.style_article = ''
   form.category = ''
-  form.exim_material_code = ''
+}
+
+function openDetail(row) {
+  detailRow.value = row
+  detailVisible.value = true
 }
 
 function openCreate() {
@@ -232,14 +196,7 @@ function openEdit(row) {
   form.thickness_range = row.thickness_range || ''
   form.color = row.color || ''
   form.emboss = row.emboss || ''
-  form.softness = row.softness || ''
-  form.color_reference = row.color_reference || ''
-  form.color_standard = row.color_standard || ''
-  form.backing = row.backing || ''
-  form.quantity_order_default = row.quantity_order_default ?? ''
-  form.style_article = row.style_article || ''
   form.category = row.category || ''
-  form.exim_material_code = row.exim_material_code || ''
   formVisible.value = true
 }
 
@@ -248,23 +205,19 @@ async function submit() {
     ElMessage.warning(t('pages.masterItems.codeRequired'))
     return
   }
+  if (!form.category?.trim()) {
+    ElMessage.warning(t('pages.masterItems.categoryRequired'))
+    return
+  }
   saving.value = true
   try {
     const payload = {
       item_code: form.item_code.trim(),
+      category: form.category || undefined,
       material_name: form.material_name || undefined,
       thickness_range: form.thickness_range || undefined,
       color: form.color || undefined,
       emboss: form.emboss || undefined,
-      softness: form.softness || undefined,
-      color_reference: form.color_reference || undefined,
-      color_standard: form.color_standard || undefined,
-      backing: form.backing || undefined,
-      quantity_order_default:
-        form.quantity_order_default !== '' ? Number(form.quantity_order_default) : undefined,
-      style_article: form.style_article || undefined,
-      category: form.category || undefined,
-      exim_material_code: form.exim_material_code?.trim() || undefined,
     }
     if (isEdit.value && editingId.value) {
       await updateMasterItem(editingId.value, payload)

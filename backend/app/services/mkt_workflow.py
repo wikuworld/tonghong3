@@ -1,4 +1,4 @@
-"""Alur MKT sesuai flowchart: tahapan berurutan + syarat advance."""
+"""Alur MKT sesuai flowchart: tahapan berurutan + syarat advance + auto-advance."""
 
 from __future__ import annotations
 
@@ -101,6 +101,109 @@ def po_has_invoice_for_po(db: "Session", po_id: int) -> bool:
         .limit(1)
     ).first()
     return row is not None
+
+
+def po_has_ppic_assignment(db: "Session", po_id: int) -> bool:
+    from app.models import PoPpicAssignment
+
+    row = db.scalars(
+        select(PoPpicAssignment).where(PoPpicAssignment.po_id == po_id).limit(1)
+    ).first()
+    return row is not None
+
+
+def po_ppic_is_complete(db: "Session", po_id: int) -> bool:
+    from app.models import PoPpicAssignment
+
+    row = db.scalars(
+        select(PoPpicAssignment)
+        .where(PoPpicAssignment.po_id == po_id, PoPpicAssignment.status == "completed")
+        .limit(1)
+    ).first()
+    return row is not None
+
+
+def get_stuck_reason(db: "Session", po_id: int) -> str | None:
+    """Return reason why PO is stuck, or None if ready to advance."""
+    from app.models import PoHeader
+
+    row = db.get(PoHeader, po_id)
+    if not row:
+        return None
+
+    current_stage = (row.mkt_workflow_stage or "input_system").strip()
+    nxt = next_mkt_stage(current_stage)
+
+    if nxt is None:
+        return None
+
+    if nxt == "rekap_printed":
+        if not row.rekap_printed_at:
+            return "Menunggu rekap PO diprint"
+        if row.status != "confirmed":
+            return "PO belum di-confirm"
+
+    elif nxt == "with_ppic":
+        if not po_has_ppic_assignment(db, po_id):
+            return "Belum di-assign ke PPIC"
+        if not po_ppic_is_complete(db, po_id):
+            return "PPIC belum menyelesaikan tugas"
+
+    elif nxt == "back_to_mkt":
+        if not po_ppic_is_complete(db, po_id):
+            return "Menunggu PPIC menyelesaikan tugas"
+
+    elif nxt == "in_outstanding":
+        if not po_ppic_is_complete(db, po_id):
+            return "Menunggu PPIC menyelesaikan tugas"
+
+    elif nxt == "material_followup":
+        if not row.material_followup_done:
+            return "Material belum di-follow up"
+
+    elif nxt == "delivery_arranged":
+        if not row.material_followup_done:
+            return "Material belum selesai di-follow up"
+        if not po_has_delivery_for_po(db, po_id):
+            return "Delivery belum dibuat"
+
+    elif nxt == "sj_invpl":
+        if not po_has_sj_invpl_prints(db, po_id):
+            return "SJ/INVPL belum dicetak"
+
+    elif nxt == "invoice_billing":
+        if not po_has_invoice_for_po(db, po_id):
+            return "Invoice belum dibuat"
+
+    return None
+
+
+def auto_advance_if_ready(db: "Session", po_id: int) -> str | None:
+    """Auto-advance PO to next stage if conditions are met. Returns new stage or None."""
+    from app.models import PoHeader
+
+    row = db.get(PoHeader, po_id)
+    if not row:
+        return None
+
+    current_stage = (row.mkt_workflow_stage or "input_system").strip()
+    nxt = next_mkt_stage(current_stage)
+
+    if nxt is None:
+        return None
+
+    stuck_reason = get_stuck_reason(db, po_id)
+    if stuck_reason is not None:
+        return None
+
+    now = datetime.utcnow()
+    row.mkt_workflow_stage = nxt
+    row.mkt_workflow_updated_at = now
+
+    if nxt == "rekap_printed" and row.rekap_printed_at is None:
+        row.rekap_printed_at = now
+
+    return nxt
 
 
 def validate_mkt_advance(

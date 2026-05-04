@@ -2,10 +2,19 @@
   <div class="space-y-4">
     <AdminSection :title="t('pages.packing.title')" :subtitle="t('pages.packing.subtitle')">
       <template #actions>
+        <el-select
+          v-model="statusTableFilter"
+          clearable
+          :placeholder="t('pages.packing.filterPackingStatus')"
+          class="w-36 mr-2"
+        >
+          <el-option :label="t('status.draft')" value="draft" />
+          <el-option :label="t('status.done')" value="done" />
+        </el-select>
         <el-button v-if="canCreate" type="primary" :loading="loading" @click="openCreate">{{ t('pages.packing.create') }}</el-button>
       </template>
       <el-alert :title="t('pages.packing.guide')" type="info" show-icon :closable="false" class="mb-3" />
-      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.packing.tableEmpty')">
+      <el-table :data="displayRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.packing.tableEmpty')">
         <el-table-column prop="packing_number" :label="t('pages.packing.packingNo')" min-width="160" />
         <el-table-column :label="t('pages.packing.production')" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ prodLabel(row.production_id) }}</template>
@@ -117,7 +126,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Document, Grid, Printer, Select, Stamp } from '@element-plus/icons-vue'
@@ -136,6 +145,13 @@ import {
 
 const { t } = useI18n()
 const rows = ref([])
+const statusTableFilter = ref('')
+
+const displayRows = computed(() => {
+  const f = (statusTableFilter.value || '').toLowerCase()
+  if (!f) return rows.value
+  return (rows.value || []).filter((r) => (r.status || '').toLowerCase() === f)
+})
 const canCreate = can('packing', 'create')
 const canUpdate = can('packing', 'update')
 const canPrint = can('packing', 'print')

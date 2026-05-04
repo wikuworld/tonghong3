@@ -14,22 +14,27 @@
               <el-input v-model="filter.orderNo" :placeholder="t('common.placeholder.orderNo')" />
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="12" :md="6">
-            <el-form-item :label="`${t('common.date')} ${t('common.from')}`">
-              <el-date-picker v-model="filter.fromDate" type="date" class="w-full" :placeholder="t('common.placeholder.fromDate')" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12" :md="6">
-            <el-form-item :label="`${t('common.date')} ${t('common.to')}`">
-              <el-date-picker v-model="filter.toDate" type="date" class="w-full" :placeholder="t('common.placeholder.toDate')" />
+          <el-col :xs="24" :sm="24" :md="6">
+            <el-form-item :label="t('common.dateRange')">
+              <el-date-picker
+                v-model="filter.dateRange"
+                type="daterange"
+                :range-separator="t('common.rangeSeparator')"
+                :start-placeholder="t('common.startDate')"
+                :end-placeholder="t('common.endDate')"
+                class="w-full"
+                :shortcuts="dateShortcuts"
+                unlink-panels
+                value-format="YYYY-MM-DD"
+              />
             </el-form-item>
           </el-col>
         </el-row>
       </el-form>
       <div class="mt-1 flex flex-wrap gap-2">
-        <el-button type="primary">{{ t('common.search') }}</el-button>
-        <el-button type="success">{{ t('pages.deliveryPull.title') }}</el-button>
-        <el-button @click="resetFilter">{{ t('common.reset') }}</el-button>
+        <el-button type="primary" :icon="Search">{{ t('common.search') }}</el-button>
+        <el-button type="success" :icon="Check">{{ t('pages.deliveryPull.title') }}</el-button>
+        <el-button :icon="Refresh" @click="resetFilter">{{ t('common.reset') }}</el-button>
       </div>
     </div>
 
@@ -61,20 +66,75 @@
     </el-table>
 
     <div class="mt-4 flex justify-end gap-2">
-      <el-button>{{ t('common.cancel') }}</el-button>
-      <el-button type="primary">{{ t('common.confirm') }}</el-button>
+      <el-button :icon="Close">{{ t('common.cancel') }}</el-button>
+      <el-button type="primary" :icon="Check">{{ t('common.confirm') }}</el-button>
     </div>
   </AdminSection>
 </template>
 
 <script setup>
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Delete, EditPen, View } from '@element-plus/icons-vue'
+import { Delete, EditPen, View, Search, Close, Refresh, Check } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 
 const { t } = useI18n()
-const filter = reactive({ customer: '', orderNo: '', fromDate: '', toDate: '' })
+const filter = reactive({ customer: '', orderNo: '', dateRange: [] })
+
+const dateShortcuts = computed(() => [
+  {
+    text: t('common.shortcutToday'),
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutLast7Days'),
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 7)
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutLast30Days'),
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 30)
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutLast90Days'),
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 90)
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutThisMonth'),
+    value: () => {
+      const end = new Date()
+      const start = new Date(end.getFullYear(), end.getMonth(), 1)
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutLastMonth'),
+    value: () => {
+      const end = new Date()
+      end.setDate(0)
+      const start = new Date(end.getFullYear(), end.getMonth(), 1)
+      return [start, end]
+    },
+  },
+])
 
 const rows = reactive([
   { no: 1, sj: 'THI-M26026001', customer: 'PT. CUSTOMER', material: 'Split Suede', thickness: '1.2 - 1.4', color: 'Grey', qty: 327.8, roll: 2, pcs: 15 },
@@ -84,7 +144,6 @@ const rows = reactive([
 const resetFilter = () => {
   filter.customer = ''
   filter.orderNo = ''
-  filter.fromDate = ''
-  filter.toDate = ''
+  filter.dateRange = []
 }
 </script>

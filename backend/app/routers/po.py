@@ -1,29 +1,32 @@
 import logging
+import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
-from app.models import Brand, BrandBuyerMap, CustomerBrandMapping, PoDetail, PoDetailDelivery, PoHeader, SubconInvoice, PpicsAssignment
+from app.models import Brand, CustomerBrandMapping, FluorescentColorMaster, PoDetail, PoDetailDelivery, PoHeader, SubconInvoice, PpicsAssignment
 from app.services.audit import log_change
 from app.services.numbering import next_number
 from app.schemas import (
     DeliverySchedulesPayload,
-    DeliveryScheduleItem,
     PoDetailCreate,
+    PoDetailDeliveryOut,
     PoDetailOut,
     PoDetailUpdate,
     PoHeaderCreate,
     PoHeaderOut,
     PoHeaderUpdate,
+    PoHeaderPageOut,
 )
 from app.services.business_rules import validate_po_status_transition
 from app.services.mkt_workflow import (
     MKT_STAGES_ORDER,
     apply_mkt_stage,
+    get_stuck_reason,
     next_mkt_stage,
     prev_mkt_stage,
     validate_mkt_advance,
@@ -83,7 +86,6 @@ def _detail_loaded(db: Session, detail_id: int) -> Optional[PoDetail]:
 def _validate_customer_brand_buyer(db: Session, data: dict) -> None:
     customer_id = data.get("customer_id")
     brand_id = data.get("brand_id")
-    buyer_code = (data.get("buyer") or "").strip()
     if not brand_id:
         return
     brand = db.get(Brand, brand_id)
@@ -98,21 +100,77 @@ def _validate_customer_brand_buyer(db: Session, data: dict) -> None:
         ).first()
         if not mapping:
             raise HTTPException(status_code=400, detail="Brand tidak terkait customer terpilih")
-    if buyer_code:
-        allowed = db.scalars(
-            select(BrandBuyerMap).where(
-                BrandBuyerMap.brand_id == brand_id,
-                BrandBuyerMap.buyer_code == buyer_code,
-            )
-        ).first()
-        has_any_map = db.scalars(
-            select(BrandBuyerMap.id).where(BrandBuyerMap.brand_id == brand_id)
-        ).first()
-        if has_any_map and not allowed:
-            raise HTTPException(
-                status_code=400,
-                detail="Buyer tidak valid untuk brand ini",
-            )
+
+
+def _season_candidates_from_date(order_date) -> list[str]:
+    if not order_date:
+        return []
+    year = int(order_date.year)
+    month = int(order_date.month)
+    if month <= 6:
+        return [f"SS {year}", f"SPSU {year}", f"SP/SU {str(year)[-2:]}"]
+    return [f"FW {year}", f"FA/HO {str(year)[-2:]}", f"FAHO {str(year)[-2:]}"]
+
+
+def _validate_fluorescent_color_master(
+    db: Session,
+    po: PoHeader,
+    *,
+    color_family: Optional[str],
+    color: Optional[str],
+) -> None:
+    if (color_family or "").strip().lower() != "fluorescent":
+        return
+    color_raw = (color or "").strip()
+    if not color_raw:
+        return
+    buyer_code = (po.buyer or "").strip().upper()
+    if not buyer_code:
+        return
+    strict_buyers = {"NB", "ADIDAS", "UA", "NIKE", "OIA", "OIA NIKE"}
+
+    color_norm = re.sub(r"\s+", " ", color_raw).strip().lower()
+    color_code_hint = None
+    m = re.search(r"\(([A-Za-z0-9\-]+)\)\s*$", color_raw)
+    if m:
+        color_code_hint = m.group(1).strip().lower()
+
+    season_labels = _season_candidates_from_date(po.order_date)
+    season_set = {s.lower() for s in season_labels}
+
+    rows = db.scalars(
+        select(FluorescentColorMaster).where(
+            FluorescentColorMaster.buyer_code.in_([buyer_code, "GLOBAL"]),
+            FluorescentColorMaster.is_active.is_(True),
+        )
+    ).all()
+    if buyer_code not in strict_buyers and not any(r.buyer_code == buyer_code for r in rows):
+        return
+
+    def row_match(row: FluorescentColorMaster) -> bool:
+        name = re.sub(r"\s+", " ", str(row.color_name or "")).strip().lower()
+        code = str(row.color_code or "").strip().lower()
+        if color_norm and (color_norm == name or color_norm in name or name in color_norm):
+            pass
+        elif color_code_hint and code and color_code_hint == code:
+            pass
+        else:
+            return False
+        if not season_set:
+            return True
+        if not row.season_label:
+            return True
+        return str(row.season_label).strip().lower() in season_set
+
+    if any(row_match(r) for r in rows):
+        return
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"Warna fluorescent '{color_raw}' tidak terdaftar untuk buyer {buyer_code} "
+            f"pada season terkait. Silakan cek master fluorescent color."
+        ),
+    )
 
 
 @router.get("/po/mkt-workflow-stages")
@@ -124,6 +182,11 @@ def mkt_workflow_stages(_user=Depends(get_current_user)) -> dict:
 def list_po(
     mkt_workflow_stage: Optional[str] = Query(None),
     q: Optional[str] = Query(None, description="Search PO no/customer/buyer"),
+    customer_id: Optional[int] = Query(None),
+    buyer: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    po_category: Optional[str] = Query(None),
+    order_date: Optional[str] = Query(None, description="Filter by order date (YYYY-MM-DD)"),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -132,8 +195,19 @@ def list_po(
     stmt = select(PoHeader).order_by(PoHeader.id.desc()).limit(limit).offset(offset)
     if mkt_workflow_stage:
         stmt = stmt.where(PoHeader.mkt_workflow_stage == mkt_workflow_stage)
+    if customer_id is not None:
+        stmt = stmt.where(PoHeader.customer_id == customer_id)
+    if buyer:
+        stmt = stmt.where(PoHeader.buyer == buyer)
+    if status:
+        stmt = stmt.where(PoHeader.status == status)
+    if po_category:
+        stmt = stmt.where(PoHeader.po_category == po_category)
+    if order_date:
+        stmt = stmt.where(PoHeader.order_date == order_date)
     if q:
         like = f"%{q}%"
+        po_ids_by_detail_material = select(PoDetail.po_id).where(PoDetail.material_name.ilike(like))
         stmt = stmt.where(
             or_(
                 PoHeader.po_number.ilike(like),
@@ -142,9 +216,74 @@ def list_po(
                 PoHeader.po_customer_ref.ilike(like),
                 PoHeader.customer_name_snapshot.ilike(like),
                 PoHeader.customer_code.ilike(like),
+                PoHeader.id.in_(po_ids_by_detail_material),
             )
         )
-    return list(db.scalars(stmt).all())
+    results = list(db.scalars(stmt).all())
+
+    for po in results:
+        po.stuck_reason = get_stuck_reason(db, po.id)
+
+    return results
+
+
+@router.get("/po/page", response_model=PoHeaderPageOut)
+def list_po_page(
+    mkt_workflow_stage: Optional[str] = Query(None),
+    q: Optional[str] = Query(None, description="Search PO no/customer/buyer"),
+    customer_id: Optional[int] = Query(None),
+    buyer: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    po_category: Optional[str] = Query(None),
+    order_date: Optional[str] = Query(None, description="Filter by order date (YYYY-MM-DD)"),
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> PoHeaderPageOut:
+    stmt = select(PoHeader)
+    count_stmt = select(func.count(PoHeader.id))
+    if mkt_workflow_stage:
+        stmt = stmt.where(PoHeader.mkt_workflow_stage == mkt_workflow_stage)
+        count_stmt = count_stmt.where(PoHeader.mkt_workflow_stage == mkt_workflow_stage)
+    if customer_id is not None:
+        stmt = stmt.where(PoHeader.customer_id == customer_id)
+        count_stmt = count_stmt.where(PoHeader.customer_id == customer_id)
+    if buyer:
+        stmt = stmt.where(PoHeader.buyer == buyer)
+        count_stmt = count_stmt.where(PoHeader.buyer == buyer)
+    if status:
+        stmt = stmt.where(PoHeader.status == status)
+        count_stmt = count_stmt.where(PoHeader.status == status)
+    if po_category:
+        stmt = stmt.where(PoHeader.po_category == po_category)
+        count_stmt = count_stmt.where(PoHeader.po_category == po_category)
+    if order_date:
+        stmt = stmt.where(PoHeader.order_date == order_date)
+        count_stmt = count_stmt.where(PoHeader.order_date == order_date)
+    if q:
+        like = f"%{q}%"
+        po_ids_by_detail_material = select(PoDetail.po_id).where(PoDetail.material_name.ilike(like))
+        where_clause = or_(
+            PoHeader.po_number.ilike(like),
+            PoHeader.buyer.ilike(like),
+            PoHeader.remark.ilike(like),
+            PoHeader.po_customer_ref.ilike(like),
+            PoHeader.customer_name_snapshot.ilike(like),
+            PoHeader.customer_code.ilike(like),
+            PoHeader.id.in_(po_ids_by_detail_material),
+        )
+        stmt = stmt.where(where_clause)
+        count_stmt = count_stmt.where(where_clause)
+    total = int(db.scalar(count_stmt) or 0)
+    items = list(
+        db.scalars(
+            stmt.order_by(PoHeader.id.desc()).limit(limit).offset(offset)
+        ).all()
+    )
+    for po in items:
+        po.stuck_reason = get_stuck_reason(db, po.id)
+    return PoHeaderPageOut(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post("/po/{po_id}/mkt-workflow/advance", response_model=PoHeaderOut)
@@ -228,35 +367,72 @@ def create_po(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "marketing", "sales")),
 ) -> PoHeader:
-    data = body.model_dump(exclude_unset=True)
-    _validate_customer_brand_buyer(db, data)
-    if not data.get("po_number"):
-        data["po_number"] = next_number(db, "SO", "SO")
-    row = PoHeader(**data)
-    db.add(row)
-    db.flush()
-    log_change(
-        db,
-        entity_type="sales_order",
-        entity_id=row.id,
-        action="create",
-        after={"po_number": row.po_number, "status": row.status},
-        actor=user.username,
-    )
-    create_notification_for_roles(
-        db,
-        ("admin", "marketing", "ppic"),
-        title=f"PO baru {row.po_number}",
-        message=f"Sales order dibuat oleh {user.username}",
-        category="po",
-        entity_type="sales_order",
-        entity_id=row.id,
-        route_path="/admin/po",
-        route_query={"po_id": row.id},
-    )
-    db.commit()
-    db.refresh(row)
-    return row
+    try:
+        data = body.model_dump(exclude_unset=True)
+        _validate_customer_brand_buyer(db, data)
+        if not data.get("po_number"):
+            data["po_number"] = next_number(db, "SO", "SO")
+        else:
+            # Check if po_number already exists, auto-generate if duplicate
+            existing = db.scalars(
+                select(PoHeader).where(PoHeader.po_number == data["po_number"])
+            ).first()
+            if existing:
+                data["po_number"] = next_number(db, "SO", "SO")
+        # Auto-generate po_customer_ref if empty
+        if not data.get("po_customer_ref"):
+            data["po_customer_ref"] = f"PO-{data['po_number']}"
+        row = PoHeader(**data)
+        db.add(row)
+        db.flush()
+        log_change(
+            db,
+            entity_type="sales_order",
+            entity_id=row.id,
+            action="create",
+            after={"po_number": row.po_number, "status": row.status},
+            actor=user.username,
+        )
+        create_notification_for_roles(
+            db,
+            ("admin", "marketing", "ppic"),
+            title=f"PO baru {row.po_number}",
+            message=f"Sales order dibuat oleh {user.username}",
+            category="po",
+            entity_type="sales_order",
+            entity_id=row.id,
+            route_path="/admin/po",
+            route_query={"po_id": row.id},
+        )
+        db.commit()
+        db.refresh(row)
+        return row
+    except HTTPException:
+        db.rollback()
+        raise
+    except IntegrityError as e:
+        db.rollback()
+        log.warning("create_po integrity_error: %s", e)
+        raise HTTPException(
+            status_code=409,
+            detail="Simpan PO gagal (konflik data, misalnya nomor PO unik).",
+        ) from e
+    except SQLAlchemyError as e:
+        db.rollback()
+        log.exception("create_po failed")
+        orig_msg = ""
+        if getattr(e, "orig", None) is not None:
+            orig_msg = str(e.orig)
+        low = f"{e} {orig_msg}".lower()
+        if "unknown column" in low or "doesn't exist" in low or "does not exist" in low:
+            raise HTTPException(
+                status_code=503,
+                detail="Skema database belum selaras dengan kode. Jalankan migrasi: alembic upgrade head (folder backend).",
+            ) from e
+        raise HTTPException(
+            status_code=500,
+            detail="Simpan PO gagal (database). Cek log server untuk detail.",
+        ) from e
 
 
 @router.post("/po/{po_id}/duplicate", response_model=PoHeaderOut)
@@ -300,7 +476,7 @@ def duplicate_po(
             delivery_address=src.delivery_address,
             brand_id=src.brand_id,
             marketing_excel_date_serial=None,
-            po_customer_ref=src.po_customer_ref,
+            po_customer_ref=src.po_customer_ref or None,
             order_type_label=src.order_type_label,
             brand_name_snapshot=src.brand_name_snapshot,
             customer_name_snapshot=src.customer_name_snapshot,
@@ -514,7 +690,14 @@ def add_po_detail(
     po = db.get(PoHeader, po_id)
     if not po:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
-    row = PoDetail(po_id=po_id, **body.model_dump(exclude_unset=True))
+    payload = body.model_dump(exclude_unset=True)
+    _validate_fluorescent_color_master(
+        db,
+        po,
+        color_family=payload.get("color_family"),
+        color=payload.get("color"),
+    )
+    row = PoDetail(po_id=po_id, **payload)
     db.add(row)
     db.flush()
     log_change(
@@ -548,6 +731,14 @@ def update_po_detail(
     if not row:
         raise HTTPException(status_code=404, detail="Detail PO tidak ditemukan")
     data = body.model_dump(exclude_unset=True)
+    po = db.get(PoHeader, row.po_id)
+    if po:
+        _validate_fluorescent_color_master(
+            db,
+            po,
+            color_family=data.get("color_family", row.color_family),
+            color=data.get("color", row.color),
+        )
 
     # Harga otomatis: hanya admin/finance yang boleh mengubah unit_price langsung.
     if "unit_price" in data and user.role not in ("admin", "finance"):
@@ -616,7 +807,7 @@ def delete_po_detail(
     return {"status": "deleted"}
 
 
-@router.put("/po-detail/{detail_id}/delivery-schedules")
+@router.put("/po-detail/{detail_id}/delivery-schedules", response_model=list[PoDetailDeliveryOut])
 def set_po_detail_delivery_schedules(
     detail_id: int,
     body: DeliverySchedulesPayload,
@@ -626,23 +817,66 @@ def set_po_detail_delivery_schedules(
     row = db.get(PoDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail PO tidak ditemukan")
-
-    row.delivery_schedules.clear()
+    seq_seen: set[int] = set()
     for item in body.schedules:
-        delivery = PoDetailDelivery(
-            po_detail_id=detail_id,
-            sequence_no=item.sequence_no,
-            qty=item.qty,
-            delivery_date=item.delivery_date,
+        if item.sequence_no <= 0:
+            raise HTTPException(status_code=400, detail="Nomor urutan delivery harus lebih dari 0")
+        if item.sequence_no in seq_seen:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Nomor urutan delivery duplikat: {item.sequence_no}",
+            )
+        seq_seen.add(item.sequence_no)
+
+    try:
+        db.query(PoDetailDelivery).filter(PoDetailDelivery.po_detail_id == detail_id).delete(
+            synchronize_session=False
         )
-        row.delivery_schedules.append(delivery)
+        db.flush()
+        for item in sorted(body.schedules, key=lambda x: x.sequence_no):
+            db.add(
+                PoDetailDelivery(
+                po_detail_id=detail_id,
+                sequence_no=item.sequence_no,
+                qty=item.qty,
+                delivery_date=item.delivery_date,
+                )
+            )
 
-    db.commit()
-    db.refresh(row)
-    return row.delivery_schedules
+        db.commit()
+        return list(
+            db.scalars(
+                select(PoDetailDelivery)
+                .where(PoDetailDelivery.po_detail_id == detail_id)
+                .order_by(PoDetailDelivery.sequence_no.asc())
+            ).all()
+        )
+    except IntegrityError as e:
+        db.rollback()
+        log.warning("set_po_detail_delivery_schedules integrity_error detail_id=%s: %s", detail_id, e)
+        raise HTTPException(
+            status_code=409,
+            detail="Simpan jadwal delivery gagal (konflik data). Periksa urutan/jadwal yang duplikat.",
+        ) from e
+    except SQLAlchemyError as e:
+        db.rollback()
+        log.exception("set_po_detail_delivery_schedules failed detail_id=%s", detail_id)
+        orig_msg = ""
+        if getattr(e, "orig", None) is not None:
+            orig_msg = str(e.orig)
+        low = f"{e} {orig_msg}".lower()
+        if "unknown column" in low or "doesn't exist" in low or "does not exist" in low or "doesn't have a default value" in low:
+            raise HTTPException(
+                status_code=503,
+                detail="Skema database belum selaras untuk jadwal delivery. Jalankan migrasi terbaru (alembic upgrade head).",
+            ) from e
+        raise HTTPException(
+            status_code=500,
+            detail="Simpan jadwal delivery gagal (database). Cek log server untuk detail.",
+        ) from e
 
 
-@router.get("/po-detail/{detail_id}/delivery-schedules")
+@router.get("/po-detail/{detail_id}/delivery-schedules", response_model=list[PoDetailDeliveryOut])
 def get_po_detail_delivery_schedules(
     detail_id: int,
     db: Session = Depends(get_db),

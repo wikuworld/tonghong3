@@ -26,25 +26,18 @@
         <p class="filter-panel__title">{{ t('common.filter') }}</p>
         <el-form class="filter-form" label-position="top">
           <el-row :gutter="12">
-            <el-col :xs="24" :sm="12" :md="6">
-              <el-form-item :label="`${t('common.date')} ${t('common.from')}`">
+            <el-col :xs="24" :sm="24" :md="12">
+              <el-form-item :label="t('pages.reports.dateRange')">
                 <el-date-picker
-                  v-model="dateFrom"
-                  type="date"
+                  v-model="dateRange"
+                  type="daterange"
+                  :range-separator="t('common.rangeSeparator')"
+                  :start-placeholder="t('common.startDate')"
+                  :end-placeholder="t('common.endDate')"
                   value-format="YYYY-MM-DD"
                   class="w-full"
-                  :placeholder="t('common.placeholder.fromDate')"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :xs="24" :sm="12" :md="6">
-              <el-form-item :label="`${t('common.date')} ${t('common.to')}`">
-                <el-date-picker
-                  v-model="dateTo"
-                  type="date"
-                  value-format="YYYY-MM-DD"
-                  class="w-full"
-                  :placeholder="t('common.placeholder.toDate')"
+                  :shortcuts="dateShortcuts"
+                  unlink-panels
                 />
               </el-form-item>
             </el-col>
@@ -71,7 +64,7 @@
             </el-col>
             <el-col :xs="24" :md="2" class="reports-filter-action">
               <el-form-item label="&nbsp;">
-                <el-button type="primary" class="w-full" :loading="reportLoading" @click="runGenerateReport">
+                <el-button type="primary" :icon="DataAnalysis" class="w-full" :loading="reportLoading" @click="runGenerateReport">
                   {{ t('pages.reports.generateReport') }}
                 </el-button>
               </el-form-item>
@@ -270,7 +263,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Download, Printer } from '@element-plus/icons-vue'
+import { Download, Printer, DataAnalysis } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import {
   fetchReportPoOrderDescription,
@@ -283,12 +276,66 @@ import {
 const { t, te } = useI18n()
 
 const keyword = ref('')
-const dateFrom = ref('')
-const dateTo = ref('')
+const dateRange = ref([])
 const customer = ref('')
 const category = ref('')
 const dateField = ref('order')
 const customers = ref([])
+
+const dateShortcuts = computed(() => [
+  {
+    text: t('common.shortcutToday'),
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutLast7Days'),
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 7)
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutLast30Days'),
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 30)
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutLast90Days'),
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 90)
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutThisMonth'),
+    value: () => {
+      const end = new Date()
+      const start = new Date(end.getFullYear(), end.getMonth(), 1)
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutLastMonth'),
+    value: () => {
+      const end = new Date()
+      end.setDate(0)
+      const start = new Date(end.getFullYear(), end.getMonth(), 1)
+      return [start, end]
+    },
+  },
+])
 
 const reportLoading = ref(false)
 const dailyCsvLoading = ref(false)
@@ -315,8 +362,10 @@ function exportLinesCsv() {
 
 function buildReportQuery() {
   const q = {}
-  if (dateFrom.value) q.date_from = dateFrom.value
-  if (dateTo.value) q.date_to = dateTo.value
+  if (dateRange.value && dateRange.value.length === 2) {
+    q.date_from = dateRange.value[0]
+    q.date_to = dateRange.value[1]
+  }
   if (customer.value) q.customer = customer.value
   if (dateField.value) q.date_field = dateField.value
   return q

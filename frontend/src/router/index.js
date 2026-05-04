@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AdminLayout from '../layouts/AdminLayout.vue'
 import DashboardPage from '../views/admin/DashboardPage.vue'
 import CustomersPage from '../views/admin/CustomersPage.vue'
+import QuotationPage from '../views/admin/QuotationPage.vue'
 import PurchaseOrderPage from '../views/admin/PurchaseOrderPage.vue'
 import ProductionPage from '../views/admin/ProductionPage.vue'
 import QualityControlPage from '../views/admin/QualityControlPage.vue'
@@ -19,6 +20,7 @@ import BulkPriceUpdatePage from '../views/admin/BulkPriceUpdatePage.vue'
 import MarketingFlowPage from '../views/admin/MarketingFlowPage.vue'
 import MasterImportPage from '../views/admin/MasterImportPage.vue'
 import MasterItemsPage from '../views/admin/MasterItemsPage.vue'
+import FluorescentColorMasterPage from '../views/admin/FluorescentColorMasterPage.vue'
 import UserAccessPage from '../views/admin/UserAccessPage.vue'
 import CustomerBrandMappingPage from '../views/admin/CustomerBrandMappingPage.vue'
 import SubconInvoicePage from '../views/admin/SubconInvoicePage.vue'
@@ -49,6 +51,11 @@ const router = createRouter({
         { path: 'dashboard', component: DashboardPage, meta: { titleKey: 'menu.dashboard', roles: ROUTE_ROLES.dashboard } },
         { path: 'customers', component: CustomersPage, meta: { titleKey: 'menu.customers', roles: ROUTE_ROLES.customers } },
         {
+          path: 'quotations',
+          component: QuotationPage,
+          meta: { titleKey: 'menu.quotations', roles: ROUTE_ROLES.quotations },
+        },
+        {
           path: 'exchange-rates',
           component: ExchangeRatePage,
           meta: { titleKey: 'menu.exchangeRate', roles: ROUTE_ROLES.exchangeRates },
@@ -78,6 +85,7 @@ const router = createRouter({
         { path: 'customs', component: CustomsPage, meta: { titleKey: 'menu.customs', roles: ROUTE_ROLES.customs } },
         { path: 'master-import', component: MasterImportPage, meta: { titleKey: 'menu.masterImport', roles: ROUTE_ROLES.masterImport } },
         { path: 'master-items', component: MasterItemsPage, meta: { titleKey: 'menu.masterItems', roles: ROUTE_ROLES.masterItems } },
+        { path: 'fluorescent-colors', component: FluorescentColorMasterPage, meta: { titleKey: 'menu.fluorescentColors', roles: ROUTE_ROLES.fluorescentColors } },
         { path: 'user-access', component: UserAccessPage, meta: { titleKey: 'menu.userAccess', roles: ROUTE_ROLES.userAccess } },
         { path: 'customer-brand-mapping', component: CustomerBrandMappingPage, meta: { titleKey: 'menu.customerBrandMapping', roles: ROUTE_ROLES.customerBrandMapping } },
         { path: 'subcon-invoices', component: SubconInvoicePage, meta: { titleKey: 'menu.subconInvoice', roles: ROUTE_ROLES.subconInvoice } },

@@ -12,6 +12,12 @@ export const ACTION_MATRIX = {
     delete: ['admin'],
     advance: ['admin', 'marketing', 'ppic'],
   },
+  quotations: {
+    view: ['admin', 'marketing', 'sales', 'finance'],
+    create: ['admin', 'marketing', 'sales'],
+    update: ['admin', 'marketing', 'sales'],
+    delete: ['admin', 'marketing'],
+  },
   production: {
     view: ['admin', 'production', 'ppic', 'qc'],
     create: ['admin', 'production', 'ppic'],

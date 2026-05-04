@@ -15,6 +15,22 @@ class ORMBase(BaseModel):
 
 
 # --- Customers ---
+class CustomerContactIn(BaseModel):
+    name: Optional[str] = None
+    title: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
+class CustomerContactOut(ORMBase):
+    id: int
+    customer_id: Optional[int] = None
+    name: Optional[str] = None
+    title: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+
+
 class CustomerCreate(BaseModel):
     code: Optional[str] = None
     name: Optional[str] = None
@@ -28,13 +44,19 @@ class CustomerCreate(BaseModel):
     skep_kb_number: Optional[str] = None
     customs_office_code: Optional[str] = None
     address: Optional[str] = None
+    billing_address: Optional[str] = None
     remark: Optional[str] = None
+    is_active: bool = True
     is_export_customer: bool = False
-    bill_to: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
     wilayah_village_code: Optional[str] = None
+    payment_terms: Optional[str] = None
+    default_currency: Optional[str] = None
+    tax_mode: Optional[str] = None
+    reference_quotation: Optional[str] = None
+    contacts: list[CustomerContactIn] = Field(default_factory=list)
 
 
 class CustomerUpdate(BaseModel):
@@ -50,13 +72,19 @@ class CustomerUpdate(BaseModel):
     skep_kb_number: Optional[str] = None
     customs_office_code: Optional[str] = None
     address: Optional[str] = None
+    billing_address: Optional[str] = None
     remark: Optional[str] = None
+    is_active: Optional[bool] = None
     is_export_customer: Optional[bool] = None
-    bill_to: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
     wilayah_village_code: Optional[str] = None
+    payment_terms: Optional[str] = None
+    default_currency: Optional[str] = None
+    tax_mode: Optional[str] = None
+    reference_quotation: Optional[str] = None
+    contacts: Optional[list[CustomerContactIn]] = None
 
 
 class CustomerOut(ORMBase):
@@ -73,15 +101,111 @@ class CustomerOut(ORMBase):
     skep_kb_number: Optional[str] = None
     customs_office_code: Optional[str] = None
     address: Optional[str] = None
+    billing_address: Optional[str] = None
     remark: Optional[str] = None
+    is_active: bool = True
     is_export_customer: bool = False
-    bill_to: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
     wilayah_village_code: Optional[str] = None
+    payment_terms: Optional[str] = None
+    default_currency: Optional[str] = None
+    tax_mode: Optional[str] = None
+    reference_quotation: Optional[str] = None
+    contacts: list[CustomerContactOut] = Field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+
+class CustomerPageOut(BaseModel):
+    items: list[CustomerOut] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
+
+
+# --- Quotations (penawaran) ---
+class QuotationLineCreate(BaseModel):
+    master_item_id: Optional[int] = None
+    item_code: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+    specification: Optional[str] = None
+    quantity: Optional[Decimal] = None
+    unit: Optional[str] = "S/F"
+    unit_price: Optional[Decimal] = None
+    discount_amount: Optional[Decimal] = None
+    tax_rate: Optional[Decimal] = None
+
+
+class QuotationLineUpdate(BaseModel):
+    item_code: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+    specification: Optional[str] = None
+    quantity: Optional[Decimal] = None
+    unit: Optional[str] = None
+    unit_price: Optional[Decimal] = None
+    discount_amount: Optional[Decimal] = None
+    tax_rate: Optional[Decimal] = None
+
+
+class QuotationLineOut(ORMBase):
+    id: int
+    quotation_id: int
+    line_no: int
+    master_item_id: Optional[int] = None
+    item_code: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+    specification: Optional[str] = None
+    quantity: Optional[Decimal] = None
+    unit: Optional[str] = None
+    unit_price: Optional[Decimal] = None
+    discount_amount: Optional[Decimal] = None
+    tax_rate: Optional[Decimal] = None
+    line_amount: Optional[Decimal] = None
+
+
+class QuotationHeaderCreate(BaseModel):
+    customer_id: Optional[int] = None
+    quotation_date: Optional[date] = None
+    currency: Optional[str] = "USD"
+    payment_terms: Optional[str] = None
+    valid_until: Optional[date] = None
+    salesperson: Optional[str] = None
+    remark: Optional[str] = None
+    status: str = "draft"
+
+
+class QuotationHeaderUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    quotation_date: Optional[date] = None
+    currency: Optional[str] = None
+    payment_terms: Optional[str] = None
+    valid_until: Optional[date] = None
+    salesperson: Optional[str] = None
+    remark: Optional[str] = None
+    status: Optional[str] = None
+
+
+class QuotationHeaderOut(ORMBase):
+    id: int
+    quotation_number: Optional[str] = None
+    customer_id: Optional[int] = None
+    quotation_date: Optional[date] = None
+    currency: Optional[str] = None
+    payment_terms: Optional[str] = None
+    valid_until: Optional[date] = None
+    salesperson: Optional[str] = None
+    remark: Optional[str] = None
+    status: str = "draft"
+    total_amount: Optional[Decimal] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    lines: Optional[list[QuotationLineOut]] = None
+    customer_name: Optional[str] = None
 
 
 # --- Buyer price lists ---
@@ -91,7 +215,6 @@ class BuyerPriceListCreate(BaseModel):
     period_label: Optional[str] = None
     period_start: Optional[date] = None
     period_end: Optional[date] = None
-    source_label: Optional[str] = None
     currency: str = "USD"
 
 
@@ -100,7 +223,6 @@ class BuyerPriceListUpdate(BaseModel):
     period_label: Optional[str] = None
     period_start: Optional[date] = None
     period_end: Optional[date] = None
-    source_label: Optional[str] = None
     currency: Optional[str] = None
 
 
@@ -369,11 +491,19 @@ class PoHeaderOut(ORMBase):
     rekap_printed_at: Optional[datetime] = None
     material_followup_remark: Optional[str] = None
     material_followup_done: Optional[bool] = None
+    stuck_reason: Optional[str] = None
 
     @computed_field
     @property
     def so_number(self) -> Optional[str]:
         return self.po_number
+
+
+class PoHeaderPageOut(BaseModel):
+    items: list[PoHeaderOut] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 20
+    offset: int = 0
 
 
 class PoDetailDeliveryOut(ORMBase):
@@ -519,6 +649,7 @@ class DeliveryHeaderCreate(BaseModel):
     bc_number: Optional[str] = None
     bc_date: Optional[date] = None
     status: str = "draft"
+    delivery_zone: Optional[str] = None
 
 
 class DeliveryHeaderUpdate(BaseModel):
@@ -532,6 +663,7 @@ class DeliveryHeaderUpdate(BaseModel):
     bc_date: Optional[date] = None
     status: Optional[str] = None
     packing_id: Optional[int] = None
+    delivery_zone: Optional[str] = None
 
 
 class DeliveryDetailCreate(BaseModel):
@@ -634,21 +766,28 @@ class InvoiceDetailCreate(BaseModel):
 # --- Master Item & Master Price (sheet Excel) ---
 class MasterItemCreate(BaseModel):
     item_code: str
-    thickness_mm: Optional[Decimal] = None
-    thickness_range: Optional[str] = None
+    category: str
     material_name: Optional[str] = None
-    emboss: Optional[str] = None
+    thickness_range: Optional[str] = None
     color: Optional[str] = None
-    softness: Optional[str] = None
-    color_reference: Optional[str] = None
-    backing: Optional[str] = None
-    quantity_order_default: Optional[Decimal] = None
-    style_article: Optional[str] = None
-    model: Optional[str] = None
-    category: Optional[str] = None
-    exim_material_code: Optional[str] = None
-    color_standard: Optional[str] = None
-    model_takedown: Optional[str] = None
+    emboss: Optional[str] = None
+
+    @field_validator("category")
+    @classmethod
+    def validate_master_item_category(cls, v: str) -> str:
+        raw = str(v or "").strip().lower()
+        alias = {
+            "pu": "PU",
+            "suide": "Suide",
+            "suede": "Suide",
+            "subkon": "SubKon",
+            "subcont": "SubKon",
+            "subcontract": "SubKon",
+        }
+        out = alias.get(raw)
+        if not out:
+            raise ValueError("category harus salah satu: PU, Suide, SubKon")
+        return out
 
 
 class MasterItemOut(ORMBase):

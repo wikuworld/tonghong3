@@ -1,6 +1,6 @@
 <template>
-  <el-container class="admin-root min-h-screen">
-    <el-aside :width="isSidebarCollapsed ? '64px' : '240px'" class="admin-sidebar border-r border-slate-200 bg-slate-900 text-white">
+  <el-container class="admin-root">
+    <el-aside :width="isSidebarCollapsed ? '64px' : '240px'" class="admin-sidebar">
       <div class="border-b border-slate-800 px-5 py-4" :class="{ 'px-2': isSidebarCollapsed }">
         <div class="flex items-center gap-3">
           <img v-show="!isSidebarCollapsed" :src="logoPath" alt="CDS Logo" class="h-8 w-auto object-contain" />
@@ -14,76 +14,76 @@
           </div>
         </div>
       </div>
+      
       <el-menu
         :default-active="route.path"
         :collapse="isSidebarCollapsed"
-        class="admin-sidebar-menu el-menu-vertical-demo border-none bg-transparent text-white"
+        class="admin-sidebar-menu"
         background-color="#0f172a"
         text-color="#cbd5e1"
         active-text-color="#ffffff"
         @select="goTo"
       >
-        <el-menu-item-group :title="t('common.nav.erp')">
-          <el-sub-menu index="erp-flow" v-if="filteredErpFlowMenus.length">
-            <template #title>
-              <span class="admin-subgroup-title">
-                <el-icon><Share /></el-icon>
-                <span>{{ t('common.nav.flow') }}</span>
-              </span>
-            </template>
-            <el-menu-item v-for="item in filteredErpFlowMenus" :key="item.path" :index="item.path">
-              <el-icon><component :is="item.icon" /></el-icon>
-              <span>{{ t(item.labelKey) }}</span>
-            </el-menu-item>
-          </el-sub-menu>
-          <el-sub-menu index="erp-master" v-if="filteredErpMasterMenus.length">
-            <template #title>
-              <span class="admin-subgroup-title">
-                <el-icon><Files /></el-icon>
-                <span>{{ t('common.nav.masterData') }}</span>
-              </span>
-            </template>
-            <el-menu-item v-for="item in filteredErpMasterMenus" :key="item.path" :index="item.path">
-              <el-icon><component :is="item.icon" /></el-icon>
-              <span>{{ t(item.labelKey) }}</span>
-            </el-menu-item>
-          </el-sub-menu>
-          <el-sub-menu index="erp-system" v-if="filteredErpSystemMenus.length">
-            <template #title>
-              <span class="admin-subgroup-title">
-                <el-icon><Setting /></el-icon>
-                <span>{{ t('common.nav.system') }}</span>
-              </span>
-            </template>
-            <el-menu-item v-for="item in filteredErpSystemMenus" :key="item.path" :index="item.path">
-              <el-icon><component :is="item.icon" /></el-icon>
-              <span>{{ t(item.labelKey) }}</span>
-            </el-menu-item>
-          </el-sub-menu>
-        </el-menu-item-group>
-        <el-menu-item-group :title="t('common.nav.mrp')">
-          <el-menu-item v-for="item in filteredMrpMenus" :key="item.path" :index="item.path">
+        <div v-show="!isSidebarCollapsed" class="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          {{ t('common.nav.erp') }}
+        </div>
+        
+        <el-sub-menu v-if="filteredErpFlowMenus.length" index="erp-flow">
+          <template #title>
+            <el-icon><Share /></el-icon>
+            <span>{{ t('common.nav.flow') }}</span>
+          </template>
+          <el-menu-item v-for="item in filteredErpFlowMenus" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ t(item.labelKey) }}</span>
+            <el-badge v-if="getBadgeCount(item.path) > 0" :value="getBadgeCount(item.path)" :max="99" class="menu-badge" />
+          </el-menu-item>
+        </el-sub-menu>
+        
+        <el-sub-menu v-if="filteredErpMasterMenus.length" index="erp-master">
+          <template #title>
+            <el-icon><Files /></el-icon>
+            <span>{{ t('common.nav.masterData') }}</span>
+          </template>
+          <el-menu-item v-for="item in filteredErpMasterMenus" :key="item.path" :index="item.path">
             <el-icon><component :is="item.icon" /></el-icon>
             <span>{{ t(item.labelKey) }}</span>
           </el-menu-item>
-        </el-menu-item-group>
+        </el-sub-menu>
+        
+        <el-sub-menu v-if="filteredErpSystemMenus.length" index="erp-system">
+          <template #title>
+            <el-icon><Setting /></el-icon>
+            <span>{{ t('common.nav.system') }}</span>
+          </template>
+          <el-menu-item v-for="item in filteredErpSystemMenus" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ t(item.labelKey) }}</span>
+          </el-menu-item>
+        </el-sub-menu>
+        
+        <div v-show="!isSidebarCollapsed" class="px-3 py-2 mt-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+          {{ t('common.nav.mrp') }}
+        </div>
+        
+        <el-menu-item v-for="item in filteredMrpMenus" :key="item.path" :index="item.path">
+          <el-icon><component :is="item.icon" /></el-icon>
+          <span>{{ t(item.labelKey) }}</span>
+          <el-badge v-if="getBadgeCount(item.path) > 0" :value="getBadgeCount(item.path)" :max="99" class="menu-badge" />
+        </el-menu-item>
       </el-menu>
     </el-aside>
 
-    <el-container class="admin-layout-main min-w-0 flex-1" :style="{ marginLeft: isSidebarCollapsed ? '64px' : '240px' }">
-      <el-header class="admin-header flex min-h-[56px] flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white py-2" :style="{ left: isSidebarCollapsed ? '64px' : '240px' }">
-        <div class="flex items-center gap-3">
-          <el-button text @click="toggleSidebar">
-            <el-icon size="20">
-              <Expand v-if="isSidebarCollapsed" />
-              <Fold v-else />
-            </el-icon>
-          </el-button>
-          <h1 class="truncate text-base font-semibold text-slate-800">
-            {{ t(route.meta.titleKey || 'menu.dashboard') }}
-          </h1>
-        </div>
-        <div class="flex shrink-0 flex-wrap items-center gap-2 sm:gap-3">
+    <el-container>
+      <el-header class="admin-header" :style="{ left: isSidebarCollapsed ? '64px' : '240px' }">
+        <el-button text @click="toggleSidebar">
+          <el-icon size="20">
+            <Expand v-if="isSidebarCollapsed" />
+            <Fold v-else />
+          </el-icon>
+        </el-button>
+        
+        <div class="flex items-center gap-2 ml-auto">
           <el-badge :value="unreadCount" :hidden="unreadCount <= 0" class="admin-notification-badge">
             <el-popover placement="bottom-end" :width="340" trigger="click" @show="loadNotifications">
               <template #reference>
@@ -117,45 +117,54 @@
               </template>
             </el-popover>
           </el-badge>
+          
           <el-dropdown trigger="click">
-            <el-button>
-              <el-icon class="mr-1"><UserFilled /></el-icon>
-              {{ currentUser?.username || '-' }}
+            <el-button circle>
+              <el-icon><UserFilled /></el-icon>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
+                <div class="px-4 py-2 border-b border-gray-100">
+                  <div class="font-medium">{{ currentUser?.username || '-' }}</div>
+                  <div class="text-xs text-gray-500">{{ currentUser?.role || '-' }}</div>
+                </div>
                 <el-dropdown-item disabled>
-                  {{ t('common.profileUser') }}: {{ currentUser?.username || '-' }}
+                  <span class="text-gray-400">{{ t('common.profileUser') }}:</span> {{ currentUser?.username || '-' }}
                 </el-dropdown-item>
                 <el-dropdown-item disabled>
-                  {{ t('common.profileRole') }}: {{ currentUser?.role || '-' }}
+                  <span class="text-gray-400">{{ t('common.profileRole') }}:</span> {{ currentUser?.role || '-' }}
                 </el-dropdown-item>
                 <el-dropdown-item disabled>
-                  {{ t('common.profileStatus') }}:
+                  <span class="text-gray-400">{{ t('common.profileStatus') }}:</span>
                   {{ currentUser?.is_active ? t('status.active') : t('status.inactive') }}
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-          <span class="hidden text-sm text-slate-500 sm:inline">{{ t('common.language') }}</span>
-          <el-select
-            v-model="currentLocale"
-            class="admin-locale-select"
-            @change="onChangeLocale"
-          >
-            <el-option
-              v-for="option in localeOptions"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
-          </el-select>
+          
+          <el-dropdown trigger="click" @command="onChangeLocale">
+            <el-button circle>
+              <span class="text-xs font-bold">{{ getCurrentLangCode() }}</span>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="lang in languageOptions" :key="lang.value" :command="lang.value">
+                  <span class="flex items-center gap-2">
+                    <span class="w-8 text-center font-bold">{{ lang.code }}</span>
+                    <span>{{ lang.label }}</span>
+                    <el-icon v-if="currentLocale === lang.value" class="ml-auto"><Check /></el-icon>
+                  </span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </el-header>
 
-      <el-main class="admin-main min-w-0 overflow-x-auto bg-slate-50 p-4">
+      <el-main class="admin-main" :style="{ marginLeft: isSidebarCollapsed ? '64px' : '240px' }">
         <router-view />
       </el-main>
+
       <el-footer class="admin-footer" :style="{ left: isSidebarCollapsed ? '64px' : '240px' }">
         <span>{{ t('common.poweredBy') }} : PT Creative Digital Solutions</span>
       </el-footer>
@@ -169,28 +178,30 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import {
-  Document,
-  Goods,
-  Van,
-  Tickets,
-  Coin,
-  Box,
-  FolderOpened,
-  Sell,
-  CollectionTag,
-  Guide,
-  Share,
-  Files,
-  Setting,
   Bell,
   UserFilled,
   Fold,
   Expand,
+  Check,
   DataAnalysis,
   ShoppingCart,
+  Guide,
+  Van,
+  Tickets,
+  Document,
+  DocumentCopy,
+  Files,
+  Setting,
+  Share,
+  Box,
+  Sell,
+  CollectionTag,
+  Coin,
+  Goods,
   Operation,
   CircleCheck,
   User,
+  FolderOpened,
 } from '@element-plus/icons-vue'
 import {
   getPermissionMatrix,
@@ -215,11 +226,16 @@ const currentLocale = computed({
   },
 })
 
-const localeOptions = computed(() => [
-  { value: 'id', label: t('common.languageOptions.id') },
-  { value: 'en', label: t('common.languageOptions.en') },
-  { value: 'zh', label: t('common.languageOptions.zh') },
-])
+const languageOptions = [
+  { value: 'id', label: 'Indonesia', code: 'ID' },
+  { value: 'en', label: 'English', code: 'EN' },
+  { value: 'zh', label: '中文', code: 'ZH' },
+]
+
+function getCurrentLangCode() {
+  const lang = languageOptions.find(l => l.value === currentLocale.value)
+  return lang?.code || 'EN'
+}
 
 const currentUser = ref(null)
 const currentRole = computed(() => currentUser.value?.role || 'guest')
@@ -227,6 +243,7 @@ const notifications = ref([])
 const unreadCount = ref(0)
 const isSidebarCollapsed = ref(false)
 let unreadTimer = null
+let menuBadgeTimer = null
 
 function toggleSidebar() {
   isSidebarCollapsed.value = !isSidebarCollapsed.value
@@ -234,6 +251,7 @@ function toggleSidebar() {
 
 const erpFlowMenus = [
   { path: '/admin/dashboard', labelKey: 'menu.dashboard', icon: DataAnalysis },
+  { path: '/admin/quotations', labelKey: 'menu.quotations', icon: DocumentCopy },
   { path: '/admin/po', labelKey: 'menu.po', icon: ShoppingCart },
   { path: '/admin/marketing-flow', labelKey: 'menu.marketingFlow', icon: Guide },
   { path: '/admin/delivery', labelKey: 'menu.delivery', icon: Van },
@@ -247,6 +265,7 @@ const erpMasterMenus = [
   { path: '/admin/brands', labelKey: 'menu.brandMaster', icon: CollectionTag },
   { path: '/admin/customs', labelKey: 'menu.customs', icon: FolderOpened },
   { path: '/admin/master-items', labelKey: 'menu.masterItems', icon: Box },
+  { path: '/admin/fluorescent-colors', labelKey: 'menu.fluorescentColors', icon: CollectionTag },
   { path: '/admin/exchange-rates', labelKey: 'menu.exchangeRate', icon: Coin },
   { path: '/admin/master-import', labelKey: 'menu.masterImport', icon: FolderOpened },
   { path: '/admin/inventory', labelKey: 'menu.inventory', icon: Goods },
@@ -261,6 +280,14 @@ const mrpMenus = [
   { path: '/admin/qc', labelKey: 'menu.qc', icon: CircleCheck },
   { path: '/admin/packing', labelKey: 'menu.packing', icon: Box },
 ]
+
+const menuBadges = ref({
+  po: 0,
+  invoice: 0,
+  production: 0,
+  qc: 0,
+  outstanding: 0,
+})
 
 const filteredErpFlowMenus = computed(() =>
   erpFlowMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
@@ -299,6 +326,7 @@ onMounted(async () => {
     unreadCount.value = Number((await unreadNotificationsCount()).unread_count || 0)
     const pm = await getPermissionMatrix().catch(() => null)
     if (pm?.matrix) setRuntimePermissionMatrix(pm.matrix)
+    loadMenuBadges()
   } catch (e) {
     localStorage.removeItem('auth_token')
     ElMessage.error(e.message || t('common.sessionExpired'))
@@ -311,10 +339,14 @@ onMounted(async () => {
       // ignore periodic polling error
     }
   }, 30000)
+  menuBadgeTimer = setInterval(() => {
+    if (currentUser.value) loadMenuBadges()
+  }, 60000)
 })
 
 onBeforeUnmount(() => {
   if (unreadTimer) clearInterval(unreadTimer)
+  if (menuBadgeTimer) clearInterval(menuBadgeTimer)
 })
 
 async function loadNotifications() {
@@ -367,17 +399,25 @@ async function handleMarkAllRead() {
     ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
+
+function getBadgeCount(path) {
+  if (path === '/admin/po') return menuBadges.value.po
+  if (path === '/admin/invoice') return menuBadges.value.invoice
+  if (path === '/admin/production') return menuBadges.value.production
+  if (path === '/admin/qc') return menuBadges.value.qc
+  if (path === '/admin/outstanding-materials') return menuBadges.value.outstanding
+  return 0
+}
+
+async function loadMenuBadges() {
+  // Badge loading disabled - API functions not available
+  menuBadges.value = { po: 0, invoice: 0, production: 0, qc: 0, outstanding: 0 }
+}
 </script>
 
 <style scoped>
 .admin-root {
-  width: 100%;
-  max-width: 100vw;
-}
-
-.admin-layout-main {
-  min-width: 0;
-  flex: 1 1 auto;
+  min-height: 100vh;
 }
 
 .admin-sidebar {
@@ -385,12 +425,13 @@ async function handleMarkAllRead() {
   top: 0;
   left: 0;
   bottom: 0;
-  z-index: 30;
-  overflow: hidden;
-  transition: width 0.3s;
+  background-color: #0f172a;
+  transition: width 0.3s, left 0.3s;
+  z-index: 100;
 }
 
 .admin-sidebar-menu {
+  border: none;
   height: calc(100vh - 82px);
   overflow-y: auto;
 }
@@ -399,13 +440,45 @@ async function handleMarkAllRead() {
   width: 240px;
 }
 
-.admin-sidebar-menu {
-  height: calc(100vh - 82px);
-  overflow-y: auto;
+.admin-header {
+  position: fixed;
+  top: 0;
+  left: 240px;
+  right: 0;
+  height: 56px;
+  background-color: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  z-index: 99;
+  transition: left 0.3s;
 }
 
-.admin-locale-select {
-  width: 140px;
+.admin-main {
+  background-color: #f8fafc;
+  padding: 16px;
+  margin-top: 56px;
+  margin-bottom: 40px;
+  min-height: calc(100vh - 96px);
+}
+
+.admin-footer {
+  position: fixed;
+  bottom: 0;
+  left: 240px;
+  right: 0;
+  height: 40px;
+  background-color: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99;
+  transition: left 0.3s;
 }
 
 .admin-notification-badge :deep(.el-badge__content) {
@@ -453,57 +526,17 @@ async function handleMarkAllRead() {
   opacity: 1;
 }
 
-.admin-header {
-  position: fixed;
-  top: 0;
-  left: 240px;
-  right: 0;
-  z-index: 20;
-  transition: left 0.3s ease;
-}
-
-.admin-layout-main {
-  transition: margin-left 0.3s ease;
-}
-
-.admin-main {
-  margin-top: 56px;
-  margin-bottom: 40px;
-  min-height: calc(100vh - 96px);
-}
-
-.admin-footer {
-  position: fixed;
-  left: 240px;
-  right: 0;
-  bottom: 0;
-  z-index: 20;
-  min-height: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-top: 1px solid #e2e8f0;
-  background: #ffffff;
-  color: #64748b;
-  font-size: 12px;
-  transition: left 0.3s ease;
-}
-
-:deep(.admin-root > .el-aside) {
-  transition: width 0.3s ease;
-}
-
-@media (min-width: 640px) {
-  .admin-locale-select {
-    width: 150px;
-  }
-}
-
 :deep(.el-menu-item:hover) {
   background-color: #1e293b;
 }
 :deep(.el-menu-item.is-active) {
   background-color: #2563eb;
+}
+:deep(.menu-badge) {
+  margin-left: auto;
+}
+:deep(.menu-badge .el-badge__content) {
+  background-color: #ef4444;
+  border: none;
 }
 </style>

@@ -46,7 +46,7 @@
               :value="b.id"
             />
           </el-select>
-          <el-button type="primary" class="mt-3 w-full" :loading="savingConstraint" @click="saveConstraint">
+          <el-button type="primary" :icon="Check" class="mt-3 w-full" :loading="savingConstraint" @click="saveConstraint">
             {{ t('pages.customerBrandMapping.saveConstraint') }}
           </el-button>
         </el-card>
@@ -57,7 +57,7 @@
           <template #header>
             <div class="flex items-center justify-between">
               <span class="font-semibold">{{ t('pages.customerBrandMapping.title') }}</span>
-              <el-button type="primary" size="small" @click="openAddMappingDialog">
+              <el-button type="primary" :icon="Plus" size="small" @click="openAddMappingDialog">
                 {{ t('pages.customerBrandMapping.addMapping') }}
               </el-button>
             </div>
@@ -131,8 +131,8 @@
       </el-form>
       <template #footer>
         <div class="flex justify-end gap-2">
-          <el-button @click="addMappingVisible = false">{{ t('common.cancel') }}</el-button>
-          <el-button type="primary" :loading="savingMapping" @click="addMapping">
+          <el-button :icon="Close" @click="addMappingVisible = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :icon="Check" :loading="savingMapping" @click="addMapping">
             {{ t('common.save') }}
           </el-button>
         </div>
@@ -145,7 +145,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Star } from '@element-plus/icons-vue'
+import { Delete, Star, Close, Check, Plus } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import {
   createCustomerBrandMapping,

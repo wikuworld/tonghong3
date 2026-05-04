@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import io
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from html import escape
 from typing import Any
@@ -120,7 +120,7 @@ def usd_amount_in_words(amount: Decimal) -> str:
     if cents:
         c = _small_num_to_words(cents)
         return f"{w} POINT {c} UNITED STATES DOLLARS ONLY"
-    return f"{w} UNITED STATES DOLLARS ONLY"
+    return f"{w} POINT (ZERO) UNITED STATES DOLLARS ONLY"
 
 
 def _fmt_date_en(d: date | None) -> str:
@@ -157,14 +157,30 @@ def _resolve_customer_delivery_packing(
     return None, dh
 
 
-def gather_invpl_rows(db: Session, packing_id: int) -> dict[str, Any]:
+def gather_invpl_rows(
+    db: Session, packing_id: int, *, delivery_id: int | None = None
+) -> dict[str, Any]:
     ph = db.get(PackingHeader, packing_id)
     if not ph:
         raise ValueError("packing_not_found")
-    cust, dh = _resolve_customer_delivery_packing(db, ph)
+
+    dh: DeliveryHeader | None = None
+    cust: Customer | None = None
     inv: Invoice | None = None
-    if dh:
+    if delivery_id is not None:
+        dh_fixed = db.get(DeliveryHeader, delivery_id)
+        if not dh_fixed:
+            raise ValueError("delivery_not_found")
+        if dh_fixed.packing_id is None or int(dh_fixed.packing_id) != int(packing_id):
+            raise ValueError("delivery_packing_mismatch")
+        dh = dh_fixed
+        if dh.customer_id:
+            cust = db.get(Customer, dh.customer_id)
         inv = db.scalars(select(Invoice).where(Invoice.delivery_id == dh.id).limit(1)).first()
+    else:
+        cust, dh = _resolve_customer_delivery_packing(db, ph)
+        if dh:
+            inv = db.scalars(select(Invoice).where(Invoice.delivery_id == dh.id).limit(1)).first()
 
     pkd_list = db.scalars(
         select(PackingDetail)
@@ -194,7 +210,7 @@ def gather_invpl_rows(db: Session, packing_id: int) -> dict[str, Any]:
     is_export = bool(cust and cust.is_export_customer)
     bill_to = ""
     if is_export:
-        bill_to = (cust.bill_to or "").strip() if cust else ""
+        bill_to = (cust.billing_address or "").strip() if cust else ""
         if not bill_to and ph.production_id:
             pr = db.get(ProductionOrder, ph.production_id)
             if pr and pr.po_id:
@@ -209,6 +225,7 @@ def gather_invpl_rows(db: Session, packing_id: int) -> dict[str, Any]:
     total_pcs = 0
     total_nw = Decimal(0)
     total_gw = Decimal(0)
+    is_claim_order = False
 
     for i, pkd in enumerate(pkd_list, 1):
         pd_row: ProductionDetail | None = None
@@ -234,6 +251,11 @@ def gather_invpl_rows(db: Session, packing_id: int) -> dict[str, Any]:
         pcs = dd.qty_pcs if dd else None
         nw: Decimal | None = None
         gw: Decimal | None = None
+
+        po_no = (poh.po_number or "").strip() if poh else ""
+        if poh and (poh.po_category or "").lower() == "claim":
+            is_claim_order = True
+
         remark_line = ""
         if i - 1 < len(inv_details):
             idet = inv_details[i - 1]
@@ -242,6 +264,9 @@ def gather_invpl_rows(db: Session, packing_id: int) -> dict[str, Any]:
             if idet.gross_weight is not None:
                 gw = idet.gross_weight
             remark_line = (idet.remark or "").strip()
+        if not remark_line:
+            # Default remark otomatis dari no PO agar commercial invoice tetap terisi.
+            remark_line = po_no
         if nw is None and dd and dd.weight is not None:
             nw = dd.weight
         if gw is None:
@@ -251,7 +276,6 @@ def gather_invpl_rows(db: Session, packing_id: int) -> dict[str, Any]:
         if is_export and master and (master.exim_material_code or "").strip():
             exim = master.exim_material_code.strip()
 
-        po_no = (poh.po_number or "").strip() if poh else ""
         color = (pod.color or "").strip() if pod else ""
 
         lines_out.append(
@@ -325,7 +349,71 @@ def gather_invpl_rows(db: Session, packing_id: int) -> dict[str, Any]:
         "bank_address": (inv.bank_address or "").strip() if inv else "",
         "bank_phone": (inv.bank_phone or "").strip() if inv else "",
         "description_line": INVPL_DESC_DEFAULT,
+        "claim_title_suffix": " (Non)" if is_claim_order else "",
     }
+
+
+CI_REASON_MESSAGES: dict[str, str] = {
+    "delivery_not_found": "Delivery tidak ditemukan.",
+    "no_packing": "Delivery belum terhubung ke packing — commercial invoice tidak tersedia.",
+    "packing_not_found": "Packing tidak ditemukan.",
+    "invpl_not_printed": "INVPL belum ditandai dicetak — commercial invoice hanya setelah INVPL.",
+    "local_wait_h_plus_1": "Pengiriman dalam kota: commercial invoice baru boleh dicetak mulai H+1 tanggal kirim.",
+    "outtown_wait_delivery_date": "Commercial invoice belum boleh dicetak sebelum tanggal pengiriman.",
+}
+
+
+def commercial_invoice_eligibility(db: Session, delivery_id: int) -> tuple[bool, str]:
+    """Aturan: INVPL sudah dicetak; dalam kota H+1; luar kota mulai tanggal kirim."""
+    dh = db.get(DeliveryHeader, delivery_id)
+    if not dh:
+        return False, "delivery_not_found"
+    pid = dh.packing_id
+    if not pid:
+        return False, "no_packing"
+    ph = db.get(PackingHeader, int(pid))
+    if not ph:
+        return False, "packing_not_found"
+    if ph.invpl_printed_at is None:
+        return False, "invpl_not_printed"
+
+    dday = dh.delivery_date or date.today()
+    zone = (dh.delivery_zone or "outtown").strip().lower()
+    today = date.today()
+    if zone == "local":
+        if today < dday + timedelta(days=1):
+            return False, "local_wait_h_plus_1"
+    else:
+        if today < dday:
+            return False, "outtown_wait_delivery_date"
+    return True, ""
+
+
+def commercial_invoice_eligibility_message(code: str) -> str:
+    return CI_REASON_MESSAGES.get(code, code)
+
+
+def gather_commercial_invoice_ctx(db: Session, delivery_id: int) -> dict[str, Any]:
+    dh = db.get(DeliveryHeader, delivery_id)
+    if not dh or not dh.packing_id:
+        raise ValueError("delivery_not_found")
+    ctx = gather_invpl_rows(db, int(dh.packing_id), delivery_id=delivery_id)
+    suf = (ctx.get("claim_title_suffix") or "").strip()
+    ctx["document_title"] = f"COMMERCIAL INVOICE{suf}"
+    return ctx
+
+
+def render_commercial_invoice_html(ctx: dict[str, Any]) -> str:
+    """Sama layout INVPL, judul commercial invoice (+ (Non) untuk klaim)."""
+    ctx2 = dict(ctx)
+    ctx2.setdefault("document_title", "COMMERCIAL INVOICE")
+    return render_invpl_html(ctx2)
+
+
+def render_commercial_invoice_pdf(ctx: dict[str, Any]) -> bytes:
+    ctx2 = dict(ctx)
+    ctx2.setdefault("document_title", "COMMERCIAL INVOICE")
+    return render_invpl_pdf(ctx2)
 
 
 def render_invpl_html(ctx: dict[str, Any]) -> str:
@@ -405,7 +493,7 @@ def render_invpl_html(ctx: dict[str, Any]) -> str:
     </div>
   </div>
   {bill_html}
-  <h2 class="title">INVOICE PACKING LIST</h2>
+  <h2 class="title">{escape(ctx.get('document_title', 'INVOICE PACKING LIST'))}</h2>
   <div class="stars">*******************</div>
   <p class="desc">{escape(ctx['description_line'])}</p>
   <table class="grid"><thead>{thead}</thead><tbody>{rows_html}</tbody></table>
@@ -446,8 +534,9 @@ def render_invpl_html(ctx: dict[str, Any]) -> str:
     .sign { margin-top: 28px; text-align: right; font-size: 10px; }
     @media print { body { margin: 8px; } }
     """
+    doc_title = str(ctx.get("document_title", "INVPL"))
     return f"""<!DOCTYPE html>
-<html lang="id"><head><meta charset="utf-8"/><title>INVPL</title>
+<html lang="id"><head><meta charset="utf-8"/><title>{escape(doc_title)}</title>
 <style>{style}</style></head><body>{body}</body></html>"""
 
 
@@ -549,7 +638,9 @@ def render_invpl_pdf(ctx: dict[str, Any]) -> bytes:
         )
     )
     story.append(Spacer(1, 3 * mm))
-    story.append(Paragraph("<b>INVOICE PACKING LIST</b>", styles["Heading2"]))
+    story.append(
+        Paragraph(f"<b>{escape(str(ctx.get('document_title', 'INVOICE PACKING LIST')))}</b>", styles["Heading2"])
+    )
     story.append(Paragraph(escape(ctx["description_line"]), small))
 
     is_export = ctx["is_export"]
@@ -646,6 +737,7 @@ def gather_sj_rows(db: Session, delivery_id: int) -> dict[str, Any]:
     t_roll = 0
     t_pcs = 0
     ph_for_cat: PoHeader | None = None
+    extra_header_remark = (dh.destination or "").strip()
     for i, dd in enumerate(details, 1):
         pod: PoDetail | None = None
         poh: PoHeader | None = None
@@ -662,6 +754,12 @@ def gather_sj_rows(db: Session, delivery_id: int) -> dict[str, Any]:
         mat = _item_description(pod) if pod else "—"
         thick = _thickness_mm(pod) if pod else ""
         color = (pod.color or "").strip() if pod else ""
+        po_line_remark = (pod.detail_remark or "").strip() if pod else ""
+        base_remark = po_no or ""
+        if po_line_remark:
+            base_remark = f"{base_remark} | {po_line_remark}" if base_remark else po_line_remark
+        if extra_header_remark:
+            base_remark = f"{base_remark} | {extra_header_remark}" if base_remark else extra_header_remark
         lines_out.append(
             {
                 "no": i,
@@ -672,7 +770,7 @@ def gather_sj_rows(db: Session, delivery_id: int) -> dict[str, Any]:
                 "qty": _dec(dd.qty),
                 "rolls": dd.qty_roll,
                 "pcs": dd.qty_pcs,
-                "remark": "",
+                "remark": base_remark,
             }
         )
         t_qty += _dec(dd.qty)

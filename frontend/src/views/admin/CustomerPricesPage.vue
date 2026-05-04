@@ -76,20 +76,23 @@
               <el-input-number v-model="form.discount_percentage" :min="0" :max="100" :precision="2" class="w-full" placeholder="0" />
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('pages.customerPrices.validFrom')">
-              <el-date-picker v-model="form.valid_from" type="date" value-format="YYYY-MM-DD" class="w-full" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('pages.customerPrices.validTo')">
-              <el-date-picker v-model="form.valid_to" type="date" value-format="YYYY-MM-DD" class="w-full" />
+          <el-col :span="24">
+            <el-form-item :label="t('pages.customerPrices.validPeriod')">
+              <el-date-picker
+                v-model="form.valid_range"
+                type="daterange"
+                :range-separator="t('common.rangeSeparator')"
+                :start-placeholder="t('common.startDate')"
+                :end-placeholder="t('common.endDate')"
+                value-format="YYYY-MM-DD"
+                class="w-full"
+              />
             </el-form-item>
           </el-col>
         </el-row>
       </el-form>
       <template #footer>
-        <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button :icon="Close" @click="formVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" @click="submitForm">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
@@ -99,7 +102,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, EditPen, Delete } from '@element-plus/icons-vue'
+import { Plus, EditPen, Delete, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminSection from '../../components/AdminSection.vue'
 import { listCustomerPrices, createCustomerPrice, updateCustomerPrice, deleteCustomerPrice, listCustomers } from '../../api/client'
@@ -121,8 +124,7 @@ const form = reactive({
   material_pattern: '',
   price_override: null,
   discount_percentage: null,
-  valid_from: null,
-  valid_to: null,
+  valid_range: [],
 })
 
 const filteredRows = computed(() => {
@@ -162,8 +164,7 @@ function resetForm() {
     material_pattern: '',
     price_override: null,
     discount_percentage: null,
-    valid_from: null,
-    valid_to: null,
+    valid_range: [],
   })
 }
 
@@ -183,18 +184,23 @@ function openEdit(row) {
     material_pattern: row.material_pattern || '',
     price_override: row.price_override,
     discount_percentage: row.discount_percentage,
-    valid_from: row.valid_from,
-    valid_to: row.valid_to,
+    valid_range: row.valid_from && row.valid_to ? [row.valid_from, row.valid_to] : [],
   })
   formVisible.value = true
 }
 
 async function submitForm() {
   try {
+    const payload = {
+      ...form,
+      valid_from: form.valid_range?.[0] || null,
+      valid_to: form.valid_range?.[1] || null,
+    }
+    delete payload.valid_range
     if (isEdit.value) {
-      await updateCustomerPrice(editingId.value, form)
+      await updateCustomerPrice(editingId.value, payload)
     } else {
-      await createCustomerPrice(form)
+      await createCustomerPrice(payload)
     }
     ElMessage.success(t('common.save'))
     formVisible.value = false

@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from datetime import date, datetime
-from decimal import Decimal
 
 from app.db import get_db
 from app.models import Warehouse, RawMaterial, MaterialStock, MaterialReceipt, MaterialReceiptDetail
@@ -123,7 +122,7 @@ def list_stocks(
 @router.get("/stocks/summary")
 def stock_summary(db: Session = Depends(get_db), _user=Depends(get_current_user)):
     """Get summary: total materials, total value, low stock count."""
-    materials = db.scalars(select(RawMaterial).where(RawMaterial.is_active == True)).all()
+    materials = db.scalars(select(RawMaterial).where(RawMaterial.is_active)).all()
     stocks = db.scalars(select(MaterialStock)).all()
     
     total_materials = len(materials)
@@ -172,7 +171,7 @@ def create_receipt(body: MaterialReceiptCreate, db: Session = Depends(get_db), _
     if last:
         try:
             seq = int(last.receipt_number.split("-")[-1]) + 1
-        except:
+        except (ValueError, IndexError):
             seq = 1
     
     receipt_number = f"{prefix}-{seq:04d}"

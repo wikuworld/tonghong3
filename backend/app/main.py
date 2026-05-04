@@ -24,6 +24,7 @@ from app.routers import (
     po,
     pricing,
     production,
+    quotations,
     qc,
     reports,
     sales_orders,
@@ -50,6 +51,7 @@ app.include_router(customers.router, prefix=_PREFIX)
 app.include_router(wilayah.router, prefix=_PREFIX)
 app.include_router(sales_orders.router, prefix=_PREFIX)
 app.include_router(po.router, prefix=_PREFIX)
+app.include_router(quotations.router, prefix=_PREFIX)
 app.include_router(subcon.router, prefix=_PREFIX)
 app.include_router(marketing.router, prefix=_PREFIX)
 app.include_router(production.router, prefix=_PREFIX)

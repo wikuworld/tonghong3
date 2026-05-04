@@ -1,76 +1,136 @@
 <template>
   <AdminSection :title="t('pages.customers.title')" :subtitle="t('pages.customers.subtitle')">
-    <template #actions>
-      <el-input
-        v-model="keyword"
-        :placeholder="t('pages.customers.searchPlaceholder')"
-        clearable
-        class="customer-toolbar-search"
-      />
-      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
-      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">
-        {{ t('common.create') }}
-      </el-button>
-    </template>
+    <p class="mb-3 text-sm text-slate-600">{{ t('pages.customers.legacyLayoutHint') }}</p>
 
-    <el-table
-      :data="filteredRows"
-      v-loading="loading"
-      border
-      stripe
-      size="small"
-      class="admin-table"
-      table-layout="fixed"
-      :empty-text="t('pages.customers.tableEmpty')"
-    >
-      <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
-      <el-table-column prop="code" :label="t('common.code')" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="name" :label="t('common.name')" min-width="180" show-overflow-tooltip />
-      <el-table-column
-        prop="contact_person"
-        :label="t('pages.customers.fieldContactPerson')"
-        min-width="130"
-        show-overflow-tooltip
-      />
-      <el-table-column prop="email" :label="t('pages.customers.fieldEmail')" min-width="160">
-        <template #default="{ row }">
-          <a v-if="row.email" :href="`mailto:${row.email}`" class="text-primary hover:underline" @click.stop>{{ row.email }}</a>
-          <span v-else class="text-slate-400">-</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="phone" :label="t('common.phone')" min-width="130">
-        <template #default="{ row }">
-          <a v-if="row.phone" :href="`tel:${row.phone}`" class="text-primary hover:underline" @click.stop>{{ row.phone }}</a>
-          <span v-else class="text-slate-400">-</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('pages.customers.fieldCityCountry')" min-width="140" show-overflow-tooltip>
-        <template #default="{ row }">{{ cityCountry(row) }}</template>
-      </el-table-column>
-      <el-table-column prop="tax_id" :label="t('pages.customers.fieldTaxId')" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="skep_kb_number" :label="t('pages.customers.fieldSkepKb')" min-width="140" show-overflow-tooltip />
-      <el-table-column
-        prop="customs_office_code"
-        :label="t('pages.customers.fieldCustomsOfficeCode')"
-        min-width="140"
-        show-overflow-tooltip
-      />
-      <el-table-column :label="t('common.actions')" width="132" align="center" fixed="right">
-        <template #default="{ row }">
-          <div class="customer-row-actions">
-            <el-tooltip :content="t('common.detail')" placement="top">
-              <el-button :icon="View" link type="primary" :aria-label="t('common.detail')" @click="openDetail(row)" />
-            </el-tooltip>
-            <el-tooltip v-if="canUpdate" :content="t('common.edit')" placement="top">
-              <el-button :icon="EditPen" link type="warning" :aria-label="t('common.edit')" @click="openEdit(row)" />
-            </el-tooltip>
-            <el-tooltip v-if="canDelete" :content="t('common.delete')" placement="top">
-              <el-button :icon="Delete" link type="danger" :aria-label="t('common.delete')" @click="confirmDelete(row)" />
-            </el-tooltip>
+    <el-row :gutter="16" class="customer-master-layout mb-4">
+      <el-col :xs="24" :md="7" :lg="6">
+        <el-card shadow="never" class="customer-aside-card">
+          <template #header>
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm font-semibold">{{ t('pages.customers.asideTitle') }}</span>
+              <el-button v-if="canCreate" type="primary" size="small" :icon="Plus" @click="openCreate">
+                {{ t('common.create') }}
+              </el-button>
+            </div>
+          </template>
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <span class="text-xs text-slate-500">{{ t('pages.customers.filterMode') }}</span>
+            <el-switch
+              v-model="showExportCustomers"
+              inline-prompt
+              :active-text="t('pages.customers.filterExport')"
+              :inactive-text="t('pages.customers.filterLocal')"
+            />
           </div>
-        </template>
-      </el-table-column>
-    </el-table>
+          <div class="customer-count-summary">
+            <el-tag size="small" type="warning" effect="plain">Export customer: {{ exportCount }}</el-tag>
+            <el-tag size="small" type="success" effect="plain">Lokal customer: {{ localCount }}</el-tag>
+          </div>
+          <div class="customer-list-filter">
+            <el-autocomplete
+              v-model="keyword"
+              :fetch-suggestions="querySearch"
+              :placeholder="t('pages.customers.searchPlaceholder')"
+              clearable
+              class="w-full"
+            />
+          </div>
+          <el-scrollbar max-height="420">
+            <div
+              v-for="row in filteredRows"
+              :key="row.id"
+              class="customer-aside-item"
+              :class="{ 'customer-aside-item--active': panelRow?.id === row.id }"
+              role="button"
+              tabindex="0"
+              @click="selectCustomer(row.id)"
+              @keydown.enter.prevent="selectCustomer(row.id)"
+              @dblclick="openEdit(row)"
+            >
+              <div class="customer-aside-item__head">
+                <div class="text-xs font-mono text-slate-500">{{ row.code || '—' }}</div>
+                <el-tag size="small" :type="row.is_active ? 'success' : 'info'" effect="light">
+                  {{ row.is_active ? t('status.active') : t('status.inactive') }}
+                </el-tag>
+              </div>
+              <div class="text-sm font-medium text-slate-800 line-clamp-2">{{ row.name || t('common.emptyValue') }}</div>
+              <div class="customer-aside-item__meta">
+                <span>{{ row.country || t('common.emptyValue') }}</span>
+                <span>{{ contactSummary(row) }}</span>
+              </div>
+              <div class="customer-aside-item__actions">
+                <el-switch
+                  :model-value="Boolean(row.is_active)"
+                  size="small"
+                  @click.stop
+                  @change="toggleCustomerActive(row, $event)"
+                />
+                <el-button
+                  v-if="canDelete"
+                  :icon="Delete"
+                  link
+                  type="danger"
+                  @click.stop="confirmDelete(row)"
+                />
+              </div>
+            </div>
+            <el-empty v-if="!filteredRows.length" :description="t('pages.customers.tableEmpty')" />
+          </el-scrollbar>
+          <div class="customer-list-pagination">
+            <el-pagination
+              size="small"
+              background
+              layout="prev, pager, next"
+              :total="totalRows"
+              :current-page="page"
+              :page-size="pageSize"
+              @current-change="onPageChange"
+            />
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :md="17" :lg="18">
+        <el-card v-if="panelRow" shadow="never" v-loading="panelLoading">
+          <template #header>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="font-semibold">{{ panelRow.name || panelRow.code }}</span>
+              <div class="flex flex-wrap gap-2">
+                <el-button v-if="canUpdate" type="primary" size="small" :icon="EditPen" @click="openEdit(panelRow)">
+                  {{ t('common.edit') }}
+                </el-button>
+                <el-button size="small" :icon="View" @click="openDetail(panelRow)">{{ t('common.detail') }}</el-button>
+              </div>
+            </div>
+          </template>
+          <el-descriptions :column="2" border size="small">
+            <el-descriptions-item :label="t('common.code')">{{ panelRow.code || '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customers.fieldReferenceQuotation')">
+              {{ panelRow.reference_quotation || '—' }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customers.fieldPaymentTerms')">
+              {{ panelRow.payment_terms || '—' }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customers.fieldDefaultCurrency')">
+              {{ panelRow.default_currency || '—' }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customers.fieldTaxMode')">
+              {{ taxModeLabel(panelRow.tax_mode) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customers.fieldContactSummary')">
+              {{ contactSummary(panelRow) }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('common.address')" :span="2">{{ panelRow.address || '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customers.fieldBillingAddress')" :span="2">
+              {{ panelRow.billing_address || '—' }}
+            </el-descriptions-item>
+            <el-descriptions-item :label="t('pages.customers.fieldRemark')" :span="2">{{ panelRow.remark || '—' }}</el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+        <el-card v-else shadow="never" class="min-h-[200px] flex items-center justify-center">
+          <el-empty :description="t('pages.customers.panelEmpty')" />
+        </el-card>
+      </el-col>
+    </el-row>
 
     <el-dialog
       v-model="detailVisible"
@@ -89,17 +149,8 @@
           <el-descriptions-item :label="t('common.name')" :span="1">
             {{ detailRow.name || t('common.emptyValue') }}
           </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldContactPerson')" :span="1">
-            {{ detailRow.contact_person || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldPosition')" :span="1">
-            {{ detailRow.position || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldEmail')" :span="1">
-            {{ detailRow.email || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('common.phone')" :span="1">
-            {{ detailRow.phone || t('common.emptyValue') }}
+          <el-descriptions-item :label="t('pages.customers.fieldContactSummary')" :span="2">
+            {{ contactSummary(detailRow) }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldTaxId')" :span="1">
             {{ detailRow.tax_id || t('common.emptyValue') }}
@@ -110,9 +161,6 @@
           <el-descriptions-item :label="t('pages.customers.fieldCustomsOfficeCode')" :span="1">
             {{ detailRow.customs_office_code || t('common.emptyValue') }}
           </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldCity')" :span="1">
-            {{ detailRow.city || t('common.emptyValue') }}
-          </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldCountry')" :span="1">
             {{ detailRow.country || t('common.emptyValue') }}
           </el-descriptions-item>
@@ -122,14 +170,26 @@
           <el-descriptions-item :label="t('common.address')" :span="2">
             {{ detailRow.address || t('common.emptyValue') }}
           </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.customers.fieldBillingAddress')" :span="2">
+            {{ detailRow.billing_address || t('common.emptyValue') }}
+          </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldRemark')" :span="2">
             {{ detailRow.remark || t('common.emptyValue') }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldExportCustomer')" :span="1">
             {{ detailRow.is_export_customer ? t('common.yes') : t('common.no') }}
           </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldBillTo')" :span="2">
-            {{ detailRow.bill_to || t('common.emptyValue') }}
+          <el-descriptions-item :label="t('pages.customers.fieldReferenceQuotation')" :span="1">
+            {{ detailRow.reference_quotation || t('common.emptyValue') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.customers.fieldPaymentTerms')" :span="1">
+            {{ detailRow.payment_terms || t('common.emptyValue') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.customers.fieldDefaultCurrency')" :span="1">
+            {{ detailRow.default_currency || t('common.emptyValue') }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.customers.fieldTaxMode')" :span="1">
+            {{ taxModeLabel(detailRow.tax_mode) }}
           </el-descriptions-item>
         </el-descriptions>
       </template>
@@ -141,13 +201,16 @@
     <el-dialog
       v-model="formVisible"
       :title="formIsEdit ? t('pages.customers.dialogEdit') : t('pages.customers.dialogAdd')"
-      width="95%" style="max-width: 900px"
+      width="900px"
       destroy-on-close
       class="customer-dialog"
       align-center
       @closed="resetFormModel"
     >
-      <p class="mb-3 text-sm text-slate-600">{{ t('pages.customers.formHint') }}</p>
+      <p class="customer-form-hint">{{ t('pages.customers.formHint') }}</p>
+      <div class="customer-form-toolbar">
+        <el-button size="small" type="primary" plain @click="applyQuotationDefaults">{{ t('pages.customers.applyDefaultLocal') }}</el-button>
+      </div>
       <el-form
         ref="formRef"
         :model="formModel"
@@ -156,7 +219,7 @@
         class="customer-form"
         @submit.prevent
       >
-        <el-row :gutter="16">
+        <el-row :gutter="16" class="customer-form-grid">
           <el-col :xs="24" :sm="12">
             <el-form-item :label="t('common.code')" prop="code">
               <el-input
@@ -179,61 +242,94 @@
               />
             </el-form-item>
           </el-col>
+          <el-col :span="24">
+            <el-divider content-position="left">{{ t('pages.customers.quotationSection') }}</el-divider>
+          </el-col>
           <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.fieldContactPerson')" prop="contact_person">
-              <el-input v-model="formModel.contact_person" maxlength="255" clearable />
+            <el-form-item :label="t('pages.customers.fieldReferenceQuotation')" prop="reference_quotation">
+              <el-input v-model="formModel.reference_quotation" maxlength="100" clearable />
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.fieldPosition')" prop="position">
+            <el-form-item :label="t('pages.customers.fieldPaymentTerms')" prop="payment_terms">
               <el-select
-                v-model="formModel.position"
-                :placeholder="t('pages.customers.fieldPosition')"
-                clearable
+                v-model="formModel.payment_terms"
                 filterable
                 allow-create
                 default-first-option
+                clearable
                 class="w-full"
               >
-                <el-option label="Director" value="Director" />
-                <el-option label="General Manager" value="General Manager" />
-                <el-option label="Marketing Director" value="Marketing Director" />
-                <el-option label="Purchasing Manager" value="Purchasing Manager" />
-                <el-option label="Procurement Manager" value="Procurement Manager" />
-                <el-option label="Finance Manager" value="Finance Manager" />
-                <el-option label="QC Manager" value="QC Manager" />
-                <el-option label="Production Manager" value="Production Manager" />
-                <el-option label="Sales Manager" value="Sales Manager" />
-                <el-option label="PPIC Manager" value="PPIC Manager" />
-                <el-option label="Warehouse Manager" value="Warehouse Manager" />
-                <el-option label="Admin" value="Admin" />
-                <el-option label="Staff" value="Staff" />
-                <template #footer>
-                  <div class="p-2 border-t">
-                    <el-input
-                      v-model="customPosition"
-                      size="small"
-                      :placeholder="t('pages.customers.addCustomPosition')"
-                      @keyup.enter="addCustomPosition"
-                    >
-                      <template #append>
-                        <el-button @click="addCustomPosition">{{ t('common.create') }}</el-button>
-                      </template>
-                    </el-input>
-                  </div>
-                </template>
+                <el-option
+                  v-for="term in PAYMENT_TERMS_OPTIONS"
+                  :key="term.value"
+                  :label="term.label"
+                  :value="term.value"
+                />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.fieldEmail')" prop="email">
-              <el-input v-model="formModel.email" type="email" maxlength="255" clearable />
+          <el-col :xs="24" :sm="8">
+            <el-form-item :label="t('pages.customers.fieldDefaultCurrency')" prop="default_currency">
+              <el-select v-model="formModel.default_currency" filterable allow-create clearable class="w-full" default-first-option>
+                <el-option label="USD" value="USD" />
+                <el-option label="IDR" value="IDR" />
+                <el-option label="EUR" value="EUR" />
+              </el-select>
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('common.phone')" prop="phone">
-              <el-input v-model="formModel.phone" :placeholder="t('pages.customers.placeholderPhone')" maxlength="50" clearable />
+          <el-col :xs="24" :sm="8">
+            <el-form-item :label="t('pages.customers.fieldTaxMode')" prop="tax_mode">
+              <el-select v-model="formModel.tax_mode" clearable class="w-full" :placeholder="t('pages.customers.fieldTaxMode')">
+                <el-option :label="t('pages.customers.taxMode_pkp')" value="pkp" />
+                <el-option :label="t('pages.customers.taxMode_non_pkp')" value="non_pkp" />
+                <el-option :label="t('pages.customers.taxMode_exempt')" value="exempt" />
+              </el-select>
             </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-divider content-position="left">{{ t('pages.customers.contactsSection') }}</el-divider>
+            <div class="mb-2 flex justify-end">
+              <el-button type="primary" plain size="small" :icon="Plus" @click="addContactRow">
+                {{ t('pages.customers.addContact') }}
+              </el-button>
+            </div>
+            <div v-for="(contact, idx) in formModel.contacts" :key="`contact-${idx}`" class="customer-contact-card">
+              <el-row :gutter="12" class="customer-contact-row">
+                <el-col :xs="24" :sm="7" :md="7">
+                  <el-form-item :label="t('common.name')">
+                    <el-input v-model="contact.name" maxlength="255" clearable />
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="7" :md="6">
+                  <el-form-item :label="t('pages.customers.fieldPosition')">
+                    <el-select
+                      v-model="contact.title"
+                      filterable
+                      allow-create
+                      default-first-option
+                      clearable
+                      class="w-full"
+                    >
+                      <el-option v-for="role in POSITION_OPTIONS" :key="role" :label="role" :value="role" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="5" :md="5">
+                  <el-form-item :label="t('common.phone')">
+                    <el-input v-model="contact.phone" maxlength="50" clearable />
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="5" :md="5">
+                  <el-form-item :label="t('pages.customers.fieldEmail')">
+                    <el-input v-model="contact.email" type="email" maxlength="255" clearable />
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="24" :md="1" class="customer-contact-remove">
+                  <el-button link type="danger" :icon="Delete" @click="removeContactRow(idx)" />
+                </el-col>
+              </el-row>
+            </div>
           </el-col>
           <el-col :xs="24" :sm="12">
             <el-form-item :label="t('pages.customers.fieldTaxId')" prop="tax_id">
@@ -318,11 +414,6 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.fieldCity')" prop="city">
-              <el-input v-model="formModel.city" maxlength="120" clearable :placeholder="t('pages.customers.cityFromWilayah')" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12">
             <el-form-item :label="t('pages.customers.fieldCountry')" prop="country">
               <el-input v-model="formModel.country" maxlength="100" clearable />
             </el-form-item>
@@ -340,25 +431,34 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24">
+            <el-form-item :label="t('pages.customers.fieldBillingAddress')" prop="billing_address">
+              <el-input
+                v-model="formModel.billing_address"
+                type="textarea"
+                :rows="2"
+                :placeholder="t('pages.customers.placeholderBillingAddress')"
+                maxlength="2000"
+                show-word-limit
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24">
             <el-form-item :label="t('pages.customers.fieldRemark')" prop="remark">
               <el-input v-model="formModel.remark" type="textarea" :rows="2" maxlength="2000" show-word-limit />
             </el-form-item>
           </el-col>
           <el-col :xs="24">
-            <el-form-item :label="t('pages.customers.fieldExportCustomer')">
-              <el-switch v-model="formModel.is_export_customer" />
+            <el-form-item :label="t('status.status')">
+              <el-switch
+                v-model="formModel.is_active"
+                :active-text="t('status.active')"
+                :inactive-text="t('status.inactive')"
+              />
             </el-form-item>
           </el-col>
           <el-col :xs="24">
-            <el-form-item :label="t('pages.customers.fieldBillTo')">
-              <el-input
-                v-model="formModel.bill_to"
-                type="textarea"
-                :rows="3"
-                maxlength="2000"
-                show-word-limit
-                :placeholder="t('pages.customers.billToPlaceholder')"
-              />
+            <el-form-item :label="t('pages.customers.fieldExportCustomer')">
+              <el-switch v-model="formModel.is_export_customer" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -386,7 +486,8 @@ import { formatDate } from '../../utils/format'
 import {
   createCustomer,
   deleteCustomer,
-  listCustomers,
+  getCustomer,
+  listCustomersPage,
   updateCustomer,
   wilayahDistricts,
   wilayahProvinces,
@@ -395,6 +496,30 @@ import {
 } from '../../api/client'
 
 const { t } = useI18n()
+const POSITION_OPTIONS = [
+  'Director',
+  'General Manager',
+  'Marketing Director',
+  'Purchasing Manager',
+  'Procurement Manager',
+  'Finance Manager',
+  'QC Manager',
+  'Production Manager',
+  'Sales Manager',
+  'PPIC Manager',
+  'Warehouse Manager',
+  'Admin',
+  'Staff',
+]
+const PAYMENT_TERMS_OPTIONS = [
+  { value: 'COD', label: 'COD (Cash on Delivery)' },
+  { value: 'NET 7', label: 'NET 7 Hari' },
+  { value: 'NET 14', label: 'NET 14 Hari' },
+  { value: 'NET 30', label: 'NET 30 Hari' },
+  { value: 'NET 45', label: 'NET 45 Hari' },
+  { value: 'DP 50% + Pelunasan sebelum kirim', label: 'DP 50% + Pelunasan sebelum kirim' },
+]
+
 const canCreate = can('customers', 'create')
 const canUpdate = can('customers', 'update')
 const canDelete = can('customers', 'delete')
@@ -402,38 +527,119 @@ const canDelete = can('customers', 'delete')
 const keyword = ref('')
 const loading = ref(false)
 const rows = ref([])
+const totalRows = ref(0)
+const exportCount = ref(0)
+const localCount = ref(0)
+const page = ref(1)
+const pageSize = ref(20)
+const showExportCustomers = ref(false)
+const panelRow = ref(null)
+const panelLoading = ref(false)
+
+function taxModeLabel(mode) {
+  const v = (mode || '').toLowerCase()
+  if (v === 'pkp') return t('pages.customers.taxMode_pkp')
+  if (v === 'non_pkp') return t('pages.customers.taxMode_non_pkp')
+  if (v === 'exempt') return t('pages.customers.taxMode_exempt')
+  return mode || '—'
+}
+
+function normalizeContacts(row) {
+  const list = Array.isArray(row?.contacts) ? row.contacts : []
+  return list
+    .map((c) => ({
+      name: (c?.name || '').trim(),
+      title: (c?.title || '').trim(),
+      phone: (c?.phone || '').trim(),
+      email: (c?.email || '').trim(),
+    }))
+    .filter((c) => c.name || c.title || c.phone || c.email)
+}
+
+function contactSummary(row) {
+  const contacts = normalizeContacts(row)
+  if (!contacts.length) return t('common.emptyValue')
+  return contacts
+    .map((c) => [c.name, c.title].filter(Boolean).join(' - '))
+    .filter(Boolean)
+    .join(', ')
+}
+
+function searchableText(row) {
+  return [
+    row.code,
+    row.name,
+    contactSummary(row),
+    row.country,
+    row.tax_id,
+    row.address,
+    row.billing_address,
+    row.remark,
+    row.payment_terms,
+    row.default_currency,
+    row.reference_quotation,
+    row.tax_mode,
+    row.wilayah_province_code,
+    row.wilayah_regency_code,
+    row.wilayah_district_code,
+    row.wilayah_village_code,
+    row.is_active ? t('status.active') : t('status.inactive'),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function querySearch(queryString, cb) {
+  const q = (queryString || '').trim().toLowerCase()
+  const candidates = rows.value
+    .filter((row) => !q || searchableText(row).includes(q))
+    .slice(0, 10)
+    .map((row) => ({
+      value: [row.code, row.name, row.country].filter(Boolean).join(' - ') || String(row.id),
+    }))
+  cb(candidates)
+}
+
+async function selectCustomer(id) {
+  if (id == null) return
+  panelLoading.value = true
+  try {
+    panelRow.value = await getCustomer(id)
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+    panelRow.value = null
+  } finally {
+    panelLoading.value = false
+  }
+}
 
 const filteredRows = computed(() => {
-  if (!keyword.value.trim()) return rows.value
-  const q = keyword.value.toLowerCase()
-  return rows.value.filter((row) =>
-    [
-      row.code,
-      row.name,
-      row.contact_person,
-      row.email,
-      row.phone,
-      row.city,
-      row.country,
-      row.tax_id,
-      row.address,
-      row.remark,
-      row.wilayah_province_code,
-      row.wilayah_regency_code,
-      row.wilayah_district_code,
-      row.wilayah_village_code,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .includes(q),
-  )
+  const q = keyword.value.trim().toLowerCase()
+  return rows.value.filter((row) => {
+    if (!q) return true
+    return searchableText(row).includes(q)
+  })
 })
 
 async function load() {
   loading.value = true
   try {
-    rows.value = await listCustomers()
+    const [result, exportAgg, localAgg] = await Promise.all([
+      listCustomersPage({
+        q: keyword.value.trim() || undefined,
+        is_export_customer: showExportCustomers.value,
+        limit: pageSize.value,
+        offset: (page.value - 1) * pageSize.value,
+      }),
+      listCustomersPage({ is_export_customer: true, limit: 1, offset: 0 }),
+      listCustomersPage({ is_export_customer: false, limit: 1, offset: 0 }),
+    ])
+    const offset = (page.value - 1) * pageSize.value
+    rows.value = result?.items || []
+    totalRows.value = Number(result?.total || 0)
+    exportCount.value = Number(exportAgg?.total || 0)
+    localCount.value = Number(localAgg?.total || 0)
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
@@ -441,11 +647,23 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+})
 
-function cityCountry(row) {
-  const p = [row.city, row.country].filter(Boolean)
-  return p.length ? p.join(', ') : t('common.emptyValue')
+watch(keyword, () => {
+  page.value = 1
+  load()
+})
+
+watch(showExportCustomers, () => {
+  page.value = 1
+  load()
+})
+
+function onPageChange(nextPage) {
+  page.value = nextPage
+  load()
 }
 
 const detailVisible = ref(false)
@@ -489,6 +707,44 @@ async function openDetail(row) {
   wilayahDetailText.value = await buildWilayahReadable(row)
 }
 
+async function toggleCustomerActive(row, nextValue) {
+  const old = Boolean(row.is_active)
+  row.is_active = Boolean(nextValue)
+  try {
+    await updateCustomer(row.id, { is_active: row.is_active })
+    if (panelRow.value?.id === row.id) {
+      panelRow.value.is_active = row.is_active
+    }
+    ElMessage.success(t('pages.customers.saved'))
+  } catch (e) {
+    row.is_active = old
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+function applyQuotationDefaults() {
+  formModel.default_currency = 'IDR'
+  formModel.tax_mode = 'non_pkp'
+  if (!(formModel.country || '').trim()) {
+    formModel.country = t('common.countryIndonesia')
+  }
+}
+
+function emptyContact() {
+  return { name: '', title: '', phone: '', email: '' }
+}
+
+function addContactRow() {
+  formModel.contacts.push(emptyContact())
+}
+
+function removeContactRow(index) {
+  formModel.contacts.splice(index, 1)
+  if (!formModel.contacts.length) {
+    formModel.contacts.push(emptyContact())
+  }
+}
+
 const formVisible = ref(false)
 const formIsEdit = ref(false)
 const formRef = ref(null)
@@ -505,24 +761,11 @@ const wilayahLoading = reactive({
   village: false,
 })
 
-const customPosition = ref('')
-
-function addCustomPosition() {
-  if (customPosition.value.trim()) {
-    formModel.position = customPosition.value.trim()
-    customPosition.value = ''
-  }
-}
-
 const formModel = reactive({
   id: null,
   code: '',
   name: '',
-  contact_person: '',
-  position: '',
-  email: '',
-  phone: '',
-  city: '',
+  contacts: [],
   country: '',
   tax_id: '',
   skep_kb_number: '',
@@ -530,11 +773,16 @@ const formModel = reactive({
   address: '',
   remark: '',
   is_export_customer: false,
-  bill_to: '',
+  is_active: true,
   wilayah_province_code: '',
   wilayah_regency_code: '',
   wilayah_district_code: '',
   wilayah_village_code: '',
+  payment_terms: '',
+  default_currency: '',
+  tax_mode: '',
+  reference_quotation: '',
+  billing_address: '',
 })
 
 const formRules = computed(() => ({
@@ -546,11 +794,7 @@ function resetFormModel() {
   formModel.id = null
   formModel.code = ''
   formModel.name = ''
-  formModel.contact_person = ''
-  formModel.position = ''
-  formModel.email = ''
-  formModel.phone = ''
-  formModel.city = ''
+  formModel.contacts = [emptyContact()]
   formModel.country = ''
   formModel.tax_id = ''
   formModel.skep_kb_number = ''
@@ -558,11 +802,16 @@ function resetFormModel() {
   formModel.address = ''
   formModel.remark = ''
   formModel.is_export_customer = false
-  formModel.bill_to = ''
+  formModel.is_active = true
   formModel.wilayah_province_code = ''
   formModel.wilayah_regency_code = ''
   formModel.wilayah_district_code = ''
   formModel.wilayah_village_code = ''
+  formModel.payment_terms = ''
+  formModel.default_currency = ''
+  formModel.tax_mode = ''
+  formModel.reference_quotation = ''
+  formModel.billing_address = ''
   regencyOptions.value = []
   districtOptions.value = []
   villageOptions.value = []
@@ -612,7 +861,6 @@ async function onRegencyPicked(code) {
   villageOptions.value = []
   const sel = regencyOptions.value.find((x) => x.code === code)
   if (sel) {
-    formModel.city = sel.name
     formModel.country = t('common.countryIndonesia')
   }
   if (!code) return
@@ -688,11 +936,17 @@ async function openEdit(row) {
   formModel.id = row.id
   formModel.code = row.code || ''
   formModel.name = row.name || ''
-  formModel.contact_person = row.contact_person || ''
-  formModel.position = row.position || ''
-  formModel.email = row.email || ''
-  formModel.phone = row.phone || ''
-  formModel.city = row.city || ''
+  formModel.contacts = normalizeContacts(row)
+  if (!formModel.contacts.length) {
+    formModel.contacts = [
+      {
+        name: row.contact_person || '',
+        title: row.position || '',
+        phone: row.phone || '',
+        email: row.email || '',
+      },
+    ]
+  }
   formModel.country = row.country || ''
   formModel.tax_id = row.tax_id || ''
   formModel.skep_kb_number = row.skep_kb_number || ''
@@ -700,11 +954,16 @@ async function openEdit(row) {
   formModel.address = row.address || ''
   formModel.remark = row.remark || ''
   formModel.is_export_customer = Boolean(row.is_export_customer)
-  formModel.bill_to = row.bill_to || ''
+  formModel.is_active = row.is_active !== false
   formModel.wilayah_province_code = row.wilayah_province_code || ''
   formModel.wilayah_regency_code = row.wilayah_regency_code || ''
   formModel.wilayah_district_code = row.wilayah_district_code || ''
   formModel.wilayah_village_code = row.wilayah_village_code || ''
+  formModel.payment_terms = row.payment_terms || ''
+  formModel.default_currency = row.default_currency || ''
+  formModel.tax_mode = row.tax_mode || ''
+  formModel.reference_quotation = row.reference_quotation || ''
+  formModel.billing_address = row.billing_address || ''
   formVisible.value = true
   await hydrateWilayahFromRow(row)
 }
@@ -721,11 +980,7 @@ async function submitForm() {
     const body = {
       code: formModel.code.trim(),
       name: formModel.name.trim(),
-      contact_person: formModel.contact_person.trim() || undefined,
-      position: formModel.position.trim() || undefined,
-      email: formModel.email.trim() || undefined,
-      phone: formModel.phone.trim() || undefined,
-      city: formModel.city.trim() || undefined,
+      contacts: normalizeContacts(formModel),
       country: formModel.country.trim() || undefined,
       tax_id: formModel.tax_id.trim() || undefined,
       skep_kb_number: formModel.skep_kb_number.trim() || undefined,
@@ -733,20 +988,31 @@ async function submitForm() {
       address: formModel.address.trim() || undefined,
       remark: formModel.remark.trim() || undefined,
       is_export_customer: formModel.is_export_customer,
-      bill_to: formModel.bill_to.trim() || undefined,
+      is_active: formModel.is_active,
       wilayah_province_code: formModel.wilayah_province_code || undefined,
       wilayah_regency_code: formModel.wilayah_regency_code || undefined,
       wilayah_district_code: formModel.wilayah_district_code || undefined,
       wilayah_village_code: formModel.wilayah_village_code || undefined,
+      payment_terms: formModel.payment_terms.trim() || undefined,
+      default_currency: (formModel.default_currency || '').trim().toUpperCase() || undefined,
+      tax_mode: formModel.tax_mode || undefined,
+      reference_quotation: formModel.reference_quotation.trim() || undefined,
+      billing_address: formModel.billing_address.trim() || undefined,
     }
+    let refreshId = formModel.id
     if (formIsEdit.value && formModel.id != null) {
       await updateCustomer(formModel.id, body)
+      refreshId = formModel.id
     } else {
-      await createCustomer(body)
+      const created = await createCustomer(body)
+      refreshId = created?.id ?? null
     }
     ElMessage.success(t('pages.customers.saved'))
     formVisible.value = false
     await load()
+    if (refreshId != null && panelRow.value?.id === refreshId) {
+      await selectCustomer(refreshId)
+    }
   } catch (e) {
     const msg = e.message || ''
     if (msg.includes('duplicate') || msg.includes('409')) {
@@ -769,6 +1035,9 @@ function confirmDelete(row) {
     .then(async () => {
       try {
         await deleteCustomer(row.id)
+        if (panelRow.value?.id === row.id) {
+          panelRow.value = null
+        }
         ElMessage.success(t('pages.customers.deleted'))
         await load()
       } catch (e) {
@@ -788,8 +1057,25 @@ function confirmDelete(row) {
   gap: 2px 4px;
 }
 
+.customer-list-filter {
+  margin-bottom: 10px;
+}
+
+.customer-count-summary {
+  margin-bottom: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.customer-list-pagination {
+  margin-top: 10px;
+  display: flex;
+  justify-content: center;
+}
+
 .customer-form :deep(.el-form-item) {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .customer-form :deep(.el-form-item:last-child) {
@@ -800,5 +1086,104 @@ function confirmDelete(row) {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.customer-form-hint {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+.customer-form-toolbar {
+  margin: 0 0 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.customer-dialog :deep(.el-dialog) {
+  max-height: 90vh;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.customer-dialog :deep(.el-dialog__header),
+.customer-dialog :deep(.el-dialog__footer) {
+  padding: 16px 20px;
+}
+
+.customer-dialog :deep(.el-dialog__body) {
+  padding: 14px 20px 10px;
+  overflow-y: auto;
+}
+
+.customer-form-grid {
+  row-gap: 4px;
+}
+
+.customer-aside-card :deep(.el-card__body) {
+  padding-top: 8px;
+}
+
+.customer-aside-item {
+  padding: 10px 10px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--el-border-color-lighter);
+}
+
+.customer-aside-item:hover {
+  background: var(--el-fill-color-light);
+}
+
+.customer-aside-item--active {
+  border-color: var(--el-color-primary-light-5);
+  background: var(--el-color-primary-light-9);
+}
+
+.customer-aside-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.customer-aside-item__meta {
+  margin-top: 4px;
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.customer-aside-item__actions {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.customer-contact-card {
+  margin-bottom: 12px;
+  padding: 12px 12px 2px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 6px;
+  background: var(--el-fill-color-blank);
+}
+
+.customer-contact-remove {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding-bottom: 16px;
+}
+
+@media (max-width: 767px) {
+  .customer-contact-remove {
+    justify-content: flex-start;
+    padding-bottom: 10px;
+  }
 }
 </style>

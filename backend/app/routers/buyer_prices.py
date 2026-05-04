@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -33,11 +33,13 @@ class BuyerPriceSummaryOut(BaseModel):
 
     id: int
     buyer_code: str
+    currency: str = "USD"
     title: Optional[str] = None
     period_label: Optional[str] = None
     period_start: Optional[str] = None
     period_end: Optional[str] = None
-    source_label: Optional[str] = None
+    item_codes: list[str] = Field(default_factory=list)
+    filled_price_components: list[str] = Field(default_factory=list)
 
 
 def _normalize_cell_value(val: Any) -> Any:
@@ -48,16 +50,78 @@ def _normalize_cell_value(val: Any) -> Any:
     return str(val)
 
 
+_NUMERIC_PRICE_KEYS = {
+    "COLOR WHITE",
+    "COLOR BLACK",
+    "FLOURASENT",
+    "METALIC",
+    "EMBOSS",
+    "SPESIAL EMBOSS",
+}
+
+
+def _normalize_price_cell(val: Any) -> Any:
+    if val is None:
+        return ""
+    if isinstance(val, str):
+        raw = val.strip()
+        if not raw:
+            return ""
+    else:
+        raw = val
+    if isinstance(raw, str):
+        s = raw.replace(" ", "")
+        if "," in s and "." not in s:
+            s = s.replace(",", ".")
+        elif "," in s and "." in s:
+            s = s.replace(",", "")
+        raw = s
+    try:
+        return round(float(raw), 2)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=400,
+            detail="Kolom harga wajib numerik (COLOR WHITE/COLOR BLACK/FLOURASENT/METALIC/EMBOSS/SPESIAL EMBOSS)",
+        )
+
+
 def _row_to_summary(r: BuyerPriceList) -> BuyerPriceSummaryOut:
     return BuyerPriceSummaryOut(
         id=r.id,
         buyer_code=r.buyer_code,
+        currency=r.currency or "USD",
         title=r.title,
         period_label=r.period_label,
         period_start=r.period_start.isoformat() if r.period_start else None,
         period_end=r.period_end.isoformat() if r.period_end else None,
-        source_label=r.source_label,
     )
+
+
+def _extract_sheet_overview(rows: list[BuyerPriceSheetRow]) -> tuple[list[str], list[str]]:
+    item_codes: list[str] = []
+    filled_components: list[str] = []
+    seen_item: set[str] = set()
+    seen_component: set[str] = set()
+    for row in rows:
+        cells = row.cells if isinstance(row.cells, dict) else {}
+        item = str(cells.get("ITEM") or "").strip()
+        if item and item not in seen_item:
+            seen_item.add(item)
+            item_codes.append(item)
+        for key in _NUMERIC_PRICE_KEYS:
+            val = cells.get(key)
+            if val in (None, ""):
+                continue
+            try:
+                num = float(val)
+            except (TypeError, ValueError):
+                continue
+            if num <= 0:
+                continue
+            if key not in seen_component:
+                seen_component.add(key)
+                filled_components.append(key)
+    return item_codes, filled_components
 
 
 @router.get("/buyer-prices/lists", response_model=list[BuyerPriceSummaryOut])
@@ -66,7 +130,25 @@ def list_buyer_prices(
     _user=Depends(get_current_user),
 ) -> list[BuyerPriceSummaryOut]:
     rows = db.scalars(select(BuyerPriceList).order_by(BuyerPriceList.buyer_code)).all()
-    return [_row_to_summary(r) for r in rows]
+    if not rows:
+        return []
+    list_ids = [r.id for r in rows]
+    sheet_rows = db.scalars(
+        select(BuyerPriceSheetRow)
+        .where(BuyerPriceSheetRow.list_id.in_(list_ids))
+        .order_by(BuyerPriceSheetRow.list_id, BuyerPriceSheetRow.row_number)
+    ).all()
+    grouped: dict[int, list[BuyerPriceSheetRow]] = {x: [] for x in list_ids}
+    for sr in sheet_rows:
+        grouped.setdefault(sr.list_id, []).append(sr)
+    out: list[BuyerPriceSummaryOut] = []
+    for r in rows:
+        summary = _row_to_summary(r)
+        item_codes, filled_components = _extract_sheet_overview(grouped.get(r.id, []))
+        summary.item_codes = item_codes
+        summary.filled_price_components = filled_components
+        out.append(summary)
+    return out
 
 
 @router.post("/buyer-prices/lists", response_model=BuyerPriceSummaryOut)
@@ -87,7 +169,7 @@ def create_buyer_price_list(
         period_label=body.period_label,
         period_start=body.period_start,
         period_end=body.period_end,
-        source_label=body.source_label,
+        currency=body.currency or "USD",
     )
     db.add(row)
     db.commit()
@@ -157,7 +239,11 @@ def save_buyer_price_sheet(
             raw_cells = {}
         cells: dict[str, Any] = {}
         for ck in column_keys:
-            cells[ck] = _normalize_cell_value(raw_cells.get(ck))
+            raw_val = raw_cells.get(ck)
+            if str(ck).strip().upper() in _NUMERIC_PRICE_KEYS:
+                cells[ck] = _normalize_price_cell(raw_val)
+            else:
+                cells[ck] = _normalize_cell_value(raw_val)
         db.add(BuyerPriceSheetRow(list_id=list_id, row_number=i, cells=cells))
 
     db.commit()

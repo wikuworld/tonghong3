@@ -1,6 +1,5 @@
 import io
 from openpyxl import Workbook, load_workbook
-from typing import BinaryIO
 
 def export_to_excel(data: list[dict], columns: list[str], sheet_name: str = "Sheet1") -> bytes:
     wb = Workbook()

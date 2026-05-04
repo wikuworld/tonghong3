@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import csv
 import io
 from app.db import get_db
-from app.models import SpecialPrice, CustomerSpecialPrice, BuyerPriceList, BuyerPriceSheetRow
+from app.models import SpecialPrice, CustomerSpecialPrice, BuyerPriceList
 from app.schemas import SpecialPriceCreate, SpecialPriceUpdate, SpecialPriceOut, CustomerSpecialPriceCreate, CustomerSpecialPriceUpdate, CustomerSpecialPriceOut
 
 router = APIRouter(prefix="/pricing", tags=["pricing"])
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/pricing", tags=["pricing"])
 
 @router.get("/special-prices", response_model=list[SpecialPriceOut])
 def list_special_prices(buyer_code: str = None, db: Session = Depends(get_db)):
-    query = db.query(SpecialPrice).filter(SpecialPrice.is_active == True)
+    query = db.query(SpecialPrice).filter(SpecialPrice.is_active)
     if buyer_code:
         query = query.filter(SpecialPrice.buyer_code == buyer_code)
     return query.order_by(SpecialPrice.id.desc()).all()
@@ -52,7 +52,7 @@ def delete_special_price(price_id: int, db: Session = Depends(get_db)):
 
 @router.get("/customer-prices", response_model=list[CustomerSpecialPriceOut])
 def list_customer_prices(customer_id: int = None, db: Session = Depends(get_db)):
-    query = db.query(CustomerSpecialPrice).filter(CustomerSpecialPrice.is_active == True)
+    query = db.query(CustomerSpecialPrice).filter(CustomerSpecialPrice.is_active)
     if customer_id:
         query = query.filter(CustomerSpecialPrice.customer_id == customer_id)
     return query.order_by(CustomerSpecialPrice.id.desc()).all()
@@ -152,7 +152,7 @@ async def bulk_update_prices_csv(file: UploadFile = File(...), db: Session = Dep
         
         try:
             new_price_dec = Decimal(new_price)
-        except:
+        except (InvalidOperation, ValueError):
             continue
         
         buyer_list = db.query(BuyerPriceList).filter(

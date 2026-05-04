@@ -19,13 +19,71 @@ def _norm(s: str | None) -> str:
     return re.sub(r"\s+", " ", str(s).strip().lower())
 
 
+def _norm_alnum(s: str | None) -> str:
+    raw = _norm(s)
+    if not raw:
+        return ""
+    raw = raw.replace("&", " and ")
+    raw = re.sub(r"[^a-z0-9.\-\s]", " ", raw)
+    return re.sub(r"\s+", " ", raw).strip()
+
+
+def _material_variants(material_name: str | None) -> list[str]:
+    base = _norm_alnum(material_name)
+    if not base:
+        return []
+    out: set[str] = {base}
+    # Hilangkan istilah umum yang sering membuat mismatch.
+    stripped = re.sub(r"\b(map|leather|material|coated)\b", " ", base)
+    stripped = re.sub(r"\s+", " ", stripped).strip()
+    if stripped:
+        out.add(stripped)
+    # Buang suffix dalam kurung: "SPLIT SUEDE (MAP-SPLIT SUEDE)" -> "split suede".
+    no_paren = re.sub(r"\(.*?\)", " ", base)
+    no_paren = re.sub(r"\s+", " ", no_paren).strip()
+    if no_paren:
+        out.add(no_paren)
+    return [x for x in out if x]
+
+
+def _normalize_thickness_token(thickness_text: str | None) -> str:
+    t = _norm_alnum(thickness_text)
+    if not t:
+        return ""
+    t = re.sub(r"\bmm\b", "", t).strip()
+    t = re.sub(r"\s*-\s*", "-", t)
+    return t
+
+
+def _thickness_variants(thickness_text: str | None) -> list[str]:
+    t = _normalize_thickness_token(thickness_text)
+    if not t:
+        return []
+    out: set[str] = {t}
+    if "-" in t:
+        parts = [p.strip() for p in t.split("-", 1)]
+        if len(parts) == 2 and all(parts):
+            out.add(f"{parts[0]} - {parts[1]}")
+            out.add(f"{parts[0]}-{parts[1]} mm")
+            out.add(f"{parts[0]} - {parts[1]} mm")
+    return [x for x in out if x]
+
+
 def _collect_price_keys(column_keys: list[str]) -> list[str]:
+    std_price_labels = {
+        "COLOR WHITE",
+        "COLOR BLACK",
+        "FLOURASENT",
+        "METALIC",
+        "EMBOSS",
+        "SPESIAL EMBOSS",
+    }
     out: list[str] = []
     for k in column_keys:
         if k is None:
             continue
         ks = str(k).strip()
-        if re.search(r"price|harga", ks, re.I):
+        if re.search(r"price|harga", ks, re.I) or ks.upper() in std_price_labels:
             out.append(ks)
     return out
 
@@ -76,16 +134,16 @@ def _score_row(
     style_article: str | None,
     thickness_text: str | None,
 ) -> int:
-    mat = _norm(material_name)
-    col = _norm(color)
-    sty = _norm(style_article)
-    th = _norm(thickness_text)
+    mat_variants = _material_variants(material_name)
+    col = _norm_alnum(color)
+    sty = _norm_alnum(style_article)
+    th_variants = _thickness_variants(thickness_text)
     blob_parts: list[str] = []
     thick_cells: list[str] = []
     for k in keys:
         if k in price_key_set:
             continue
-        cell = _norm(row.get(k))
+        cell = _norm_alnum(row.get(k))
         if not cell:
             continue
         blob_parts.append(cell)
@@ -93,15 +151,19 @@ def _score_row(
             thick_cells.append(cell)
     blob = " ".join(blob_parts)
     s = 0
-    if mat:
-        if mat in blob:
+    if mat_variants:
+        if any(m in blob for m in mat_variants):
             s += 12
         for part in blob_parts:
-            if mat in part or part in mat:
+            if any(m in part or part in m for m in mat_variants):
                 s += 6
                 break
-    if th:
-        matched_th = any(th in c or c in th for c in thick_cells) if thick_cells else th in blob
+    if th_variants:
+        matched_th = False
+        if thick_cells:
+            matched_th = any(tv in c or c in tv for tv in th_variants for c in thick_cells)
+        else:
+            matched_th = any(tv in blob for tv in th_variants)
         if matched_th:
             s += 10
     if sty and sty in blob:
@@ -187,16 +249,48 @@ def resolve_unit_price_for_buyer(
             "detail": f"Tidak ada baris yang cocok untuk material '{material_name or '-'}' dengan kriteria yang diberikan - cek nama material atau thickness",
         }
 
+    normalized_keys = {str(k).strip().upper(): str(k).strip() for k in keys}
+    base_key = normalized_keys.get("COLOR WHITE")
+    add_black_key = normalized_keys.get("COLOR BLACK")
+    add_fluor_key = normalized_keys.get("FLOURASENT")
+    add_metalic_key = normalized_keys.get("METALIC")
+    add_emboss_key = normalized_keys.get("EMBOSS")
+    add_special_emboss_key = normalized_keys.get("SPESIAL EMBOSS")
+
     unit: Decimal | None = None
     chosen_col = price_col
-    if chosen_col:
-        unit = _parse_price_cell(best_row.get(chosen_col))
+    color_text = _norm(color)
+
+    # New pricing matrix: COLOR WHITE is base; other columns are additive toppings.
+    if base_key and best_row.get(base_key) not in (None, ""):
+        base = _parse_price_cell(best_row.get(base_key))
+        if base is not None:
+            add_total = Decimal("0")
+            cf = (color_family or "").strip().lower()
+            if cf == "black" and add_black_key:
+                add_total += _parse_price_cell(best_row.get(add_black_key)) or Decimal("0")
+            if cf == "fluorescent" and add_fluor_key:
+                add_total += _parse_price_cell(best_row.get(add_fluor_key)) or Decimal("0")
+            if "metalic" in color_text or "metallic" in color_text:
+                if add_metalic_key:
+                    add_total += _parse_price_cell(best_row.get(add_metalic_key)) or Decimal("0")
+            if "spesial emboss" in color_text or "special emboss" in color_text:
+                if add_special_emboss_key:
+                    add_total += _parse_price_cell(best_row.get(add_special_emboss_key)) or Decimal("0")
+            elif "emboss" in color_text and add_emboss_key:
+                add_total += _parse_price_cell(best_row.get(add_emboss_key)) or Decimal("0")
+            unit = base + add_total
+            chosen_col = "COLOR WHITE (+addons)"
+
     if unit is None:
-        for pk in price_keys:
-            unit = _parse_price_cell(best_row.get(pk))
-            if unit is not None:
-                chosen_col = pk
-                break
+        if chosen_col:
+            unit = _parse_price_cell(best_row.get(chosen_col))
+        if unit is None:
+            for pk in price_keys:
+                unit = _parse_price_cell(best_row.get(pk))
+                if unit is not None:
+                    chosen_col = pk
+                    break
 
     if unit is None:
         return {

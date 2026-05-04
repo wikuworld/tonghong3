@@ -26,6 +26,12 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "delete": [],
         "advance": ["marketing", "ppic"],
     },
+    "quotations": {
+        "view": ["marketing", "sales", "finance"],
+        "create": ["marketing", "sales"],
+        "update": ["marketing", "sales"],
+        "delete": ["marketing"],
+    },
     "production": {
         "view": ["production", "ppic", "qc"],
         "create": ["production", "ppic"],

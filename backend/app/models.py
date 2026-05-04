@@ -43,9 +43,14 @@ class Customer(Base):
     skep_kb_number: Mapped[Optional[str]] = mapped_column(String(80))
     customs_office_code: Mapped[Optional[str]] = mapped_column(String(32))
     address: Mapped[Optional[str]] = mapped_column(Text)
+    billing_address: Mapped[Optional[str]] = mapped_column(Text)
     remark: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_export_customer: Mapped[bool] = mapped_column(Boolean, default=False)
-    bill_to: Mapped[Optional[str]] = mapped_column(Text)
+    payment_terms: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    default_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
+    tax_mode: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    reference_quotation: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     wilayah_province_code: Mapped[Optional[str]] = mapped_column(String(8))
     wilayah_regency_code: Mapped[Optional[str]] = mapped_column(String(16))
     wilayah_district_code: Mapped[Optional[str]] = mapped_column(String(24))
@@ -58,7 +63,13 @@ class Customer(Base):
     brand_mappings: Mapped[list["CustomerBrandMapping"]] = relationship(
         "CustomerBrandMapping", back_populates="customer", cascade="all, delete-orphan"
     )
+    contacts: Mapped[list["CustomerPic"]] = relationship(
+        "CustomerPic", cascade="all, delete-orphan"
+    )
     invoices: Mapped[list["Invoice"]] = relationship("Invoice", overlaps="customer")
+    quotations: Mapped[list["QuotationHeader"]] = relationship(
+        "QuotationHeader", back_populates="customer"
+    )
 
 
 class MasterItem(Base):
@@ -89,6 +100,9 @@ class MasterItem(Base):
 
     po_details: Mapped[list["PoDetail"]] = relationship(
         "PoDetail", back_populates="master_item"
+    )
+    quotation_lines: Mapped[list["QuotationLine"]] = relationship(
+        "QuotationLine", back_populates="master_item"
     )
 
 
@@ -165,7 +179,6 @@ class BuyerPriceList(Base):
     period_label: Mapped[Optional[str]] = mapped_column(Text)
     period_start: Mapped[Optional[date]] = mapped_column(Date)
     period_end: Mapped[Optional[date]] = mapped_column(Date)
-    source_label: Mapped[Optional[str]] = mapped_column(String(255))
     meta_json: Mapped[Optional[dict]] = mapped_column(JSON)
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
@@ -239,6 +252,37 @@ class BrandBuyerMap(Base):
     buyer_code: Mapped[str] = mapped_column(String(32))
 
 
+class FluorescentColorMaster(Base):
+    """Master warna fluorescent/metallic per buyer + season."""
+
+    __tablename__ = "fluorescent_color_masters"
+    __table_args__ = (
+        UniqueConstraint(
+            "buyer_code",
+            "season_label",
+            "color_code",
+            "color_name",
+            name="uq_fluorescent_color_master",
+        ),
+        Index("ix_fluorescent_color_masters_buyer", "buyer_code"),
+        Index("ix_fluorescent_color_masters_season", "season_label"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    buyer_code: Mapped[str] = mapped_column(String(32), default="GLOBAL")
+    season_label: Mapped[Optional[str]] = mapped_column(String(64))
+    season_year: Mapped[Optional[int]] = mapped_column(Integer)
+    season_type: Mapped[Optional[str]] = mapped_column(String(16))
+    color_name: Mapped[str] = mapped_column(String(255))
+    color_code: Mapped[Optional[str]] = mapped_column(String(64))
+    color_class: Mapped[str] = mapped_column(String(32), default="fluorescent")
+    source_file: Mapped[Optional[str]] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+
+
 class CustomerPic(Base):
     __tablename__ = "customer_pics"
 
@@ -250,6 +294,8 @@ class CustomerPic(Base):
     phone: Mapped[Optional[str]] = mapped_column(String(50))
     email: Mapped[Optional[str]] = mapped_column(String(255))
     title: Mapped[Optional[str]] = mapped_column(String(120))
+
+    customer: Mapped[Optional["Customer"]] = relationship("Customer", back_populates="contacts")
 
 
 class SpecialPrice(Base):
@@ -287,6 +333,63 @@ class CustomerSpecialPrice(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
 
     customer: Mapped[Optional["Customer"]] = relationship("Customer")
+
+
+class QuotationHeader(Base):
+    """Penawaran harga (legacy Create Quotation)."""
+
+    __tablename__ = "quotation_headers"
+    __table_args__ = (
+        Index("ix_quotation_headers_customer_id", "customer_id"),
+        Index("ix_quotation_headers_status", "status"),
+        Index("ix_quotation_headers_quotation_date", "quotation_date"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    quotation_number: Mapped[Optional[str]] = mapped_column(String(100), unique=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("customers.id", ondelete="SET NULL"))
+    quotation_date: Mapped[Optional[date]] = mapped_column(Date)
+    currency: Mapped[Optional[str]] = mapped_column(String(3), default="USD")
+    payment_terms: Mapped[Optional[str]] = mapped_column(String(255))
+    valid_until: Mapped[Optional[date]] = mapped_column(Date)
+    salesperson: Mapped[Optional[str]] = mapped_column(String(100))
+    remark: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    total_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    customer: Mapped[Optional["Customer"]] = relationship("Customer", back_populates="quotations")
+    lines: Mapped[list["QuotationLine"]] = relationship(
+        "QuotationLine", back_populates="quotation", cascade="all, delete-orphan", order_by="QuotationLine.line_no"
+    )
+
+
+class QuotationLine(Base):
+    __tablename__ = "quotation_lines"
+    __table_args__ = (Index("ix_quotation_lines_quotation_id", "quotation_id"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    quotation_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("quotation_headers.id", ondelete="CASCADE"), nullable=False
+    )
+    line_no: Mapped[int] = mapped_column(Integer)
+    master_item_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("master_items.id", ondelete="SET NULL"))
+    item_code: Mapped[Optional[str]] = mapped_column(String(80))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    color: Mapped[Optional[str]] = mapped_column(String(200))
+    specification: Mapped[Optional[str]] = mapped_column(String(500))
+    quantity: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    unit: Mapped[Optional[str]] = mapped_column(String(20), default="S/F")
+    unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    discount_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), default=0)
+    tax_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), default=0)
+    line_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+
+    quotation: Mapped["QuotationHeader"] = relationship("QuotationHeader", back_populates="lines")
+    master_item: Mapped[Optional["MasterItem"]] = relationship("MasterItem", back_populates="quotation_lines")
 
 
 class PoHeader(Base):
@@ -535,6 +638,8 @@ class DeliveryHeader(Base):
     )
     packing_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("packing_headers.id"))
     surat_jalan_printed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # local = dalam kota (commercial invoice H+1); outtown = luar kota (boleh hari pengiriman setelah INVPL)
+    delivery_zone: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
 
     invoices: Mapped[list["Invoice"]] = relationship("Invoice", back_populates="delivery")
     customer: Mapped[Optional["Customer"]] = relationship("Customer")

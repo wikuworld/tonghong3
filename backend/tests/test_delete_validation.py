@@ -1,12 +1,12 @@
 """Unit tests for delete validations."""
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from fastapi import HTTPException
 
 from app.routers.customers import delete_customer
 from app.routers.buyer_prices import delete_buyer_price_list
-from app.models import Customer, BuyerPriceList, PoHeader
+from app.models import Customer, BuyerPriceList
 
 
 class TestCustomerDeleteValidation:

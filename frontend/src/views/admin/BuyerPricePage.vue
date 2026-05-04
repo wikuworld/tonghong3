@@ -26,12 +26,31 @@
       >
         <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
         <el-table-column prop="buyer_code" :label="t('pages.buyerPrices.buyerCode')" width="120" show-overflow-tooltip />
+        <el-table-column prop="currency" :label="t('pages.buyerPrices.currency')" width="90" align="center" />
         <el-table-column prop="title" :label="t('pages.buyerPrices.listTitle')" min-width="160" show-overflow-tooltip />
         <el-table-column prop="period_label" :label="t('pages.buyerPrices.period')" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="source_label" :label="t('pages.buyerPrices.source')" min-width="140" show-overflow-tooltip />
-        <el-table-column :label="t('common.actions')" width="100" align="center" fixed="right">
+        <el-table-column :label="t('pages.buyerPrices.itemList')" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ previewList(row.item_codes) }}
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('pages.buyerPrices.priceComponentsFilled')" min-width="220" show-overflow-tooltip>
+          <template #default="{ row }">
+            {{ previewList(row.filled_price_components) }}
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('common.actions')" width="130" align="center" fixed="right">
           <template #default="{ row }">
             <div class="flex flex-wrap items-center justify-center gap-0">
+              <el-tooltip :content="t('pages.buyerPrices.viewDetail')" placement="top">
+                <el-button
+                  :icon="View"
+                  link
+                  type="info"
+                  :aria-label="t('pages.buyerPrices.viewDetail')"
+                  @click="openDetail(row.id)"
+                />
+              </el-tooltip>
               <el-tooltip :content="t('pages.buyerPrices.manageData')" placement="top">
                 <el-button
                   :icon="EditPen"
@@ -88,8 +107,55 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="createSaving" @click="submitCreate">{{ t('common.save') }}</el-button>
+        <el-button :icon="Close" @click="createVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :icon="Check" :loading="createSaving" @click="submitCreate">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="detailVisible"
+      :title="t('pages.buyerPrices.detailDialogTitle')"
+      width="900px"
+      destroy-on-close
+      align-center
+    >
+      <div v-loading="detailLoading" class="space-y-3">
+        <el-descriptions v-if="detailData" :column="2" border size="small">
+          <el-descriptions-item :label="t('pages.buyerPrices.buyerCode')">{{ detailData.buyer_code || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('pages.buyerPrices.currency')">{{ detailData.currency || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('pages.buyerPrices.listTitle')">{{ detailData.title || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('pages.buyerPrices.period')">{{ detailData.period_label || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="t('pages.buyerPrices.itemList')" :span="2">
+            {{ previewList(extractUniqueItems(detailData.rows), 30) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.buyerPrices.priceComponentsFilled')" :span="2">
+            {{ previewList(extractFilledComponents(detailData.rows), 30) }}
+          </el-descriptions-item>
+        </el-descriptions>
+        <el-table
+          v-if="detailData"
+          :data="normalizeRows(detailData.rows)"
+          border
+          stripe
+          size="small"
+          class="admin-table"
+          max-height="48vh"
+          table-layout="auto"
+        >
+          <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
+          <el-table-column prop="ITEM" label="ITEM" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="THICKNESS" label="THICKNESS" min-width="110" show-overflow-tooltip />
+          <el-table-column prop="COLOR" label="COLOR" min-width="110" show-overflow-tooltip />
+          <el-table-column prop="COLOR WHITE" label="COLOR WHITE" min-width="130" />
+          <el-table-column prop="COLOR BLACK" label="COLOR BLACK" min-width="130" />
+          <el-table-column prop="FLOURASENT" label="FLOURASENT" min-width="120" />
+          <el-table-column prop="METALIC" label="METALIC" min-width="110" />
+          <el-table-column prop="EMBOSS" label="EMBOSS" min-width="110" />
+          <el-table-column prop="SPESIAL EMBOSS" label="SPESIAL EMBOSS" min-width="150" />
+        </el-table>
+      </div>
+      <template #footer>
+        <el-button @click="detailVisible = false">{{ t('common.close') }}</el-button>
       </template>
     </el-dialog>
 
@@ -107,6 +173,15 @@
             <el-col :span="24">
               <el-form-item :label="t('pages.buyerPrices.periodLabel')">
                 <el-input v-model="headerForm.period_label" maxlength="255" clearable />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item :label="t('pages.buyerPrices.currency')">
+                <el-select v-model="headerForm.currency" class="w-full">
+                  <el-option label="USD" value="USD" />
+                  <el-option label="IDR" value="IDR" />
+                  <el-option label="EUR" value="EUR" />
+                </el-select>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :sm="12">
@@ -131,31 +206,162 @@
                 />
               </el-form-item>
             </el-col>
-            <el-col :span="24">
-              <el-form-item :label="t('pages.buyerPrices.source')">
-                <el-input v-model="headerForm.source_label" maxlength="255" clearable />
-              </el-form-item>
-            </el-col>
           </el-row>
         </el-form>
 
         <el-divider content-position="left">{{ t('pages.buyerPrices.sectionSheet') }}</el-divider>
+        <el-alert type="info" :closable="false" class="mb-2">
+          Harga dihitung dari base <strong>COLOR WHITE</strong>. Kolom +COLOR BLACK, +FLOURASENT, +METALIC, +EMBOSS,
+          dan +SPESIAL EMBOSS adalah nilai penambahan dari base.
+        </el-alert>
         <div class="flex flex-wrap items-center gap-2 pb-2">
-          <el-button type="primary" plain @click="promptAddColumn">{{ t('pages.buyerPrices.addColumn') }}</el-button>
           <el-button @click="addSheetRow">{{ t('pages.buyerPrices.addRow') }}</el-button>
           <el-button type="primary" :loading="masterSaving" @click="saveMaster">{{ t('pages.buyerPrices.saveSheet') }}</el-button>
         </div>
 
         <el-table :data="sheetRows" border stripe size="small" class="admin-table" max-height="52vh" table-layout="auto">
-          <el-table-column type="index" :label="t('common.noLabel')" width="52" align="center" fixed />
-          <el-table-column
-            v-for="key in sheetColumnKeys"
-            :key="key"
-            :label="key"
-            :min-width="key.length > 12 ? 160 : 120"
-          >
+          <el-table-column type="index" label="NO" width="52" align="center" fixed />
+          <el-table-column label="ITEM" min-width="200" fixed>
             <template #default="{ row }">
-              <el-input v-model="row[key]" size="small" clearable />
+              <el-select
+                v-model="row.ITEM"
+                filterable
+                clearable
+                placeholder="Pilih Material"
+                class="w-full"
+                size="small"
+                @change="onItemChange(row)"
+              >
+                <el-option
+                  v-for="item in masterItems"
+                  :key="`${item.item_code}-${item.material_name}`"
+                  :label="itemOptionLabel(item)"
+                  :value="item.material_name || item.item_code || ''"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="THICKNESS" min-width="120">
+            <template #default="{ row }">
+              <el-input v-model="row.THICKNESS" size="small" disabled />
+            </template>
+          </el-table-column>
+          <el-table-column label="COLOR" min-width="120">
+            <template #default="{ row }">
+              <el-input v-model="row.COLOR" size="small" disabled />
+            </template>
+          </el-table-column>
+          <el-table-column label="COLOR WHITE (BASE)" min-width="150">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row['COLOR WHITE']"
+                size="small"
+                :controls="false"
+                :min="0"
+                :precision="2"
+                :step="0.01"
+                class="w-full"
+                placeholder="0"
+              >
+                <template #suffix>
+                  <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
+                </template>
+              </el-input-number>
+            </template>
+          </el-table-column>
+          <el-table-column label="+ COLOR BLACK" min-width="120">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row['COLOR BLACK']"
+                size="small"
+                :controls="false"
+                :min="0"
+                :precision="2"
+                :step="0.01"
+                class="w-full"
+                placeholder="0"
+                @change="(val) => onAddonPriceChange(row, 'COLOR BLACK', val)"
+              >
+                <template #suffix>
+                  <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
+                </template>
+              </el-input-number>
+            </template>
+          </el-table-column>
+          <el-table-column label="+ FLOURASENT" min-width="120">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.FLOURASENT"
+                size="small"
+                :controls="false"
+                :min="0"
+                :precision="2"
+                :step="0.01"
+                class="w-full"
+                placeholder="0"
+                @change="(val) => onAddonPriceChange(row, 'FLOURASENT', val)"
+              >
+                <template #suffix>
+                  <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
+                </template>
+              </el-input-number>
+            </template>
+          </el-table-column>
+          <el-table-column label="+ METALIC" min-width="120">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.METALIC"
+                size="small"
+                :controls="false"
+                :min="0"
+                :precision="2"
+                :step="0.01"
+                class="w-full"
+                placeholder="0"
+                @change="(val) => onAddonPriceChange(row, 'METALIC', val)"
+              >
+                <template #suffix>
+                  <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
+                </template>
+              </el-input-number>
+            </template>
+          </el-table-column>
+          <el-table-column label="+ EMBOSS" min-width="120">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.EMBOSS"
+                size="small"
+                :controls="false"
+                :min="0"
+                :precision="2"
+                :step="0.01"
+                class="w-full"
+                placeholder="0"
+                @change="(val) => onAddonPriceChange(row, 'EMBOSS', val)"
+              >
+                <template #suffix>
+                  <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
+                </template>
+              </el-input-number>
+            </template>
+          </el-table-column>
+          <el-table-column label="+ SPESIAL EMBOSS" min-width="140">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row['SPESIAL EMBOSS']"
+                size="small"
+                :controls="false"
+                :min="0"
+                :precision="2"
+                :step="0.01"
+                class="w-full"
+                placeholder="0"
+                @change="(val) => onAddonPriceChange(row, 'SPESIAL EMBOSS', val)"
+              >
+                <template #suffix>
+                  <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
+                </template>
+              </el-input-number>
             </template>
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="72" align="center" fixed="right">
@@ -181,7 +387,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Delete, EditPen, Plus } from '@element-plus/icons-vue'
+import { Delete, EditPen, Plus, Close, Check, View } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminSection from '../../components/AdminSection.vue'
 import {
@@ -189,6 +395,7 @@ import {
   deleteBuyerPriceList,
   getBuyerPriceList,
   listBuyerPriceLists,
+  listMasterItems,
   saveBuyerPriceSheet,
   toIsoDate,
   updateBuyerPriceList,
@@ -196,11 +403,15 @@ import {
 
 const { t } = useI18n()
 
-const DEFAULT_COLUMNS = ['NO', 'ITEM', 'DESCRIPTION', 'UOM', 'PRICE']
+const SHEET_COLUMNS = ['ITEM', 'THICKNESS', 'COLOR', 'COLOR WHITE', 'COLOR BLACK', 'FLOURASENT', 'METALIC', 'EMBOSS', 'SPESIAL EMBOSS']
 
 const rows = ref([])
 const loading = ref(false)
 const keyword = ref('')
+const masterItems = ref([])
+const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detailData = ref(null)
 
 const createVisible = ref(false)
 const createSaving = ref(false)
@@ -222,13 +433,12 @@ const masterBuyerCode = ref('')
 
 const headerForm = reactive({
   title: '',
+  currency: 'USD',
   period_label: '',
   period_start: '',
   period_end: '',
-  source_label: '',
 })
 
-const sheetColumnKeys = ref([])
 const sheetRows = ref([])
 
 const masterDrawerTitle = computed(() => {
@@ -240,7 +450,7 @@ const filteredRows = computed(() => {
   const k = keyword.value.trim().toLowerCase()
   if (!k) return rows.value
   return rows.value.filter((r) => {
-    const hay = [r.buyer_code, r.title, r.period_label, r.source_label]
+    const hay = [r.buyer_code, r.title, r.period_label, r.currency]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()
@@ -248,47 +458,140 @@ const filteredRows = computed(() => {
   })
 })
 
-function inferColumnKeys(meta, dataRows) {
-  const mk = meta?.column_keys
-  if (Array.isArray(mk) && mk.length) {
-    const seen = new Set(mk)
-    const extra = []
-    for (const r of dataRows || []) {
-      if (r && typeof r === 'object') {
-        for (const key of Object.keys(r)) {
-          if (!seen.has(key)) {
-            seen.add(key)
-            extra.push(key)
-          }
-        }
-      }
-    }
-    extra.sort((a, b) => a.localeCompare(b))
-    return [...mk, ...extra]
-  }
-  const u = new Set()
-  for (const r of dataRows || []) {
-    if (r && typeof r === 'object') Object.keys(r).forEach((k) => u.add(k))
-  }
-  if (u.size) return [...u].sort((a, b) => a.localeCompare(b))
-  return [...DEFAULT_COLUMNS]
-}
-
-function normalizeRows(dataRows, keys) {
+function normalizeRows(dataRows) {
   return (dataRows || []).map((r) => {
     const o = {}
-    for (const k of keys) {
+    for (const k of SHEET_COLUMNS) {
       const v = r && typeof r === 'object' ? r[k] : undefined
-      o[k] = v != null && v !== '' ? String(v) : ''
+      if (v == null || v === '') {
+        o[k] = ''
+      } else if (isPriceColumn(k)) {
+        const num = Number(v)
+        o[k] = Number.isFinite(num) ? num : ''
+      } else {
+        o[k] = String(v)
+      }
     }
     return o
   })
+}
+
+function createEmptyRow() {
+  const o = {}
+  SHEET_COLUMNS.forEach((k) => {
+    o[k] = isPriceColumn(k) ? null : ''
+  })
+  return o
+}
+
+const PRICE_COLUMNS = new Set(['COLOR WHITE', 'COLOR BLACK', 'FLOURASENT', 'METALIC', 'EMBOSS', 'SPESIAL EMBOSS'])
+
+function isPriceColumn(key) {
+  return PRICE_COLUMNS.has(String(key || '').trim().toUpperCase())
+}
+
+function parseNumber(val) {
+  if (val == null || val === '') return null
+  const n = Number(val)
+  return Number.isFinite(n) ? n : null
+}
+
+function previewList(arr, max = 3) {
+  const list = (arr || []).filter(Boolean)
+  if (!list.length) return '-'
+  if (list.length <= max) return list.join(', ')
+  return `${list.slice(0, max).join(', ')} +${list.length - max}`
+}
+
+function extractUniqueItems(dataRows) {
+  const seen = new Set()
+  const out = []
+  for (const row of dataRows || []) {
+    const code = String(row?.ITEM || '').trim()
+    if (!code || seen.has(code)) continue
+    seen.add(code)
+    out.push(code)
+  }
+  return out
+}
+
+function extractFilledComponents(dataRows) {
+  const keys = ['COLOR WHITE', 'COLOR BLACK', 'FLOURASENT', 'METALIC', 'EMBOSS', 'SPESIAL EMBOSS']
+  const out = []
+  for (const key of keys) {
+    const hasValue = (dataRows || []).some((row) => {
+      const v = row?.[key]
+      if (v == null || v === '') return false
+      const n = Number(v)
+      return Number.isFinite(n) && n > 0
+    })
+    if (hasValue) out.push(key)
+  }
+  return out
+}
+
+function formatPopupNumber(val) {
+  return Number(val).toLocaleString('id-ID', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+function onAddonPriceChange(row, addonKey, addonValue) {
+  const addon = parseNumber(addonValue)
+  if (addon == null) return
+  const base = parseNumber(row['COLOR WHITE'])
+  if (base == null) {
+    ElMessage.warning(t('pages.buyerPrices.popupNeedBase'))
+    return
+  }
+  const total = base + addon
+  ElMessage.info(
+    t('pages.buyerPrices.popupAddonTotal', {
+      addon: addonKey,
+      value: formatPopupNumber(addon),
+      total: formatPopupNumber(total),
+    }),
+  )
+}
+
+function onItemChange(row) {
+  const selected = masterItems.value.find((i) => (i.material_name || '') === row.ITEM)
+  if (selected) {
+    row.THICKNESS = selected.thickness_range || ''
+    const suggestions = colorSuggestionsFromItem(selected)
+    row.COLOR = suggestions[0] || selected.color_standard || selected.color_reference || selected.color || ''
+  }
+}
+
+function itemOptionLabel(item) {
+  return item.material_name || item.item_code || '-'
+}
+
+function colorSuggestionsFromItem(item) {
+  const src = [item?.color_standard, item?.color_reference]
+    .filter(Boolean)
+    .join(',')
+  const out = []
+  for (const raw of src.split(/[,/;|]/)) {
+    const v = String(raw || '').trim()
+    if (v && !out.includes(v)) out.push(v)
+  }
+  return out
+}
+
+function queryColorSuggestions(row, queryString, cb) {
+  const selected = masterItems.value.find((i) => (i.material_name || '') === row.ITEM)
+  const options = selected ? colorSuggestionsFromItem(selected) : []
+  const q = (queryString || '').trim().toLowerCase()
+  cb(options.filter((x) => !q || x.toLowerCase().includes(q)).slice(0, 12).map((x) => ({ value: x })))
 }
 
 function resetCreateForm() {
   createForm.buyer_code = ''
   createForm.title = ''
   createForm.currency = 'USD'
+  headerForm.currency = 'USD'
 }
 
 function openCreateDialog() {
@@ -335,7 +638,6 @@ function onMasterClosed() {
   activeListId.value = null
   masterBuyerCode.value = ''
   sheetRows.value = []
-  sheetColumnKeys.value = []
 }
 
 const drawerSize = computed(() => {
@@ -353,53 +655,43 @@ async function openMaster(id) {
     const d = await getBuyerPriceList(id)
     masterBuyerCode.value = d.buyer_code || ''
     headerForm.title = d.title || ''
+    headerForm.currency = d.currency || 'USD'
     headerForm.period_label = d.period_label || ''
     headerForm.period_start = d.period_start || ''
     headerForm.period_end = d.period_end || ''
-    headerForm.source_label = d.source_label || ''
-    const keys = inferColumnKeys(d.meta_json, d.rows)
-    sheetColumnKeys.value = keys
-    sheetRows.value = normalizeRows(d.rows, keys)
+    sheetRows.value = normalizeRows(d.rows)
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
     masterDrawer.value = false
+    masterLoading.value = false
+    return
+  }
+  try {
+    const items = await listMasterItems()
+    masterItems.value = items || []
+  } catch (e) {
+    console.warn('Failed to load master items:', e)
+    masterItems.value = []
   } finally {
     masterLoading.value = false
   }
 }
 
-function promptAddColumn() {
-  ElMessageBox.prompt(t('pages.buyerPrices.columnNamePrompt'), t('pages.buyerPrices.addColumn'), {
-    confirmButtonText: t('common.save'),
-    cancelButtonText: t('common.cancel'),
-    inputPattern: /\S/,
-    inputErrorMessage: t('pages.buyerPrices.columnNamePrompt'),
-  })
-    .then(({ value }) => {
-      const name = String(value).trim()
-      if (!name) return
-      if (sheetColumnKeys.value.includes(name)) {
-        ElMessage.error(t('pages.buyerPrices.duplicateColumn'))
-        return
-      }
-      sheetColumnKeys.value.push(name)
-      sheetRows.value.forEach((r) => {
-        r[name] = ''
-      })
-    })
-    .catch(() => {})
+async function openDetail(id) {
+  detailVisible.value = true
+  detailLoading.value = true
+  try {
+    detailData.value = await getBuyerPriceList(id)
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+    detailVisible.value = false
+  } finally {
+    detailLoading.value = false
+  }
 }
 
 function addSheetRow() {
-  if (!sheetColumnKeys.value.length) {
-    ElMessage.warning(t('pages.buyerPrices.needColumnFirst'))
-    return
-  }
-  const o = {}
-  sheetColumnKeys.value.forEach((k) => {
-    o[k] = ''
-  })
-  sheetRows.value.push(o)
+  sheetRows.value.push(createEmptyRow())
 }
 
 function removeSheetRow(index) {
@@ -412,21 +704,20 @@ async function saveMaster() {
   try {
     await updateBuyerPriceList(activeListId.value, {
       title: emptyToNull(headerForm.title),
+      currency: emptyToNull(headerForm.currency) || 'USD',
       period_label: emptyToNull(headerForm.period_label),
       period_start: toIsoDate(headerForm.period_start),
       period_end: toIsoDate(headerForm.period_end),
-      source_label: emptyToNull(headerForm.source_label),
     })
-    const keys = [...sheetColumnKeys.value]
     const rowsPayload = sheetRows.value.map((r) => {
       const o = {}
-      keys.forEach((k) => {
+      SHEET_COLUMNS.forEach((k) => {
         o[k] = r[k] ?? ''
       })
       return o
     })
     await saveBuyerPriceSheet(activeListId.value, {
-      column_keys: keys,
+      column_keys: SHEET_COLUMNS,
       rows: rowsPayload,
     })
     ElMessage.success(t('pages.buyerPrices.sheetSaved'))
@@ -477,6 +768,13 @@ onMounted(load)
 }
 .buyer-master :deep(.el-drawer__body) {
   padding-top: 0;
+}
+.buyer-price-currency-suffix {
+  display: inline-block;
+  min-width: 2.5rem;
+  text-align: right;
+  font-size: 12px;
+  color: #64748b;
 }
 @media (max-width: 768px) {
   :deep(.el-drawer) {

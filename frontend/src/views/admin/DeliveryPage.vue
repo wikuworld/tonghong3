@@ -6,6 +6,24 @@
         <el-option label="Draft" value="draft" />
         <el-option label="Sent" value="sent" />
       </el-select>
+      <el-select
+        v-model="packingStatusFilter"
+        clearable
+        :placeholder="t('pages.delivery.filterPackingStatus')"
+        class="w-36"
+      >
+        <el-option :label="t('status.draft')" value="draft" />
+        <el-option :label="t('status.done')" value="done" />
+      </el-select>
+      <el-select
+        v-model="invplFilter"
+        clearable
+        :placeholder="t('pages.delivery.filterInvplPrinted')"
+        class="w-36"
+      >
+        <el-option :label="t('pages.delivery.filterInvplYes')" value="yes" />
+        <el-option :label="t('pages.delivery.filterInvplNo')" value="no" />
+      </el-select>
       <el-button :icon="Download" :loading="exporting" @click="downloadDeliveryExcel">{{ t('pages.delivery.downloadExcel') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
@@ -85,7 +103,7 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('pages.delivery.packingRequiredLabel')" required>
-          <el-select v-model="form.packing_id" filterable class="w-full" :placeholder="t('pages.delivery.pickDonePacking')">
+          <el-select v-model="form.packing_id" filterable class="w-full" :placeholder="t('pages.delivery.pickDonePacking')" @change="onCreatePackingChange">
             <el-option
               v-for="p in packingsDone"
               :key="p.id"
@@ -94,8 +112,24 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('pages.delivery.deliveryType')" required>
+          <el-radio-group v-model="form.delivery_type" class="w-full">
+            <el-radio value="production">{{ t('status.production') }}</el-radio>
+            <el-radio value="sample">{{ t('status.sample') }}</el-radio>
+            <el-radio value="return">{{ t('status.return') }}</el-radio>
+            <el-radio value="subcont">{{ t('status.subcont') }}</el-radio>
+            <el-radio value="claim">{{ t('status.claim') }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item :label="t('common.date')">
           <el-date-picker v-model="form.delivery_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
+        </el-form-item>
+        <el-form-item :label="t('pages.delivery.deliveryZone')">
+          <el-select v-model="form.delivery_zone" class="w-full">
+            <el-option :label="t('pages.delivery.deliveryZoneOuttown')" value="outtown" />
+            <el-option :label="t('pages.delivery.deliveryZoneLocal')" value="local" />
+          </el-select>
+          <span class="mt-1 block text-xs text-slate-500">{{ t('pages.delivery.deliveryZoneHint') }}</span>
         </el-form-item>
         <el-form-item :label="t('common.vehicle')">
           <el-input v-model="form.vehicle_number" />
@@ -103,11 +137,47 @@
         <el-form-item :label="t('common.driver')">
           <el-input v-model="form.driver_name" />
         </el-form-item>
+        <el-form-item :label="t('pages.delivery.manualDeliveryRemark')">
+          <el-input v-model="form.destination" type="textarea" :rows="2" :placeholder="t('pages.delivery.manualDeliveryRemarkHint')" />
+        </el-form-item>
         <el-form-item :label="t('common.status')">
           <el-select v-model="form.status" class="w-full" disabled>
             <el-option :label="t('status.draft')" value="draft" />
           </el-select>
           <span class="mt-1 block text-xs text-slate-500">{{ t('pages.delivery.markSentHint') }}</span>
+        </el-form-item>
+        <el-form-item :label="t('pages.delivery.pickQtyToShip')" required>
+          <div v-if="createProdDetailsLoading" class="py-2 text-sm text-slate-500">
+            <el-icon class="is-loading"><Loading /></el-icon> {{ t('common.loading') }}
+          </div>
+          <el-table
+            v-else
+            :data="createCandidateProdDetails"
+            border
+            size="small"
+            max-height="220"
+            @selection-change="onCreateLineSelectionChange"
+          >
+            <el-table-column type="selection" width="48" />
+            <el-table-column prop="id" :label="t('pages.delivery.productionDetailId')" width="110">
+              <template #default="{ row }">#{{ row.id }}</template>
+            </el-table-column>
+            <el-table-column prop="qty_actual" :label="t('common.actual')" width="90" align="right">
+              <template #default="{ row }">{{ formatNumber(row.qty_actual, 2) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.delivery.qtyToShip')" min-width="140">
+              <template #default="{ row }">
+                <el-input
+                  v-model="createLineQty[row.id]"
+                  type="number"
+                  step="0.01"
+                  :placeholder="t('common.quantity')"
+                  @input="onCreateLineQtyInput(row)"
+                />
+              </template>
+            </el-table-column>
+          </el-table>
+          <span class="mt-1 block text-xs text-slate-500">{{ t('pages.delivery.pickQtyToShipHint') }}</span>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -145,7 +215,25 @@
             <el-descriptions-item :label="t('common.vehicle')">{{ detailRow.vehicle_number || '—' }}</el-descriptions-item>
             <el-descriptions-item :label="t('common.driver')">{{ detailRow.driver_name || '—' }}</el-descriptions-item>
             <el-descriptions-item :label="t('common.destination')">{{ detailRow.destination || '—' }}</el-descriptions-item>
+            <el-descriptions-item :label="t('pages.delivery.deliveryZone')">
+              {{ deliveryZoneLabel(detailRow.delivery_zone) }}
+            </el-descriptions-item>
           </el-descriptions>
+        </el-card>
+
+        <el-card v-if="canUpdate" class="mb-4" shadow="never">
+          <template #header>
+            <span class="font-semibold">{{ t('pages.delivery.deliveryZone') }}</span>
+          </template>
+          <el-select v-model="zoneEdit" class="w-full max-w-md">
+            <el-option :label="t('pages.delivery.deliveryZoneOuttown')" value="outtown" />
+            <el-option :label="t('pages.delivery.deliveryZoneLocal')" value="local" />
+          </el-select>
+          <div class="mt-3">
+            <el-button type="primary" plain size="small" :loading="zoneSaving" @click="saveDeliveryZone">
+              {{ t('pages.delivery.saveDeliveryZone') }}
+            </el-button>
+          </div>
         </el-card>
 
         <el-card class="mb-4" shadow="never" v-if="canUpdate">
@@ -196,9 +284,11 @@
           <p v-if="detailLines.length === 0" class="mt-2 text-xs text-amber-600">{{ t('pages.delivery.needAtLeastOneLine') }}</p>
         </div>
 
-        <div class="flex gap-3">
+        <div class="flex flex-wrap gap-3">
           <el-button v-if="canPrint" type="default" @click="openSjPrint">{{ t('pages.delivery.printSj') }}</el-button>
           <el-button v-if="canPrint" type="default" @click="downloadSjPdf">{{ t('pages.delivery.downloadPdf') }}</el-button>
+          <el-button v-if="canPrint" type="primary" plain @click="openCommercialInvoice">{{ t('pages.delivery.openCommercialInvoice') }}</el-button>
+          <el-button v-if="canPrint" type="primary" plain @click="downloadCommercialInvoicePdf">{{ t('pages.delivery.commercialInvoicePdf') }}</el-button>
           <el-button v-if="canUpdate" type="success" plain :loading="markingSj" @click="markSjPrinted">{{ t('pages.delivery.markSjPrinted') }}</el-button>
         </div>
 
@@ -240,7 +330,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -275,6 +365,8 @@ const saving = ref(false)
 const exporting = ref(false)
 const keyword = ref('')
 const statusFilter = ref('')
+const packingStatusFilter = ref('')
+const invplFilter = ref('')
 const lineRows = ref([])
 const customers = ref([])
 const packings = ref([])
@@ -294,11 +386,19 @@ function customerOptionLabel(c) {
   return c.city ? `${base} ${t('common.dotSeparator')} ${c.city}` : base
 }
 
+function deliveryLinesQueryParams() {
+  const p = {}
+  if (statusFilter.value) p.delivery_status = statusFilter.value
+  if (packingStatusFilter.value) p.packing_status = packingStatusFilter.value
+  if (invplFilter.value) p.invpl_printed = invplFilter.value
+  return p
+}
+
 async function load() {
   loading.value = true
   try {
     const [linesResp, cust, pack] = await Promise.all([
-      listMarketingDeliveryLines(),
+      listMarketingDeliveryLines(deliveryLinesQueryParams()),
       listCustomers(),
       listPacking(),
     ])
@@ -317,6 +417,10 @@ async function load() {
   }
 }
 
+watch([statusFilter, packingStatusFilter, invplFilter], () => {
+  load()
+})
+
 onMounted(() => {
   const kw = route.query.keyword
   if (kw != null && String(kw).trim()) keyword.value = String(kw).trim()
@@ -332,15 +436,9 @@ onMounted(() => {
 
 const filteredRows = computed(() => {
   let rows = lineRows.value
-  
-  if (statusFilter.value) {
-    const sf = statusFilter.value.toLowerCase()
-    rows = rows.filter(r => (r.delivery_status || '').toLowerCase() === sf)
-  }
-  
   const q = keyword.value.trim().toLowerCase()
   if (!q) return rows
-  
+
   return rows.filter((r) => {
     const searchableFields = [
       r.surat_jalan_no, r.factory_name, r.po_number, r.lot_no,
@@ -361,7 +459,9 @@ async function downloadDeliveryExcel() {
   exporting.value = true
   try {
     const q = keyword.value.trim() || undefined
-    await fetchAuthenticatedDocument(marketingDeliveryXlsxPath({ q }), {
+    await fetchAuthenticatedDocument(
+      marketingDeliveryXlsxPath({ q, ...deliveryLinesQueryParams() }),
+      {
       mode: 'download',
       downloadFallbackName: 'delivery_list_sistem.xlsx',
     })
@@ -376,20 +476,67 @@ const formVisible = ref(false)
 const form = reactive({
   customer_id: null,
   packing_id: null,
+  delivery_type: 'production',
   delivery_date: '',
+  delivery_zone: 'outtown',
   vehicle_number: '',
   driver_name: '',
+  destination: '',
   status: 'draft',
 })
+const createProdDetailsLoading = ref(false)
+const createCandidateProdDetails = ref([])
+const createSelectedLines = ref([])
+const createLineQty = reactive({})
 
 function openCreate() {
   form.customer_id = null
   form.packing_id = null
-  form.delivery_date = ''
+  form.delivery_type = 'production'
+  form.delivery_date = new Date().toISOString().slice(0, 10)
+  form.delivery_zone = 'outtown'
   form.vehicle_number = ''
   form.driver_name = ''
+  form.destination = ''
   form.status = 'draft'
+  createCandidateProdDetails.value = []
+  createSelectedLines.value = []
+  Object.keys(createLineQty).forEach((k) => delete createLineQty[k])
   formVisible.value = true
+}
+
+async function onCreatePackingChange(packingId) {
+  createCandidateProdDetails.value = []
+  createSelectedLines.value = []
+  Object.keys(createLineQty).forEach((k) => delete createLineQty[k])
+  if (!packingId) return
+  createProdDetailsLoading.value = true
+  try {
+    const pk = await getPacking(packingId)
+    if (!pk?.production_id) return
+    const pds = await listProductionDetails(pk.production_id)
+    createCandidateProdDetails.value = pds || []
+    for (const pd of createCandidateProdDetails.value) {
+      const fallbackQty = pd.qty_actual ?? pd.qty_planned ?? ''
+      createLineQty[pd.id] = fallbackQty !== '' ? String(fallbackQty) : ''
+    }
+  } catch (e) {
+    ElMessage.error(e.message || t('pages.delivery.loadProductionDetailsError'))
+  } finally {
+    createProdDetailsLoading.value = false
+  }
+}
+
+function onCreateLineSelectionChange(selection) {
+  createSelectedLines.value = selection || []
+}
+
+function onCreateLineQtyInput(row) {
+  if (!row?.id) return
+  if (!createSelectedLines.value.find((x) => x.id === row.id)) {
+    const target = createCandidateProdDetails.value.find((x) => x.id === row.id)
+    if (target) createSelectedLines.value = [...createSelectedLines.value, target]
+  }
 }
 
 async function submit() {
@@ -401,16 +548,32 @@ async function submit() {
     ElMessage.warning(t('pages.delivery.pickDonePackingWarning'))
     return
   }
+  if (!createSelectedLines.value.length) {
+    ElMessage.warning(t('pages.delivery.pickQtyToShipWarning'))
+    return
+  }
   saving.value = true
   try {
-    await createDelivery({
+    const remark = (form.destination || '').trim()
+    const destinationText = [form.delivery_type?.toUpperCase(), remark].filter(Boolean).join(' | ')
+    const created = await createDelivery({
       customer_id: form.customer_id,
       packing_id: form.packing_id,
       delivery_date: toIsoDate(form.delivery_date) || undefined,
+      delivery_zone: form.delivery_zone || undefined,
       vehicle_number: form.vehicle_number || undefined,
       driver_name: form.driver_name || undefined,
+      destination: destinationText || undefined,
       status: 'draft',
     })
+    for (const ln of createSelectedLines.value) {
+      const rawQty = createLineQty[ln.id]
+      const qty = rawQty != null && String(rawQty).trim() !== '' ? Number(rawQty) : undefined
+      await addDeliveryDetail(created.id, {
+        production_detail_id: ln.id,
+        qty: Number.isFinite(qty) ? qty : undefined,
+      })
+    }
     ElMessage.success(t('pages.delivery.saved'))
     formVisible.value = false
     await load()
@@ -441,6 +604,15 @@ const bcForm = reactive({
   bc_date: '',
 })
 const bcSaving = ref(false)
+const zoneEdit = ref('outtown')
+const zoneSaving = ref(false)
+
+function deliveryZoneLabel(z) {
+  const v = (z || '').toLowerCase()
+  if (v === 'local') return t('pages.delivery.deliveryZoneLocal')
+  if (v === 'outtown') return t('pages.delivery.deliveryZoneOuttown')
+  return t('pages.delivery.deliveryZoneOuttown')
+}
 
 function resetDetail() {
   detailLines.value = []
@@ -478,6 +650,7 @@ async function openDetailById(deliveryId) {
   try {
     const full = await getDelivery(deliveryId)
     detailRow.value = { ...full, customer_name: custName(full.customer_id) }
+    zoneEdit.value = (full.delivery_zone || 'outtown').toLowerCase() === 'local' ? 'local' : 'outtown'
     bcForm.bc_number = full.bc_number || ''
     bcForm.bc_date = full.bc_date ? String(full.bc_date).slice(0, 10) : ''
     const lines = await listDeliveryDetails(deliveryId)
@@ -528,6 +701,43 @@ async function saveBcFields() {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     bcSaving.value = false
+  }
+}
+
+async function saveDeliveryZone() {
+  if (!detailRow.value?.id) return
+  zoneSaving.value = true
+  try {
+    await updateDelivery(detailRow.value.id, { delivery_zone: zoneEdit.value })
+    ElMessage.success(t('pages.delivery.zoneSaved'))
+    await load()
+    const full = await getDelivery(detailRow.value.id)
+    detailRow.value = { ...full, customer_name: custName(full.customer_id) }
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    zoneSaving.value = false
+  }
+}
+
+async function openCommercialInvoice() {
+  if (!detailRow.value?.id) return
+  try {
+    await fetchAuthenticatedDocument(`/documents/commercial-invoice/${detailRow.value.id}`, { mode: 'open' })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function downloadCommercialInvoicePdf() {
+  if (!detailRow.value?.id) return
+  try {
+    await fetchAuthenticatedDocument(`/documents/commercial-invoice/${detailRow.value.id}/pdf`, {
+      mode: 'download',
+      downloadFallbackName: `commercial_invoice_${detailRow.value.id}.pdf`,
+    })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
 

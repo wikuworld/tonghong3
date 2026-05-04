@@ -2,28 +2,21 @@
   <AdminSection :title="t('pages.journalEntries.title')" :subtitle="t('pages.journalEntries.subtitle')">
     <template #actions>
       <el-button type="primary" :icon="Plus" @click="openGenerate">{{ t('pages.journalEntries.generateFromTransaction') }}</el-button>
-      <el-button @click="showTrialBalance = true">{{ t('pages.journalEntries.showTrialBalance') }}</el-button>
+      <el-button :icon="Refresh" @click="showTrialBalance = true">{{ t('pages.journalEntries.showTrialBalance') }}</el-button>
     </template>
 
     <div class="flex flex-wrap gap-2 mb-4 items-center">
       <el-date-picker
-        v-model="filterDateFrom"
-        type="date"
-        :placeholder="t('pages.journalEntries.dateFrom')"
+        v-model="filterDateRange"
+        type="daterange"
+        :range-separator="t('common.rangeSeparator')"
+        :start-placeholder="t('common.startDate')"
+        :end-placeholder="t('common.endDate')"
         format="YYYY-MM-DD"
         value-format="YYYY-MM-DD"
-        class="w-40"
-        clearable
-      />
-      <span>—</span>
-      <el-date-picker
-        v-model="filterDateTo"
-        type="date"
-        :placeholder="t('pages.journalEntries.dateTo')"
-        format="YYYY-MM-DD"
-        value-format="YYYY-MM-DD"
-        class="w-40"
-        clearable
+        class="w-72"
+        :shortcuts="dateShortcuts"
+        unlink-panels
       />
       <el-select v-model="filterType" :placeholder="t('pages.journalEntries.filterTransactionType')" clearable class="w-40">
         <el-option :label="t('pages.journalEntries.allTransactionTypes')" value="" />
@@ -31,7 +24,7 @@
         <el-option :label="t('pages.journalEntries.invoice')" value="invoice" />
         <el-option :label="t('pages.journalEntries.payment')" value="payment" />
       </el-select>
-      <el-button type="primary" @click="loadEntries">{{ t('common.search') }}</el-button>
+      <el-button type="primary" :icon="Search" @click="loadEntries">{{ t('common.search') }}</el-button>
     </div>
 
     <el-table :data="entries" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.journalEntries.tableEmpty')">
@@ -70,7 +63,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="generateVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button :icon="Close" @click="generateVisible = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="generating" @click="submitGenerate">{{ t('pages.journalEntries.generate') }}</el-button>
       </template>
     </el-dialog>
@@ -78,25 +71,18 @@
     <el-dialog v-model="showTrialBalance" :title="t('pages.journalEntries.trialBalanceTitle')" width="800px" destroy-on-close align-center>
       <div class="flex flex-wrap gap-2 mb-4 items-center">
         <el-date-picker
-          v-model="tbDateFrom"
-          type="date"
-          :placeholder="t('pages.journalEntries.dateFrom')"
+          v-model="tbDateRange"
+          type="daterange"
+          :range-separator="t('common.rangeSeparator')"
+          :start-placeholder="t('common.startDate')"
+          :end-placeholder="t('common.endDate')"
           format="YYYY-MM-DD"
           value-format="YYYY-MM-DD"
-          class="w-40"
-          clearable
+          class="w-72"
+          :shortcuts="dateShortcuts"
+          unlink-panels
         />
-        <span>—</span>
-        <el-date-picker
-          v-model="tbDateTo"
-          type="date"
-          :placeholder="t('pages.journalEntries.dateTo')"
-          format="YYYY-MM-DD"
-          value-format="YYYY-MM-DD"
-          class="w-40"
-          clearable
-        />
-        <el-button type="primary" @click="loadTrialBalance">{{ t('common.search') }}</el-button>
+        <el-button type="primary" :icon="Search" @click="loadTrialBalance">{{ t('common.search') }}</el-button>
       </div>
 
       <el-table :data="trialBalance.rows" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('common.tableEmpty')" show-summary>
@@ -131,20 +117,74 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { Plus, Search, Close, Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
-import { listJournalEntries, generateJournalFromTransaction, getTrialBalance } from '../../api/client'
+import { generateJournalFromTransaction, getTrialBalance, listJournalEntries } from '../../api/client'
 
 const { t } = useI18n()
 
 const loading = ref(false)
 const entries = ref([])
-const filterDateFrom = ref('')
-const filterDateTo = ref('')
+const filterDateRange = ref([])
 const filterType = ref('')
+
+const dateShortcuts = computed(() => [
+  {
+    text: t('common.shortcutToday'),
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutLast7Days'),
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 7)
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutLast30Days'),
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 30)
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutLast90Days'),
+    value: () => {
+      const end = new Date()
+      const start = new Date()
+      start.setTime(start.getTime() - 3600 * 1000 * 24 * 90)
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutThisMonth'),
+    value: () => {
+      const end = new Date()
+      const start = new Date(end.getFullYear(), end.getMonth(), 1)
+      return [start, end]
+    },
+  },
+  {
+    text: t('common.shortcutLastMonth'),
+    value: () => {
+      const end = new Date()
+      end.setDate(0)
+      const start = new Date(end.getFullYear(), end.getMonth(), 1)
+      return [start, end]
+    },
+  },
+])
 
 const generateVisible = ref(false)
 const generating = ref(false)
@@ -154,8 +194,7 @@ const generateForm = reactive({
 })
 
 const showTrialBalance = ref(false)
-const tbDateFrom = ref('')
-const tbDateTo = ref('')
+const tbDateRange = ref([])
 const trialBalance = reactive({
   rows: [],
   total_debit: 0,
@@ -172,8 +211,8 @@ async function loadEntries() {
   loading.value = true
   try {
     entries.value = await listJournalEntries({
-      date_from: filterDateFrom.value || undefined,
-      date_to: filterDateTo.value || undefined,
+      date_from: filterDateRange.value?.[0] || undefined,
+      date_to: filterDateRange.value?.[1] || undefined,
       transaction_type: filterType.value || undefined,
     })
   } catch (e) {
@@ -210,8 +249,8 @@ async function submitGenerate() {
 async function loadTrialBalance() {
   try {
     const result = await getTrialBalance({
-      date_from: tbDateFrom.value || undefined,
-      date_to: tbDateTo.value || undefined,
+      date_from: tbDateRange.value?.[0] || undefined,
+      date_to: tbDateRange.value?.[1] || undefined,
     })
     trialBalance.rows = result.rows
     trialBalance.total_debit = result.total_debit

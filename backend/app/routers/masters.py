@@ -9,13 +9,13 @@ import zipfile
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 logger = logging.getLogger(__name__)
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from app.schemas import MasterItemCreate, MasterItemOut, MasterPriceOut
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -24,7 +24,9 @@ from app.models import (
     Brand,
     BuyerPriceList,
     Customer,
+    CustomerBrandMapping,
     CustomerPic,
+    FluorescentColorMaster,
     MasterItem,
     MasterPrice,
 )
@@ -37,8 +39,8 @@ router = APIRouter(tags=["masters"])
 class BrandIn(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    code: Optional[str] = None
     name: Optional[str] = None
+    customer_ids: list[int] = []
 
 
 class BrandOut(BaseModel):
@@ -47,6 +49,8 @@ class BrandOut(BaseModel):
     id: int
     code: Optional[str] = None
     name: Optional[str] = None
+    customer_id: Optional[int] = None
+    customer_ids: list[int] = []
 
 
 class BrandBuyerMapIn(BaseModel):
@@ -84,12 +88,47 @@ class PicOut(BaseModel):
     title: Optional[str] = None
 
 
+class FluorescentColorOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    buyer_code: str
+    season_label: Optional[str] = None
+    season_year: Optional[int] = None
+    season_type: Optional[str] = None
+    color_name: str
+    color_code: Optional[str] = None
+    color_class: str
+    source_file: Optional[str] = None
+    is_active: bool = True
+
+
+class FluorescentColorPageOut(BaseModel):
+    items: list[FluorescentColorOut]
+    total: int
+    limit: int
+    offset: int
+
+
 @router.get("/masters/brands", response_model=list[BrandOut])
 def list_brands(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
-) -> list[Brand]:
-    return list(db.scalars(select(Brand).order_by(Brand.id.desc())).all())
+) -> list[BrandOut]:
+    brands = list(db.scalars(select(Brand).order_by(Brand.id.desc())).all())
+    out: list[BrandOut] = []
+    for brand in brands:
+        mapped_ids = sorted({int(m.customer_id) for m in (brand.customer_mappings or []) if m.customer_id is not None})
+        out.append(
+            BrandOut(
+                id=brand.id,
+                code=brand.code,
+                name=brand.name,
+                customer_id=mapped_ids[0] if mapped_ids else None,
+                customer_ids=mapped_ids,
+            )
+        )
+    return out
 
 
 @router.post("/masters/brands", response_model=BrandOut)
@@ -98,8 +137,17 @@ def create_brand(
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin")),
 ) -> Brand:
-    row = Brand(**body.model_dump(exclude_unset=True))
+    brand_name = (body.name or "").strip()
+    if not brand_name:
+        raise HTTPException(status_code=400, detail="Nama brand wajib diisi")
+    row = Brand(name=brand_name, code=brand_name)
     db.add(row)
+    db.flush()
+    customer_ids = sorted({int(x) for x in (body.customer_ids or []) if x is not None})
+    for customer_id in customer_ids:
+        customer = db.get(Customer, customer_id)
+        if customer:
+            db.add(CustomerBrandMapping(customer_id=customer_id, brand_id=row.id, is_default=False))
     db.commit()
     db.refresh(row)
     return row
@@ -115,8 +163,21 @@ def update_brand(
     row = db.get(Brand, brand_id)
     if not row:
         raise HTTPException(status_code=404, detail="Brand tidak ada")
-    for k, v in body.model_dump(exclude_unset=True).items():
-        setattr(row, k, v)
+    data = body.model_dump(exclude_unset=True)
+    if "name" in data:
+        brand_name = (data.get("name") or "").strip()
+        if not brand_name:
+            raise HTTPException(status_code=400, detail="Nama brand wajib diisi")
+        row.name = brand_name
+        # Tetap sinkronkan code dari nama agar modul lama tidak putus.
+        row.code = brand_name
+    if "customer_ids" in data:
+        customer_ids = sorted({int(x) for x in (data.get("customer_ids") or []) if x is not None})
+        db.query(CustomerBrandMapping).filter(CustomerBrandMapping.brand_id == brand_id).delete()
+        for customer_id in customer_ids:
+            customer = db.get(Customer, customer_id)
+            if customer:
+                db.add(CustomerBrandMapping(customer_id=customer_id, brand_id=brand_id, is_default=False))
     db.commit()
     db.refresh(row)
     return row
@@ -221,6 +282,79 @@ def replace_brand_buyers(
     return list(rows)
 
 
+@router.get("/masters/fluorescent-colors", response_model=list[FluorescentColorOut])
+def list_fluorescent_colors(
+    buyer_code: Optional[str] = None,
+    season_label: Optional[str] = None,
+    color_class: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> list[FluorescentColorMaster]:
+    stmt = select(FluorescentColorMaster).where(FluorescentColorMaster.is_active.is_(True))
+    if buyer_code:
+        b = buyer_code.strip().upper()
+        stmt = stmt.where(FluorescentColorMaster.buyer_code.in_([b, "GLOBAL"]))
+    if season_label:
+        stmt = stmt.where(FluorescentColorMaster.season_label == season_label.strip())
+    if color_class:
+        stmt = stmt.where(FluorescentColorMaster.color_class == color_class.strip().lower())
+    rows = db.scalars(
+        stmt.order_by(
+            FluorescentColorMaster.buyer_code.asc(),
+            FluorescentColorMaster.season_year.desc(),
+            FluorescentColorMaster.color_name.asc(),
+        )
+    ).all()
+    return list(rows)
+
+
+@router.get("/masters/fluorescent-colors/page", response_model=FluorescentColorPageOut)
+def list_fluorescent_colors_page(
+    buyer_code: Optional[str] = None,
+    season_label: Optional[str] = None,
+    color_class: Optional[str] = None,
+    q: Optional[str] = Query(None, description="Search color code/name/season"),
+    limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> FluorescentColorPageOut:
+    stmt = select(FluorescentColorMaster).where(FluorescentColorMaster.is_active.is_(True))
+    count_stmt = select(func.count(FluorescentColorMaster.id)).where(FluorescentColorMaster.is_active.is_(True))
+    if buyer_code:
+        b = buyer_code.strip().upper()
+        stmt = stmt.where(FluorescentColorMaster.buyer_code.in_([b, "GLOBAL"]))
+        count_stmt = count_stmt.where(FluorescentColorMaster.buyer_code.in_([b, "GLOBAL"]))
+    if season_label:
+        stmt = stmt.where(FluorescentColorMaster.season_label == season_label.strip())
+        count_stmt = count_stmt.where(FluorescentColorMaster.season_label == season_label.strip())
+    if color_class:
+        c = color_class.strip().lower()
+        stmt = stmt.where(FluorescentColorMaster.color_class == c)
+        count_stmt = count_stmt.where(FluorescentColorMaster.color_class == c)
+    if q:
+        like = f"%{q.strip()}%"
+        where_clause = or_(
+            FluorescentColorMaster.color_name.ilike(like),
+            FluorescentColorMaster.color_code.ilike(like),
+            FluorescentColorMaster.season_label.ilike(like),
+            FluorescentColorMaster.buyer_code.ilike(like),
+        )
+        stmt = stmt.where(where_clause)
+        count_stmt = count_stmt.where(where_clause)
+    total = int(db.scalar(count_stmt) or 0)
+    items = list(
+        db.scalars(
+            stmt.order_by(
+                FluorescentColorMaster.buyer_code.asc(),
+                FluorescentColorMaster.season_year.desc(),
+                FluorescentColorMaster.color_name.asc(),
+            ).limit(limit).offset(offset)
+        ).all()
+    )
+    return FluorescentColorPageOut(items=items, total=total, limit=limit, offset=offset)
+
+
 @router.get("/masters/customer-pics", response_model=list[PicOut])
 def list_pics(
     db: Session = Depends(get_db),
@@ -271,7 +405,26 @@ def create_master_item(
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin")),
 ) -> MasterItem:
-    row = MasterItem(**body.model_dump(exclude_unset=True))
+    data = body.model_dump(exclude_unset=True)
+    row = MasterItem(
+        item_code=data.get("item_code"),
+        category=data.get("category"),
+        material_name=data.get("material_name"),
+        thickness_range=data.get("thickness_range"),
+        color=data.get("color"),
+        emboss=data.get("emboss"),
+        # Kolom lama tetap ada di DB namun tidak dipakai lagi di input.
+        thickness_mm=None,
+        softness=None,
+        color_reference=None,
+        color_standard=None,
+        backing=None,
+        quantity_order_default=None,
+        style_article=None,
+        model=None,
+        model_takedown=None,
+        exim_material_code=None,
+    )
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -297,6 +450,17 @@ def update_master_item(
             raise HTTPException(status_code=400, detail="item_code sudah dipakai")
     for k, v in data.items():
         setattr(row, k, v)
+    # Pastikan kolom lama dikosongkan agar konsisten dengan form baru.
+    row.thickness_mm = None
+    row.softness = None
+    row.color_reference = None
+    row.color_standard = None
+    row.backing = None
+    row.quantity_order_default = None
+    row.style_article = None
+    row.model = None
+    row.model_takedown = None
+    row.exim_material_code = None
     db.commit()
     db.refresh(row)
     return row
@@ -332,9 +496,7 @@ async def export_master_items(
     _user=Depends(get_current_user),
 ):
     items = db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all()
-    columns = ["item_code", "material_name", "thickness_range", "thickness_mm",
-               "color", "emboss", "softness", "color_reference", "backing",
-               "style_article", "model", "category", "exim_material_code"]
+    columns = ["category", "item_code", "material_name", "thickness_range", "color", "emboss"]
     data = [{col: getattr(item, col, None) for col in columns} for item in items]
     excel_content = export_to_excel(data, columns, "Master Items")
     return StreamingResponse(
@@ -350,9 +512,7 @@ async def import_master_items(
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin")),
 ):
-    columns = ["item_code", "material_name", "thickness_range", "thickness_mm",
-               "color", "emboss", "softness", "color_reference", "backing",
-               "style_article", "model", "category", "exim_material_code"]
+    columns = ["category", "item_code", "material_name", "thickness_range", "color", "emboss"]
     
     content = await file.read()
     items = import_from_excel(content, columns)
@@ -456,29 +616,30 @@ async def import_master_zip(
                 if not row:
                     row = MasterItem(item_code=item_code)
                     db.add(row)
-                thickness_mm = dec(r.get("thickness_mm"))
-                if thickness_mm is not None:
-                    row.thickness_mm = thickness_mm
+                category_raw = (r.get("category") or "").strip().lower()
+                category_alias = {
+                    "pu": "PU",
+                    "suide": "Suide",
+                    "suede": "Suide",
+                    "subkon": "SubKon",
+                    "subcont": "SubKon",
+                    "subcontract": "SubKon",
+                }
+                row.category = category_alias.get(category_raw, row.category or "PU")
                 row.material_name = (r.get("material_name") or row.material_name)
+                row.thickness_range = (r.get("thickness_range") or row.thickness_range)
                 row.emboss = (r.get("emboss") or row.emboss)
                 row.color = (r.get("color") or row.color)
-                row.softness = (r.get("softness") or row.softness)
-                row.color_reference = (
-                    r.get("color_reference")
-                    or r.get("color_standard")
-                    or row.color_reference
-                )
-                row.backing = (r.get("backing") or row.backing)
-                qty_default = dec(
-                    r.get("quantity_order_default")
-                    or r.get("qty_default")
-                    or r.get("quantity_order")
-                )
-                if qty_default is not None:
-                    row.quantity_order_default = qty_default
-                row.style_article = (r.get("style_article") or row.style_article)
-                row.model = (r.get("model") or row.model)
-                row.category = (r.get("category") or row.category)
+                row.thickness_mm = None
+                row.softness = None
+                row.color_reference = None
+                row.color_standard = None
+                row.backing = None
+                row.quantity_order_default = None
+                row.style_article = None
+                row.model = None
+                row.model_takedown = None
+                row.exim_material_code = None
                 stats["items_upserted"] += 1
 
         elif base.startswith("02_") or "master_harga" in base.lower() or "master_harga" in base.lower():

@@ -6,13 +6,13 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from decimal import Decimal
 
 from app.db import get_db
-from app.models import Customer, OutstandingMaterial, PoDetail, PoHeader, PpicsAssignment, User
+from app.models import OutstandingMaterial, PoDetail, PoHeader, PpicsAssignment, User
 from app.routers.auth import get_current_user
 from app.schemas import (
     OutstandingMaterialCreate,
@@ -448,7 +448,7 @@ def list_ppic_users(
 ) -> list[UserOut]:
     ppic_users = db.scalars(
         select(User)
-        .where(User.department == "ppic", User.is_active == True)
+        .where(User.department == "ppic", User.is_active)
         .order_by(User.username)
     ).all()
 

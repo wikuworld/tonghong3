@@ -1,7 +1,7 @@
 <template>
   <AdminSection :title="t('pages.inventory.stockTitle')" :subtitle="t('pages.inventory.stockSubtitle')">
     <template #actions>
-      <el-button type="primary" @click="refresh">{{ t('common.refresh') }}</el-button>
+      <el-button type="primary" :icon="Refresh" @click="refresh">{{ t('common.refresh') }}</el-button>
     </template>
 
     <el-row :gutter="12" class="mb-4">
@@ -54,6 +54,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import { listStocks, getStockSummary } from '../../../api/client'
 import { formatCurrency, formatNumber } from '../../../utils/format'

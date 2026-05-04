@@ -61,16 +61,16 @@
               <el-input-number v-model="item.unit_cost" class="w-full" />
             </el-col>
             <el-col :span="2">
-              <el-button link type="danger" @click="removeDetail(idx)">X</el-button>
+              <el-button link type="danger" :icon="Delete" @click="removeDetail(idx)" />
             </el-col>
           </el-row>
         </div>
         
-        <el-button @click="addDetail">{{ t('pages.inventory.addItem') }}</el-button>
+        <el-button :icon="Plus" @click="addDetail">{{ t('pages.inventory.addItem') }}</el-button>
       </el-form>
       <template #footer>
-        <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="submit">{{ t('common.save') }}</el-button>
+        <el-button :icon="Close" @click="formVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :icon="Check" @click="submit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -80,7 +80,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Close, Check, Delete } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import { listReceipts, createReceipt, listMaterials, listWarehouses } from '../../../api/client'
 import { formatCurrency } from '../../../utils/format'

@@ -74,6 +74,28 @@ class TestCustomerSchema:
         )
         assert customer.is_export_customer is True
 
+    def test_customer_create_accepts_multiple_contacts(self):
+        customer = CustomerCreate(
+            code="C001",
+            name="Test Customer",
+            contacts=[
+                {"name": "Andi", "title": "Purchasing", "phone": "08123"},
+                {"name": "Budi", "title": "Finance", "phone": "08124"},
+            ],
+        )
+        assert len(customer.contacts) == 2
+        assert customer.contacts[0].name == "Andi"
+
+    def test_customer_create_accepts_main_and_billing_address(self):
+        customer = CustomerCreate(
+            code="C001",
+            name="Test Customer",
+            address="Jl. Utama No. 1",
+            billing_address="Jl. Penagihan No. 2",
+        )
+        assert customer.address == "Jl. Utama No. 1"
+        assert customer.billing_address == "Jl. Penagihan No. 2"
+
 
 class TestColorFamilyValidation:
     def test_color_family_accepts_black(self):

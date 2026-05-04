@@ -21,6 +21,7 @@ from app.models import (
     DeliveryHeader,
     Invoice,
     InvoiceDetail,
+    PackingHeader,
     PoDetail,
     PoHeader,
     ProductionDetail,
@@ -45,6 +46,30 @@ class ShipmentStatusFilter(str, Enum):
     all = "all"
     sent = "sent"
     not_sent = "not_sent"
+
+
+class DeliveryLinesStatusFilter(str, Enum):
+    """Filter status header delivery pada daftar baris delivery."""
+
+    all = "all"
+    draft = "draft"
+    sent = "sent"
+
+
+class PackingLinesStatusFilter(str, Enum):
+    """Filter status packing terkait delivery."""
+
+    all = "all"
+    draft = "draft"
+    done = "done"
+
+
+class InvplPrintedFilter(str, Enum):
+    """Filter baris berdasarkan INVPL sudah ditandai dicetak atau belum."""
+
+    all = "all"
+    yes = "yes"
+    no = "no"
 
 
 def _passes_balance_filter(ln: PoDetail, mode: BalanceFilter) -> bool:
@@ -374,6 +399,9 @@ _DELIVERY_LIST_XLS_COLUMNS: list[tuple[str, str]] = [
     ("remark", "REMARK"),
     ("order_type", "ORDER TYPE"),
     ("delivery_status", "STATUS DELIVERY"),
+    ("packing_status", "STATUS PACKING"),
+    ("invpl_printed", "INVPL SUDAH CETAK"),
+    ("delivery_zone", "ZONA KIRIM"),
 ]
 
 
@@ -400,6 +428,7 @@ def _delivery_detail_to_row(
     cust: Optional[Customer],
     inv: Optional[Invoice],
     invd: Optional[InvoiceDetail],
+    pkh: Optional[PackingHeader],
 ) -> dict[str, Any]:
     factory = ""
     if cust and (cust.name or "").strip():
@@ -471,18 +500,37 @@ def _delivery_detail_to_row(
         "delivery_id": dh.id,
         "delivery_detail_id": dd.id,
         "delivery_status": dh.status or "",
+        "packing_id": dh.packing_id,
+        "packing_status": (pkh.status or "").strip() if pkh else "",
+        "invpl_printed": bool(pkh and pkh.invpl_printed_at is not None),
+        "delivery_zone": (dh.delivery_zone or "").strip() if dh.delivery_zone else "",
     }
 
 
-def _query_delivery_lines_rows(db: Session, q: Optional[str] = None) -> list[dict[str, Any]]:
+def _query_delivery_lines_rows(
+    db: Session,
+    q: Optional[str] = None,
+    delivery_status: DeliveryLinesStatusFilter = DeliveryLinesStatusFilter.all,
+    packing_status: PackingLinesStatusFilter = PackingLinesStatusFilter.all,
+    invpl_printed: InvplPrintedFilter = InvplPrintedFilter.all,
+) -> list[dict[str, Any]]:
     """Baris delivery + join ke produksi & PO (format lembar DELIVERY LIST)."""
     stmt = (
-        select(DeliveryDetail, DeliveryHeader, ProductionDetail, PoDetail, PoHeader, Customer)
+        select(
+            DeliveryDetail,
+            DeliveryHeader,
+            ProductionDetail,
+            PoDetail,
+            PoHeader,
+            Customer,
+            PackingHeader,
+        )
         .join(DeliveryHeader, DeliveryDetail.delivery_id == DeliveryHeader.id)
         .outerjoin(ProductionDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
         .outerjoin(PoDetail, ProductionDetail.po_detail_id == PoDetail.id)
         .outerjoin(PoHeader, PoDetail.po_id == PoHeader.id)
         .outerjoin(Customer, DeliveryHeader.customer_id == Customer.id)
+        .outerjoin(PackingHeader, DeliveryHeader.packing_id == PackingHeader.id)
         .order_by(DeliveryHeader.id.desc(), DeliveryDetail.id.asc())
     )
     raw = db.execute(stmt).all()
@@ -515,7 +563,7 @@ def _query_delivery_lines_rows(db: Session, q: Optional[str] = None) -> list[dic
 
     line_index: dict[int, int] = defaultdict(int)
     out: list[dict[str, Any]] = []
-    for dd, dh, pd, pod, ph, cust in raw:
+    for dd, dh, pd, pod, ph, cust, pkh in raw:
         inv = inv_by_delivery.get(dh.id)
         invd: InvoiceDetail | None = None
         if inv:
@@ -524,7 +572,18 @@ def _query_delivery_lines_rows(db: Session, q: Optional[str] = None) -> list[dic
             if li < len(lst):
                 invd = lst[li]
         line_index[dh.id] += 1
-        out.append(_delivery_detail_to_row(dd, dh, pd, pod, ph, cust, inv, invd))
+        out.append(_delivery_detail_to_row(dd, dh, pd, pod, ph, cust, inv, invd, pkh))
+
+    if delivery_status != DeliveryLinesStatusFilter.all:
+        want = delivery_status.value
+        out = [r for r in out if (r.get("delivery_status") or "").lower() == want]
+    if packing_status != PackingLinesStatusFilter.all:
+        want = packing_status.value
+        out = [r for r in out if (r.get("packing_status") or "").lower() == want]
+    if invpl_printed == InvplPrintedFilter.yes:
+        out = [r for r in out if r.get("invpl_printed") is True]
+    elif invpl_printed == InvplPrintedFilter.no:
+        out = [r for r in out if r.get("invpl_printed") is not True]
 
     if q and str(q).strip():
         qq = str(q).strip().lower()
@@ -621,11 +680,29 @@ def marketing_outstanding_lines_xlsx(
 def marketing_delivery_lines(
     db: Session = Depends(get_db),
     q: Optional[str] = Query(None, description="Saring baris (substring, case-insensitive)"),
+    delivery_status: DeliveryLinesStatusFilter = Query(
+        default=DeliveryLinesStatusFilter.all,
+        description="all | draft | sent — status header delivery",
+    ),
+    packing_status: PackingLinesStatusFilter = Query(
+        default=PackingLinesStatusFilter.all,
+        description="all | draft | done — status packing terkait",
+    ),
+    invpl_printed: InvplPrintedFilter = Query(
+        default=InvplPrintedFilter.all,
+        description="all | yes | no — INVPL sudah ditandai dicetak",
+    ),
     skip: int = Query(0, ge=0, description="Offset for pagination"),
     limit: int = Query(100, ge=1, le=1000, description="Limit for pagination"),
     _user=Depends(get_current_user),
 ) -> dict:
-    rows = _query_delivery_lines_rows(db, q=q)
+    rows = _query_delivery_lines_rows(
+        db,
+        q=q,
+        delivery_status=delivery_status,
+        packing_status=packing_status,
+        invpl_printed=invpl_printed,
+    )
     total = len(rows)
     paginated = rows[skip : skip + limit]
     return {"data": paginated, "total": total}
@@ -635,9 +712,18 @@ def marketing_delivery_lines(
 def marketing_delivery_lines_csv(
     db: Session = Depends(get_db),
     q: Optional[str] = Query(None),
+    delivery_status: DeliveryLinesStatusFilter = Query(default=DeliveryLinesStatusFilter.all),
+    packing_status: PackingLinesStatusFilter = Query(default=PackingLinesStatusFilter.all),
+    invpl_printed: InvplPrintedFilter = Query(default=InvplPrintedFilter.all),
     _user=Depends(get_current_user),
 ) -> Response:
-    rows = _query_delivery_lines_rows(db, q=q)
+    rows = _query_delivery_lines_rows(
+        db,
+        q=q,
+        delivery_status=delivery_status,
+        packing_status=packing_status,
+        invpl_printed=invpl_printed,
+    )
     buf = io.StringIO()
     if not rows:
         w = csv.writer(buf)
@@ -666,9 +752,18 @@ def marketing_delivery_lines_csv(
 def marketing_delivery_lines_xlsx(
     db: Session = Depends(get_db),
     q: Optional[str] = Query(None),
+    delivery_status: DeliveryLinesStatusFilter = Query(default=DeliveryLinesStatusFilter.all),
+    packing_status: PackingLinesStatusFilter = Query(default=PackingLinesStatusFilter.all),
+    invpl_printed: InvplPrintedFilter = Query(default=InvplPrintedFilter.all),
     _user=Depends(get_current_user),
 ) -> Response:
-    rows = _query_delivery_lines_rows(db, q=q)
+    rows = _query_delivery_lines_rows(
+        db,
+        q=q,
+        delivery_status=delivery_status,
+        packing_status=packing_status,
+        invpl_printed=invpl_printed,
+    )
     data = _delivery_list_rows_to_xlsx_bytes(rows)
     return Response(
         content=data,

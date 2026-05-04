@@ -1,6 +1,6 @@
 ---
 description: Stack & konteks proyek Tonghong (Vue, Docker)
-alwaysApply: true
+alwaysApply: false
 ---
 
 # Proyek Tonghong
@@ -8,6 +8,13 @@ alwaysApply: true
 - **Frontend**: Vue 3 + Vite + Element Plus + Tailwind + vue-i18n (locale `id` default, fallback `en`, plus `zh`).
 - **Struktur**: workspace root `package.json` memanggil skrip di `frontend/`; halaman admin di `frontend/src/views/admin/`, layout `AdminLayout.vue`, router `/admin/*`.
 - **Docker**: `docker-compose.yml` — service **`web`** (build statis + Nginx, port **8080**), profile **`dev`** + **`frontend-dev`** untuk Vite + HMR (port **5173**). Setelah ubah kode frontend untuk image production, perlu **`docker compose build`** / **`up --build`**.
+- **Workflow Docker (dev vs production)**:
+  - **Frontend HMR** hanya lewat service **`frontend-dev`** (`docker compose --profile dev up frontend-dev`), bukan service `web`.
+  - Untuk perubahan kode backend harian (source di-mount volume), **cukup restart backend** (`docker compose restart backend`) tanpa rebuild image.
+  - Untuk perubahan schema/model database, **wajib buat migration Alembic baru** (`docker compose exec backend alembic revision --autogenerate -m "<pesan>"`) dan review isi file migration sebelum dijalankan.
+  - Jalankan `docker compose exec backend alembic upgrade head` saat ada migration baru.
+  - Setelah migration dibuat, validasi dengan `docker compose exec backend alembic heads` (pastikan head tunggal) lalu `docker compose exec backend alembic upgrade head`.
+  - Pakai `docker compose up --build` hanya saat perlu rebuild image (mis. ubah `Dockerfile`, dependency image, atau mau refresh image production `web`/`backend`).
 - **Quality gates CI**: frontend wajib `npm run lint` + `npm run build`; backend wajib `python -m ruff check --select F,E9 app tests` + `python -m pytest`; workflow GitHub Actions divalidasi dengan `actionlint`.
 - **Terminal Cursor / PATH (npm, nvm)**: (1) `.vscode/settings.json` — profil default **zsh `-il`** (macOS) / **bash `-l`** (Linux) untuk terminal terpadu. (2) **`tools/nvm-load.sh`** — sebelum menjalankan `npm`/`node` dari **agen Cursor** atau shell minimal, jalankan dari root repo: `source tools/nvm-load.sh` (atau satu baris: `bash -c 'source tools/nvm-load.sh && cd frontend && npm run lint'`). Skrip root `package.json` (`npm run build`, `dev`, dll.) sudah mem-`source` file ini lewat `bash -c`. Pastikan nvm terpasang di `~/.nvm` atau path Homebrew di skrip tersebut.
 

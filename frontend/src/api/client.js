@@ -157,6 +157,16 @@ export function listCustomers() {
   return apiFetch('/customers')
 }
 
+export function listCustomersPage(params = {}) {
+  const q = new URLSearchParams()
+  if (params.q != null && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.is_export_customer != null) q.set('is_export_customer', String(Boolean(params.is_export_customer)))
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/customers/page${suffix}`)
+}
+
 export function getCustomer(id) {
   return apiFetch(`/customers/${id}`)
 }
@@ -171,6 +181,47 @@ export function updateCustomer(id, body) {
 
 export function deleteCustomer(id) {
   return apiFetch(`/customers/${id}`, { method: 'DELETE' })
+}
+
+export function listQuotations(params = {}) {
+  const q = new URLSearchParams()
+  if (params.q != null && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.customer_id != null && params.customer_id !== '') q.set('customer_id', String(params.customer_id))
+  if (params.status != null && String(params.status).trim()) q.set('status', String(params.status).trim())
+  if (params.date_from) q.set('date_from', params.date_from)
+  if (params.date_to) q.set('date_to', params.date_to)
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/quotations${suffix}`)
+}
+
+export function getQuotation(id) {
+  return apiFetch(`/quotations/${id}`)
+}
+
+export function createQuotation(body) {
+  return apiFetch('/quotations', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateQuotation(id, body) {
+  return apiFetch(`/quotations/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteQuotation(id) {
+  return apiFetch(`/quotations/${id}`, { method: 'DELETE' })
+}
+
+export function addQuotationLine(quotationId, body) {
+  return apiFetch(`/quotations/${quotationId}/lines`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateQuotationLine(lineId, body) {
+  return apiFetch(`/quotation-lines/${lineId}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteQuotationLine(lineId) {
+  return apiFetch(`/quotation-lines/${lineId}`, { method: 'DELETE' })
 }
 
 /** Data wilayah Indonesia: provinsi → kab/kota → kecamatan → kelurahan/desa */
@@ -194,8 +245,31 @@ export function wilayahVillages(districtCode) {
 export function listPo(params = {}) {
   const q = new URLSearchParams()
   if (params.mkt_workflow_stage) q.set('mkt_workflow_stage', params.mkt_workflow_stage)
+  if (params.order_date) q.set('order_date', params.order_date)
+  if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.customer_id != null && params.customer_id !== '') q.set('customer_id', String(params.customer_id))
+  if (params.buyer && String(params.buyer).trim()) q.set('buyer', String(params.buyer).trim())
+  if (params.status && String(params.status).trim()) q.set('status', String(params.status).trim())
+  if (params.po_category && String(params.po_category).trim()) q.set('po_category', String(params.po_category).trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/po${suffix}`)
+}
+
+export function listPoPage(params = {}) {
+  const q = new URLSearchParams()
+  if (params.mkt_workflow_stage) q.set('mkt_workflow_stage', params.mkt_workflow_stage)
+  if (params.order_date) q.set('order_date', params.order_date)
+  if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.customer_id != null && params.customer_id !== '') q.set('customer_id', String(params.customer_id))
+  if (params.buyer && String(params.buyer).trim()) q.set('buyer', String(params.buyer).trim())
+  if (params.status && String(params.status).trim()) q.set('status', String(params.status).trim())
+  if (params.po_category && String(params.po_category).trim()) q.set('po_category', String(params.po_category).trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/po/page${suffix}`)
 }
 
 export function listPoForCopy(params = {}) {
@@ -246,6 +320,12 @@ export function marketingOutstandingXlsxPath(params = {}) {
 export function listMarketingDeliveryLines(params = {}) {
   const q = new URLSearchParams()
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.delivery_status && String(params.delivery_status).trim())
+    q.set('delivery_status', String(params.delivery_status).trim())
+  if (params.packing_status && String(params.packing_status).trim())
+    q.set('packing_status', String(params.packing_status).trim())
+  if (params.invpl_printed && String(params.invpl_printed).trim())
+    q.set('invpl_printed', String(params.invpl_printed).trim())
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/marketing/delivery-lines${suffix}`)
 }
@@ -253,6 +333,12 @@ export function listMarketingDeliveryLines(params = {}) {
 export function marketingDeliveryCsvUrl(params = {}) {
   const q = new URLSearchParams()
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.delivery_status && String(params.delivery_status).trim())
+    q.set('delivery_status', String(params.delivery_status).trim())
+  if (params.packing_status && String(params.packing_status).trim())
+    q.set('packing_status', String(params.packing_status).trim())
+  if (params.invpl_printed && String(params.invpl_printed).trim())
+    q.set('invpl_printed', String(params.invpl_printed).trim())
   const suffix = q.toString() ? `?${q}` : ''
   return `/marketing/delivery-lines.csv${suffix}`
 }
@@ -261,8 +347,24 @@ export function marketingDeliveryCsvUrl(params = {}) {
 export function marketingDeliveryXlsxPath(params = {}) {
   const q = new URLSearchParams()
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.delivery_status && String(params.delivery_status).trim())
+    q.set('delivery_status', String(params.delivery_status).trim())
+  if (params.packing_status && String(params.packing_status).trim())
+    q.set('packing_status', String(params.packing_status).trim())
+  if (params.invpl_printed && String(params.invpl_printed).trim())
+    q.set('invpl_printed', String(params.invpl_printed).trim())
   const suffix = q.toString() ? `?${q}` : ''
   return `/marketing/delivery-lines.xlsx${suffix}`
+}
+
+/** Unduhan PDF sales contract / sales order per PO. */
+export function salesContractPdfPath(poId) {
+  return `/documents/sales-contract/${poId}/pdf`
+}
+
+/** Unduhan Word (.docx) sales contract per PO. */
+export function salesContractDocxPath(poId) {
+  return `/documents/sales-contract/${poId}/docx`
 }
 
 export function advanceMktWorkflow(poId) {
@@ -366,7 +468,6 @@ export function deleteMasterItem(id) {
 }
 
 export async function exportMasterItems() {
-  const url = marketingOutstandingXlsxPath()
   const r = await fetch(`/api/v1/masters/items/export`, {
     headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
   })
@@ -388,6 +489,27 @@ export async function importMasterItems(file) {
 
 export function listMasterPrices() {
   return apiFetch('/masters/prices')
+}
+
+export function listFluorescentColors(params = {}) {
+  const q = new URLSearchParams()
+  if (params.buyer_code && String(params.buyer_code).trim()) q.set('buyer_code', String(params.buyer_code).trim())
+  if (params.season_label && String(params.season_label).trim()) q.set('season_label', String(params.season_label).trim())
+  if (params.color_class && String(params.color_class).trim()) q.set('color_class', String(params.color_class).trim())
+  const suffix = q.toString() ? `?${q.toString()}` : ''
+  return apiFetch(`/masters/fluorescent-colors${suffix}`)
+}
+
+export function listFluorescentColorsPage(params = {}) {
+  const q = new URLSearchParams()
+  if (params.buyer_code && String(params.buyer_code).trim()) q.set('buyer_code', String(params.buyer_code).trim())
+  if (params.season_label && String(params.season_label).trim()) q.set('season_label', String(params.season_label).trim())
+  if (params.color_class && String(params.color_class).trim()) q.set('color_class', String(params.color_class).trim())
+  if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  const suffix = q.toString() ? `?${q.toString()}` : ''
+  return apiFetch(`/masters/fluorescent-colors/page${suffix}`)
 }
 
 export function listCustomerPics() {
@@ -671,6 +793,17 @@ export function reportPoDailyMarketingCsvPath(params = {}) {
   if (params.date_field) q.set('date_field', params.date_field)
   const suffix = q.toString() ? `?${q}` : ''
   return `/api/v1/reports/po-daily-marketing.csv${suffix}`
+}
+
+/** XLSX LAPORAN PO HARIAN MARKETING; path relatif untuk fetch + Authorization. */
+export function reportPoDailyMarketingXlsxPath(params = {}) {
+  const q = new URLSearchParams()
+  if (params.date_from) q.set('date_from', params.date_from)
+  if (params.date_to) q.set('date_to', params.date_to)
+  if (params.customer) q.set('customer', params.customer)
+  if (params.date_field) q.set('date_field', params.date_field)
+  const suffix = q.toString() ? `?${q}` : ''
+  return `/api/v1/reports/po-daily-marketing.xlsx${suffix}`
 }
 
 /** Rekap laporan PO (filter tanggal order atau input) */

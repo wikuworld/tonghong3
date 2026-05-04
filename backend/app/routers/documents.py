@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.routers.auth import get_current_user
 from app.services import marketing_documents as md
+from app.services import sales_contract_documents as sc
 
 router = APIRouter(tags=["documents"])
 
@@ -29,6 +30,85 @@ def _sj_ctx(db: Session, delivery_id: int) -> dict:
         if str(e) == "delivery_not_found":
             raise HTTPException(status_code=404, detail="Delivery tidak ditemukan") from e
         raise
+
+
+def _commercial_invoice_ctx(db: Session, delivery_id: int) -> dict:
+    ok, code = md.commercial_invoice_eligibility(db, delivery_id)
+    if not ok:
+        raise HTTPException(
+            status_code=400,
+            detail=md.commercial_invoice_eligibility_message(code),
+        )
+    try:
+        return md.gather_commercial_invoice_ctx(db, delivery_id)
+    except ValueError as e:
+        if str(e) == "delivery_not_found":
+            raise HTTPException(status_code=404, detail="Delivery tidak ditemukan") from e
+        if str(e) == "delivery_packing_mismatch":
+            raise HTTPException(status_code=400, detail="Delivery tidak cocok dengan packing") from e
+        if str(e) == "packing_not_found":
+            raise HTTPException(status_code=404, detail="Packing tidak ditemukan") from e
+        raise
+
+
+@router.get("/documents/commercial-invoice/{delivery_id}/pdf")
+def document_commercial_invoice_pdf(
+    delivery_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> Response:
+    ctx = _commercial_invoice_ctx(db, delivery_id)
+    data = md.render_commercial_invoice_pdf(ctx)
+    fn = f"commercial_invoice_delivery_{delivery_id}.pdf"
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
+
+
+@router.get("/documents/commercial-invoice/{delivery_id}")
+def document_commercial_invoice(
+    delivery_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> HTMLResponse:
+    ctx = _commercial_invoice_ctx(db, delivery_id)
+    return HTMLResponse(md.render_commercial_invoice_html(ctx))
+
+
+@router.get("/documents/sales-contract/{po_id}/pdf")
+def document_sales_contract_pdf(
+    po_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> Response:
+    try:
+        ctx = sc.gather_sales_contract_ctx(db, po_id)
+    except ValueError as e:
+        if str(e) == "po_not_found":
+            raise HTTPException(status_code=404, detail="PO tidak ditemukan") from e
+        raise
+    data = sc.render_sales_contract_pdf(ctx)
+    fn = f"sales_contract_{ctx['po_number']}.pdf"
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
+
+
+@router.get("/documents/sales-contract/{po_id}/docx")
+def document_sales_contract_docx(
+    po_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> Response:
+    try:
+        ctx = sc.gather_sales_contract_ctx(db, po_id)
+    except ValueError as e:
+        if str(e) == "po_not_found":
+            raise HTTPException(status_code=404, detail="PO tidak ditemukan") from e
+        raise
+    data = sc.render_sales_contract_docx(ctx)
+    fn = f"sales_contract_{ctx['po_number']}.docx"
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
 
 
 @router.get("/documents/surat-jalan/{delivery_id}/pdf")

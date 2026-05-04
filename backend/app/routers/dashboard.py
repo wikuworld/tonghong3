@@ -11,9 +11,12 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import (
+    Customer,
     DeliveryHeader,
+    DeliveryDetail,
     ExchangeRate,
     Invoice,
+    PoDetail,
     PoHeader,
     ProductionOrder,
     QcDetail,
@@ -76,6 +79,135 @@ def _build_activity_feed(db: Session) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def _build_rcvd_po_summary(db: Session) -> dict[str, Any]:
+    """
+    Ringkasan RCVD PO berbasis data real PO:
+    - sumber qty: po_details.quantity_order (sf)
+    - kategori: po_headers.po_category == 'suede' => SUEDE, selain itu => PU
+    - tanggal acuan: order_date terbaru yang punya detail qty
+    """
+    as_of = db.scalar(
+        select(func.max(PoHeader.order_date))
+        .select_from(PoHeader)
+        .join(PoDetail, PoDetail.po_id == PoHeader.id)
+        .where(PoHeader.order_date.is_not(None))
+    )
+    if not as_of:
+        return {
+            "as_of": None,
+            "pu_lines": [],
+            "suede_lines": [],
+            "total_pu_sf": 0.0,
+            "total_suede_sf": 0.0,
+        }
+
+    rows = db.execute(
+        select(
+            PoHeader.po_category,
+            PoHeader.buyer,
+            PoHeader.customer_name_snapshot,
+            func.coalesce(func.sum(PoDetail.quantity_order), 0),
+        )
+        .join(PoDetail, PoDetail.po_id == PoHeader.id)
+        .where(PoHeader.order_date == as_of)
+        .group_by(PoHeader.po_category, PoHeader.buyer, PoHeader.customer_name_snapshot)
+        .order_by(PoHeader.buyer.asc(), PoHeader.customer_name_snapshot.asc())
+    ).all()
+
+    pu_lines: list[dict[str, Any]] = []
+    suede_lines: list[dict[str, Any]] = []
+    total_pu = 0.0
+    total_suede = 0.0
+
+    for po_category, buyer, factory, qty in rows:
+        qty_f = float(qty or 0)
+        if qty_f <= 0:
+            continue
+        line = {
+            "buyer": str(buyer or "").strip() or "-",
+            "factory": str(factory or "").strip() or "-",
+            "sf": qty_f,
+        }
+        if str(po_category or "").strip().lower() == "suede":
+            suede_lines.append(line)
+            total_suede += qty_f
+        else:
+            pu_lines.append(line)
+            total_pu += qty_f
+
+    return {
+        "as_of": as_of.isoformat(),
+        "pu_lines": pu_lines,
+        "suede_lines": suede_lines,
+        "total_pu_sf": round(total_pu, 2),
+        "total_suede_sf": round(total_suede, 2),
+    }
+
+
+def _delivery_status_label(status: str) -> str:
+    s = (status or "").strip().lower()
+    mapping = {
+        "sent": "Received",
+        "loading": "Loading",
+        "ready_pickup": "Will be pick up",
+        "pickup_ready": "Will be pick up",
+        "picked_up": "Already pick up",
+        "pickedup": "Already pick up",
+        "draft": "Draft",
+    }
+    return mapping.get(s, status or "-")
+
+
+def _build_delivery_digest(db: Session) -> dict[str, Any]:
+    date_rows = db.execute(
+        select(DeliveryHeader.delivery_date)
+        .where(DeliveryHeader.delivery_date.is_not(None))
+        .group_by(DeliveryHeader.delivery_date)
+        .order_by(DeliveryHeader.delivery_date.desc())
+        .limit(2)
+    ).all()
+    dates = [row[0] for row in date_rows if row[0]]
+    out_days: list[dict[str, Any]] = []
+    for d in dates:
+        rows = db.execute(
+            select(
+                Customer.code,
+                Customer.name,
+                DeliveryHeader.status,
+                func.coalesce(func.sum(DeliveryDetail.qty), 0),
+            )
+            .select_from(DeliveryHeader)
+            .join(Customer, Customer.id == DeliveryHeader.customer_id, isouter=True)
+            .join(DeliveryDetail, DeliveryDetail.delivery_id == DeliveryHeader.id, isouter=True)
+            .where(DeliveryHeader.delivery_date == d)
+            .group_by(Customer.code, Customer.name, DeliveryHeader.status)
+            .order_by(Customer.code.asc(), Customer.name.asc())
+        ).all()
+        lines: list[dict[str, Any]] = []
+        total_sf = 0.0
+        for code, name, status, qty in rows:
+            sf = float(qty or 0)
+            if sf <= 0:
+                continue
+            lines.append(
+                {
+                    "customer_code": str(code or "").strip() or str(name or "").strip() or "-",
+                    "customer_name": str(name or "").strip() or "-",
+                    "sf": sf,
+                    "status_label": _delivery_status_label(str(status or "").strip()),
+                }
+            )
+            total_sf += sf
+        out_days.append(
+            {
+                "date": d.isoformat(),
+                "lines": lines,
+                "total_sf": round(total_sf, 2),
+            }
+        )
+    return {"days": out_days}
 
 
 @router.get("/dashboard/invoice-summary")
@@ -233,6 +365,9 @@ def dashboard_summary(db: Session = Depends(get_db)) -> dict[str, Any]:
     if n_so > 0:
         delivery_vs_so_pct = min(100.0, round(100.0 * n_delivery / n_so, 1))
 
+    rcvd_po = _build_rcvd_po_summary(db)
+    delivery_digest = _build_delivery_digest(db)
+
     return {
         "counts": {
             "sales_orders": n_so,
@@ -267,5 +402,7 @@ def dashboard_summary(db: Session = Depends(get_db)) -> dict[str, Any]:
             "qc_pass_pct": qc_pass_pct,
             "delivery_coverage_pct": delivery_vs_so_pct,
         },
+        "rcvd_po": rcvd_po,
+        "delivery_digest": delivery_digest,
         "as_of": date.today().isoformat(),
     }

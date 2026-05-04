@@ -69,8 +69,8 @@
         </el-row>
       </el-form>
       <template #footer>
-        <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="submitForm">{{ t('common.save') }}</el-button>
+        <el-button :icon="Close" @click="formVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :icon="Check" @click="submitForm">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -79,7 +79,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, EditPen, Delete } from '@element-plus/icons-vue'
+import { Plus, EditPen, Delete, Close, Check } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminSection from '../../components/AdminSection.vue'
 import { listSpecialPrices, createSpecialPrice, updateSpecialPrice, deleteSpecialPrice } from '../../api/client'

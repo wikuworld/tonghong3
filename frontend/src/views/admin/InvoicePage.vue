@@ -11,7 +11,13 @@
     <p class="mb-3 text-sm text-slate-600">{{ t('pages.invoice.deliveryRequiredNote') }}</p>
 
     <el-tabs v-model="tab">
-      <el-tab-pane :label="t('pages.invoice.tabList')" name="list">
+      <el-tab-pane name="list">
+        <template #label>
+          <span class="flex items-center gap-1">
+            {{ t('pages.invoice.tabList') }}
+            <el-badge v-if="invoiceListCount > 0" :value="invoiceListCount" :max="99" type="primary" />
+          </span>
+        </template>
         <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.invoice.tableEmpty')">
           <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
           <el-table-column prop="invoice_number" :label="t('common.invoiceNo')" min-width="150" />
@@ -42,7 +48,13 @@
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane :label="t('pages.invoice.tabOutstanding')" name="outstanding">
+      <el-tab-pane name="outstanding">
+        <template #label>
+          <span class="flex items-center gap-1">
+            {{ t('pages.invoice.tabOutstanding') }}
+            <el-badge v-if="outstandingCount > 0" :value="outstandingCount" :max="99" type="danger" />
+          </span>
+        </template>
         <div class="mb-3 flex flex-wrap items-end gap-3">
           <el-form-item :label="t('pages.invoice.filter')" class="mb-0">
             <el-select v-model="outstandingMode" class="w-[220px]" @change="loadOutstanding">
@@ -52,7 +64,7 @@
             </el-select>
           </el-form-item>
           <el-checkbox v-model="hidePo" @change="loadOutstanding">{{ t('pages.invoice.hidePo') }}</el-checkbox>
-          <el-button :loading="outstandingLoading" @click="loadOutstanding">{{ t('common.search') }}</el-button>
+          <el-button :loading="outstandingLoading" :icon="Search" @click="loadOutstanding">{{ t('common.search') }}</el-button>
         </div>
 
         <el-table :data="outstandingRows" v-loading="outstandingLoading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.invoice.tableEmpty')">
@@ -105,7 +117,7 @@
         <el-descriptions-item :label="t('common.total')">{{ formatNum(detailRow.total_amount) }}</el-descriptions-item>
       </el-descriptions>
       <template #footer>
-        <el-button type="primary" @click="detailVisible = false">{{ t('pages.invoice.closeDetail') }}</el-button>
+        <el-button type="primary" :icon="Close" @click="detailVisible = false">{{ t('pages.invoice.closeDetail') }}</el-button>
       </template>
     </el-dialog>
 
@@ -147,8 +159,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button v-if="canCreate" type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
+        <el-button :icon="Close" @click="formVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button v-if="canCreate" type="primary" :icon="Check" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -195,8 +207,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="outstandingEditVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button v-if="canUpdate" type="primary" :loading="outstandingSaving" @click="saveOutstanding">{{ t('common.save') }}</el-button>
+        <el-button :icon="Close" @click="outstandingEditVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button v-if="canUpdate" type="primary" :icon="Check" :loading="outstandingSaving" @click="saveOutstanding">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -207,7 +219,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { EditPen, Plus, View } from '@element-plus/icons-vue'
+import { EditPen, Plus, View, Search, Check, Close } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { can } from '../../security/permissions'
 import { formatCurrency, formatDate, statusType, statusLabel } from '../../utils/format'
@@ -366,6 +378,10 @@ const filteredRows = computed(() => {
 const totalAmount = computed(() => {
   return rows.value.reduce((sum, r) => sum + (Number(r.total_amount) || 0), 0)
 })
+
+const invoiceListCount = computed(() => rows.value.length)
+
+const outstandingCount = computed(() => outstandingRows.value.filter(r => r.payment_status !== 'paid').length)
 
 const detailVisible = ref(false)
 const detailRow = ref(null)

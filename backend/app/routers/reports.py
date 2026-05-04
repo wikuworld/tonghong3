@@ -9,6 +9,9 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Query, Response
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -249,6 +252,30 @@ _MARKETING_CSV_COLS = [
     "po_category",
 ]
 
+_MARKETING_XLSX_COLS = [
+    ("No", None),
+    ("Order Date", "order_date"),
+    ("PO No", "poNo"),
+    ("PO Cust", "po_customer_ref"),
+    ("Customer", "customer"),
+    ("Buyer", "buyer"),
+    ("Order Type", "order_type"),
+    ("THI/Lot", "thi_line_ref"),
+    ("Material", "material"),
+    ("Thickness", "thickness"),
+    ("Old Thickness", "oldThickness"),
+    ("New Thickness", "newThickness"),
+    ("Color", "color"),
+    ("Softness", "softness"),
+    ("Qty", "qty"),
+    ("Unit Price", "unit_price"),
+    ("Color Ref", "color_reference"),
+    ("Backing", "backing"),
+    ("Model", "model"),
+    ("Style/Article", "style_article"),
+    ("ETD", "line_etd"),
+]
+
 
 def _row_to_csv_tuple(section: str, row: dict[str, Any]) -> tuple:
     return (
@@ -282,6 +309,37 @@ def _row_to_csv_tuple(section: str, row: dict[str, Any]) -> tuple:
     )
 
 
+def _append_marketing_section_xlsx(ws, start_row: int, title: str, rows: list[dict[str, Any]]) -> int:
+    ws.cell(row=start_row, column=1, value=title)
+    ws.cell(row=start_row, column=1).font = Font(bold=True, size=12)
+    row_idx = start_row + 1
+
+    for col_idx, (label, _) in enumerate(_MARKETING_XLSX_COLS, start=1):
+        c = ws.cell(row=row_idx, column=col_idx, value=label)
+        c.font = Font(bold=True)
+        c.fill = PatternFill(start_color="FFF59D", end_color="FFF59D", fill_type="solid")
+    row_idx += 1
+
+    total_qty = 0.0
+    for i, item in enumerate(rows, start=1):
+        for col_idx, (_, key) in enumerate(_MARKETING_XLSX_COLS, start=1):
+            value = i if key is None else item.get(key, "")
+            ws.cell(row=row_idx, column=col_idx, value=value)
+            if key == "qty":
+                try:
+                    total_qty += float(value or 0)
+                except Exception:
+                    pass
+        row_idx += 1
+
+    ws.cell(row=row_idx, column=1, value=f"TOTAL {title}")
+    ws.cell(row=row_idx, column=1).font = Font(bold=True)
+    qty_col_idx = next(i for i, (_, k) in enumerate(_MARKETING_XLSX_COLS, start=1) if k == "qty")
+    ws.cell(row=row_idx, column=qty_col_idx, value=round(total_qty, 2))
+    ws.cell(row=row_idx, column=qty_col_idx).font = Font(bold=True)
+    return row_idx + 2
+
+
 @router.get("/reports/po-daily-marketing.csv")
 def export_po_daily_marketing_csv(
     db: Session = Depends(get_db),
@@ -309,6 +367,45 @@ def export_po_daily_marketing_csv(
     return Response(
         content=body,
         media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
+
+
+@router.get("/reports/po-daily-marketing.xlsx")
+def export_po_daily_marketing_xlsx(
+    db: Session = Depends(get_db),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    customer: Optional[str] = Query(None),
+    date_field: str = Query("order"),
+    _user=Depends(get_current_user),
+) -> Response:
+    """Ekspor XLSX LAPORAN PO HARIAN MARKETING (revise thickness, production order, sample)."""
+    _ = _user
+    payload = _build_marketing_daily_payload(db, date_from, date_to, customer, date_field)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "PO Daily Marketing"
+
+    ws["A1"] = payload.get("report_title") or "LAPORAN PO HARIAN MARKETING"
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = f"Generated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+
+    row_idx = 4
+    row_idx = _append_marketing_section_xlsx(ws, row_idx, "REVISE THICKNESS", payload.get("revise_thickness") or [])
+    row_idx = _append_marketing_section_xlsx(ws, row_idx, "PRODUCTION ORDER", payload.get("production_orders") or [])
+    _append_marketing_section_xlsx(ws, row_idx, "SAMPLE", payload.get("samples") or [])
+
+    for idx, _ in enumerate(_MARKETING_XLSX_COLS, start=1):
+        ws.column_dimensions[get_column_letter(idx)].width = 16
+
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    fn = f"laporan_po_harian_marketing_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.xlsx"
+    return Response(
+        content=out.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{fn}"'},
     )
 

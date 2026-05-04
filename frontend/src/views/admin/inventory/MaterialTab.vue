@@ -16,7 +16,7 @@
       </el-table-column>
       <el-table-column :label="t('common.actions')" width="100" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
+          <el-button link type="primary" :icon="EditPen" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -47,8 +47,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" @click="submit">{{ t('common.save') }}</el-button>
+        <el-button :icon="Close" @click="formVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :icon="Check" @click="submit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -58,7 +58,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, Close, Check, EditPen } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import { listMaterials, createMaterial, updateMaterial } from '../../../api/client'
 import { formatCurrency } from '../../../utils/format'
