@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,15 +13,19 @@ from app.models import Brand, CustomerBrandMapping, FluorescentColorMaster, PoDe
 from app.services.audit import log_change
 from app.services.numbering import next_number
 from app.schemas import (
+    DeliveryScheduleItem,
     DeliverySchedulesPayload,
+    LotGenerateIn,
+    LotGenerateOut,
     PoDetailCreate,
     PoDetailDeliveryOut,
     PoDetailOut,
     PoDetailUpdate,
     PoHeaderCreate,
     PoHeaderOut,
-    PoHeaderUpdate,
     PoHeaderPageOut,
+    PoHeaderUpdate,
+    PoMarketingReviseBody,
 )
 from app.services.business_rules import validate_po_status_transition
 from app.services.mkt_workflow import (
@@ -32,10 +37,24 @@ from app.services.mkt_workflow import (
     validate_mkt_advance,
 )
 from app.services.notifications import create_notification_for_roles
+from app.services.lot_numbers import (
+    _material_group_from_inputs,
+    generate_lot_number,
+    generate_po_detail_lot_number,
+)
 from app.routers.auth import get_current_user, require_roles
 
 router = APIRouter(tags=["po"])
 log = logging.getLogger(__name__)
+
+
+def _parse_query_date(s: Optional[str]) -> Optional[date]:
+    if not s or not str(s).strip():
+        return None
+    try:
+        return date.fromisoformat(str(s).strip()[:10])
+    except ValueError:
+        return None
 
 _ALLOWED_PO_CATEGORY_DUP = frozenset(
     {"production", "sample", "claim", "return", "subcont", "suede"},
@@ -60,6 +79,7 @@ _PO_DETAIL_DUPLICATE_FIELDS = (
     "vir_softness_type",
     "softness",
     "color_reference",
+    "color_standard",
     "backing",
     "quantity_order",
     "style_article",
@@ -186,7 +206,9 @@ def list_po(
     buyer: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     po_category: Optional[str] = Query(None),
-    order_date: Optional[str] = Query(None, description="Filter by order date (YYYY-MM-DD)"),
+    order_date: Optional[str] = Query(None, description="Filter by order date (YYYY-MM-DD), exact day"),
+    order_date_from: Optional[str] = Query(None, description="Rentang order_date: awal (YYYY-MM-DD)"),
+    order_date_to: Optional[str] = Query(None, description="Rentang order_date: akhir (YYYY-MM-DD)"),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -203,8 +225,16 @@ def list_po(
         stmt = stmt.where(PoHeader.status == status)
     if po_category:
         stmt = stmt.where(PoHeader.po_category == po_category)
-    if order_date:
-        stmt = stmt.where(PoHeader.order_date == order_date)
+    d_from = _parse_query_date(order_date_from)
+    d_to = _parse_query_date(order_date_to)
+    d_one = _parse_query_date(order_date)
+    if d_from is not None or d_to is not None:
+        if d_from is not None:
+            stmt = stmt.where(PoHeader.order_date.is_not(None), PoHeader.order_date >= d_from)
+        if d_to is not None:
+            stmt = stmt.where(PoHeader.order_date.is_not(None), PoHeader.order_date <= d_to)
+    elif d_one is not None:
+        stmt = stmt.where(PoHeader.order_date == d_one)
     if q:
         like = f"%{q}%"
         po_ids_by_detail_material = select(PoDetail.po_id).where(PoDetail.material_name.ilike(like))
@@ -235,7 +265,9 @@ def list_po_page(
     buyer: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     po_category: Optional[str] = Query(None),
-    order_date: Optional[str] = Query(None, description="Filter by order date (YYYY-MM-DD)"),
+    order_date: Optional[str] = Query(None, description="Filter by order date (YYYY-MM-DD), exact day"),
+    order_date_from: Optional[str] = Query(None, description="Rentang order_date: awal (YYYY-MM-DD)"),
+    order_date_to: Optional[str] = Query(None, description="Rentang order_date: akhir (YYYY-MM-DD)"),
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -258,9 +290,21 @@ def list_po_page(
     if po_category:
         stmt = stmt.where(PoHeader.po_category == po_category)
         count_stmt = count_stmt.where(PoHeader.po_category == po_category)
-    if order_date:
-        stmt = stmt.where(PoHeader.order_date == order_date)
-        count_stmt = count_stmt.where(PoHeader.order_date == order_date)
+    d_from = _parse_query_date(order_date_from)
+    d_to = _parse_query_date(order_date_to)
+    d_one = _parse_query_date(order_date)
+    if d_from is not None or d_to is not None:
+        if d_from is not None:
+            w = (PoHeader.order_date.is_not(None), PoHeader.order_date >= d_from)
+            stmt = stmt.where(*w)
+            count_stmt = count_stmt.where(*w)
+        if d_to is not None:
+            w = (PoHeader.order_date.is_not(None), PoHeader.order_date <= d_to)
+            stmt = stmt.where(*w)
+            count_stmt = count_stmt.where(*w)
+    elif d_one is not None:
+        stmt = stmt.where(PoHeader.order_date == d_one)
+        count_stmt = count_stmt.where(PoHeader.order_date == d_one)
     if q:
         like = f"%{q}%"
         po_ids_by_detail_material = select(PoDetail.po_id).where(PoDetail.material_name.ilike(like))
@@ -600,6 +644,14 @@ def update_po(
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
     before = {"status": row.status, "mkt_workflow_stage": row.mkt_workflow_stage}
     data = body.model_dump(exclude_unset=True)
+    if "order_date" in data:
+        new_od = data["order_date"]
+        old_od = row.order_date
+        if old_od is not None and new_od != old_od:
+            raise HTTPException(
+                status_code=400,
+                detail="Tanggal PO tidak dapat diubah setelah ditetapkan.",
+            )
     merged = {
         "customer_id": row.customer_id,
         "brand_id": row.brand_id,
@@ -633,6 +685,117 @@ def update_po(
         actor=user.username,
     )
     db.commit()
+    db.refresh(row)
+    return row
+
+
+def _validate_delivery_schedule_items(schedules: list[DeliveryScheduleItem]) -> None:
+    seq_seen: set[int] = set()
+    for item in schedules:
+        if item.sequence_no <= 0:
+            raise HTTPException(status_code=400, detail="Nomor urutan delivery harus lebih dari 0")
+        if item.sequence_no > 8:
+            raise HTTPException(
+                status_code=400,
+                detail="Nomor urutan delivery maksimal 8 (selaras lembar outstanding marketing).",
+            )
+        if item.sequence_no in seq_seen:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Nomor urutan delivery duplikat: {item.sequence_no}",
+            )
+        seq_seen.add(item.sequence_no)
+
+
+def _replace_po_detail_delivery_schedules_core(
+    db: Session,
+    detail_id: int,
+    schedules: list[DeliveryScheduleItem],
+) -> None:
+    _validate_delivery_schedule_items(schedules)
+    db.query(PoDetailDelivery).filter(PoDetailDelivery.po_detail_id == detail_id).delete(synchronize_session=False)
+    db.flush()
+    for item in sorted(schedules, key=lambda x: x.sequence_no):
+        db.add(
+            PoDetailDelivery(
+                po_detail_id=detail_id,
+                sequence_no=item.sequence_no,
+                qty=item.qty,
+                delivery_date=item.delivery_date,
+            )
+        )
+
+
+@router.patch("/po/{po_id}/marketing-revise", response_model=PoHeaderOut)
+def marketing_revise_po(
+    po_id: int,
+    body: PoMarketingReviseBody,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "marketing")),
+) -> PoHeader:
+    """Perbarui field marketing/planning saja; tidak memicu penjurnalan. Tanggal order tidak boleh diubah di sini."""
+    row = db.get(PoHeader, po_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="PO tidak ditemukan")
+    if body.header is None and not body.lines:
+        raise HTTPException(status_code=400, detail="Berikan bagian header atau daftar baris untuk revisi.")
+    try:
+        if body.header:
+            h = body.header.model_dump(exclude_unset=True)
+            allowed = {
+                "remark",
+                "etd",
+                "delivery_address",
+                "material_followup_remark",
+                "material_followup_done",
+            }
+            for k, v in h.items():
+                if k in allowed:
+                    setattr(row, k, v)
+        if body.lines:
+            for ln in body.lines:
+                drow = db.get(PoDetail, ln.detail_id)
+                if not drow or drow.po_id != po_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Detail PO #{ln.detail_id} tidak termasuk PO ini",
+                    )
+                pdata = ln.model_dump(exclude_unset=True)
+                pdata.pop("detail_id", None)
+                sched_raw = pdata.pop("delivery_schedules", None)
+                for k, v in pdata.items():
+                    if k in ("line_etd", "detail_remark", "marketing_outstanding_remark", "rtd_text"):
+                        setattr(drow, k, v)
+                if sched_raw is not None:
+                    schedules = [
+                        DeliveryScheduleItem.model_validate(x) if isinstance(x, dict) else x
+                        for x in sched_raw
+                    ]
+                    _replace_po_detail_delivery_schedules_core(db, int(drow.id), schedules)
+        log_change(
+            db,
+            entity_type="sales_order",
+            entity_id=row.id,
+            action="marketing_revise",
+            before=None,
+            after={
+                "header": body.header.model_dump(exclude_unset=True) if body.header else None,
+                "lines": [x.model_dump(exclude_unset=True) for x in (body.lines or [])],
+            },
+            actor=user.username,
+        )
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        log.warning("marketing_revise_po integrity_error po_id=%s: %s", po_id, e)
+        raise HTTPException(
+            status_code=409,
+            detail="Simpan revisi marketing gagal (konflik data). Periksa jadwal delivery.",
+        ) from e
+    except SQLAlchemyError as e:
+        db.rollback()
+        log.exception("marketing_revise_po failed po_id=%s", po_id)
+        raise HTTPException(status_code=500, detail="Simpan revisi marketing gagal (database).") from e
     db.refresh(row)
     return row
 
@@ -749,6 +912,7 @@ def update_po_detail(
         "color": row.color,
         "color_family": row.color_family,
         "color_reference": row.color_reference,
+        "color_standard": row.color_standard,
         "thickness_text": row.thickness_text,
         "thickness_min": row.thickness_min,
         "thickness_max": row.thickness_max,
@@ -770,6 +934,7 @@ def update_po_detail(
             "color": row.color,
             "color_family": row.color_family,
             "color_reference": row.color_reference,
+            "color_standard": row.color_standard,
             "thickness_text": row.thickness_text,
             "thickness_min": row.thickness_min,
             "thickness_max": row.thickness_max,
@@ -783,6 +948,65 @@ def update_po_detail(
     db.commit()
     out = _detail_loaded(db, detail_id)
     return out or row
+
+
+@router.post("/po-detail/{detail_id}/generate-lot", response_model=PoDetailOut)
+def generate_lot_for_po_detail(
+    detail_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "marketing", "sales")),
+) -> PoDetail:
+    """Generate nomor lot untuk kolom THI/Lot (thi_line_ref) sesuai format marketing."""
+    row = db.get(PoDetail, detail_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Detail PO tidak ditemukan")
+    try:
+        before_thi = row.thi_line_ref
+        lot = generate_po_detail_lot_number(db, detail_id)
+        row.thi_line_ref = lot
+        log_change(
+            db,
+            entity_type="sales_order_line",
+            entity_id=row.id,
+            action="update",
+            before={"thi_line_ref": before_thi},
+            after={"thi_line_ref": lot, "via": "generate_lot"},
+            actor=user.username,
+        )
+        db.commit()
+        out = _detail_loaded(db, detail_id)
+        return out or row
+    except HTTPException:
+        db.rollback()
+        raise
+    except SQLAlchemyError as e:
+        db.rollback()
+        log.exception("generate_lot_for_po_detail failed detail_id=%s", detail_id)
+        raise HTTPException(status_code=500, detail="Generate lot gagal (database).") from e
+
+
+@router.post("/po/generate-lot", response_model=LotGenerateOut)
+def generate_lot_preview(
+    body: LotGenerateIn,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing", "sales")),
+) -> LotGenerateOut:
+    """Generate lot number tanpa perlu simpan PO/detail dulu (dipakai saat draft)."""
+    data = body.model_dump(exclude_unset=True)
+    group = _material_group_from_inputs(
+        db,
+        master_item_id=data.get("master_item_id"),
+        material_name=data.get("material_name"),
+        vir_softness_type=data.get("vir_softness_type"),
+    )
+    lot = generate_lot_number(
+        db,
+        po_category=data.get("po_category") or "production",
+        factory_code=data.get("factory_code") or "",
+        material_group=group,
+    )
+    db.commit()
+    return LotGenerateOut(lot_number=lot)
 
 
 @router.delete("/po-detail/{detail_id}")
@@ -817,32 +1041,9 @@ def set_po_detail_delivery_schedules(
     row = db.get(PoDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail PO tidak ditemukan")
-    seq_seen: set[int] = set()
-    for item in body.schedules:
-        if item.sequence_no <= 0:
-            raise HTTPException(status_code=400, detail="Nomor urutan delivery harus lebih dari 0")
-        if item.sequence_no in seq_seen:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Nomor urutan delivery duplikat: {item.sequence_no}",
-            )
-        seq_seen.add(item.sequence_no)
 
     try:
-        db.query(PoDetailDelivery).filter(PoDetailDelivery.po_detail_id == detail_id).delete(
-            synchronize_session=False
-        )
-        db.flush()
-        for item in sorted(body.schedules, key=lambda x: x.sequence_no):
-            db.add(
-                PoDetailDelivery(
-                po_detail_id=detail_id,
-                sequence_no=item.sequence_no,
-                qty=item.qty,
-                delivery_date=item.delivery_date,
-                )
-            )
-
+        _replace_po_detail_delivery_schedules_core(db, detail_id, list(body.schedules))
         db.commit()
         return list(
             db.scalars(

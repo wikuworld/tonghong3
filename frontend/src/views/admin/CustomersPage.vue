@@ -512,12 +512,10 @@ const POSITION_OPTIONS = [
   'Staff',
 ]
 const PAYMENT_TERMS_OPTIONS = [
-  { value: 'COD', label: 'COD (Cash on Delivery)' },
-  { value: 'NET 7', label: 'NET 7 Hari' },
-  { value: 'NET 14', label: 'NET 14 Hari' },
-  { value: 'NET 30', label: 'NET 30 Hari' },
-  { value: 'NET 45', label: 'NET 45 Hari' },
-  { value: 'DP 50% + Pelunasan sebelum kirim', label: 'DP 50% + Pelunasan sebelum kirim' },
+  { value: 'TT in advance', label: 'TT in advance' },
+  { value: 'TT 30 days', label: 'TT 30 days' },
+  { value: 'TT 60 days', label: 'TT 60 days' },
+  { value: 'TT 90 days', label: 'TT 90 days' },
 ]
 
 const canCreate = can('customers', 'create')

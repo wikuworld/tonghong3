@@ -1,7 +1,33 @@
 <template>
   <AdminSection :title="t('pages.delivery.title')" :subtitle="t('pages.delivery.subtitle')">
     <template #actions>
+      <el-date-picker
+        v-model="shipDateRange"
+        type="daterange"
+        value-format="YYYY-MM-DD"
+        unlink-panels
+        clearable
+        class="w-[260px]"
+        :start-placeholder="t('pages.delivery.filterShipDateFrom')"
+        :end-placeholder="t('pages.delivery.filterShipDateTo')"
+      />
+      <el-input
+        v-model="factoryCodeFilter"
+        clearable
+        class="w-28"
+        :placeholder="t('pages.delivery.filterFactoryCode')"
+      />
+      <el-select v-model="poCategoryFilter" clearable class="w-32" :placeholder="t('pages.delivery.filterPoCategory')">
+        <el-option :label="t('status.production')" value="production" />
+        <el-option :label="t('status.sample')" value="sample" />
+        <el-option :label="t('status.return')" value="return" />
+        <el-option :label="t('status.subcont')" value="subcont" />
+        <el-option :label="t('status.claim')" value="claim" />
+        <el-option label="Suede" value="suede" />
+      </el-select>
+      <el-input v-model="customerFilter" clearable class="w-32" :placeholder="t('pages.delivery.filterCustomer')" />
       <el-input v-model="keyword" :placeholder="t('pages.delivery.listSearchPlaceholder')" clearable class="delivery-toolbar-search" />
+      <el-switch v-model="showFullCols" :active-text="t('pages.delivery.showAllColumns')" class="ml-1" />
       <el-select v-model="statusFilter" clearable :placeholder="t('common.status')" class="w-32">
         <el-option label="Draft" value="draft" />
         <el-option label="Sent" value="sent" />
@@ -38,7 +64,7 @@
         </div>
         <div class="flex items-center gap-4">
           <div class="text-right">
-            <p class="text-2xl font-bold text-slate-700">{{ filteredRows.length }}</p>
+            <p class="text-2xl font-bold text-slate-700">{{ totalLines }}</p>
             <p class="text-xs text-slate-500">{{ t('common.total') }}</p>
           </div>
         </div>
@@ -46,7 +72,7 @@
     </el-card>
 
     <el-table
-      :data="filteredRows"
+      :data="lineRows"
       v-loading="loading"
       border
       stripe
@@ -62,6 +88,64 @@
       </el-table-column>
       <el-table-column prop="factory_name" :label="t('pages.delivery.columns.factory')" min-width="150" show-overflow-tooltip />
       <el-table-column prop="po_number" :label="t('pages.delivery.columns.poNumber')" min-width="130" show-overflow-tooltip />
+      <el-table-column
+        v-if="showFullCols"
+        prop="system_no"
+        :label="t('pages.delivery.columns.systemNo')"
+        min-width="110"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        v-if="showFullCols"
+        prop="factory_code"
+        :label="t('pages.delivery.columns.factoryCode')"
+        width="100"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        v-if="showFullCols"
+        prop="thickness"
+        :label="t('pages.delivery.columns.thickness')"
+        width="90"
+        show-overflow-tooltip
+      />
+      <el-table-column v-if="showFullCols" prop="color" :label="t('pages.delivery.columns.color')" width="90" show-overflow-tooltip />
+      <el-table-column
+        v-if="showFullCols"
+        prop="order_type"
+        :label="t('pages.delivery.columns.orderType')"
+        width="90"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        v-if="showFullCols"
+        prop="invoice_number"
+        :label="t('pages.delivery.columns.invNumber')"
+        min-width="120"
+        show-overflow-tooltip
+      />
+      <el-table-column v-if="showFullCols" prop="pi_no" :label="t('pages.delivery.columns.piNo')" width="100" show-overflow-tooltip />
+      <el-table-column
+        v-if="showFullCols"
+        prop="delivery_zone"
+        :label="t('pages.delivery.deliveryZone')"
+        width="100"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        v-if="showFullCols"
+        prop="packing_status"
+        :label="t('pages.delivery.filterPackingStatus')"
+        width="90"
+        show-overflow-tooltip
+      />
+      <el-table-column v-if="showFullCols" :label="t('pages.delivery.filterInvplPrinted')" width="88" align="center">
+        <template #default="{ row }">
+          <el-tag :type="row.invpl_printed ? 'success' : 'info'" size="small">
+            {{ row.invpl_printed ? t('pages.delivery.filterInvplYes') : t('pages.delivery.filterInvplNo') }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="buyer" :label="t('pages.delivery.columns.buyer')" width="90" show-overflow-tooltip />
       <el-table-column prop="lot_no" :label="t('pages.delivery.columns.lotNo')" width="100" show-overflow-tooltip />
       <el-table-column prop="material_name" :label="t('pages.delivery.columns.materialName')" min-width="140" show-overflow-tooltip />
@@ -89,6 +173,19 @@
         </template>
       </el-table-column>
     </el-table>
+
+    <div class="mt-4 flex justify-end">
+      <el-pagination
+        v-model:current-page="currentPage"
+        v-model:page-size="pageSize"
+        :total="totalLines"
+        :page-sizes="[25, 50, 100, 200]"
+        layout="total, sizes, prev, pager, next"
+        background
+        @current-change="load"
+        @size-change="onPageSizeChange"
+      />
+    </div>
 
     <el-dialog v-model="formVisible" :title="`${t('common.create')} ${t('menu.delivery')}`" width="560px" destroy-on-close align-center>
       <el-form label-position="top">
@@ -215,6 +312,9 @@
             <el-descriptions-item :label="t('common.vehicle')">{{ detailRow.vehicle_number || '—' }}</el-descriptions-item>
             <el-descriptions-item :label="t('common.driver')">{{ detailRow.driver_name || '—' }}</el-descriptions-item>
             <el-descriptions-item :label="t('common.destination')">{{ detailRow.destination || '—' }}</el-descriptions-item>
+            <el-descriptions-item v-if="detailRow.delivery_type" :label="t('pages.delivery.deliveryType')">
+              {{ detailRow.delivery_type }}
+            </el-descriptions-item>
             <el-descriptions-item :label="t('pages.delivery.deliveryZone')">
               {{ deliveryZoneLabel(detailRow.delivery_zone) }}
             </el-descriptions-item>
@@ -272,6 +372,20 @@
             <el-table-column prop="production_detail_id" :label="t('pages.delivery.productionDetailId')" min-width="120">
               <template #default="{ row }">#{{ row.production_detail_id }}</template>
             </el-table-column>
+            <el-table-column :label="t('pages.delivery.columns.poNumber')" min-width="120" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span v-if="!row.po_id">{{ row.po_number || '—' }}</span>
+                <el-button v-else link type="primary" @click="goPoFromLine(row)">
+                  {{ row.po_number || `#${row.po_id}` }}
+                </el-button>
+              </template>
+            </el-table-column>
+            <el-table-column prop="system_no" :label="t('pages.delivery.columns.systemNo')" width="110" show-overflow-tooltip />
+            <el-table-column prop="lot_number" :label="t('pages.delivery.columns.lotNo')" width="100" show-overflow-tooltip />
+            <el-table-column prop="material_name_line" :label="t('pages.delivery.columns.materialName')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="thickness_display" :label="t('pages.delivery.columns.thickness')" width="90" show-overflow-tooltip />
+            <el-table-column prop="color_line" :label="t('pages.delivery.columns.color')" width="80" show-overflow-tooltip />
+            <el-table-column prop="order_type" :label="t('pages.delivery.columns.orderType')" width="88" show-overflow-tooltip />
             <el-table-column prop="qty" :label="t('common.quantity')" min-width="100" align="right">
               <template #default="{ row }">{{ formatNumber(row.qty, 2) }}</template>
             </el-table-column>
@@ -315,6 +429,9 @@
                 <el-input v-model="lineForm.qty" type="number" step="0.01" />
               </el-form-item>
             </div>
+            <el-checkbox v-if="isAdminRole" v-model="lineForm.bypass_qc" class="mt-2">
+              {{ t('pages.delivery.bypassQcAdmin') }}
+            </el-checkbox>
             <div class="mt-3">
               <el-button type="primary" :loading="addingLine" @click="addLine">{{ t('pages.delivery.addToDelivery') }}</el-button>
             </div>
@@ -332,7 +449,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, View, Van, Document, Download, Loading } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
@@ -351,6 +468,7 @@ import {
   listProductionDetails,
   markSuratJalanPrinted,
   marketingDeliveryXlsxPath,
+  me,
   toIsoDate,
   updateDelivery,
 } from '../../api/client'
@@ -360,6 +478,7 @@ const canCreate = can('delivery', 'create')
 const canUpdate = can('delivery', 'update')
 const canPrint = can('delivery', 'print')
 const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const saving = ref(false)
 const exporting = ref(false)
@@ -367,6 +486,16 @@ const keyword = ref('')
 const statusFilter = ref('')
 const packingStatusFilter = ref('')
 const invplFilter = ref('')
+const shipDateRange = ref(null)
+const factoryCodeFilter = ref('')
+const poCategoryFilter = ref('')
+const customerFilter = ref('')
+const showFullCols = ref(false)
+const currentPage = ref(1)
+const pageSize = ref(50)
+const totalLines = ref(0)
+const isAdminRole = ref(false)
+const keywordWatchActive = ref(false)
 const lineRows = ref([])
 const customers = ref([])
 const packings = ref([])
@@ -391,20 +520,43 @@ function deliveryLinesQueryParams() {
   if (statusFilter.value) p.delivery_status = statusFilter.value
   if (packingStatusFilter.value) p.packing_status = packingStatusFilter.value
   if (invplFilter.value) p.invpl_printed = invplFilter.value
+  const dr = shipDateRange.value
+  if (Array.isArray(dr) && dr[0] && dr[1]) {
+    p.delivery_date_from = String(dr[0]).slice(0, 10)
+    p.delivery_date_to = String(dr[1]).slice(0, 10)
+  }
+  const fc = factoryCodeFilter.value.trim()
+  if (fc) p.factory_code = fc
+  if (poCategoryFilter.value) p.po_category = poCategoryFilter.value
+  const cu = customerFilter.value.trim()
+  if (cu) p.customer = cu
+  const qkw = keyword.value.trim()
+  if (qkw) p.q = qkw
   return p
+}
+
+function onPageSizeChange() {
+  currentPage.value = 1
+  load()
 }
 
 async function load() {
   loading.value = true
   try {
+    const skip = (currentPage.value - 1) * pageSize.value
     const [linesResp, cust, pack] = await Promise.all([
-      listMarketingDeliveryLines(deliveryLinesQueryParams()),
+      listMarketingDeliveryLines({
+        ...deliveryLinesQueryParams(),
+        skip,
+        limit: pageSize.value,
+      }),
       listCustomers(),
       listPacking(),
     ])
     customers.value = cust
     packings.value = pack
     const lines = Array.isArray(linesResp) ? linesResp : (linesResp?.data || [])
+    totalLines.value = typeof linesResp?.total === 'number' ? linesResp.total : lines.length
     lineRows.value = lines.map((r) => ({
       ...r,
       delivery_date: r.delivery_date ? String(r.delivery_date).slice(0, 10) : '',
@@ -417,38 +569,63 @@ async function load() {
   }
 }
 
-watch([statusFilter, packingStatusFilter, invplFilter], () => {
-  load()
+watch(
+  [statusFilter, packingStatusFilter, invplFilter, shipDateRange, factoryCodeFilter, poCategoryFilter, customerFilter],
+  () => {
+    currentPage.value = 1
+    load()
+  },
+)
+
+let keywordDebounce = null
+watch(keyword, () => {
+  if (!keywordWatchActive.value) return
+  if (keywordDebounce) clearTimeout(keywordDebounce)
+  keywordDebounce = setTimeout(() => {
+    currentPage.value = 1
+    load()
+  }, 400)
 })
 
 onMounted(() => {
-  const kw = route.query.keyword
-  if (kw != null && String(kw).trim()) keyword.value = String(kw).trim()
-  load().then(() => {
-    const deliveryIdRaw = route.query.delivery_id
-    const deliveryId = Number(deliveryIdRaw)
-    if (!Number.isNaN(deliveryId) && deliveryId > 0) {
-      const target = lineRows.value.find((r) => Number(r.delivery_id) === deliveryId)
-      if (target) openDetailFromLine(target)
-    }
-  })
-})
-
-const filteredRows = computed(() => {
-  let rows = lineRows.value
-  const q = keyword.value.trim().toLowerCase()
-  if (!q) return rows
-
-  return rows.filter((r) => {
-    const searchableFields = [
-      r.surat_jalan_no, r.factory_name, r.po_number, r.lot_no,
-      r.buyer, r.material_name, r.color, r.delivery_status,
+  try {
+    me().then((u) => {
+      isAdminRole.value = (u?.role || '') === 'admin'
+    })
+  } catch {
+    isAdminRole.value = false
+  }
+  const q = route.query
+  if (q.keyword != null && String(q.keyword).trim()) keyword.value = String(q.keyword).trim()
+  if (q.delivery_date_from && q.delivery_date_to) {
+    shipDateRange.value = [
+      String(q.delivery_date_from).slice(0, 10),
+      String(q.delivery_date_to).slice(0, 10),
     ]
-    return searchableFields.some(field => 
-      field != null && String(field).toLowerCase().includes(q)
-    )
-  })
+  }
+  if (q.factory_code != null && String(q.factory_code).trim()) factoryCodeFilter.value = String(q.factory_code).trim()
+  if (q.po_category != null && String(q.po_category).trim()) poCategoryFilter.value = String(q.po_category).trim()
+  if (q.po_number != null && String(q.po_number).trim()) keyword.value = String(q.po_number).trim()
+  if (q.customer != null && String(q.customer).trim()) customerFilter.value = String(q.customer).trim()
+  load()
+    .then(() => {
+      const deliveryIdRaw = route.query.delivery_id
+      const deliveryId = Number(deliveryIdRaw)
+      if (!Number.isNaN(deliveryId) && deliveryId > 0) {
+        const target = lineRows.value.find((r) => Number(r.delivery_id) === deliveryId)
+        if (target) openDetailFromLine(target)
+        else openDetailById(deliveryId)
+      }
+    })
+    .finally(() => {
+      keywordWatchActive.value = true
+    })
 })
+
+function goPoFromLine(row) {
+  if (!row?.po_id) return
+  router.push({ path: '/admin/po', query: { highlight: String(row.po_id) } })
+}
 
 const isSentOrCancelled = computed(() => {
   const status = (detailRow.value?.status || '').toLowerCase()
@@ -458,10 +635,7 @@ const isSentOrCancelled = computed(() => {
 async function downloadDeliveryExcel() {
   exporting.value = true
   try {
-    const q = keyword.value.trim() || undefined
-    await fetchAuthenticatedDocument(
-      marketingDeliveryXlsxPath({ q, ...deliveryLinesQueryParams() }),
-      {
+    await fetchAuthenticatedDocument(marketingDeliveryXlsxPath(deliveryLinesQueryParams()), {
       mode: 'download',
       downloadFallbackName: 'delivery_list_sistem.xlsx',
     })
@@ -555,15 +729,15 @@ async function submit() {
   saving.value = true
   try {
     const remark = (form.destination || '').trim()
-    const destinationText = [form.delivery_type?.toUpperCase(), remark].filter(Boolean).join(' | ')
     const created = await createDelivery({
       customer_id: form.customer_id,
       packing_id: form.packing_id,
+      delivery_type: form.delivery_type || undefined,
       delivery_date: toIsoDate(form.delivery_date) || undefined,
       delivery_zone: form.delivery_zone || undefined,
       vehicle_number: form.vehicle_number || undefined,
       driver_name: form.driver_name || undefined,
-      destination: destinationText || undefined,
+      destination: remark || undefined,
       status: 'draft',
     })
     for (const ln of createSelectedLines.value) {
@@ -597,6 +771,7 @@ const addingLine = ref(false)
 const lineForm = reactive({
   production_detail_id: null,
   qty: '',
+  bypass_qc: false,
 })
 
 const bcForm = reactive({
@@ -619,6 +794,7 @@ function resetDetail() {
   candidateProdDetails.value = []
   lineForm.production_detail_id = null
   lineForm.qty = ''
+  lineForm.bypass_qc = false
   bcForm.bc_number = ''
   bcForm.bc_date = ''
 }
@@ -776,14 +952,19 @@ async function addLine() {
   }
   addingLine.value = true
   try {
-    await addDeliveryDetail(detailRow.value.id, {
-      production_detail_id: lineForm.production_detail_id,
-      qty: lineForm.qty ? Number(lineForm.qty) : undefined,
-    })
+    await addDeliveryDetail(
+      detailRow.value.id,
+      {
+        production_detail_id: lineForm.production_detail_id,
+        qty: lineForm.qty ? Number(lineForm.qty) : undefined,
+      },
+      { bypass_qc: Boolean(lineForm.bypass_qc && isAdminRole.value) },
+    )
     ElMessage.success(t('pages.delivery.lineAdded'))
     detailLines.value = await listDeliveryDetails(detailRow.value.id)
     lineForm.production_detail_id = null
     lineForm.qty = ''
+    lineForm.bypass_qc = false
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {

@@ -16,7 +16,7 @@
       <p class="filter-panel__title">{{ t('common.filter') }}</p>
       <el-form class="filter-form" label-position="top">
         <el-row :gutter="12">
-          <el-col :xs="24" :sm="12" :md="9" :lg="7">
+          <el-col :xs="24" :sm="12" :md="8" :lg="5">
             <el-form-item :label="t('common.customer')">
               <el-select
                 v-model="filterCustomerId"
@@ -35,7 +35,7 @@
             </el-form-item>
           </el-col>
 
-          <el-col :xs="24" :sm="12" :md="7" :lg="5">
+          <el-col :xs="24" :sm="12" :md="8" :lg="4">
             <el-form-item :label="t('common.status')">
               <el-select v-model="filterStatus" clearable class="w-full" :placeholder="t('common.status')">
                 <el-option :label="t('status.draft')" value="draft" />
@@ -44,15 +44,31 @@
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="12" :md="8" :lg="6">
+          <el-col :xs="24" :sm="12" :md="8" :lg="4">
             <el-form-item :label="t('common.buyer')">
               <el-select v-model="filterBuyer" clearable filterable class="w-full" :placeholder="t('common.placeholder.buyer')">
                 <el-option v-for="b in buyerCodes" :key="b" :label="b" :value="b" />
               </el-select>
             </el-form-item>
           </el-col>
-
-          <el-col :xs="24" :sm="24" :md="8" :lg="6" class="po-filter-action-col">
+          <el-col :xs="24" :sm="18" :md="16" :lg="8">
+            <el-form-item :label="t('pages.po.filterOrderDateRange')">
+              <el-date-picker
+                v-model="filterOrderDateRange"
+                type="daterange"
+                unlink-panels
+                range-separator="—"
+                value-format="YYYY-MM-DD"
+                size="small"
+                class="w-full min-w-[200px] max-w-full"
+                :shortcuts="poOrderDateShortcuts"
+                clearable
+                :start-placeholder="t('common.fromDate')"
+                :end-placeholder="t('common.toDate')"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="6" :md="8" :lg="3" class="po-filter-action-col">
             <el-form-item label="&nbsp;">
               <el-button class="w-full" :icon="RefreshLeft" @click="resetFilter">{{ t('common.reset') }}</el-button>
             </el-form-item>
@@ -74,15 +90,41 @@
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
       <el-table-column prop="po_number" :label="t('common.poNo')" min-width="160" show-overflow-tooltip />
       <el-table-column prop="po_customer_ref" :label="t('pages.po.poCustomerRef')" min-width="140" show-overflow-tooltip />
+      <el-table-column prop="order_date_fmt" :label="t('common.orderDate')" width="112" align="center" />
       <el-table-column prop="customerName" :label="t('common.customer')" min-width="200" show-overflow-tooltip />
+      <el-table-column prop="brand_name_snapshot" :label="t('pages.po.brand')" min-width="120" show-overflow-tooltip />
       <el-table-column prop="buyer" :label="t('common.buyer')" min-width="120" show-overflow-tooltip />
       <el-table-column prop="material_hint" :label="t('common.material')" min-width="140" show-overflow-tooltip />
+      <el-table-column :label="t('pages.po.colOrderTypeFactory')" min-width="130" show-overflow-tooltip>
+        <template #default="{ row }">
+          <span>{{ row.order_type_label || t('common.emptyValue') }}</span>
+          <span v-if="row.factory_code" class="text-slate-500"> · {{ row.factory_code }}</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="po_category" :label="t('common.category')" min-width="110" align="center">
         <template #default="{ row }">
           <el-tag size="small" type="info" effect="plain">{{ t(`status.${row.po_category}`) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="etd" :label="t('common.etd')" min-width="110" align="center" />
+      <el-table-column prop="delivery_address" :label="t('pages.po.deliveryAddress')" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="remark" :label="t('pages.po.colHeaderRemarkSo')" min-width="140" show-overflow-tooltip />
+      <el-table-column :label="t('pages.marketingFlow.materialFollowUp')" min-width="150" show-overflow-tooltip>
+        <template #default="{ row }">
+          <div class="flex flex-wrap items-center gap-1">
+            <el-tag v-if="row.material_followup_done" size="small" type="success" effect="plain">{{ t('pages.po.done') }}</el-tag>
+            <el-tag v-else size="small" type="info" effect="plain">{{ t('pages.po.followupOpen') }}</el-tag>
+            <span v-if="row.material_followup_remark" class="text-xs text-slate-700">{{ row.material_followup_remark }}</span>
+            <span v-else class="text-xs text-slate-400">—</span>
+          </div>
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('pages.marketingFlow.stuckReason')" min-width="140" show-overflow-tooltip>
+        <template #default="{ row }">
+          <el-tag v-if="row.stuck_reason" type="warning" size="small" effect="plain">{{ row.stuck_reason }}</el-tag>
+          <span v-else class="text-slate-400 text-xs">—</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="mkt_workflow_stage" :label="t('pages.po.mktFlow')" min-width="140" show-overflow-tooltip>
         <template #default="{ row }">{{ row.mkt_workflow_stage || t('common.emptyValue') }}</template>
       </el-table-column>
@@ -174,6 +216,15 @@
             <el-tag v-else type="primary" effect="plain" size="small">
               {{ formModel.po_number }}
             </el-tag>
+            <el-button
+              v-if="isEditMode && canManage"
+              type="warning"
+              size="small"
+              class="ml-2 shrink-0"
+              @click="openMarketingReviseDialog"
+            >
+              {{ t('pages.po.marketingReviseOpen') }}
+            </el-button>
           </div>
           <div class="po-dialog-steps-wrapper">
             <el-steps class="mb-4 po-dialog-steps w-full" :space="100" :active="currentStep" simple>
@@ -278,6 +329,11 @@
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :md="8">
+                <el-form-item label="Factory Code">
+                  <el-input v-model="formModel.factory_code" clearable maxlength="32" placeholder="Contoh: LR028" />
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :md="8">
                 <el-form-item :label="t('common.poNo')">
                   <el-input :model-value="isEditMode ? formModel.po_number : nextPoNumberDisplay" disabled />
                   <span class="text-xs text-slate-500">{{ t('pages.po.autoGenerateHint') }}</span>
@@ -290,12 +346,14 @@
               </el-col>
               <el-col :xs="24" :md="8">
                 <el-form-item :label="t('common.orderDate')">
-                  <el-date-picker v-model="formModel.order_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('pages.po.headerEtd')">
-                  <el-date-picker v-model="formModel.etd" type="date" class="w-full" value-format="YYYY-MM-DD" />
+                  <el-date-picker
+                    v-model="formModel.order_date"
+                    type="date"
+                    class="w-full"
+                    value-format="YYYY-MM-DD"
+                    :disabled="orderDateLocked"
+                  />
+                  <div v-if="orderDateLocked" class="text-xs text-slate-500 mt-1">{{ t('pages.po.orderDateLockedHint') }}</div>
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :md="8">
@@ -320,34 +378,21 @@
             <h3 class="text-lg font-semibold mb-4">{{ t('pages.po.step2Title') }}</h3>
             <el-row :gutter="16" class="material-step-grid">
               <el-col :xs="24" :md="8">
-                <el-form-item :label="`${t('common.material')} (${t('common.masterLabel')})`">
-                  <el-select
-                    v-model="formModel.master_item_id"
-                    clearable
-                    filterable
-                    class="w-full"
-                    :placeholder="t('pages.po.masterItemPlaceholder')"
-                    @change="onMasterItemChange"
-                  >
-                    <el-option
-                      v-for="it in masterItems"
-                      :key="it.id"
-                      :label="`${it.item_code} — ${it.material_name || ''}`"
-                      :value="it.id"
-                    />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
                 <el-form-item :label="t('common.material')" :error="formErrors.material_name">
                   <div class="field-lock-row">
-                    <el-input
+                    <el-select
                       v-model="formModel.material_name"
-                      class="w-full"
-                      :placeholder="t('common.placeholder.material')"
-                      :disabled="isMaterialFieldLocked('material_name')"
+                      filterable
+                      allow-create
+                      default-first-option
                       clearable
-                    />
+                      class="w-full"
+                      :placeholder="t('pages.po.materialCascadePlaceholder')"
+                      :disabled="isMaterialFieldLocked('material_name')"
+                      @change="onPickedMaterialDimension"
+                    >
+                      <el-option v-for="opt in materialDimensionOptions" :key="opt" :label="opt" :value="opt" />
+                    </el-select>
                     <div class="mt-1 flex items-center gap-2">
                       <el-button
                         v-if="isMaterialFieldLocked('material_name')"
@@ -372,40 +417,20 @@
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :md="8">
-                <el-form-item label="ARTICLE">
-                  <div class="field-lock-row">
-                    <el-input v-model="formModel.style_article" class="w-full" :disabled="isMaterialFieldLocked('style_article')" />
-                    <div class="mt-1 flex items-center gap-2">
-                      <el-button
-                        v-if="isMaterialFieldLocked('style_article')"
-                        link
-                        type="primary"
-                        size="small"
-                        @click="enableMaterialOverride('style_article')"
-                      >
-                        Override
-                      </el-button>
-                      <el-button
-                        v-else-if="formModel.master_item_id && materialFieldOverride.style_article"
-                        link
-                        type="primary"
-                        size="small"
-                        @click="resetMaterialFieldToMaster('style_article')"
-                      >
-                        Reset
-                      </el-button>
-                    </div>
-                  </div>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
                 <el-form-item :label="t('common.thickness')">
                   <div class="field-lock-row">
-                    <el-select v-model="formModel.thickness_text" clearable filterable class="w-full" :disabled="isMaterialFieldLocked('thickness_text')">
-                      <el-option label="1.0-1.2" value="1.0-1.2" />
-                      <el-option label="1.2-1.4" value="1.2-1.4" />
-                      <el-option label="1.4-1.6" value="1.4-1.6" />
-                      <el-option label="1.6-1.8" value="1.6-1.8" />
+                    <el-select
+                      v-model="formModel.thickness_text"
+                      clearable
+                      filterable
+                      allow-create
+                      default-first-option
+                      class="w-full"
+                      :placeholder="t('pages.po.thicknessCascadePlaceholder')"
+                      :disabled="isMaterialFieldLocked('thickness_text') || !String(formModel.material_name || '').trim()"
+                      @change="onPickedThicknessDimension"
+                    >
+                      <el-option v-for="opt in thicknessDimensionOptions" :key="opt" :label="opt" :value="opt" />
                     </el-select>
                     <div class="mt-1 flex items-center gap-2">
                       <el-button
@@ -432,47 +457,77 @@
               </el-col>
               <el-col :xs="24" :md="8">
                 <el-form-item :label="t('common.color')">
-                  <el-select
-                    v-if="isFluorescentFamily"
-                    v-model="formModel.color"
-                    clearable
-                    filterable
-                    class="w-full"
-                    :placeholder="t('common.placeholder.color')"
-                    :disabled="isMaterialFieldLocked('color')"
-                  >
-                    <el-option
-                      v-for="opt in fluorescentColorOptions"
-                      :key="opt.id"
-                      :label="formatFluorescentOption(opt)"
-                      :value="opt.color_name"
-                    />
-                  </el-select>
-                  <el-input v-else v-model="formModel.color" class="w-full" :disabled="isMaterialFieldLocked('color')" />
-                  <div class="mt-1">
-                    <el-button
-                      v-if="isMaterialFieldLocked('color')"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="enableMaterialOverride('color')"
+                  <div class="field-lock-row">
+                    <el-select
+                      v-if="isFluorescentFamily"
+                      v-model="formModel.color"
+                      clearable
+                      filterable
+                      class="w-full"
+                      :placeholder="t('common.placeholder.color')"
+                      :disabled="isMaterialFieldLocked('color') || !String(formModel.material_name || '').trim() || !String(formModel.thickness_text || '').trim()"
                     >
-                      Override warna
-                    </el-button>
-                    <el-button
-                      v-else-if="formModel.master_item_id && materialFieldOverride.color"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="resetMaterialFieldToMaster('color')"
+                      <el-option
+                        v-for="opt in poColorCascadeOptions"
+                        :key="opt.id"
+                        :label="opt._label"
+                        :value="opt.color_name"
+                      />
+                    </el-select>
+                    <el-select
+                      v-else
+                      v-model="formModel.color"
+                      filterable
+                      allow-create
+                      default-first-option
+                      clearable
+                      class="w-full"
+                      :placeholder="t('common.placeholder.color')"
+                      :disabled="isMaterialFieldLocked('color') || !String(formModel.material_name || '').trim() || !String(formModel.thickness_text || '').trim()"
                     >
-                      Reset warna
-                    </el-button>
+                      <el-option v-for="c in colorDimensionOptions" :key="c" :label="c" :value="c" />
+                    </el-select>
+                    <div class="mt-1">
+                      <el-button
+                        v-if="isMaterialFieldLocked('color')"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="enableMaterialOverride('color')"
+                      >
+                        Override warna
+                      </el-button>
+                      <el-button
+                        v-else-if="formModel.master_item_id && materialFieldOverride.color"
+                        link
+                        type="primary"
+                        size="small"
+                        @click="resetMaterialFieldToMaster('color')"
+                      >
+                        Reset warna
+                      </el-button>
+                    </div>
                   </div>
                   <div v-if="isFluorescentFamily" class="mt-1 text-xs text-slate-500">
                     Season aktif: {{ activeSeasonLabel || '-' }} · {{ t('common.masterLabel') }} fluorescent: {{ fluorescentColorOptions.length }} opsi
                   </div>
                 </el-form-item>
+              </el-col>
+              <el-col :span="24">
+                <div v-if="formModel.master_item_id" class="flex flex-wrap items-center gap-2 mb-2">
+                  <el-tag type="success" closable @close="clearLinkedMasterItem">
+                    {{ t('pages.po.masterLinkedTag') }}: {{ resolvedMasterItemLabel }}
+                  </el-tag>
+                  <span v-if="masterResolveLoading" class="text-xs text-slate-500">{{ t('pages.po.resolvingMaster') }}</span>
+                </div>
+                <el-alert
+                  v-else-if="lastResolveHadNoMaster && materialThicknessColorComplete"
+                  type="warning"
+                  :closable="false"
+                  show-icon
+                  class="mb-2"
+                  :title="t('pages.po.masterNotMatchedHint')"
+                />
               </el-col>
               <el-col :xs="24" :md="8">
                 <el-form-item :label="t('pages.po.colorFamily')">
@@ -549,62 +604,29 @@
                 <el-collapse v-model="materialAdvancedOpen">
                   <el-collapse-item name="advanced-material">
                     <template #title>
-                      <span class="font-medium">Advanced (opsional)</span>
+                      <span class="font-medium">{{ t('pages.po.materialExtraGroupTitle') }}</span>
                     </template>
                     <el-row :gutter="16">
-                      <el-col :xs="24" :md="8">
-                        <el-form-item :label="t('pages.po.virSoftnessType')">
-                          <el-input v-model="formModel.vir_softness_type" clearable @input="autoFieldMeta.vir_softness_type = false" />
+                      <el-col :xs="24" :md="6">
+                        <el-form-item :label="t('pages.po.colorStandart')">
+                          <el-input v-model="formModel.color_standard" @input="autoFieldMeta.color_standard = false" />
                           <div class="mt-2 flex items-center gap-2">
-                            <el-tag v-if="autoFieldMeta.vir_softness_type && formModel.vir_softness_type" size="small" type="success">
+                            <el-tag v-if="autoFieldMeta.color_standard && formModel.color_standard" size="small" type="success">
                               {{ t('pages.po.autoFilled') }}
                             </el-tag>
                             <el-button
-                              v-if="formModel.vir_softness_type"
+                              v-if="formModel.color_standard"
                               link
                               type="primary"
                               size="small"
-                              @click="resetToAuto('vir_softness_type')"
+                              @click="resetToAuto('color_standard')"
                             >
                               {{ t('pages.po.resetToAuto') }}
                             </el-button>
                           </div>
                         </el-form-item>
                       </el-col>
-                      <el-col :xs="24" :md="8">
-                        <el-form-item :label="t('common.softness')">
-                          <el-select v-model="formModel.softness" clearable filterable allow-create class="w-full" @change="autoFieldMeta.softness = false">
-                            <el-option label="Soft" value="Soft" />
-                            <el-option label="Medium" value="Medium" />
-                            <el-option label="Hard" value="Hard" />
-                            <el-option label="Extra Soft" value="Extra Soft" />
-                            <el-option label="Super Soft" value="Super Soft" />
-                          </el-select>
-                          <div v-if="softnessRangeWarning" class="mt-1 text-xs text-amber-600">
-                            {{ softnessRangeWarning }}
-                          </div>
-                        </el-form-item>
-                      </el-col>
-                      <el-col :xs="24" :md="8">
-                        <el-form-item :label="t('common.colorReference')">
-                          <el-input v-model="formModel.color_reference" @input="autoFieldMeta.color_reference = false" />
-                          <div class="mt-2 flex items-center gap-2">
-                            <el-tag v-if="autoFieldMeta.color_reference && formModel.color_reference" size="small" type="success">
-                              {{ t('pages.po.autoFilled') }}
-                            </el-tag>
-                            <el-button
-                              v-if="formModel.color_reference"
-                              link
-                              type="primary"
-                              size="small"
-                              @click="resetToAuto('color_reference')"
-                            >
-                              {{ t('pages.po.resetToAuto') }}
-                            </el-button>
-                          </div>
-                        </el-form-item>
-                      </el-col>
-                      <el-col :xs="24" :md="8">
+                      <el-col :xs="24" :md="6">
                         <el-form-item :label="t('common.backing')">
                           <el-input v-model="formModel.backing" @input="autoFieldMeta.backing = false" />
                           <div class="mt-2 flex items-center gap-2">
@@ -617,7 +639,7 @@
                           </div>
                         </el-form-item>
                       </el-col>
-                      <el-col :xs="24" :md="8">
+                      <el-col :xs="24" :md="6">
                         <el-form-item :label="t('common.model')">
                           <el-input v-model="formModel.model" :placeholder="t('common.placeholder.model')" @input="autoFieldMeta.model = false" />
                           <div class="mt-2 flex items-center gap-2">
@@ -627,6 +649,33 @@
                             <el-button v-if="formModel.model" link type="primary" size="small" @click="resetToAuto('model')">
                               {{ t('pages.po.resetToAuto') }}
                             </el-button>
+                          </div>
+                        </el-form-item>
+                      </el-col>
+                      <el-col :xs="24" :md="6">
+                        <el-form-item :label="t('pages.po.articleShort')">
+                          <div class="field-lock-row">
+                            <el-input v-model="formModel.style_article" class="w-full" :disabled="isMaterialFieldLocked('style_article')" />
+                            <div class="mt-1 flex items-center gap-2">
+                              <el-button
+                                v-if="isMaterialFieldLocked('style_article')"
+                                link
+                                type="primary"
+                                size="small"
+                                @click="enableMaterialOverride('style_article')"
+                              >
+                                Override
+                              </el-button>
+                              <el-button
+                                v-else-if="formModel.master_item_id && materialFieldOverride.style_article"
+                                link
+                                type="primary"
+                                size="small"
+                                @click="resetMaterialFieldToMaster('style_article')"
+                              >
+                                Reset
+                              </el-button>
+                            </div>
                           </div>
                         </el-form-item>
                       </el-col>
@@ -642,15 +691,10 @@
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :md="8">
-                <el-form-item label="REPLY ETD">
-                  <el-date-picker v-model="formModel.line_etd" type="date" class="w-full" value-format="YYYY-MM-DD" />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
                 <el-form-item label="THI ORDER / LOT NO">
                   <div class="field-stack-row">
                     <el-input v-model="formModel.thi_line_ref" class="w-full" clearable />
-                    <el-button size="small" class="self-start" @click="applyLotPrefix">{{ t('pages.po.applyLotPrefix') }}</el-button>
+                    <el-button size="small" type="primary" class="self-start" @click="generateLotNumber">Generate</el-button>
                   </div>
                 </el-form-item>
               </el-col>
@@ -665,7 +709,7 @@
                   <div v-if="formModel.is_special_price" class="mt-2 flex items-center gap-2">
                     <el-input-number
                       v-model="formModel.discount_value"
-                      :min="0"
+                      :min="formModel.discount_type === 'percent' ? -100 : -999999"
                       :max="formModel.discount_type === 'percent' ? 100 : 999999"
                       :controls="false"
                       class="flex-1"
@@ -744,15 +788,29 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column v-if="hasSpecialPriceInLines" :label="t('pages.po.discount')" width="80" align="center">
+              <el-table-column v-if="hasSpecialPriceInLines" label="Adj" width="80" align="center">
                 <template #default="{ row }">
                   <el-tag v-if="row.is_special_price" size="small" type="warning">
-                    {{ row.discount_value }}{{ row.discount_type === 'percent' ? '%' : '$' }}
+                    {{ row.discount_value >= 0 ? '+' : '' }}{{ row.discount_value }}{{ row.discount_type === 'percent' ? '%' : '$' }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="line_etd" label="REPLY ETD" width="110" />
-              <el-table-column prop="thi_line_ref" label="THI ORDER / LOT NO" min-width="130" />
+              <el-table-column prop="thi_line_ref" label="THI ORDER / LOT NO" min-width="160">
+                <template #default="{ row }">
+                  <div class="flex items-center gap-2">
+                    <span class="truncate">{{ row.thi_line_ref || '—' }}</span>
+                    <el-button
+                      v-if="isEditMode && row.id"
+                      size="small"
+                      type="primary"
+                      plain
+                      @click="generateLotNumber(row.id)"
+                    >
+                      Gen
+                    </el-button>
+                  </div>
+                </template>
+              </el-table-column>
               <el-table-column :label="'SYSTEM NO'" min-width="120" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.system_reference || row.thi_line_ref || '—' }}</template>
               </el-table-column>
@@ -762,36 +820,7 @@
                 </template>
               </el-table-column>
             </el-table>
-            <div class="mt-2 text-sm font-semibold text-slate-700">Jadwal &amp; Catatan</div>
-            <div class="mt-1">
-              <el-form-item :label="t('pages.po.etdSchedule')">
-                <el-table :data="etdScheduleRows" border size="small">
-                  <el-table-column :label="t('common.noLabel')" width="60" align="center">
-                    <template #default="{ $index }">{{ $index + 1 }}</template>
-                  </el-table-column>
-                  <el-table-column :label="t('pages.po.etdQty')" width="140">
-                    <template #default="{ $index }">
-                      <el-input-number v-model="etdScheduleRows[$index].qty" :min="0" :controls="false" size="small" class="w-full" />
-                    </template>
-                  </el-table-column>
-                  <el-table-column :label="t('pages.po.etdDate')">
-                    <template #default="{ $index }">
-                      <el-date-picker v-model="etdScheduleRows[$index].date" type="date" size="small" class="w-full" value-format="YYYY-MM-DD" />
-                    </template>
-                  </el-table-column>
-                </el-table>
-                <div class="mt-2 flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <el-button size="small" @click="clearEtdSchedule">{{ t('common.clear') }}</el-button>
-                    <el-button size="small" type="primary" @click="autoFillEtdSchedule">{{ t('pages.po.autoFillFromEtd') }}</el-button>
-                  </div>
-                  <div class="text-xs" :class="etdScheduleValid ? 'text-green-600' : 'text-red-500'">
-                    {{ t('pages.po.scheduleTotal') }}: {{ etdScheduleTotal }} / {{ formModel.quantity_order || 0 }}
-                    <el-tag v-if="!etdScheduleValid && etdScheduleTotal > 0" size="small" type="danger" class="ml-2">{{ t('pages.po.scheduleMismatch') }}</el-tag>
-                  </div>
-                </div>
-              </el-form-item>
-            </div>
+            <div class="mt-2 text-sm font-semibold text-slate-700">Catatan</div>
             <div class="mt-1">
               <el-form-item label="REMARK">
                 <el-input v-model="formModel.detail_remark" type="textarea" :rows="2" />
@@ -844,7 +873,6 @@
                   {{ row.unit_price != null && row.quantity_order ? `$${(row.unit_price * row.quantity_order).toFixed(2)}` : '—' }}
                 </template>
               </el-table-column>
-              <el-table-column prop="line_etd" label="REPLY ETD" width="110" />
               <el-table-column prop="thi_line_ref" label="THI ORDER / LOT NO" min-width="130" />
               <el-table-column :label="'SYSTEM NO'" min-width="120" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.system_reference || row.thi_line_ref || '—' }}</template>
@@ -882,6 +910,67 @@
     </el-dialog>
 
     <el-dialog
+      v-model="marketingReviseVisible"
+      :title="t('pages.po.marketingReviseTitle')"
+      width="720px"
+      destroy-on-close
+      align-center
+    >
+      <p class="text-xs text-slate-600 mb-3">{{ t('pages.po.marketingReviseHint') }}</p>
+      <el-form label-position="top" size="small">
+        <el-form-item :label="t('common.remark')">
+          <el-input v-model="marketingReviseHeader.remark" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item :label="t('pages.po.headerEtd')">
+          <el-date-picker
+            v-model="marketingReviseHeader.etd"
+            type="date"
+            value-format="YYYY-MM-DD"
+            class="w-full"
+          />
+        </el-form-item>
+        <el-form-item :label="t('pages.po.deliveryAddress')">
+          <el-input v-model="marketingReviseHeader.delivery_address" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item :label="t('pages.marketingFlow.materialRemark')">
+          <el-input v-model="marketingReviseHeader.material_followup_remark" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item :label="t('pages.marketingFlow.materialDone')">
+          <el-switch v-model="marketingReviseHeader.material_followup_done" />
+        </el-form-item>
+      </el-form>
+      <div class="text-sm font-medium mt-4 mb-2">{{ t('pages.po.lineEtd') }} / {{ t('pages.po.detailRemark') }}</div>
+      <el-table v-loading="marketingReviseLoading" :data="marketingReviseLines" border size="small" max-height="320">
+        <el-table-column prop="detail_id" label="ID" width="72" />
+        <el-table-column prop="material_name" :label="t('common.material')" min-width="120" show-overflow-tooltip />
+        <el-table-column :label="t('pages.po.lineEtd')" width="138">
+          <template #default="{ row }">
+            <el-date-picker v-model="row.line_etd" type="date" value-format="YYYY-MM-DD" size="small" class="!w-full" />
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('pages.po.detailRemark')" min-width="100">
+          <template #default="{ row }">
+            <el-input v-model="row.detail_remark" size="small" />
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('pages.po.colMarketingOutstandingRemark')" min-width="120">
+          <template #default="{ row }">
+            <el-input v-model="row.marketing_outstanding_remark" size="small" />
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('pages.marketingFlow.colRtd')" width="96">
+          <template #default="{ row }">
+            <el-input v-model="row.rtd_text" size="small" />
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="marketingReviseVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="marketingReviseSaving" @click="submitMarketingRevise">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="detailDialogVisible"
       :title="t('pages.poDetail.title')"
       width="95%" style="max-width: 900px"
@@ -914,11 +1003,11 @@
           <template #default="{ row }">{{ colorFamilyLabel(row.color_family) }}</template>
         </el-table-column>
         <el-table-column prop="emboss" :label="t('pages.po.emboss')" width="88" show-overflow-tooltip />
+        <el-table-column prop="color_standard" :label="t('pages.po.colorStandart')" width="120" show-overflow-tooltip />
         <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="96" />
         <el-table-column prop="unit_price" :label="t('pages.po.unitPriceUsd')" width="100" align="right">
           <template #default="{ row }">{{ row.unit_price != null ? row.unit_price : t('common.emptyValue') }}</template>
         </el-table-column>
-        <el-table-column prop="line_etd" :label="t('pages.po.lineEtd')" width="112" />
         <el-table-column prop="thi_line_ref" :label="t('pages.po.thiLineRef')" min-width="110" show-overflow-tooltip />
         <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="100" show-overflow-tooltip />
         <el-table-column prop="model" :label="t('common.model')" width="96" show-overflow-tooltip />
@@ -1086,6 +1175,28 @@
         </div>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="ambiguousMasterVisible"
+      :title="t('pages.po.ambiguousMasterTitle')"
+      width="520px"
+      destroy-on-close
+      append-to-body
+    >
+      <p class="text-sm text-slate-600 mb-3">{{ t('pages.po.ambiguousMasterHint') }}</p>
+      <el-radio-group v-model="selectedAmbiguousMasterId" class="flex flex-col gap-2">
+        <el-radio v-for="c in ambiguousMasterCandidates" :key="c.id" :value="c.id" class="!items-start !h-auto whitespace-normal">
+          <span class="font-mono text-sm">{{ c.item_code }}</span>
+          <span class="text-sm text-slate-700"> — {{ c.material_name || '—' }} / {{ c.thickness_range || c.thickness_mm || '—' }} / {{ c.color || '—' }}</span>
+        </el-radio>
+      </el-radio-group>
+      <template #footer>
+        <el-button @click="ambiguousMasterVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :disabled="!selectedAmbiguousMasterId" @click="confirmAmbiguousMasterPick">
+          {{ t('common.confirm') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -1126,19 +1237,25 @@ import {
   deletePoDetail,
   deletePo,
   duplicatePo,
+  generatePoDetailLot,
+  generateLotPreview,
   fetchAuthenticatedDocument,
   getAllowedBrands,
   getCustomer,
+  getPo,
   listBrands,
   listBrandBuyers,
   listBuyerPriceLists,
   listCustomers,
   listMasterItems,
+  listMasterItemDimensionValues,
+  resolveMasterItemByDimensions,
   listFluorescentColors,
   listPoPage,
   listPoDetails,
   listPoForCopy,
   listAuditLogs,
+  marketingRevisePo,
   resolveBuyerUnitPrice,
   salesContractDocxPath,
   salesContractPdfPath,
@@ -1158,6 +1275,43 @@ const keyword = ref('')
 const filterCustomerId = ref(null)
 const filterStatus = ref('')
 const filterBuyer = ref('')
+/** Rentang tanggal order (header PO); kosong = tanpa filter tanggal */
+const filterOrderDateRange = ref(null)
+
+const poOrderDateShortcuts = computed(() => [
+  {
+    text: t('pages.marketingFlow.shortcutLast7Days'),
+    value: () => {
+      const e = new Date()
+      const s = new Date()
+      s.setDate(s.getDate() - 6)
+      return [s, e]
+    },
+  },
+  {
+    text: t('pages.marketingFlow.shortcutLast30Days'),
+    value: () => {
+      const e = new Date()
+      const s = new Date()
+      s.setDate(s.getDate() - 29)
+      return [s, e]
+    },
+  },
+  {
+    text: t('pages.marketingFlow.shortcutThisMonth'),
+    value: () => {
+      const e = new Date()
+      return [new Date(e.getFullYear(), e.getMonth(), 1), e]
+    },
+  },
+  {
+    text: t('pages.marketingFlow.shortcutThisYear'),
+    value: () => {
+      const e = new Date()
+      return [new Date(e.getFullYear(), 0, 1), e]
+    },
+  },
+])
 const customers = ref([])
 const brands = ref([])
 const masterItems = ref([])
@@ -1172,6 +1326,7 @@ const autoFieldMeta = reactive({
   vir_softness_type: false,
   softness: false,
   color_reference: false,
+  color_standard: false,
   backing: false,
   model: false,
 })
@@ -1208,6 +1363,7 @@ async function enrichPoRows(headers) {
     customerName: h.customer_name_snapshot || customerName(h.customer_id),
     material_hint: t('common.emptyValue'),
     etd: h.etd ? String(h.etd).slice(0, 10) : '',
+    order_date_fmt: h.order_date ? String(h.order_date).slice(0, 10) : '',
   }))
 }
 
@@ -1224,7 +1380,7 @@ async function quickChangeStatus(row, newStatus) {
 async function load() {
   loading.value = true
   try {
-    const [cust, br, mi, bpl, poPage] = await Promise.all([
+    const [cust, br, mi, bpl, poPage, dimMat] = await Promise.all([
       listCustomers(),
       listBrands(),
       listMasterItems(),
@@ -1234,13 +1390,21 @@ async function load() {
         customer_id: filterCustomerId.value || undefined,
         buyer: filterBuyer.value || undefined,
         status: filterStatus.value || undefined,
+        ...(Array.isArray(filterOrderDateRange.value) &&
+        filterOrderDateRange.value.length === 2 &&
+        filterOrderDateRange.value[0] &&
+        filterOrderDateRange.value[1]
+          ? { order_date_from: filterOrderDateRange.value[0], order_date_to: filterOrderDateRange.value[1] }
+          : {}),
         limit: pageSize.value,
         offset: (page.value - 1) * pageSize.value,
       }),
+      listMasterItemDimensionValues('materials').catch(() => ({ values: [] })),
     ])
     customers.value = cust
     brands.value = br
     masterItems.value = mi
+    materialDimensionOptions.value = dimMat.values || []
     const extraBuyers = [...new Set(bpl.map((x) => x.buyer_code).filter(Boolean))]
     buyerCodes.value = [...new Set([...buyerCodes.value, ...extraBuyers])]
     rows.value = await enrichPoRows(poPage.items || [])
@@ -1253,7 +1417,7 @@ async function load() {
 }
 
 let filterLoadTimer = null
-watch([keyword, filterCustomerId, filterBuyer, filterStatus], () => {
+watch([keyword, filterCustomerId, filterBuyer, filterStatus, filterOrderDateRange], () => {
   page.value = 1
   if (filterLoadTimer) clearTimeout(filterLoadTimer)
   filterLoadTimer = setTimeout(() => {
@@ -1358,6 +1522,9 @@ function nextStep() {
   }
   if (currentStep.value < 2) {
     currentStep.value++
+    if (currentStep.value === 1) {
+      void refreshMaterialDimensionOptions()
+    }
   }
 }
 
@@ -1376,12 +1543,28 @@ const resetFilter = () => {
   filterStatus.value = ''
   filterBuyer.value = ''
   keyword.value = ''
+  filterOrderDateRange.value = null
   page.value = 1
   load()
 }
 
 const formDialogVisible = ref(false)
 const isEditMode = ref(false)
+/** Tanggal order dari DB saat buka edit — jika ada, tanggal tidak boleh diubah lewat form simpan penuh. */
+const savedHeaderOrderDate = ref('')
+const orderDateLocked = computed(() => isEditMode.value && Boolean(savedHeaderOrderDate.value))
+
+const marketingReviseVisible = ref(false)
+const marketingReviseLoading = ref(false)
+const marketingReviseSaving = ref(false)
+const marketingReviseHeader = reactive({
+  remark: '',
+  etd: '',
+  delivery_address: '',
+  material_followup_remark: '',
+  material_followup_done: false,
+})
+const marketingReviseLines = ref([])
 const editingPoId = ref(null)
 const editingDetailIds = ref([])
 const draftLines = ref([])
@@ -1409,55 +1592,12 @@ const copyItemFilteredPo = computed(() => {
   )
 })
 
-const etdScheduleRows = ref([
-  { qty: null, date: '' },
-  { qty: null, date: '' },
-  { qty: null, date: '' },
-  { qty: null, date: '' },
-  { qty: null, date: '' },
-  { qty: null, date: '' },
-  { qty: null, date: '' },
-  { qty: null, date: '' },
-  { qty: null, date: '' },
-  { qty: null, date: '' },
-  { qty: null, date: '' },
-  { qty: null, date: '' },
-])
-
-function ordinalSuffix(index) {
-  const j = index % 10
-  const k = index % 100
-  if (j === 1 && k !== 11) return 'st'
-  if (j === 2 && k !== 12) return 'nd'
-  if (j === 3 && k !== 13) return 'rd'
-  return 'th'
-}
-
-function clearEtdSchedule() {
-  etdScheduleRows.value = Array.from({ length: 12 }, () => ({ qty: null, date: '' }))
-}
-
-function autoFillEtdSchedule() {
-  const qty = formModel.quantity_order ? Number(formModel.quantity_order) : 0
-  if (!qty) return
-  const eachQty = Math.floor(qty / 12)
-  const remainder = qty % 12
-  const baseDate = formModel.line_etd ? new Date(formModel.line_etd) : new Date()
-  etdScheduleRows.value = Array.from({ length: 12 }, (_, i) => {
-    const d = new Date(baseDate)
-    d.setDate(d.getDate() + i * 7)
-    return {
-      qty: i < remainder ? eachQty + 1 : eachQty,
-      date: i < remainder && i === 0 ? formModel.line_etd : d.toISOString().slice(0, 10),
-    }
-  })
-}
-
 const formModel = reactive({
   po_number: '',
   customer_id: null,
   brand_id: null,
   po_category: 'production',
+  factory_code: '',
   order_date: '',
   buyer: '',
   etd: '',
@@ -1475,11 +1615,11 @@ const formModel = reactive({
   vir_softness_type: '',
   softness: '',
   color_reference: '',
+  color_standard: '',
   backing: '',
   quantity_order: '',
   style_article: '',
   model: '',
-  line_etd: '',
   detail_remark: '',
   thi_line_ref: '',
   unit_price_input: null,
@@ -1492,6 +1632,19 @@ const formModel = reactive({
 const pricePreviewLoading = ref(false)
 const previewResolvedUnitPrice = ref(null)
 const fluorescentColorOptions = ref([])
+
+const materialDimensionOptions = ref([])
+const thicknessDimensionOptions = ref([])
+const colorDimensionOptions = ref([])
+const masterResolveLoading = ref(false)
+const ambiguousMasterVisible = ref(false)
+const ambiguousMasterCandidates = ref([])
+const selectedAmbiguousMasterId = ref(null)
+const lastResolveHadNoMaster = ref(false)
+/** Hindari resolve berulang saat dialog ambigu ditutup tanpa pilihan (kombinasi sama). */
+const skipMasterResolve = ref(false)
+/** Cegah resolve ulang saat buka edit PO selama kombinasi material|ketebalan|warna|master_id sama seperti yang dimuat dari DB. */
+const loadedDetailMasterSnapshot = ref(null)
 
 let pricePreviewTimer = null
 function schedulePricePreview() {
@@ -1542,19 +1695,24 @@ const displayResolvedUnitPrice = computed(() => {
   return '—'
 })
 const isFluorescentFamily = computed(() => String(formModel.color_family || '').toLowerCase() === 'fluorescent')
+const materialThicknessColorComplete = computed(() => {
+  return (
+    String(formModel.material_name || '').trim().length > 0 &&
+    String(formModel.thickness_text || '').trim().length > 0 &&
+    String(formModel.color || '').trim().length > 0
+  )
+})
+const resolvedMasterItemLabel = computed(() => {
+  const id = formModel.master_item_id
+  if (!id) return ''
+  const it = masterItems.value.find((x) => x.id === id)
+  if (!it) return `#${id}`
+  return `${it.item_code} — ${it.material_name || ''}`
+})
 const activeSeasonLabel = computed(() => deriveSeasonLabel(formModel.order_date))
 const pricingKeyIncomplete = computed(() => {
   if (!(formModel.buyer || '').trim()) return false
   return !String(formModel.material_name || '').trim() || !String(formModel.thickness_text || '').trim() || !String(formModel.color_family || '').trim()
-})
-
-const etdScheduleTotal = computed(() => {
-  return etdScheduleRows.value.reduce((sum, row) => sum + (Number(row.qty) || 0), 0)
-})
-
-const etdScheduleValid = computed(() => {
-  const qty = Number(formModel.quantity_order) || 0
-  return etdScheduleTotal.value === qty
 })
 
 const hasSpecialPriceInLines = computed(() => {
@@ -1576,12 +1734,14 @@ function calculateSpecialPrice() {
   }
 
   const basePrice = previewResolvedUnitPrice.value
-  const discountValue = formModel.discount_value || 0
+  const adjustValue = Number(formModel.discount_value || 0)
 
   if (formModel.discount_type === 'percent') {
-    formModel.unit_price_input = basePrice * (1 - discountValue / 100)
+    // adjustment percent: bisa + / -
+    formModel.unit_price_input = basePrice * (1 + adjustValue / 100)
   } else {
-    formModel.unit_price_input = Math.max(0, basePrice - discountValue)
+    // adjustment nominal USD: bisa + / -
+    formModel.unit_price_input = Math.max(0, basePrice + adjustValue)
   }
 }
 
@@ -1638,6 +1798,18 @@ function formatFluorescentOption(opt) {
   const code = opt.color_code ? ` (${opt.color_code})` : ''
   return `${opt.color_name}${code}`
 }
+
+const poColorCascadeOptions = computed(() => {
+  if (!isFluorescentFamily.value) return []
+  const dimSet = new Set(colorDimensionOptions.value.map((x) => String(x).trim().toLowerCase()))
+  const all = fluorescentColorOptions.value || []
+  const inter = all.filter((o) => dimSet.has(String(o.color_name || '').trim().toLowerCase()))
+  const src = inter.length ? inter : all
+  return src.map((o) => ({
+    ...o,
+    _label: formatFluorescentOption(o),
+  }))
+})
 
 async function loadFluorescentOptions() {
   if (!isFluorescentFamily.value) {
@@ -1723,27 +1895,47 @@ function applyVirSoftDefault() {
   }
 }
 
-function applyLotPrefix() {
-  const cat = formModel.po_category
-  let p = ''
-  if (cat === 'subcont') p = 'SC-'
-  else if (cat === 'return') p = 'RTN-'
-  else if (cat === 'claim') p = 'CLM-'
-  else if (cat === 'sample') p = 'SMP-'
-  else if (cat === 'suede') p = 'SDE-'
-  else if (cat === 'production') {
-    const vt = (formModel.vir_softness_type || '').toLowerCase()
-    if (vt.includes('vir') || vt.includes('pu')) p = 'PU-'
-    else p = 'THI-'
-  }
-  if (!p) return
-  const cur = (formModel.thi_line_ref || '').trim()
-  if (!cur) {
-    formModel.thi_line_ref = p
+async function generateLotNumber(forceDetailId = null) {
+  const poId = editingPoId.value
+  const isPersist = Boolean(poId && forceDetailId)
+  if (!String(formModel.factory_code || '').trim()) {
+    ElMessage.warning('Factory code wajib diisi sebelum generate lot.')
     return
   }
-  if (cur.startsWith(p)) return
-  formModel.thi_line_ref = p + cur
+  saving.value = true
+  try {
+    if (isPersist) {
+      // mode edit: generate dan simpan ke DB per detail id
+      await updatePo(poId, { factory_code: String(formModel.factory_code || '').trim() || null })
+      const updated = await generatePoDetailLot(forceDetailId)
+      // update row draftLines
+      if (Array.isArray(draftLines.value) && draftLines.value.length) {
+        const i = draftLines.value.findIndex((d) => d && d.id === forceDetailId)
+        if (i >= 0) draftLines.value[i].thi_line_ref = updated.thi_line_ref || undefined
+      }
+      // update current input bila sedang mengedit baris pertama
+      if (editingDetailIds.value?.[0] === forceDetailId) {
+        formModel.thi_line_ref = updated.thi_line_ref || ''
+      }
+      ElMessage.success('Lot berhasil digenerate.')
+      return
+    }
+
+    // mode draft (belum simpan PO/detail): generate preview dari backend dan isi field
+    const r = await generateLotPreview({
+      po_category: formModel.po_category,
+      factory_code: String(formModel.factory_code || '').trim(),
+      master_item_id: formModel.master_item_id || undefined,
+      material_name: formModel.material_name || undefined,
+      vir_softness_type: formModel.vir_softness_type || undefined,
+    })
+    formModel.thi_line_ref = r.lot_number || ''
+    ElMessage.success('Lot draft berhasil digenerate.')
+  } catch (e) {
+    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
+  } finally {
+    saving.value = false
+  }
 }
 
 function normalizedText(v) {
@@ -1778,6 +1970,10 @@ function applyReferenceDefaults(forceFields = []) {
 
   if (!best || bestScore < 2) return
   const forceSet = new Set(forceFields)
+  if ((!formModel.color_standard || forceSet.has('color_standard')) && best.color_standard) {
+    formModel.color_standard = best.color_standard
+    autoFieldMeta.color_standard = true
+  }
   if ((!formModel.color_reference || forceSet.has('color_reference')) && best.color_reference) {
     formModel.color_reference = best.color_reference
     autoFieldMeta.color_reference = true
@@ -1866,13 +2062,17 @@ function resetToAuto(field) {
     return
   }
 
-  if (field === 'color_reference' || field === 'backing' || field === 'model') {
+  if (field === 'color_reference' || field === 'color_standard' || field === 'backing' || field === 'model') {
     if (formModel.master_item_id) {
       const item = masterItems.value.find((x) => x.id === formModel.master_item_id)
       if (item) {
         if (field === 'color_reference') {
           formModel.color_reference = item.color_reference || ''
           autoFieldMeta.color_reference = Boolean(item.color_reference)
+        }
+        if (field === 'color_standard') {
+          formModel.color_standard = item.color_standard || ''
+          autoFieldMeta.color_standard = Boolean(item.color_standard)
         }
         if (field === 'backing') {
           formModel.backing = item.backing || ''
@@ -1886,6 +2086,7 @@ function resetToAuto(field) {
       return
     }
     if (field === 'color_reference') formModel.color_reference = ''
+    if (field === 'color_standard') formModel.color_standard = ''
     if (field === 'backing') formModel.backing = ''
     if (field === 'model') formModel.model = ''
     applyReferenceDefaults([field])
@@ -1944,39 +2145,11 @@ watch(
   },
 )
 
-watch(
-  () => formModel.etd,
-  (newEtd) => {
-    if (!formModel.line_etd && newEtd) {
-      formModel.line_etd = newEtd
-    }
-  },
-)
-
-watch(
-  () => formModel.line_etd,
-  (newLineEtd) => {
-    if (newLineEtd && formModel.quantity_order) {
-      autoFillEtdSchedule()
-    }
-  },
-)
-
-watch(
-  () => formModel.quantity_order,
-  (newQty) => {
-    if (newQty && formModel.line_etd) {
-      autoFillEtdSchedule()
-    }
-  },
-)
-
 const formErrors = reactive({
   customer_id: '',
   brand_id: '',
   material_name: '',
   quantity_order: '',
-  line_etd: '',
 })
 
 function resetForm() {
@@ -1984,6 +2157,7 @@ function resetForm() {
   formModel.customer_id = null
   formModel.brand_id = null
   formModel.po_category = 'production'
+  formModel.factory_code = ''
   formModel.order_date = ''
   formModel.buyer = ''
   formModel.etd = ''
@@ -2001,11 +2175,11 @@ function resetForm() {
   formModel.vir_softness_type = ''
   formModel.softness = ''
   formModel.color_reference = ''
+  formModel.color_standard = ''
   formModel.backing = ''
   formModel.quantity_order = ''
   formModel.style_article = ''
   formModel.model = ''
-  formModel.line_etd = ''
   formModel.detail_remark = ''
   formModel.thi_line_ref = ''
   formModel.unit_price_input = null
@@ -2017,6 +2191,7 @@ function resetForm() {
   autoFieldMeta.vir_softness_type = false
   autoFieldMeta.softness = false
   autoFieldMeta.color_reference = false
+  autoFieldMeta.color_standard = false
   autoFieldMeta.backing = false
   autoFieldMeta.model = false
   editingDetailIds.value = []
@@ -2026,15 +2201,22 @@ function resetForm() {
   selectedCustomer.value = null
   previewResolvedUnitPrice.value = null
   fluorescentColorOptions.value = []
+  ambiguousMasterVisible.value = false
+  ambiguousMasterCandidates.value = []
+  selectedAmbiguousMasterId.value = null
+  lastResolveHadNoMaster.value = false
+  skipMasterResolve.value = false
+  loadedDetailMasterSnapshot.value = null
+  thicknessDimensionOptions.value = []
+  colorDimensionOptions.value = []
   colorFamilyAutoMode.value = true
   materialAdvancedOpen.value = []
   resetMaterialFieldOverride()
-  clearEtdSchedule()
   formErrors.customer_id = ''
   formErrors.brand_id = ''
   formErrors.material_name = ''
   formErrors.quantity_order = ''
-  formErrors.line_etd = ''
+  savedHeaderOrderDate.value = ''
 }
 
 function getPoDraftPayload() {
@@ -2044,6 +2226,7 @@ function getPoDraftPayload() {
       customer_id: formModel.customer_id,
       brand_id: formModel.brand_id,
       po_category: formModel.po_category,
+      factory_code: formModel.factory_code,
       order_date: formModel.order_date,
       buyer: formModel.buyer,
       etd: formModel.etd,
@@ -2063,11 +2246,11 @@ function getPoDraftPayload() {
       vir_softness_type: formModel.vir_softness_type,
       softness: formModel.softness,
       color_reference: formModel.color_reference,
+      color_standard: formModel.color_standard,
       backing: formModel.backing,
       quantity_order: formModel.quantity_order,
       style_article: formModel.style_article,
       model: formModel.model,
-      line_etd: formModel.line_etd,
       detail_remark: formModel.detail_remark,
       thi_line_ref: formModel.thi_line_ref,
       unit_price_input: formModel.unit_price_input,
@@ -2076,7 +2259,6 @@ function getPoDraftPayload() {
       discount_value: formModel.discount_value,
     },
     draftLines: draftLines.value,
-    etdScheduleRows: etdScheduleRows.value,
   }
 }
 
@@ -2122,11 +2304,11 @@ function applyPoDraft(data) {
   formModel.vir_softness_type = line.vir_softness_type || ''
   formModel.softness = line.softness || ''
   formModel.color_reference = line.color_reference || ''
+  formModel.color_standard = line.color_standard || ''
   formModel.backing = line.backing || ''
   formModel.quantity_order = line.quantity_order || ''
   formModel.style_article = line.style_article || ''
   formModel.model = line.model || ''
-  formModel.line_etd = line.line_etd || ''
   formModel.detail_remark = line.detail_remark || ''
   formModel.thi_line_ref = line.thi_line_ref || ''
   formModel.unit_price_input = line.unit_price_input ?? null
@@ -2135,9 +2317,6 @@ function applyPoDraft(data) {
   formModel.discount_value = Number(line.discount_value || 0)
 
   draftLines.value = Array.isArray(data.draftLines) ? data.draftLines : []
-  if (Array.isArray(data.etdScheduleRows) && data.etdScheduleRows.length) {
-    etdScheduleRows.value = data.etdScheduleRows
-  }
 }
 
 async function restorePoDraftIfAny() {
@@ -2163,6 +2342,9 @@ async function restorePoDraftIfAny() {
     if (formModel.customer_id) await onCustomerChange()
     if (formModel.brand_id) await onBrandChange(formModel.brand_id)
     ElMessage.success('Draft PO berhasil dimuat.')
+    await refreshThicknessOptionsFromApi()
+    await refreshColorOptionsFromApi()
+    lastResolveHadNoMaster.value = false
   } catch (e) {
     if (e === 'cancel') {
       clearPoDraftLocal()
@@ -2299,57 +2481,197 @@ async function onBrandChange(brandId) {
   }
 }
 
-function onMasterItemChange(masterItemId) {
-  const item = masterItems.value.find((x) => x.id === masterItemId)
-  resetMaterialFieldOverride()
-  colorFamilyAutoMode.value = true
-  if (!item) {
-    formModel.material_name = ''
-    formModel.thickness_text = ''
-    formModel.color = ''
-    formModel.color_family = null
-    formModel.emboss = ''
-    formModel.softness = ''
-    formModel.color_reference = ''
-    formModel.backing = ''
-    formModel.quantity_order = ''
-    formModel.style_article = ''
-    formModel.model = ''
-    formModel.line_etd = ''
-    formModel.detail_remark = ''
-    formModel.thi_line_ref = ''
+function upsertMasterItemInCache(row) {
+  if (!row?.id) return
+  const rows = masterItems.value
+  const idx = rows.findIndex((x) => x.id === row.id)
+  if (idx >= 0) rows[idx] = { ...rows[idx], ...row }
+  else rows.push(row)
+}
+
+async function refreshMaterialDimensionOptions() {
+  try {
+    const r = await listMasterItemDimensionValues('materials')
+    materialDimensionOptions.value = r.values || []
+  } catch {
+    materialDimensionOptions.value = []
+  }
+}
+
+async function refreshThicknessOptionsFromApi() {
+  const m = String(formModel.material_name || '').trim()
+  if (!m) {
+    thicknessDimensionOptions.value = []
     return
   }
-  // Auto-fill dari MasterItem
-  formModel.material_name = item.material_name || ''
-  formModel.color = item.color || ''
+  try {
+    const r = await listMasterItemDimensionValues('thicknesses', { material_name: m })
+    thicknessDimensionOptions.value = r.values || []
+  } catch {
+    thicknessDimensionOptions.value = []
+  }
+}
+
+async function refreshColorOptionsFromApi() {
+  const m = String(formModel.material_name || '').trim()
+  const tt = String(formModel.thickness_text || '').trim()
+  if (!m || !tt) {
+    colorDimensionOptions.value = []
+    return
+  }
+  try {
+    const r = await listMasterItemDimensionValues('colors', { material_name: m, thickness_text: tt })
+    colorDimensionOptions.value = r.values || []
+  } catch {
+    colorDimensionOptions.value = []
+  }
+}
+
+async function onPickedMaterialDimension() {
+  formModel.thickness_text = ''
+  formModel.color = ''
+  formModel.master_item_id = null
+  skipMasterResolve.value = false
+  lastResolveHadNoMaster.value = false
+  thicknessDimensionOptions.value = []
+  colorDimensionOptions.value = []
+  const m = String(formModel.material_name || '').trim()
+  if (m) await refreshThicknessOptionsFromApi()
+}
+
+async function onPickedThicknessDimension() {
+  formModel.color = ''
+  formModel.master_item_id = null
+  skipMasterResolve.value = false
+  lastResolveHadNoMaster.value = false
+  colorDimensionOptions.value = []
+  const m = String(formModel.material_name || '').trim()
+  const tt = String(formModel.thickness_text || '').trim()
+  if (m && tt) await refreshColorOptionsFromApi()
+}
+
+function hydrateFormFromMasterItemRow(item, { syncDimensions = true } = {}) {
+  if (!item) return
+  colorFamilyAutoMode.value = true
+  if (syncDimensions) {
+    resetMaterialFieldOverride()
+    formModel.material_name = item.material_name || ''
+    formModel.thickness_text =
+      item.thickness_range || (item.thickness_mm != null ? String(item.thickness_mm) : '')
+    formModel.color = item.color || ''
+  }
   formModel.emboss = item.emboss || ''
-  // Prioritaskan thickness_range, fallback ke thickness_mm
-  formModel.thickness_text = item.thickness_range || (item.thickness_mm != null ? String(item.thickness_mm) : '')
   formModel.softness = item.softness || ''
   autoFieldMeta.softness = Boolean(item.softness)
   formModel.color_reference = item.color_reference || ''
   autoFieldMeta.color_reference = Boolean(item.color_reference)
+  formModel.color_standard = item.color_standard || ''
+  autoFieldMeta.color_standard = Boolean(item.color_standard)
   formModel.backing = item.backing || ''
   autoFieldMeta.backing = Boolean(item.backing)
   formModel.quantity_order = item.quantity_order_default != null ? String(item.quantity_order_default) : ''
   formModel.style_article = item.style_article || ''
   formModel.model = item.model || ''
   autoFieldMeta.model = Boolean(item.model)
-  // Auto-detect color_family dari color name
   if (item.color) {
     formModel.color_family = inferColorFamilyFromColor(item.color)
   }
-  // Set unit price dari resolved price jika ada
   if (previewResolvedUnitPrice.value != null) {
     formModel.unit_price_input = previewResolvedUnitPrice.value
   } else {
     formModel.unit_price_input = null
   }
-  applyReferenceDefaults(['color_reference', 'backing', 'model', 'style_article', 'vir_softness_type', 'softness'])
-  // Auto-generate thi_line_ref
-  applyLotPrefix()
 }
+
+function clearLinkedMasterItem() {
+  formModel.master_item_id = null
+  resetMaterialFieldOverride()
+  skipMasterResolve.value = false
+  lastResolveHadNoMaster.value = false
+}
+
+let masterResolveTimer = null
+let masterResolveSeq = 0
+
+async function resolveMasterFromDimensionsTriple() {
+  if (ambiguousMasterVisible.value || skipMasterResolve.value) return
+  const mn = String(formModel.material_name || '').trim()
+  const tt = String(formModel.thickness_text || '').trim()
+  const co = String(formModel.color || '').trim()
+  const curSnap = `${mn}|${tt}|${co}|${formModel.master_item_id ?? ''}`
+  if (
+    isEditMode.value &&
+    editingPoId.value &&
+    loadedDetailMasterSnapshot.value != null &&
+    curSnap === loadedDetailMasterSnapshot.value
+  ) {
+    return
+  }
+  const seq = ++masterResolveSeq
+  if (!mn || !tt || !co) {
+    lastResolveHadNoMaster.value = false
+    formModel.master_item_id = null
+    return
+  }
+  masterResolveLoading.value = true
+  try {
+    const res = await resolveMasterItemByDimensions({ material_name: mn, thickness_text: tt, color: co })
+    if (seq !== masterResolveSeq) return
+    lastResolveHadNoMaster.value = res.status === 'none'
+    if (res.status === 'single' && res.item) {
+      upsertMasterItemInCache(res.item)
+      resetMaterialFieldOverride()
+      colorFamilyAutoMode.value = true
+      formModel.master_item_id = res.item.id
+      hydrateFormFromMasterItemRow(res.item, { syncDimensions: false })
+    } else if (res.status === 'ambiguous' && (res.candidates || []).length) {
+      formModel.master_item_id = null
+      skipMasterResolve.value = true
+      ambiguousMasterCandidates.value = res.candidates
+      selectedAmbiguousMasterId.value = res.candidates[0]?.id ?? null
+      ambiguousMasterVisible.value = true
+    } else {
+      formModel.master_item_id = null
+    }
+  } catch {
+    if (seq !== masterResolveSeq) return
+    lastResolveHadNoMaster.value = true
+    formModel.master_item_id = null
+  } finally {
+    if (seq === masterResolveSeq) masterResolveLoading.value = false
+  }
+}
+
+function confirmAmbiguousMasterPick() {
+  const id = selectedAmbiguousMasterId.value
+  const c = ambiguousMasterCandidates.value.find((x) => x.id === id)
+  if (!c) return
+  upsertMasterItemInCache(c)
+  formModel.master_item_id = c.id
+  skipMasterResolve.value = false
+  ambiguousMasterVisible.value = false
+  resetMaterialFieldOverride()
+  colorFamilyAutoMode.value = true
+  hydrateFormFromMasterItemRow(c, { syncDimensions: false })
+  lastResolveHadNoMaster.value = false
+}
+
+watch(
+  () => [formModel.material_name, formModel.thickness_text, formModel.color],
+  () => {
+    skipMasterResolve.value = false
+    clearTimeout(masterResolveTimer)
+    masterResolveTimer = setTimeout(() => {
+      void resolveMasterFromDimensionsTriple()
+    }, 420)
+  },
+)
+
+watch(ambiguousMasterVisible, (open) => {
+  if (!open && !formModel.master_item_id && materialThicknessColorComplete.value) {
+    skipMasterResolve.value = true
+  }
+})
 
 const openCreateDialog = async () => {
   isEditMode.value = false
@@ -2372,11 +2694,11 @@ async function buildCurrentDetailBody() {
     vir_softness_type: formModel.vir_softness_type || undefined,
     softness: formModel.softness || undefined,
     color_reference: formModel.color_reference || undefined,
+    color_standard: formModel.color_standard || undefined,
     backing: formModel.backing || undefined,
     quantity_order: formModel.quantity_order ? Number(formModel.quantity_order) : undefined,
     style_article: formModel.style_article || undefined,
     model: formModel.model || undefined,
-    line_etd: toIsoDate(formModel.line_etd) || undefined,
     detail_remark: formModel.detail_remark || undefined,
     thi_line_ref: formModel.thi_line_ref || undefined,
   }
@@ -2411,10 +2733,6 @@ async function buildCurrentDetailBody() {
       body.unit_price = Number(formModel.unit_price_input)
     }
   }
-  body.delivery_schedules = etdScheduleRows.value
-    .filter((r) => r.qty != null || r.date)
-    .map((r, i) => ({ sequence_no: i + 1, qty: r.qty, delivery_date: r.date }))
-
   if (formModel.is_special_price && formModel.unit_price_input != null) {
     body.base_price = previewResolvedUnitPrice.value
     body.is_special_price = true
@@ -2436,6 +2754,7 @@ function detailPayloadForUpdate(body) {
 function sanitizeNewDetailBody(body) {
   const o = { ...body }
   delete o.id
+  delete o.line_etd
   return o
 }
 
@@ -2448,7 +2767,6 @@ function handleEnterKey(e) {
 async function pushCurrentLine(copyCurrent = false) {
   formErrors.material_name = ''
   formErrors.quantity_order = ''
-  formErrors.line_etd = ''
 
   if (!copyCurrent) {
     if (!formModel.material_name && !formModel.master_item_id) {
@@ -2510,20 +2828,23 @@ async function pushCurrentLine(copyCurrent = false) {
     autoFieldMeta.softness = false
     formModel.color_reference = ''
     autoFieldMeta.color_reference = false
+    formModel.color_standard = ''
+    autoFieldMeta.color_standard = false
     formModel.backing = ''
     autoFieldMeta.backing = false
     formModel.quantity_order = ''
     formModel.style_article = ''
     formModel.model = ''
     autoFieldMeta.model = false
-    formModel.line_etd = ''
     formModel.detail_remark = ''
     formModel.thi_line_ref = ''
     resetMaterialFieldOverride()
     colorFamilyAutoMode.value = true
+    lastResolveHadNoMaster.value = false
+    thicknessDimensionOptions.value = []
+    colorDimensionOptions.value = []
     formErrors.material_name = ''
     formErrors.quantity_order = ''
-    formErrors.line_etd = ''
   }
 }
 
@@ -2535,10 +2856,12 @@ const openEditDialog = async (row) => {
   isEditMode.value = true
   editingPoId.value = row.id
   resetForm()
+  savedHeaderOrderDate.value = row.order_date ? String(row.order_date).slice(0, 10) : ''
   formModel.po_number = row.po_number || ''
   formModel.customer_id = row.customer_id
   formModel.brand_id = row.brand_id ?? null
   formModel.po_category = row.po_category || 'production'
+  formModel.factory_code = row.factory_code || ''
   formModel.order_date = row.order_date ? String(row.order_date).slice(0, 10) : ''
   formModel.buyer = row.buyer || ''
   formModel.etd = row.etd ? String(row.etd).slice(0, 10) : ''
@@ -2567,18 +2890,17 @@ const openEditDialog = async (row) => {
       vir_softness_type: d.vir_softness_type || undefined,
       softness: d.softness || undefined,
       color_reference: d.color_reference || undefined,
+      color_standard: d.color_standard || undefined,
       backing: d.backing || undefined,
       quantity_order: d.quantity_order != null ? Number(d.quantity_order) : undefined,
       style_article: d.style_article || undefined,
       model: d.model || undefined,
-      line_etd: d.line_etd ? String(d.line_etd).slice(0, 10) : undefined,
       detail_remark: d.detail_remark || undefined,
       thi_line_ref: d.thi_line_ref || undefined,
       unit_price: d.unit_price != null ? Number(d.unit_price) : undefined,
       manual_override: false,
       material_master_override: false,
       material_master_matched: Boolean(d.master_item_id),
-      delivery_schedules: d.delivery_schedules || [],
     }))
     editingDetailIds.value = details.map((d) => d.id)
     const d0 = details[0]
@@ -2592,29 +2914,28 @@ const openEditDialog = async (row) => {
       formModel.vir_softness_type = d0.vir_softness_type || ''
       formModel.softness = d0.softness || ''
       formModel.color_reference = d0.color_reference || ''
+      formModel.color_standard = d0.color_standard || ''
       formModel.backing = d0.backing || ''
       formModel.quantity_order = d0.quantity_order != null ? String(d0.quantity_order) : ''
       formModel.style_article = d0.style_article || ''
       formModel.model = d0.model || ''
-      formModel.line_etd = d0.line_etd ? String(d0.line_etd).slice(0, 10) : ''
       formModel.detail_remark = d0.detail_remark || ''
       formModel.thi_line_ref = d0.thi_line_ref || ''
-      if (d0.delivery_schedules && d0.delivery_schedules.length) {
-        const rows = Array.from({ length: 12 }, () => ({ qty: null, date: '' }))
-        d0.delivery_schedules.forEach((s, idx) => {
-          if (idx < 12) {
-            rows[idx].qty = s.qty != null ? Number(s.qty) : null
-            rows[idx].date = s.delivery_date ? String(s.delivery_date).slice(0, 10) : ''
-          }
-        })
-        etdScheduleRows.value = rows
-      } else {
-        clearEtdSchedule()
+      loadedDetailMasterSnapshot.value = `${String(d0.material_name || '').trim()}|${String(d0.thickness_text || '').trim()}|${String(d0.color || '').trim()}|${d0.master_item_id ?? ''}`
+      if (d0.master_item_id) {
+        const cacheIt = masterItems.value.find((x) => x.id === d0.master_item_id)
+        if (cacheIt) upsertMasterItemInCache(cacheIt)
       }
+      await refreshThicknessOptionsFromApi()
+      await refreshColorOptionsFromApi()
+      lastResolveHadNoMaster.value = false
+    } else {
+      loadedDetailMasterSnapshot.value = null
     }
   } catch {
     editingDetailIds.value = []
     draftLines.value = []
+    loadedDetailMasterSnapshot.value = null
   }
   formDialogVisible.value = true
 }
@@ -2636,13 +2957,16 @@ const submitForm = async () => {
       brand_id: formModel.brand_id || undefined,
       buyer: formModel.buyer || undefined,
       po_category: formModel.po_category,
-      order_date: toIsoDate(formModel.order_date) || undefined,
+      factory_code: formModel.factory_code?.trim() || undefined,
       etd: toIsoDate(formModel.etd) || undefined,
       po_customer_ref: formModel.po_customer_ref?.trim() || undefined,
       remark: formModel.remark || undefined,
       billing_address: formModel.billing_address?.trim() || undefined,
       delivery_address: formModel.delivery_address?.trim() || undefined,
       status: formModel.status,
+    }
+    if (!orderDateLocked.value) {
+      header.order_date = toIsoDate(formModel.order_date) || undefined
     }
     const detailBodies = draftLines.value.length ? draftLines.value : [await buildCurrentDetailBody()]
     await validateFluorescentLinesOrThrow(detailBodies)
@@ -2652,20 +2976,15 @@ const submitForm = async () => {
       const keepIds = []
       for (let i = 0; i < detailBodies.length; i += 1) {
         const rowBody = { ...sanitizeNewDetailBody(detailBodies[i]) }
-        const schedules = rowBody.delivery_schedules || []
         delete rowBody.delivery_schedules
         const existingId = editingDetailIds.value[i]
         if (existingId) {
           await updatePoDetail(existingId, detailPayloadForUpdate(rowBody))
-          if (schedules.length) {
-            await setPoDetailDeliverySchedules(existingId, schedules)
-          }
+          await setPoDetailDeliverySchedules(existingId, [])
           keepIds.push(existingId)
         } else {
           const createdDetail = await addPoDetail(editingPoId.value, rowBody)
-          if (schedules.length) {
-            await setPoDetailDeliverySchedules(createdDetail.id, schedules)
-          }
+          await setPoDetailDeliverySchedules(createdDetail.id, [])
           keepIds.push(createdDetail.id)
         }
       }
@@ -2677,12 +2996,9 @@ const submitForm = async () => {
       const created = await createPo(header)
       for (const raw of detailBodies) {
         const rowBody = { ...sanitizeNewDetailBody(raw) }
-        const schedules = rowBody.delivery_schedules || []
         delete rowBody.delivery_schedules
         const createdDetail = await addPoDetail(created.id, rowBody)
-        if (schedules.length) {
-          await setPoDetailDeliverySchedules(createdDetail.id, schedules)
-        }
+        await setPoDetailDeliverySchedules(createdDetail.id, [])
       }
     }
     ElMessage.success(t('pages.customers.saved'))
@@ -2693,6 +3009,65 @@ const submitForm = async () => {
     ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
   } finally {
     saving.value = false
+  }
+}
+
+async function openMarketingReviseDialog() {
+  if (!editingPoId.value) return
+  marketingReviseLoading.value = true
+  try {
+    const [po, details] = await Promise.all([getPo(editingPoId.value), listPoDetails(editingPoId.value)])
+    marketingReviseHeader.remark = formModel.remark || ''
+    marketingReviseHeader.etd = formModel.etd || ''
+    marketingReviseHeader.delivery_address = formModel.delivery_address || ''
+    marketingReviseHeader.material_followup_remark = po.material_followup_remark || ''
+    marketingReviseHeader.material_followup_done = Boolean(po.material_followup_done)
+    marketingReviseLines.value = details.map((d) => ({
+      detail_id: d.id,
+      material_name: d.material_name || '',
+      line_etd: d.line_etd ? String(d.line_etd).slice(0, 10) : '',
+      detail_remark: d.detail_remark || '',
+      marketing_outstanding_remark: d.marketing_outstanding_remark || '',
+      rtd_text: d.rtd_text || '',
+    }))
+    marketingReviseVisible.value = true
+  } catch (e) {
+    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
+  } finally {
+    marketingReviseLoading.value = false
+  }
+}
+
+async function submitMarketingRevise() {
+  if (!editingPoId.value) return
+  marketingReviseSaving.value = true
+  try {
+    const header = {
+      remark: marketingReviseHeader.remark?.trim() || null,
+      etd: toIsoDate(marketingReviseHeader.etd) || null,
+      delivery_address: marketingReviseHeader.delivery_address?.trim() || null,
+      material_followup_remark: marketingReviseHeader.material_followup_remark?.trim() || null,
+      material_followup_done: Boolean(marketingReviseHeader.material_followup_done),
+    }
+    const lines = marketingReviseLines.value.map((r) => {
+      const o = { detail_id: r.detail_id }
+      const le = toIsoDate(r.line_etd)
+      if (le) o.line_etd = le
+      o.detail_remark = r.detail_remark?.trim() || null
+      o.marketing_outstanding_remark = r.marketing_outstanding_remark?.trim() || null
+      o.rtd_text = r.rtd_text?.trim() || null
+      return o
+    })
+    await marketingRevisePo(editingPoId.value, { header, lines })
+    formModel.remark = marketingReviseHeader.remark || ''
+    formModel.etd = marketingReviseHeader.etd || ''
+    formModel.delivery_address = marketingReviseHeader.delivery_address || ''
+    ElMessage.success(t('pages.po.marketingReviseSaved'))
+    marketingReviseVisible.value = false
+  } catch (e) {
+    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
+  } finally {
+    marketingReviseSaving.value = false
   }
 }
 
@@ -2743,7 +3118,7 @@ const FIELD_LABELS = {
   line_etd: 'ETD Baris',
   thi_line_ref: 'THI/Lot',
   color_family: 'Kategori Warna',
-  color_standard: 'Standard Warna',
+  color_standard: 'Color standart',
   thickness: 'Ketebalan',
   softness: 'Kelembutan',
   backing: 'Backing',
@@ -2937,11 +3312,11 @@ function addCopiedItems() {
     vir_softness_type: d.vir_softness_type,
     softness: d.softness,
     color_reference: d.color_reference,
+    color_standard: d.color_standard,
     backing: d.backing,
     quantity_order: d.quantity_order,
     style_article: d.style_article,
     model: d.model,
-    line_etd: d.line_etd,
     detail_remark: d.detail_remark,
     thi_line_ref: d.thi_line_ref,
     unit_price: d.unit_price,

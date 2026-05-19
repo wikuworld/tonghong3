@@ -4,8 +4,22 @@
       <template #header>
         <div class="flex items-center justify-between flex-wrap gap-2">
           <span class="font-semibold">{{ t('pages.marketingFlow.tabFlow') }}</span>
-          <div class="flex items-center gap-2">
-            <el-date-picker v-model="rekapDate" type="date" value-format="YYYY-MM-DD" size="small" class="w-32" @change="load" />
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-slate-600 shrink-0 max-md:hidden">{{ t('pages.marketingFlow.orderDateRangeFlow') }}</span>
+            <el-date-picker
+              v-model="flowDateRange"
+              type="daterange"
+              unlink-panels
+              range-separator="—"
+              value-format="YYYY-MM-DD"
+              size="small"
+              class="min-w-[220px] max-w-[340px]"
+              :shortcuts="orderDateRangeShortcuts"
+              clearable
+              :start-placeholder="t('common.fromDate')"
+              :end-placeholder="t('common.toDate')"
+              @change="load"
+            />
             <el-button type="warning" size="small" @click="pullCrToday">
               {{ t('pages.marketingFlow.pullCrToday') }}
             </el-button>
@@ -82,15 +96,318 @@
             <span v-else class="text-gray-400 text-xs">—</span>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="80" fixed="right" align="center">
+        <el-table-column :label="t('common.actions')" width="120" fixed="right" align="center">
           <template #default="{ row }">
-            <el-button type="default" link size="small" @click="goPo(row.id)">
-              <el-icon><Document /></el-icon>
-            </el-button>
+            <el-tooltip v-if="canAdvance" :content="t('pages.marketingFlow.advanceStageHint')" placement="top">
+              <el-button
+                type="primary"
+                link
+                size="small"
+                :loading="advancing === row.id"
+                :disabled="advancing != null && advancing !== row.id"
+                @click="advance(row)"
+              >
+                <el-icon><DArrowRight /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip :content="t('pages.marketingFlow.openPoDetail')" placement="top">
+              <el-button type="default" link size="small" @click="goPo(row.id)">
+                <el-icon><Document /></el-icon>
+              </el-button>
+            </el-tooltip>
           </template>
         </el-table-column>
       </el-table>
     </div>
+
+    <el-card shadow="never" class="mt-4 marketing-tabs">
+      <template #header>
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div class="font-semibold">{{ t('pages.marketingFlow.tabOutstanding') }}</div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <el-button size="small" :icon="Search" @click="loadOutstanding">{{ t('pages.marketingFlow.outstandingRefresh') }}</el-button>
+            <el-button size="small" :icon="Download" @click="downloadOutstanding">{{ t('pages.marketingFlow.outstandingDownloadCsv') }}</el-button>
+            <el-button size="small" type="success" :icon="Download" :loading="outstandingXlsxLoading" @click="downloadOutstandingXlsx">
+              {{ t('pages.marketingFlow.outstandingDownloadXlsx') }}
+            </el-button>
+            <el-button size="small" type="warning" :icon="Download" :loading="outstandingReturnXlsxLoading" @click="downloadReturnXlsx">
+              {{ t('pages.marketingFlow.outstandingDownloadReturXlsx') }}
+            </el-button>
+          </div>
+        </div>
+      </template>
+
+      <div class="mb-2 flex flex-wrap items-center gap-2">
+        <span class="text-sm text-slate-600 shrink-0">{{ t('pages.marketingFlow.orderDateRangeOutstanding') }}</span>
+        <el-date-picker
+          v-model="outstandingDateRange"
+          type="daterange"
+          unlink-panels
+          range-separator="—"
+          value-format="YYYY-MM-DD"
+          size="small"
+          class="min-w-[200px] max-w-[320px]"
+          :shortcuts="orderDateRangeShortcuts"
+          clearable
+          :start-placeholder="t('common.fromDate')"
+          :end-placeholder="t('common.toDate')"
+          @change="loadOutstanding"
+        />
+      </div>
+      <div class="mb-3 grid grid-cols-1 md:grid-cols-4 gap-2">
+        <el-input v-model="poSearch" size="small" clearable :placeholder="t('common.poNo')" />
+        <el-input v-model="factoryCode" size="small" clearable placeholder="Factory code (LR028…)" />
+        <el-select v-model="outstandingPoCategory" size="small" clearable placeholder="Kategori">
+          <el-option label="Production" value="production" />
+          <el-option label="Sample" value="sample" />
+          <el-option label="Claim" value="claim" />
+          <el-option label="Return" value="return" />
+          <el-option label="Subcont" value="subcont" />
+          <el-option label="Suede" value="suede" />
+        </el-select>
+        <el-select v-model="materialStatus" size="small" clearable placeholder="Status material">
+          <el-option label="All" value="all" />
+          <el-option label="Sent" value="sent" />
+          <el-option label="Not sent" value="not_sent" />
+          <el-option label="Cancelled" value="cancelled" />
+        </el-select>
+      </div>
+
+      <div class="mb-2 flex flex-wrap items-center gap-2">
+        <el-switch v-model="outstandingShowAllColumns" size="small" />
+        <span class="text-sm text-slate-600">{{ t('pages.marketingFlow.outstandingShowAllColumns') }}</span>
+      </div>
+
+      <el-table
+        ref="outstandingTableRef"
+        :data="outstandingDisplayRows"
+        v-loading="outstandingLoading"
+        border
+        stripe
+        size="small"
+        class="outstanding-table"
+        show-summary
+        :summary-method="outstandingSummary"
+        @selection-change="onOutstandingSelectionChange"
+      >
+        <el-table-column type="selection" width="42" fixed="left" />
+        <el-table-column type="index" width="50" align="center" fixed="left" />
+        <el-table-column prop="order_date" :label="t('common.orderDate')" width="110" />
+        <el-table-column prop="thi_order" :label="t('pages.marketingFlow.colThiOrder')" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="customer_name" :label="t('common.customerName')" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="brand" :label="t('pages.marketingFlow.colBrand')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="order_type" :label="t('pages.marketingFlow.colOrderType')" width="110" />
+        <el-table-column prop="no_po" :label="t('common.poNo')" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="po_customer_ref" :label="t('pages.marketingFlow.colPoCustomer')" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="material_name" :label="t('common.material')" min-width="180" show-overflow-tooltip />
+        <template v-for="col in outstandingExtraColumnDefs" :key="col.prop">
+          <el-table-column
+            v-if="outstandingShowAllColumns"
+            :prop="col.prop"
+            :label="t(col.labelKey)"
+            :width="col.width"
+            :min-width="col.minWidth"
+            show-overflow-tooltip
+          />
+        </template>
+        <el-table-column prop="qty_sf" :label="t('pages.marketingFlow.colQtySf')" width="110" />
+        <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="110" />
+        <el-table-column prop="status_material" :label="t('pages.marketingFlow.colStatusMaterial')" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="remark_system" :label="t('pages.marketingFlow.colRemarkSystem')" min-width="220" show-overflow-tooltip />
+        <el-table-column :label="t('pages.marketingFlow.colRemarkMarketing')" min-width="220">
+          <template #default="{ row }">
+            <el-input
+              v-model="row.remark_marketing"
+              size="small"
+              type="textarea"
+              :rows="2"
+              :disabled="!canEditPoDetail"
+              @blur="saveMarketingRemark(row)"
+            />
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <el-card shadow="never" class="mt-4">
+      <template #header>
+        <div class="font-semibold">{{ t('pages.marketingFlow.tabMasterPlanning') }}</div>
+      </template>
+      <el-tabs v-model="masterPlanningTab" @tab-change="onMasterPlanningTabChange">
+        <el-tab-pane name="planning" :label="t('pages.marketingFlow.planningTitle')">
+          <div class="mb-2 flex flex-wrap items-center gap-2">
+            <span class="text-sm text-slate-600 shrink-0">{{ t('pages.marketingFlow.planningDateRange') }}</span>
+            <el-date-picker
+              v-model="planningDateRange"
+              type="daterange"
+              unlink-panels
+              value-format="YYYY-MM-DD"
+              size="small"
+              class="min-w-[200px] max-w-[320px]"
+              range-separator="—"
+              :shortcuts="orderDateRangeShortcuts"
+              :start-placeholder="t('common.fromDate')"
+              :end-placeholder="t('common.toDate')"
+              @change="loadPlanning"
+            />
+            <el-input
+              v-model="planningFactory"
+              size="small"
+              clearable
+              class="w-40"
+              :placeholder="t('pages.marketingFlow.factoryFilterOptional')"
+            />
+            <el-button size="small" type="primary" :loading="planningLoading" @click="loadPlanning">
+              {{ t('pages.marketingFlow.planningLoad') }}
+            </el-button>
+          </div>
+          <el-table :data="planningRows" border stripe size="small" max-height="380" v-loading="planningLoading">
+            <el-table-column prop="delivery_date" :label="t('pages.marketingFlow.colShipDate')" width="110" />
+            <el-table-column prop="sequence_no" label="#" width="44" align="center" />
+            <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="factory_code" label="Factory" width="88" show-overflow-tooltip />
+            <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="thi_order" :label="t('pages.marketingFlow.colThiOrder')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="qty" :label="t('pages.marketingFlow.colQtyShip')" width="88" />
+            <el-table-column prop="line_etd" :label="t('pages.po.lineEtd')" width="110" />
+          </el-table>
+          <div v-if="!planningRows.length && !planningLoading" class="text-sm text-slate-500 py-3">
+            {{ t('pages.marketingFlow.planningEmpty') }}
+          </div>
+        </el-tab-pane>
+        <el-tab-pane name="today" :label="t('pages.marketingFlow.deliveryTodayTitle')">
+          <div class="mb-2 flex flex-wrap items-center gap-2">
+            <span class="text-sm text-slate-600 shrink-0">{{ t('pages.marketingFlow.todayAsOfDate') }}</span>
+            <el-date-picker
+              v-model="todayOnDate"
+              type="date"
+              value-format="YYYY-MM-DD"
+              size="small"
+              class="w-[140px]"
+              :shortcuts="todayDateShortcuts"
+              @change="loadDeliveryToday"
+            />
+            <el-input
+              v-model="todayFactory"
+              size="small"
+              clearable
+              class="w-40"
+              :placeholder="t('pages.marketingFlow.factoryFilterOptional')"
+            />
+            <el-button size="small" type="primary" :loading="todayLoading" @click="loadDeliveryToday">
+              {{ t('pages.marketingFlow.outstandingRefresh') }}
+            </el-button>
+          </div>
+          <div v-loading="todayLoading">
+            <div class="text-sm font-medium mb-1">{{ t('pages.marketingFlow.deliveryTodayPlanned') }}</div>
+            <el-table :data="todayPlanned" border stripe size="small" class="mb-4" max-height="240">
+              <el-table-column prop="delivery_date" :label="t('pages.marketingFlow.colShipDate')" width="110" />
+              <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="material_name" :label="t('common.material')" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="qty" :label="t('pages.marketingFlow.colQtyShip')" width="80" />
+            </el-table>
+            <div class="text-sm font-medium mb-1">{{ t('pages.marketingFlow.deliveryTodayEtd') }}</div>
+            <el-table :data="todayEtd" border stripe size="small" class="mb-4" max-height="200">
+              <el-table-column prop="line_etd" :label="t('pages.po.lineEtd')" width="110" />
+              <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="customer_name" :label="t('common.customerName')" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="material_name" :label="t('common.material')" min-width="120" show-overflow-tooltip />
+            </el-table>
+            <div class="text-sm font-medium mb-1">{{ t('pages.marketingFlow.deliveryTodaySj') }}</div>
+            <el-table :data="todaySj" border stripe size="small" max-height="260">
+              <el-table-column prop="surat_jalan_no" :label="t('pages.marketingFlow.colSuratJalan')" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="delivery_date" :label="t('pages.marketingFlow.colShipDate')" width="110" />
+              <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
+            </el-table>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane name="master" :label="t('pages.marketingFlow.snapshotListTitle')">
+          <div class="mb-2 flex flex-wrap gap-2">
+            <el-input
+              v-model="snapshotLabel"
+              size="small"
+              clearable
+              class="max-w-xs"
+              :placeholder="t('pages.marketingFlow.snapshotLabelPlaceholder')"
+            />
+            <el-button size="small" type="success" :loading="snapshotSaving" @click="saveOutstandingSnapshot">
+              {{ t('pages.marketingFlow.snapshotSave') }}
+            </el-button>
+            <el-button size="small" @click="loadSnapshotList">{{ t('pages.marketingFlow.outstandingRefresh') }}</el-button>
+          </div>
+          <el-table :data="snapshots" border stripe size="small" v-loading="snapshotsLoading" max-height="320">
+            <el-table-column prop="id" label="ID" width="64" align="center" />
+            <el-table-column prop="created_at" :label="t('common.date')" width="168" />
+            <el-table-column prop="label" :label="t('common.remark')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="row_count" :label="t('pages.marketingFlow.rowCountLabel')" width="100" align="right" />
+            <el-table-column :label="t('common.actions')" width="100" align="center">
+              <template #default="{ row }">
+                <el-button type="primary" link size="small" @click="openSnapshotDetail(row.id)">
+                  {{ t('pages.marketingFlow.snapshotView') }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+        <el-tab-pane name="delivery" :label="t('pages.marketingFlow.tabDelivery')">
+          <div class="mb-2 flex flex-wrap items-center gap-2">
+            <span class="text-sm text-slate-600 shrink-0">{{ t('pages.marketingFlow.deliveryShipDateRange') }}</span>
+            <el-date-picker
+              v-model="deliveryDateRange"
+              type="daterange"
+              unlink-panels
+              value-format="YYYY-MM-DD"
+              size="small"
+              class="min-w-[200px] max-w-[320px]"
+              range-separator="—"
+              :shortcuts="orderDateRangeShortcuts"
+              clearable
+              :start-placeholder="t('common.fromDate')"
+              :end-placeholder="t('common.toDate')"
+              @change="loadDelivery"
+            />
+            <el-button size="small" :icon="Search" @click="loadDelivery">{{ t('pages.marketingFlow.deliveryRefresh') }}</el-button>
+            <el-button size="small" :icon="Download" @click="downloadDelivery">{{ t('pages.marketingFlow.deliveryDownloadCsv') }}</el-button>
+          </div>
+          <el-table :data="deliveryRows" v-loading="deliveryLoading" border stripe size="small" max-height="400">
+            <el-table-column prop="surat_jalan_no" :label="t('pages.marketingFlow.colSuratJalan')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="delivery_date" :label="t('pages.marketingFlow.colShipDate')" width="110" />
+            <el-table-column prop="factory_name" :label="t('pages.marketingFlow.colFactoryName')" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="qty_sf" :label="t('pages.marketingFlow.colQtyShip')" width="90" />
+            <el-table-column :label="t('common.actions')" width="100" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="goDelivery(row)">{{ t('pages.marketingFlow.openDelivery') }}</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="!deliveryRows.length && !deliveryLoading" class="text-sm text-slate-500 py-3">
+            {{ t('pages.marketingFlow.deliveryEmpty') }}
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </el-card>
+
+    <el-dialog
+      v-model="snapshotDetailVisible"
+      :title="snapshotDetailTitle"
+      width="92%"
+      top="4vh"
+      destroy-on-close
+      align-center
+    >
+      <el-table v-if="snapshotDetailRows.length" :data="snapshotDetailRows" border stripe size="small" max-height="560">
+        <el-table-column type="index" width="48" align="center" />
+        <el-table-column prop="order_date" :label="t('common.orderDate')" width="100" />
+        <el-table-column prop="no_po" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="customer_name" :label="t('common.customerName')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="96" />
+        <el-table-column prop="remark_marketing" :label="t('pages.marketingFlow.colRemarkMarketing')" min-width="160" show-overflow-tooltip />
+      </el-table>
+    </el-dialog>
 
     <el-dialog v-model="assignDialogVisible" :title="t('ppicWorkflow.assignToPpic')" width="600px" destroy-on-close align-center>
       <el-form label-width="120px">
@@ -133,7 +450,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -142,14 +459,20 @@ import AdminSection from '../../components/AdminSection.vue'
 import {
   advanceMktWorkflow,
   assignPoToPpic,
+  createMarketingOutstandingSnapshot,
+  getMarketingDeliveryToday,
+  getMarketingOutstandingSnapshot,
   getPoPpicAssignment,
   listMarketingDeliveryLines,
+  listMarketingDeliveryPlanning,
   listMarketingOutstandingLines,
+  listMarketingOutstandingSnapshots,
   listPo,
   listPoMktStages,
   listPpicUsers,
   marketingDeliveryCsvUrl,
   marketingOutstandingCsvUrl,
+  marketingOutstandingReturnXlsxPath,
   marketingOutstandingXlsxPath,
   reportPoDailyMarketingXlsxPath,
   reportPoDailyRecapUrl,
@@ -168,15 +491,84 @@ const advancing = ref(null)
 const rows = ref([])
 const stageList = ref([])
 const filterStage = ref(null)
-const rekapDate = ref(new Date().toISOString().slice(0, 10))
+
+function isoDateLocal(d) {
+  const x = new Date(d)
+  const p = (n) => String(n).padStart(2, '0')
+  return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}`
+}
+function defaultMonthToTodayRange() {
+  const e = new Date()
+  const s = new Date(e.getFullYear(), e.getMonth(), 1)
+  return [isoDateLocal(s), isoDateLocal(e)]
+}
+/** Daftar alur MKT: rentang tanggal order PO header */
+const flowDateRange = ref(defaultMonthToTodayRange())
+/** Outstanding: opsional; kosong = semua tanggal */
+const outstandingDateRange = ref(null)
+
+const orderDateRangeShortcuts = computed(() => [
+  {
+    text: t('pages.marketingFlow.shortcutLast7Days'),
+    value: () => {
+      const e = new Date()
+      const s = new Date()
+      s.setDate(s.getDate() - 6)
+      return [s, e]
+    },
+  },
+  {
+    text: t('pages.marketingFlow.shortcutLast30Days'),
+    value: () => {
+      const e = new Date()
+      const s = new Date()
+      s.setDate(s.getDate() - 29)
+      return [s, e]
+    },
+  },
+  {
+    text: t('pages.marketingFlow.shortcutThisMonth'),
+    value: () => {
+      const e = new Date()
+      return [new Date(e.getFullYear(), e.getMonth(), 1), e]
+    },
+  },
+  {
+    text: t('pages.marketingFlow.shortcutThisYear'),
+    value: () => {
+      const e = new Date()
+      return [new Date(e.getFullYear(), 0, 1), e]
+    },
+  },
+])
+
+const todayDateShortcuts = computed(() => [
+  {
+    text: t('pages.marketingFlow.shortcutToday'),
+    value: () => new Date(),
+  },
+  {
+    text: t('pages.marketingFlow.shortcutYesterday'),
+    value: () => {
+      const d = new Date()
+      d.setDate(d.getDate() - 1)
+      return d
+    },
+  },
+])
 
 const outstandingRows = ref([])
 const outstandingLoading = ref(false)
 const outstandingXlsxLoading = ref(false)
+const outstandingReturnXlsxLoading = ref(false)
+const outstandingShowAllColumns = ref(false)
 const poDailyXlsxLoading = ref(false)
 const balanceFilter = ref('exclude_zero')
 const shipmentTab = ref('all')
 const poSearch = ref('')
+const factoryCode = ref('')
+const outstandingPoCategory = ref('')
+const materialStatus = ref('')
 const outstandingViewMode = ref('all')
 const outstandingTableRef = ref(null)
 const outstandingSelection = ref([])
@@ -194,6 +586,37 @@ const materialFollowUpForm = reactive({ done: false, remark: '' })
 const selectedPoForMaterialFollowUp = ref(null)
 const savingMaterialFollowUp = ref(false)
 
+function buildOutstandingExtraColumnDefs() {
+  const d = []
+  for (let i = 1; i <= 8; i += 1) {
+    d.push(
+      { prop: `delivery_${i}_qty`, labelKey: `pages.marketingFlow.filterDelivery${i}Qty`, width: 82 },
+      { prop: `delivery_${i}_date`, labelKey: `pages.marketingFlow.filterDelivery${i}Date`, width: 108 },
+    )
+  }
+  return [
+    { prop: 'thickness', labelKey: 'common.thickness', width: 92 },
+    { prop: 'emboss', labelKey: 'common.emboss', width: 72 },
+    { prop: 'softness_type', labelKey: 'pages.marketingFlow.colSoftnessType', minWidth: 110 },
+    { prop: 'color', labelKey: 'common.color', width: 88 },
+    { prop: 'softness', labelKey: 'common.softness', width: 88 },
+    { prop: 'unit_price', labelKey: 'pages.marketingFlow.colUnitPrice', width: 88 },
+    { prop: 'color_reference', labelKey: 'common.colorReference', minWidth: 110 },
+    { prop: 'color_standard', labelKey: 'pages.marketingFlow.colColorStd', minWidth: 100 },
+    { prop: 'backing', labelKey: 'common.backing', width: 88 },
+    { prop: 'model', labelKey: 'common.model', width: 88 },
+    { prop: 'style_article', labelKey: 'common.styleArticle', minWidth: 100 },
+    { prop: 'rtd_text', labelKey: 'pages.marketingFlow.colRtd', width: 96 },
+    { prop: 'line_etd', labelKey: 'pages.marketingFlow.colReplyEtd', width: 110 },
+    { prop: 'stock_wh_qty', labelKey: 'pages.marketingFlow.colStockWh', width: 96 },
+    { prop: 'delivered_qty', labelKey: 'pages.marketingFlow.colDeliveredQty', width: 96 },
+    { prop: 'production_status', labelKey: 'pages.marketingFlow.colProductionStatus', minWidth: 120 },
+    ...d,
+  ]
+}
+
+const outstandingExtraColumnDefs = buildOutstandingExtraColumnDefs()
+
 const OUTSTANDING_TEXT_FILTER_KEYS = [
   'order_date',
   'thi_order',
@@ -201,6 +624,7 @@ const OUTSTANDING_TEXT_FILTER_KEYS = [
   'brand',
   'order_type',
   'no_po',
+  'po_customer_ref',
   'material_name',
   'thickness',
   'emboss',
@@ -210,7 +634,9 @@ const OUTSTANDING_TEXT_FILTER_KEYS = [
   'qty_sf',
   'unit_price',
   'color_reference',
+  'color_standard',
   'backing',
+  'model',
   'style_article',
   'rtd_text',
   'line_etd',
@@ -219,6 +645,7 @@ const OUTSTANDING_TEXT_FILTER_KEYS = [
   'delivered_qty',
   'system_reference',
   'production_status',
+  'status_material',
   'remark_system',
   'remark_marketing',
   'detail_remark',
@@ -235,6 +662,10 @@ const OUTSTANDING_TEXT_FILTER_KEYS = [
   'delivery_5_date',
   'delivery_6_qty',
   'delivery_6_date',
+  'delivery_7_qty',
+  'delivery_7_date',
+  'delivery_8_qty',
+  'delivery_8_date',
 ]
 
 const outstandingTextFilters = reactive(
@@ -249,6 +680,7 @@ const outstandingTextFilterFields = computed(() => {
     brand: 'pages.marketingFlow.colBrand',
     order_type: 'pages.marketingFlow.colOrderType',
     no_po: 'common.poNo',
+    po_customer_ref: 'pages.marketingFlow.colPoCustomer',
     material_name: 'common.material',
     thickness: 'common.thickness',
     emboss: 'common.emboss',
@@ -258,7 +690,9 @@ const outstandingTextFilterFields = computed(() => {
     qty_sf: 'pages.marketingFlow.colQtySf',
     unit_price: 'pages.marketingFlow.colUnitPrice',
     color_reference: 'common.colorReference',
+    color_standard: 'pages.marketingFlow.colColorStd',
     backing: 'common.backing',
+    model: 'common.model',
     style_article: 'common.styleArticle',
     rtd_text: 'pages.marketingFlow.colRtd',
     line_etd: 'pages.marketingFlow.colReplyEtd',
@@ -267,6 +701,7 @@ const outstandingTextFilterFields = computed(() => {
     delivered_qty: 'pages.marketingFlow.colDeliveredQty',
     system_reference: 'pages.marketingFlow.colSystemNo',
     production_status: 'pages.marketingFlow.colProductionStatus',
+    status_material: 'pages.marketingFlow.colStatusMaterial',
     remark_system: 'pages.marketingFlow.colRemarkSystem',
     remark_marketing: 'pages.marketingFlow.colRemarkMarketing',
     detail_remark: 'pages.marketingFlow.colPoLineRemark',
@@ -283,6 +718,10 @@ const outstandingTextFilterFields = computed(() => {
     delivery_5_date: 'pages.marketingFlow.filterDelivery5Date',
     delivery_6_qty: 'pages.marketingFlow.filterDelivery6Qty',
     delivery_6_date: 'pages.marketingFlow.filterDelivery6Date',
+    delivery_7_qty: 'pages.marketingFlow.filterDelivery7Qty',
+    delivery_7_date: 'pages.marketingFlow.filterDelivery7Date',
+    delivery_8_qty: 'pages.marketingFlow.filterDelivery8Qty',
+    delivery_8_date: 'pages.marketingFlow.filterDelivery8Date',
   }
   return OUTSTANDING_TEXT_FILTER_KEYS.map((key) => ({
     key,
@@ -296,7 +735,7 @@ function parseOutstandingBalance(row) {
 }
 
 function outstandingHasSchedule(row) {
-  for (let i = 1; i <= 6; i += 1) {
+  for (let i = 1; i <= 8; i += 1) {
     const q = row[`delivery_${i}_qty`]
     const d = row[`delivery_${i}_date`]
     if ((q != null && String(q).trim() !== '') || (d != null && String(d).trim() !== '')) return true
@@ -340,7 +779,8 @@ function outstandingSummary({ columns, data }) {
     if (col.type === 'selection') return ''
     if (col.type === 'index') return t('pages.marketingFlow.summaryLabel')
     const prop = col.property
-    if (prop && ['qty_sf', 'stock_wh_qty', 'balance_qty', 'delivered_qty'].includes(prop)) {
+    const isDeliveryQty = prop && /^delivery_\d+_qty$/.test(String(prop))
+    if (prop && (['qty_sf', 'stock_wh_qty', 'balance_qty', 'delivered_qty'].includes(prop) || isDeliveryQty)) {
       let total = 0
       for (const row of data) {
         const n = parseFloat(String(row[prop] ?? '').replace(',', '.'))
@@ -381,11 +821,18 @@ async function saveMarketingRemark(row) {
 async function downloadOutstandingXlsx() {
   outstandingXlsxLoading.value = true
   try {
+    const od = outstandingDateRange.value
+    const outstandingDateParams =
+      Array.isArray(od) && od.length === 2 && od[0] && od[1] ? { order_date_from: od[0], order_date_to: od[1] } : {}
     const suffix = marketingOutstandingXlsxPath({
       balance_filter: balanceFilter.value,
       computed_balance: true,
       po_q: poSearch.value,
       shipment_status: shipmentTab.value,
+      material_status: materialStatus.value || undefined,
+      factory_code: factoryCode.value || undefined,
+      po_category: outstandingPoCategory.value || undefined,
+      ...outstandingDateParams,
     })
     const path = `/api/v1${suffix}`
     const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
@@ -411,8 +858,76 @@ async function downloadOutstandingXlsx() {
   }
 }
 
+async function downloadReturnXlsx() {
+  outstandingReturnXlsxLoading.value = true
+  try {
+    const od = outstandingDateRange.value
+    const outstandingDateParams =
+      Array.isArray(od) && od.length === 2 && od[0] && od[1] ? { order_date_from: od[0], order_date_to: od[1] } : {}
+    const suffix = marketingOutstandingReturnXlsxPath({
+      balance_filter: balanceFilter.value,
+      computed_balance: true,
+      po_q: poSearch.value,
+      shipment_status: shipmentTab.value,
+      material_status: materialStatus.value || undefined,
+      factory_code: factoryCode.value || undefined,
+      ...outstandingDateParams,
+    })
+    const path = `/api/v1${suffix}`
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
+    const r = await fetch(path, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!r.ok) {
+      const text = await r.text()
+      throw new Error(text || r.statusText)
+    }
+    const blob = await r.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'marketing_outstanding_retur.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success(t('pages.marketingFlow.outstandingReturXlsxOk'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    outstandingReturnXlsxLoading.value = false
+  }
+}
+
 const deliveryRows = ref([])
 const deliveryLoading = ref(false)
+
+const masterPlanningTab = ref('planning')
+function planningDefaultRange() {
+  const e = new Date()
+  const s = new Date()
+  s.setDate(s.getDate() - 7)
+  return [isoDateLocal(s), isoDateLocal(e)]
+}
+const planningDateRange = ref(planningDefaultRange())
+const planningFactory = ref('')
+const planningRows = ref([])
+const planningLoading = ref(false)
+
+const todayOnDate = ref(isoDateLocal(new Date()))
+const deliveryDateRange = ref(null)
+
+const todayFactory = ref('')
+const todayLoading = ref(false)
+const todayPlanned = ref([])
+const todayEtd = ref([])
+const todaySj = ref([])
+
+const snapshots = ref([])
+const snapshotsLoading = ref(false)
+const snapshotLabel = ref('')
+const snapshotSaving = ref(false)
+const snapshotDetailVisible = ref(false)
+const snapshotDetailRows = ref([])
+const snapshotDetailTitle = ref('')
 
 const specItems = computed(() => [
   { title: t('pages.marketingFlow.collapseSop'), body: 'pages.marketingFlow.specSop' },
@@ -489,8 +1004,9 @@ async function load() {
     if (filterStage.value) {
       params.mkt_workflow_stage = filterStage.value
     }
-    if (rekapDate.value) {
-      params.order_date = rekapDate.value
+    if (Array.isArray(flowDateRange.value) && flowDateRange.value.length === 2 && flowDateRange.value[0] && flowDateRange.value[1]) {
+      params.order_date_from = flowDateRange.value[0]
+      params.order_date_to = flowDateRange.value[1]
     }
     rows.value = await listPo(params)
   } catch (e) {
@@ -503,11 +1019,18 @@ async function load() {
 async function loadOutstanding() {
   outstandingLoading.value = true
   try {
+    const od = outstandingDateRange.value
+    const outstandingDateParams =
+      Array.isArray(od) && od.length === 2 && od[0] && od[1] ? { order_date_from: od[0], order_date_to: od[1] } : {}
     outstandingRows.value = await listMarketingOutstandingLines({
       balance_filter: balanceFilter.value,
       computed_balance: true,
       po_q: poSearch.value,
       shipment_status: shipmentTab.value,
+      material_status: materialStatus.value || undefined,
+      factory_code: factoryCode.value || undefined,
+      po_category: outstandingPoCategory.value || undefined,
+      ...outstandingDateParams,
     })
     outstandingSelection.value = []
     outstandingTableRef.value?.clearSelection?.()
@@ -521,7 +1044,12 @@ async function loadOutstanding() {
 async function loadDelivery() {
   deliveryLoading.value = true
   try {
-    const linesResp = await listMarketingDeliveryLines()
+    const dr = deliveryDateRange.value
+    const drParams =
+      Array.isArray(dr) && dr.length === 2 && dr[0] && dr[1]
+        ? { delivery_date_from: dr[0], delivery_date_to: dr[1] }
+        : {}
+    const linesResp = await listMarketingDeliveryLines({ limit: 500, ...drParams })
     const lines = Array.isArray(linesResp) ? linesResp : (linesResp?.data || [])
     deliveryRows.value = lines.map((r) => ({
       ...r,
@@ -532,6 +1060,105 @@ async function loadDelivery() {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     deliveryLoading.value = false
+  }
+}
+
+function onMasterPlanningTabChange(name) {
+  if (name === 'planning') loadPlanning()
+  else if (name === 'delivery') loadDelivery()
+  else if (name === 'today') loadDeliveryToday()
+  else if (name === 'master') loadSnapshotList()
+}
+
+async function loadPlanning() {
+  planningLoading.value = true
+  try {
+    const rge = planningDateRange.value
+    const df = Array.isArray(rge) && rge[0] ? rge[0] : isoDateLocal(new Date())
+    const dt = Array.isArray(rge) && rge[1] ? rge[1] : df
+    const r = await listMarketingDeliveryPlanning({
+      date_from: df,
+      date_to: dt,
+      factory_code: planningFactory.value?.trim() || undefined,
+    })
+    planningRows.value = Array.isArray(r?.data) ? r.data : []
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+    planningRows.value = []
+  } finally {
+    planningLoading.value = false
+  }
+}
+
+async function loadDeliveryToday() {
+  todayLoading.value = true
+  try {
+    const r = await getMarketingDeliveryToday({
+      on_date: todayOnDate.value || undefined,
+      factory_code: todayFactory.value?.trim() || undefined,
+    })
+    todayPlanned.value = Array.isArray(r?.planned_delivery_slots) ? r.planned_delivery_slots : []
+    todayEtd.value = Array.isArray(r?.lines_reply_etd_today) ? r.lines_reply_etd_today : []
+    todaySj.value = Array.isArray(r?.surat_jalan_lines) ? r.surat_jalan_lines : []
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+    todayPlanned.value = []
+    todayEtd.value = []
+    todaySj.value = []
+  } finally {
+    todayLoading.value = false
+  }
+}
+
+async function loadSnapshotList() {
+  snapshotsLoading.value = true
+  try {
+    snapshots.value = await listMarketingOutstandingSnapshots({ limit: 50 })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+    snapshots.value = []
+  } finally {
+    snapshotsLoading.value = false
+  }
+}
+
+async function saveOutstandingSnapshot() {
+  snapshotSaving.value = true
+  try {
+    const od = outstandingDateRange.value
+    const outstandingDateParams =
+      Array.isArray(od) && od.length === 2 && od[0] && od[1] ? { order_date_from: od[0], order_date_to: od[1] } : {}
+    await createMarketingOutstandingSnapshot({
+      label: snapshotLabel.value?.trim() || null,
+      filters: {
+        balance_filter: balanceFilter.value,
+        computed_balance: true,
+        po_q: poSearch.value?.trim() || null,
+        shipment_status: shipmentTab.value,
+        material_status: materialStatus.value || null,
+        factory_code: factoryCode.value?.trim() || null,
+        po_category: outstandingPoCategory.value?.trim() || null,
+        ...outstandingDateParams,
+      },
+    })
+    ElMessage.success(t('pages.marketingFlow.snapshotCreated'))
+    snapshotLabel.value = ''
+    await loadSnapshotList()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    snapshotSaving.value = false
+  }
+}
+
+async function openSnapshotDetail(id) {
+  try {
+    const r = await getMarketingOutstandingSnapshot(id)
+    snapshotDetailRows.value = Array.isArray(r?.rows_json) ? r.rows_json : []
+    snapshotDetailTitle.value = r?.label ? `Snapshot #${id} — ${r.label}` : `Snapshot #${id}`
+    snapshotDetailVisible.value = true
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
 
@@ -546,6 +1173,8 @@ onMounted(async () => {
     load(),
     loadPpicUsers(),
     loadAssignments(),
+    loadOutstanding(),
+    loadPlanning().catch(() => {}),
   ])
 })
 
@@ -662,17 +1291,31 @@ function goPo(id) {
 }
 
 function goDelivery(row) {
-  const kw = (row.surat_jalan_no && row.surat_jalan_no !== t('common.emptyValue') ? row.surat_jalan_no : '') || String(row.delivery_id || '')
-  router.push({ path: '/admin/delivery', query: kw ? { keyword: kw } : {} })
+  const q = {}
+  if (row.delivery_id != null && row.delivery_id !== '') q.delivery_id = String(row.delivery_id)
+  const sjRaw = row.surat_jalan_no && row.surat_jalan_no !== t('common.emptyValue') ? String(row.surat_jalan_no).trim() : ''
+  if (sjRaw && sjRaw !== '—') q.keyword = sjRaw
+  if (row.delivery_date) {
+    const d = String(row.delivery_date).slice(0, 10)
+    q.delivery_date_from = d
+    q.delivery_date_to = d
+  }
+  if (row.po_number && String(row.po_number).trim()) q.po_number = String(row.po_number).trim()
+  const fc = row.factory_code != null ? String(row.factory_code).trim() : ''
+  if (fc) q.factory_code = fc
+  router.push({ path: '/admin/delivery', query: q })
 }
 
 function downloadRekap() {
-  const path = reportPoDailyRecapUrl(rekapDate.value)
+  const r = flowDateRange.value
+  const day = Array.isArray(r) && r.length === 2 && r[1] ? r[1] : Array.isArray(r) && r[0] ? r[0] : new Date().toISOString().slice(0, 10)
+  const path = reportPoDailyRecapUrl(day)
   window.open(path.startsWith('/') ? `/api/v1${path}` : path, '_blank')
 }
 
 async function pullCrToday() {
-  rekapDate.value = new Date().toISOString().slice(0, 10)
+  const t = new Date().toISOString().slice(0, 10)
+  flowDateRange.value = [t, t]
   await load()
   ElMessage.success(t('pages.marketingFlow.pullCrTodayDone'))
 }
@@ -680,9 +1323,12 @@ async function pullCrToday() {
 async function downloadDailyPoReportXlsx() {
   poDailyXlsxLoading.value = true
   try {
+    const fr = flowDateRange.value
+    const from = Array.isArray(fr) && fr[0] ? fr[0] : new Date().toISOString().slice(0, 10)
+    const to = Array.isArray(fr) && fr[1] ? fr[1] : from
     const path = reportPoDailyMarketingXlsxPath({
-      date_from: rekapDate.value,
-      date_to: rekapDate.value,
+      date_from: from,
+      date_to: to,
       date_field: 'order',
     })
     const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
@@ -697,7 +1343,7 @@ async function downloadDailyPoReportXlsx() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `laporan_po_harian_${rekapDate.value || 'today'}.xlsx`
+    a.download = `laporan_po_harian_${from}_${to}.xlsx`
     a.click()
     URL.revokeObjectURL(url)
     ElMessage.success(t('pages.marketingFlow.dailyPoReportDone'))
@@ -709,17 +1355,29 @@ async function downloadDailyPoReportXlsx() {
 }
 
 function downloadOutstanding() {
+  const od = outstandingDateRange.value
+  const outstandingDateParams =
+    Array.isArray(od) && od.length === 2 && od[0] && od[1] ? { order_date_from: od[0], order_date_to: od[1] } : {}
   const suffix = marketingOutstandingCsvUrl({
     balance_filter: balanceFilter.value,
     computed_balance: true,
     po_q: poSearch.value,
     shipment_status: shipmentTab.value,
+    material_status: materialStatus.value || undefined,
+    factory_code: factoryCode.value || undefined,
+    po_category: outstandingPoCategory.value || undefined,
+    ...outstandingDateParams,
   })
   window.open(`/api/v1${suffix}`, '_blank')
 }
 
 function downloadDelivery() {
-  const suffix = marketingDeliveryCsvUrl()
+  const dr = deliveryDateRange.value
+  const drParams =
+    Array.isArray(dr) && dr.length === 2 && dr[0] && dr[1]
+      ? { delivery_date_from: dr[0], delivery_date_to: dr[1] }
+      : {}
+  const suffix = marketingDeliveryCsvUrl(drParams)
   window.open(`/api/v1${suffix}`, '_blank')
 }
 </script>

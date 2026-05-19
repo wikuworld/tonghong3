@@ -246,6 +246,10 @@ export function listPo(params = {}) {
   const q = new URLSearchParams()
   if (params.mkt_workflow_stage) q.set('mkt_workflow_stage', params.mkt_workflow_stage)
   if (params.order_date) q.set('order_date', params.order_date)
+  if (params.order_date_from && String(params.order_date_from).trim())
+    q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
+  if (params.order_date_to && String(params.order_date_to).trim())
+    q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
   if (params.customer_id != null && params.customer_id !== '') q.set('customer_id', String(params.customer_id))
   if (params.buyer && String(params.buyer).trim()) q.set('buyer', String(params.buyer).trim())
@@ -261,6 +265,10 @@ export function listPoPage(params = {}) {
   const q = new URLSearchParams()
   if (params.mkt_workflow_stage) q.set('mkt_workflow_stage', params.mkt_workflow_stage)
   if (params.order_date) q.set('order_date', params.order_date)
+  if (params.order_date_from && String(params.order_date_from).trim())
+    q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
+  if (params.order_date_to && String(params.order_date_to).trim())
+    q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
   if (params.customer_id != null && params.customer_id !== '') q.set('customer_id', String(params.customer_id))
   if (params.buyer && String(params.buyer).trim()) q.set('buyer', String(params.buyer).trim())
@@ -284,6 +292,14 @@ export function listPoMktStages() {
   return apiFetch('/po/mkt-workflow-stages')
 }
 
+export function generatePoDetailLot(detailId) {
+  return apiFetch(`/po-detail/${detailId}/generate-lot`, { method: 'POST' })
+}
+
+export function generateLotPreview(body) {
+  return apiFetch('/po/generate-lot', { method: 'POST', body: JSON.stringify(body) })
+}
+
 /** Baris outstanding format marketing (join PO header + detail). @param {{ balance_filter?: 'all'|'exclude_zero'|'positive_only', po_q?: string, shipment_status?: 'all'|'sent'|'not_sent' }} params */
 export function listMarketingOutstandingLines(params = {}) {
   const q = new URLSearchParams()
@@ -291,6 +307,13 @@ export function listMarketingOutstandingLines(params = {}) {
   if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
   if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
   if (params.shipment_status) q.set('shipment_status', params.shipment_status)
+  if (params.material_status) q.set('material_status', params.material_status)
+  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
+  if (params.po_category && String(params.po_category).trim()) q.set('po_category', String(params.po_category).trim())
+  if (params.order_date_from && String(params.order_date_from).trim())
+    q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
+  if (params.order_date_to && String(params.order_date_to).trim())
+    q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/marketing/outstanding-lines${suffix}`)
 }
@@ -301,6 +324,13 @@ export function marketingOutstandingCsvUrl(params = {}) {
   if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
   if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
   if (params.shipment_status) q.set('shipment_status', params.shipment_status)
+  if (params.material_status) q.set('material_status', params.material_status)
+  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
+  if (params.po_category && String(params.po_category).trim()) q.set('po_category', String(params.po_category).trim())
+  if (params.order_date_from && String(params.order_date_from).trim())
+    q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
+  if (params.order_date_to && String(params.order_date_to).trim())
+    q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
   const suffix = q.toString() ? `?${q}` : ''
   return `/marketing/outstanding-lines.csv${suffix}`
 }
@@ -312,8 +342,32 @@ export function marketingOutstandingXlsxPath(params = {}) {
   if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
   if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
   if (params.shipment_status) q.set('shipment_status', params.shipment_status)
+  if (params.material_status) q.set('material_status', params.material_status)
+  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
+  if (params.po_category && String(params.po_category).trim()) q.set('po_category', String(params.po_category).trim())
+  if (params.order_date_from && String(params.order_date_from).trim())
+    q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
+  if (params.order_date_to && String(params.order_date_to).trim())
+    q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
   const suffix = q.toString() ? `?${q}` : ''
   return `/marketing/outstanding-lines.xlsx${suffix}`
+}
+
+/** Unduhan Excel lembar RETUR (hanya baris `po_category=return`). Query sama seperti outstanding, tanpa `po_category`. */
+export function marketingOutstandingReturnXlsxPath(params = {}) {
+  const q = new URLSearchParams()
+  if (params.balance_filter) q.set('balance_filter', params.balance_filter)
+  if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
+  if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
+  if (params.shipment_status) q.set('shipment_status', params.shipment_status)
+  if (params.material_status) q.set('material_status', params.material_status)
+  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
+  if (params.order_date_from && String(params.order_date_from).trim())
+    q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
+  if (params.order_date_to && String(params.order_date_to).trim())
+    q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
+  const suffix = q.toString() ? `?${q}` : ''
+  return `/marketing/outstanding-return-lines.xlsx${suffix}`
 }
 
 /** Baris delivery list (join surat jalan + produksi + PO) — format lembar marketing. */
@@ -326,6 +380,17 @@ export function listMarketingDeliveryLines(params = {}) {
     q.set('packing_status', String(params.packing_status).trim())
   if (params.invpl_printed && String(params.invpl_printed).trim())
     q.set('invpl_printed', String(params.invpl_printed).trim())
+  if (params.delivery_date_from && String(params.delivery_date_from).trim())
+    q.set('delivery_date_from', String(params.delivery_date_from).trim().slice(0, 10))
+  if (params.delivery_date_to && String(params.delivery_date_to).trim())
+    q.set('delivery_date_to', String(params.delivery_date_to).trim().slice(0, 10))
+  if (params.factory_code && String(params.factory_code).trim())
+    q.set('factory_code', String(params.factory_code).trim())
+  if (params.po_category && String(params.po_category).trim())
+    q.set('po_category', String(params.po_category).trim())
+  if (params.customer && String(params.customer).trim()) q.set('customer', String(params.customer).trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.skip != null) q.set('skip', String(params.skip))
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/marketing/delivery-lines${suffix}`)
 }
@@ -339,6 +404,15 @@ export function marketingDeliveryCsvUrl(params = {}) {
     q.set('packing_status', String(params.packing_status).trim())
   if (params.invpl_printed && String(params.invpl_printed).trim())
     q.set('invpl_printed', String(params.invpl_printed).trim())
+  if (params.delivery_date_from && String(params.delivery_date_from).trim())
+    q.set('delivery_date_from', String(params.delivery_date_from).trim().slice(0, 10))
+  if (params.delivery_date_to && String(params.delivery_date_to).trim())
+    q.set('delivery_date_to', String(params.delivery_date_to).trim().slice(0, 10))
+  if (params.factory_code && String(params.factory_code).trim())
+    q.set('factory_code', String(params.factory_code).trim())
+  if (params.po_category && String(params.po_category).trim())
+    q.set('po_category', String(params.po_category).trim())
+  if (params.customer && String(params.customer).trim()) q.set('customer', String(params.customer).trim())
   const suffix = q.toString() ? `?${q}` : ''
   return `/marketing/delivery-lines.csv${suffix}`
 }
@@ -353,8 +427,50 @@ export function marketingDeliveryXlsxPath(params = {}) {
     q.set('packing_status', String(params.packing_status).trim())
   if (params.invpl_printed && String(params.invpl_printed).trim())
     q.set('invpl_printed', String(params.invpl_printed).trim())
+  if (params.delivery_date_from && String(params.delivery_date_from).trim())
+    q.set('delivery_date_from', String(params.delivery_date_from).trim().slice(0, 10))
+  if (params.delivery_date_to && String(params.delivery_date_to).trim())
+    q.set('delivery_date_to', String(params.delivery_date_to).trim().slice(0, 10))
+  if (params.factory_code && String(params.factory_code).trim())
+    q.set('factory_code', String(params.factory_code).trim())
+  if (params.po_category && String(params.po_category).trim())
+    q.set('po_category', String(params.po_category).trim())
+  if (params.customer && String(params.customer).trim()) q.set('customer', String(params.customer).trim())
   const suffix = q.toString() ? `?${q}` : ''
   return `/marketing/delivery-lines.xlsx${suffix}`
+}
+
+export function createMarketingOutstandingSnapshot(body) {
+  return apiFetch('/marketing/outstanding-snapshots', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function listMarketingOutstandingSnapshots(params = {}) {
+  const q = new URLSearchParams()
+  if (params.skip != null) q.set('skip', String(params.skip))
+  if (params.limit != null) q.set('limit', String(params.limit))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/marketing/outstanding-snapshots${suffix}`)
+}
+
+export function getMarketingOutstandingSnapshot(id) {
+  return apiFetch(`/marketing/outstanding-snapshots/${id}`)
+}
+
+export function listMarketingDeliveryPlanning(params = {}) {
+  const q = new URLSearchParams()
+  if (params.date_from && String(params.date_from).trim()) q.set('date_from', String(params.date_from).trim().slice(0, 10))
+  if (params.date_to && String(params.date_to).trim()) q.set('date_to', String(params.date_to).trim().slice(0, 10))
+  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/marketing/delivery-planning${suffix}`)
+}
+
+export function getMarketingDeliveryToday(params = {}) {
+  const q = new URLSearchParams()
+  if (params.on_date && String(params.on_date).trim()) q.set('on_date', String(params.on_date).trim().slice(0, 10))
+  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/marketing/delivery-today${suffix}`)
 }
 
 /** Unduhan PDF sales contract / sales order per PO. */
@@ -390,6 +506,11 @@ export function duplicatePo(poId) {
 
 export function updatePo(id, body) {
   return apiFetch(`/po/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+/** Revisi marketing: remark, ETD header, alamat kirim, follow-up material, baris (ETD/remark/jadwal) — tidak mengubah tanggal order / customer / harga. */
+export function marketingRevisePo(poId, body) {
+  return apiFetch(`/po/${poId}/marketing-revise`, { method: 'PATCH', body: JSON.stringify(body) })
 }
 
 export function deletePo(id) {
@@ -453,6 +574,24 @@ export function seedBrandsFromBuyers() {
 
 export function listMasterItems() {
   return apiFetch('/masters/items')
+}
+
+/** Cascade PO: nilai unik material → ketebalan → warna dari master_items. */
+export function listMasterItemDimensionValues(kind, { material_name, thickness_text } = {}) {
+  const p = new URLSearchParams({ kind })
+  if (material_name != null && String(material_name).trim()) p.append('material_name', String(material_name).trim())
+  if (thickness_text != null && String(thickness_text).trim()) p.append('thickness_text', String(thickness_text).trim())
+  return apiFetch(`/masters/items/dimension-values?${p}`)
+}
+
+/** Resolve tepat satu master item dari material + ketebalan + warna (status single|ambiguous|none). */
+export function resolveMasterItemByDimensions({ material_name, thickness_text, color }) {
+  const p = new URLSearchParams({
+    material_name: String(material_name || '').trim(),
+    thickness_text: String(thickness_text || '').trim(),
+    color: String(color || '').trim(),
+  })
+  return apiFetch(`/masters/items/resolve-by-dimensions?${p}`)
 }
 
 export function createMasterItem(body) {
@@ -591,12 +730,14 @@ export function markSuratJalanPrinted(deliveryId) {
   return apiFetch(`/delivery/${deliveryId}/mark-surat-jalan-printed`, { method: 'POST' })
 }
 
-export function addDeliveryDetail(deliveryId, body) {
-  return apiFetch(`/delivery/${deliveryId}/details`, { method: 'POST', body: JSON.stringify(body) })
+export function addDeliveryDetail(deliveryId, body, opts = {}) {
+  const q = opts.bypass_qc ? '?bypass_qc=true' : ''
+  return apiFetch(`/delivery/${deliveryId}/details${q}`, { method: 'POST', body: JSON.stringify(body) })
 }
 
-export function updateDeliveryDetail(detailId, body) {
-  return apiFetch(`/delivery-detail/${detailId}`, { method: 'PUT', body: JSON.stringify(body) })
+export function updateDeliveryDetail(detailId, body, opts = {}) {
+  const q = opts.bypass_qc ? '?bypass_qc=true' : ''
+  return apiFetch(`/delivery-detail/${detailId}${q}`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
 // --- Packing ---

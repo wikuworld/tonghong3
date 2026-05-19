@@ -8,7 +8,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import DeliveryDetail, DeliveryHeader, QcDetail
+from app.models import DeliveryDetail, DeliveryHeader, PoDetail, PoHeader, ProductionDetail, QcDetail
 from app.schemas import (
     DeliveryDetailCreate,
     DeliveryDetailUpdate,
@@ -22,6 +22,7 @@ from app.services.audit import log_change
 from app.services.notifications import create_notification_for_roles
 from app.services.mkt_workflow import auto_advance_if_ready
 from app.services.business_rules import po_numbers_from_delivery
+from app.routers.reports import _order_type_label, _thickness_display
 
 router = APIRouter(tags=["delivery"])
 
@@ -45,6 +46,10 @@ def _require_details_if_sent(
             status_code=400,
             detail="Tambah minimal satu baris detail delivery sebelum status 'sent'",
         )
+
+
+def _user_can_bypass_qc(user) -> bool:
+    return getattr(user, "role", None) == "admin"
 
 
 def _has_qc_ok(db: Session, production_detail_id: int | None) -> bool:
@@ -156,10 +161,24 @@ def update_delivery(
     data = body.model_dump(exclude_unset=True)
     if "packing_id" in data and data["packing_id"] is not None:
         require_packing_ready(db, int(data["packing_id"]))
+    prev_status = row.status
     if "status" in data:
-        _require_details_if_sent(db, delivery_id, data["status"], row.status)
+        _require_details_if_sent(db, delivery_id, data["status"], prev_status)
     for k, v in data.items():
         setattr(row, k, v)
+    new_status = (row.status or "").lower()
+    if new_status in ("cancelled", "canceled") and (prev_status or "").lower() not in ("cancelled", "canceled"):
+        create_notification_for_roles(
+            db,
+            ("admin", "marketing", "warehouse", "finance"),
+            title=f"Delivery {row.delivery_number or row.id} dibatalkan",
+            message="Status delivery diubah menjadi cancelled; tinjau alur SJ / INVPL / invoice bila dokumen sudah diproses.",
+            category="delivery",
+            entity_type="delivery",
+            entity_id=row.id,
+            route_path="/admin/delivery",
+            route_query={"delivery_id": row.id},
+        )
     if row.status == "sent" and before["status"] != "sent":
         create_notification_for_roles(
             db,
@@ -202,12 +221,30 @@ def list_delivery_details(
 ) -> list[dict]:
     if not db.get(DeliveryHeader, delivery_id):
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
-    rows = db.scalars(
-        select(DeliveryDetail)
+    joined = db.execute(
+        select(DeliveryDetail, ProductionDetail, PoDetail, PoHeader)
+        .outerjoin(ProductionDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
+        .outerjoin(PoDetail, ProductionDetail.po_detail_id == PoDetail.id)
+        .outerjoin(PoHeader, PoDetail.po_id == PoHeader.id)
         .where(DeliveryDetail.delivery_id == delivery_id)
         .order_by(DeliveryDetail.id.asc())
     ).all()
-    return [row_to_dict(r) for r in rows]
+    out: list[dict] = []
+    for dd, pd, pod, ph in joined:
+        d = row_to_dict(dd)
+        d["po_id"] = int(ph.id) if ph else None
+        d["po_number"] = (ph.po_number or "").strip() if ph else ""
+        d["po_detail_id"] = int(pod.id) if pod else None
+        d["system_no"] = (
+            ((pod.system_reference or pod.thi_line_ref or "").strip()) if pod else ""
+        )
+        d["lot_number"] = ((pd.lot_number or "").strip()) if pd else ""
+        d["material_name_line"] = ((pod.material_name or "").strip()) if pod else ""
+        d["thickness_display"] = _thickness_display(pod)
+        d["color_line"] = ((pod.color or "").strip()) if pod else ""
+        d["order_type"] = _order_type_label(ph) if ph else ""
+        out.append(d)
+    return out
 
 
 @router.post("/delivery/{delivery_id}/details")
@@ -216,11 +253,15 @@ def add_delivery_detail(
     body: DeliveryDetailCreate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse")),
+    bypass_qc: bool = Query(False, description="Admin: izinkan baris tanpa QC OK"),
 ) -> dict:
     hdr = db.get(DeliveryHeader, delivery_id)
     if not hdr:
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
-    if not _has_qc_ok(db, body.production_detail_id):
+    if bypass_qc and not _user_can_bypass_qc(user):
+        raise HTTPException(status_code=403, detail="bypass_qc hanya untuk role admin")
+    qc_ok = _has_qc_ok(db, body.production_detail_id)
+    if not qc_ok and not (bypass_qc and _user_can_bypass_qc(user)):
         raise HTTPException(
             status_code=400,
             detail="Hanya production detail yang sudah QC OK yang boleh dikirim",
@@ -249,17 +290,22 @@ def update_delivery_detail(
     body: DeliveryDetailUpdate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse")),
+    bypass_qc: bool = Query(False, description="Admin: izinkan baris tanpa QC OK"),
 ) -> dict:
     row = db.get(DeliveryDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail delivery tidak ditemukan")
     before = {"production_detail_id": row.production_detail_id, "qty": row.qty, "qty_roll": row.qty_roll, "qty_pcs": row.qty_pcs}
     new_pd = body.production_detail_id
-    if new_pd is not None and not _has_qc_ok(db, new_pd):
-        raise HTTPException(
-            status_code=400,
-            detail="Hanya production detail yang sudah QC OK yang boleh dikirim",
-        )
+    if bypass_qc and not _user_can_bypass_qc(user):
+        raise HTTPException(status_code=403, detail="bypass_qc hanya untuk role admin")
+    if new_pd is not None:
+        qc_ok = _has_qc_ok(db, new_pd)
+        if not qc_ok and not (bypass_qc and _user_can_bypass_qc(user)):
+            raise HTTPException(
+                status_code=400,
+                detail="Hanya production detail yang sudah QC OK yang boleh dikirim",
+            )
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(row, k, v)
     log_change(

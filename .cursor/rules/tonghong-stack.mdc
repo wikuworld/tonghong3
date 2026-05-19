@@ -7,14 +7,19 @@ alwaysApply: false
 
 - **Frontend**: Vue 3 + Vite + Element Plus + Tailwind + vue-i18n (locale `id` default, fallback `en`, plus `zh`).
 - **Struktur**: workspace root `package.json` memanggil skrip di `frontend/`; halaman admin di `frontend/src/views/admin/`, layout `AdminLayout.vue`, router `/admin/*`.
-- **Docker**: `docker-compose.yml` — service **`web`** (build statis + Nginx, port **8080**), profile **`dev`** + **`frontend-dev`** untuk Vite + HMR (port **5173**). Setelah ubah kode frontend untuk image production, perlu **`docker compose build`** / **`up --build`**.
+- **Docker**: `docker-compose.yml` — service **`web`** (build statis + Nginx, port **8080**), profile **`dev`**: **`frontend-dev`** (Vite **5173**), **`web-hmr`** (Nginx proxy ke Vite + API, default **8081**), **`backend-dev`**. Setelah ubah kode frontend untuk image production, perlu **`docker compose build`** / **`up --build`**.
+- **HMR lewat domain (HTTPS / Cloudflare)**:
+  - Env `frontend-dev`: **`HMR_PUBLIC_HOST`**, **`VITE_DEV_PUBLIC_ORIGIN`** (mis. `https://subdomain.domain`), **`HMR_PUBLIC_CLIENT_PORT`** (biasanya **443**), **`HMR_WSS_PROTOCOL`** (**wss**).
+  - **502 Bad Gateway dari Cloudflare** — penyebab umum: (1) **Port origin**: mode *Flexible* mem-proxy ke **HTTP port 80** di IP origin; kalau Docker hanya map **`8081:80`**, Cloudflare tidak otomatis pakai 8081. **Solusi**: set **`WEB_HMR_PORT=80`** (hati-hati bentrok), **atau** reverse proxy di host (`:80` → `127.0.0.1:8081`), **atau** **Cloudflare Tunnel** ke `http://127.0.0.1:8081`. (2) **Vite belum siap**: `web-hmr` sekarang menunggu **`frontend-dev` + `backend-dev` healthy** sebelum melayani. (3) **SSL Full (strict)** ke origin tanpa sertifikat valid di origin → ganti *Flexible* / *Full* atau pasang TLS di origin.
+  - Lokal tanpa domain: `.env` mis. `HMR_PUBLIC_HOST=localhost`, `VITE_HMR_PROTOCOL=ws`, `VITE_HMR_CLIENT_PORT=5173`, `VITE_DEV_PUBLIC_ORIGIN=` (kosong).
 - **Workflow Docker (dev vs production)**:
-  - **Frontend HMR** hanya lewat service **`frontend-dev`** (`docker compose --profile dev up frontend-dev`), bukan service `web`.
+  - **Frontend HMR** lewat **`frontend-dev`** + proxy **`web-hmr`** (bukan service **`web`** statis).
   - Untuk perubahan kode backend harian (source di-mount volume), **cukup restart backend** (`docker compose restart backend`) tanpa rebuild image.
   - Untuk perubahan schema/model database, **wajib buat migration Alembic baru** (`docker compose exec backend alembic revision --autogenerate -m "<pesan>"`) dan review isi file migration sebelum dijalankan.
   - Jalankan `docker compose exec backend alembic upgrade head` saat ada migration baru.
   - Setelah migration dibuat, validasi dengan `docker compose exec backend alembic heads` (pastikan head tunggal) lalu `docker compose exec backend alembic upgrade head`.
   - Pakai `docker compose up --build` hanya saat perlu rebuild image (mis. ubah `Dockerfile`, dependency image, atau mau refresh image production `web`/`backend`).
+- **Modul Delivery (admin)**: daftar baris memakai `GET /marketing/delivery-lines` (pagination + filter tanggal/kategori/customer/kode pabrik); detail per header memakai `GET /delivery/{id}/details` (baris diperkaya PO/lot/material). Alur bisnis umum: QC OK → packing done → baris delivery → tandai SJ/INVPL → status sent → invoice; pembatalan delivery memicu notifikasi ke peran terkait.
 - **Quality gates CI**: frontend wajib `npm run lint` + `npm run build`; backend wajib `python -m ruff check --select F,E9 app tests` + `python -m pytest`; workflow GitHub Actions divalidasi dengan `actionlint`.
 - **Terminal Cursor / PATH (npm, nvm)**: (1) `.vscode/settings.json` — profil default **zsh `-il`** (macOS) / **bash `-l`** (Linux) untuk terminal terpadu. (2) **`tools/nvm-load.sh`** — sebelum menjalankan `npm`/`node` dari **agen Cursor** atau shell minimal, jalankan dari root repo: `source tools/nvm-load.sh` (atau satu baris: `bash -c 'source tools/nvm-load.sh && cd frontend && npm run lint'`). Skrip root `package.json` (`npm run build`, `dev`, dll.) sudah mem-`source` file ini lewat `bash -c`. Pastikan nvm terpasang di `~/.nvm` atau path Homebrew di skrip tersebut.
 

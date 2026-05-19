@@ -7,14 +7,20 @@ import io
 import logging
 import zipfile
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 logger = logging.getLogger(__name__)
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
-from app.schemas import MasterItemCreate, MasterItemOut, MasterPriceOut
+from app.schemas import (
+    MasterItemCreate,
+    MasterItemDimensionValuesOut,
+    MasterItemOut,
+    MasterItemResolveByDimensionsOut,
+    MasterPriceOut,
+)
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -32,6 +38,12 @@ from app.models import (
 )
 from app.routers.auth import get_current_user, require_roles
 from app.utils.excel_utils import export_to_excel, import_from_excel
+from app.services.master_item_dimensions import (
+    distinct_colors,
+    distinct_material_names,
+    distinct_thicknesses,
+    resolve_by_dimensions,
+)
 
 router = APIRouter(tags=["masters"])
 
@@ -397,6 +409,56 @@ def list_master_items(
     _user=Depends(get_current_user),
 ) -> list[MasterItem]:
     return list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all())
+
+
+@router.get("/masters/items/dimension-values", response_model=MasterItemDimensionValuesOut)
+def list_master_item_dimension_values(
+    kind: Literal["materials", "thicknesses", "colors"] = Query(..., description="materials | thicknesses | colors"),
+    material_name: Optional[str] = Query(None, description="Wajib untuk thicknesses & colors"),
+    thickness_text: Optional[str] = Query(None, description="Wajib untuk colors"),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> MasterItemDimensionValuesOut:
+    rows = list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all())
+    if kind == "materials":
+        return MasterItemDimensionValuesOut(values=distinct_material_names(rows))
+    if kind == "thicknesses":
+        if not (material_name and str(material_name).strip()):
+            raise HTTPException(status_code=400, detail="material_name wajib untuk kind=thicknesses")
+        return MasterItemDimensionValuesOut(values=distinct_thicknesses(rows, material_name))
+    if kind == "colors":
+        if not (material_name and str(material_name).strip()) or not (thickness_text and str(thickness_text).strip()):
+            raise HTTPException(
+                status_code=400,
+                detail="material_name dan thickness_text wajib untuk kind=colors",
+            )
+        return MasterItemDimensionValuesOut(values=distinct_colors(rows, material_name, thickness_text))
+    raise HTTPException(status_code=400, detail="kind tidak valid")
+
+
+@router.get("/masters/items/resolve-by-dimensions", response_model=MasterItemResolveByDimensionsOut)
+def resolve_master_item_by_dimensions(
+    material_name: str = Query(..., min_length=1),
+    thickness_text: str = Query(..., min_length=1),
+    color: str = Query(..., min_length=1),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> MasterItemResolveByDimensionsOut:
+    rows = list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all())
+    hits = resolve_by_dimensions(
+        rows,
+        material_name=material_name,
+        thickness_text=thickness_text,
+        color=color,
+    )
+    if not hits:
+        return MasterItemResolveByDimensionsOut(status="none")
+    if len(hits) == 1:
+        return MasterItemResolveByDimensionsOut(status="single", item=MasterItemOut.model_validate(hits[0]))
+    return MasterItemResolveByDimensionsOut(
+        status="ambiguous",
+        candidates=[MasterItemOut.model_validate(r) for r in hits],
+    )
 
 
 @router.post("/masters/items", response_model=MasterItemOut)

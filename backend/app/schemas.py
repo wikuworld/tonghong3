@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 from pydantic import field_validator
@@ -293,6 +293,7 @@ class PoHeaderCreate(BaseModel):
     customer_id: Optional[int] = None
     customer_code: Optional[str] = None
     po_category: str = "production"
+    factory_code: Optional[str] = None
     buyer: Optional[str] = None
     order_date: Optional[date] = None
     etd: Optional[date] = None
@@ -333,6 +334,7 @@ class PoHeaderUpdate(BaseModel):
     customer_id: Optional[int] = None
     customer_code: Optional[str] = None
     po_category: Optional[str] = None
+    factory_code: Optional[str] = None
     buyer: Optional[str] = None
     order_date: Optional[date] = None
     etd: Optional[date] = None
@@ -385,6 +387,7 @@ class PoDetailCreate(BaseModel):
     vir_softness_type: Optional[str] = None
     softness: Optional[str] = None
     color_reference: Optional[str] = None
+    color_standard: Optional[str] = None
     backing: Optional[str] = None
     quantity_order: Optional[Decimal] = None
     style_article: Optional[str] = None
@@ -438,6 +441,7 @@ class PoDetailUpdate(BaseModel):
     vir_softness_type: Optional[str] = None
     softness: Optional[str] = None
     color_reference: Optional[str] = None
+    color_standard: Optional[str] = None
     backing: Optional[str] = None
     quantity_order: Optional[Decimal] = None
     style_article: Optional[str] = None
@@ -470,6 +474,7 @@ class PoHeaderOut(ORMBase):
     customer_id: Optional[int] = None
     customer_code: Optional[str] = None
     po_category: Optional[str] = None
+    factory_code: Optional[str] = None
     buyer: Optional[str] = None
     order_date: Optional[date] = None
     etd: Optional[date] = None
@@ -524,6 +529,60 @@ class DeliverySchedulesPayload(BaseModel):
     schedules: list[DeliveryScheduleItem] = Field(default_factory=list)
 
 
+class PoMarketingReviseHeader(BaseModel):
+    """Revisi marketing: tidak mengubah customer, brand, nomor PO, tanggal order, status, harga."""
+
+    remark: Optional[str] = None
+    etd: Optional[date] = None
+    delivery_address: Optional[str] = None
+    material_followup_remark: Optional[str] = None
+    material_followup_done: Optional[bool] = None
+
+
+class PoMarketingReviseLine(BaseModel):
+    detail_id: int
+    line_etd: Optional[date] = None
+    detail_remark: Optional[str] = None
+    marketing_outstanding_remark: Optional[str] = None
+    rtd_text: Optional[str] = None
+    delivery_schedules: Optional[list[DeliveryScheduleItem]] = None
+
+
+class PoMarketingReviseBody(BaseModel):
+    header: Optional[PoMarketingReviseHeader] = None
+    lines: Optional[list[PoMarketingReviseLine]] = None
+
+
+class MarketingOutstandingSnapshotFilter(BaseModel):
+    balance_filter: str = "exclude_zero"
+    computed_balance: bool = True
+    po_q: Optional[str] = None
+    shipment_status: str = "all"
+    material_status: Optional[str] = None
+    factory_code: Optional[str] = None
+    po_category: Optional[str] = None
+    order_date_from: Optional[str] = None
+    order_date_to: Optional[str] = None
+
+
+class MarketingOutstandingSnapshotCreate(BaseModel):
+    label: Optional[str] = None
+    filters: MarketingOutstandingSnapshotFilter = Field(default_factory=MarketingOutstandingSnapshotFilter)
+
+
+class MarketingOutstandingSnapshotListItem(ORMBase):
+    id: int
+    label: Optional[str] = None
+    row_count: int = 0
+    created_at: Optional[datetime] = None
+    created_by_username: Optional[str] = None
+
+
+class MarketingOutstandingSnapshotDetailOut(MarketingOutstandingSnapshotListItem):
+    filter_params_json: Optional[dict[str, Any]] = None
+    rows_json: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class PoDetailOut(ORMBase):
     id: int
     po_id: Optional[int] = None
@@ -539,6 +598,7 @@ class PoDetailOut(ORMBase):
     vir_softness_type: Optional[str] = None
     softness: Optional[str] = None
     color_reference: Optional[str] = None
+    color_standard: Optional[str] = None
     backing: Optional[str] = None
     quantity_order: Optional[Decimal] = None
     style_article: Optional[str] = None
@@ -555,6 +615,18 @@ class PoDetailOut(ORMBase):
     unit_price: Optional[Decimal] = None
     copied_from_detail_id: Optional[int] = None
     delivery_schedules: list[PoDetailDeliveryOut] = Field(default_factory=list)
+
+
+class LotGenerateIn(BaseModel):
+    po_category: str
+    factory_code: str
+    master_item_id: Optional[int] = None
+    material_name: Optional[str] = None
+    vir_softness_type: Optional[str] = None
+
+
+class LotGenerateOut(BaseModel):
+    lot_number: str
 
 
 # --- Production ---
@@ -650,6 +722,7 @@ class DeliveryHeaderCreate(BaseModel):
     bc_date: Optional[date] = None
     status: str = "draft"
     delivery_zone: Optional[str] = None
+    delivery_type: Optional[str] = None
 
 
 class DeliveryHeaderUpdate(BaseModel):
@@ -664,6 +737,7 @@ class DeliveryHeaderUpdate(BaseModel):
     status: Optional[str] = None
     packing_id: Optional[int] = None
     delivery_zone: Optional[str] = None
+    delivery_type: Optional[str] = None
 
 
 class DeliveryDetailCreate(BaseModel):
@@ -809,6 +883,20 @@ class MasterItemOut(ORMBase):
     color_standard: Optional[str] = None
     model_takedown: Optional[str] = None
     created_at: Optional[datetime] = None
+
+
+class MasterItemDimensionValuesOut(BaseModel):
+    """Nilai unik untuk cascade: material → ketebalan → warna."""
+
+    values: list[str] = Field(default_factory=list)
+
+
+class MasterItemResolveByDimensionsOut(BaseModel):
+    """Hasil resolve (material + ketebalan + warna) ke baris master_items."""
+
+    status: Literal["single", "ambiguous", "none"]
+    item: Optional[MasterItemOut] = None
+    candidates: list[MasterItemOut] = Field(default_factory=list)
 
 
 class MasterPriceOut(ORMBase):

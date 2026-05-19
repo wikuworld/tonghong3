@@ -405,6 +405,8 @@ class PoHeader(Base):
     customer_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("customers.id"))
     customer_code: Mapped[Optional[str]] = mapped_column(String(50))
     po_category: Mapped[str] = mapped_column(String(32), default="production")
+    # Kode pabrik/factory untuk kebutuhan nomor lot & filter outstanding
+    factory_code: Mapped[Optional[str]] = mapped_column(String(32))
     buyer: Mapped[Optional[str]] = mapped_column(String(100))
     order_date: Mapped[Optional[date]] = mapped_column(Date)
     etd: Mapped[Optional[date]] = mapped_column(Date)
@@ -469,6 +471,7 @@ class PoDetail(Base):
     vir_softness_type: Mapped[Optional[str]] = mapped_column(String(100))
     softness: Mapped[Optional[str]] = mapped_column(String(100))
     color_reference: Mapped[Optional[str]] = mapped_column(String(255))
+    color_standard: Mapped[Optional[str]] = mapped_column(String(255))
     backing: Mapped[Optional[str]] = mapped_column(String(255))
     quantity_order: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
     style_article: Mapped[Optional[str]] = mapped_column(String(100))
@@ -510,6 +513,23 @@ class PoDetailDelivery(Base):
     delivery_date: Mapped[Optional[date]] = mapped_column(Date)
 
     po_detail: Mapped["PoDetail"] = relationship("PoDetail", back_populates="delivery_schedules")
+
+
+class MarketingOutstandingSnapshot(Base):
+    """Bekuan baris outstanding marketing (audit / bandingkan dengan data live)."""
+
+    __tablename__ = "marketing_outstanding_snapshots"
+    __table_args__ = (Index("ix_mkt_out_snap_created_at", "created_at"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    label: Mapped[Optional[str]] = mapped_column(String(255))
+    filter_params_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    rows_json: Mapped[list] = mapped_column(JSON, nullable=False)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    created_by_username: Mapped[Optional[str]] = mapped_column(String(100))
 
 
 class ProductionOrder(Base):
@@ -640,6 +660,8 @@ class DeliveryHeader(Base):
     surat_jalan_printed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     # local = dalam kota (commercial invoice H+1); outtown = luar kota (boleh hari pengiriman setelah INVPL)
     delivery_zone: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    # production / sample / return / subcont / claim — terpisah dari teks destination/remark
+    delivery_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
     invoices: Mapped[list["Invoice"]] = relationship("Invoice", back_populates="delivery")
     customer: Mapped[Optional["Customer"]] = relationship("Customer")
@@ -773,6 +795,29 @@ class DocumentSequence(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     doc_type: Mapped[str] = mapped_column(String(20))
     period: Mapped[str] = mapped_column(String(10))
+    last_value: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class LotSequence(Base):
+    """Sequence harian per prefix+factory untuk nomor lot produksi/suede/PU."""
+
+    __tablename__ = "lot_sequences"
+    __table_args__ = (
+        UniqueConstraint(
+            "prefix",
+            "factory_code",
+            "date_ymd",
+            name="uq_lot_sequences_prefix_factory_date",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # Contoh: MYC, SYC, BYC, QYC, PUM, PUS, PUC, PUR
+    prefix: Mapped[str] = mapped_column(String(8))
+    # Kode pabrik, mis. LR028 / SL043
+    factory_code: Mapped[str] = mapped_column(String(32))
+    # Tanggal input dalam format YYYYMMDD (string supaya sederhana di sequence)
+    date_ymd: Mapped[str] = mapped_column(String(8))
     last_value: Mapped[int] = mapped_column(Integer, default=0)
 
 
