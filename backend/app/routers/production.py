@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import PoHeader, ProductionDetail, ProductionOrder
+from app.models import PoDetail, PoHeader, ProductionDetail, ProductionOrder
 from app.services.numbering import next_number
 from app.schemas import (
     ProductionCreate,
@@ -124,8 +124,13 @@ def add_production_detail(
     pr = db.get(ProductionOrder, production_id)
     if not pr:
         raise HTTPException(status_code=404, detail="Production tidak ditemukan")
+    data = body.model_dump(exclude_unset=True)
+    if data.get("po_detail_id") and not str(data.get("lot_number") or "").strip():
+        pod = db.get(PoDetail, int(data["po_detail_id"]))
+        if pod and (pod.thi_line_ref or "").strip():
+            data["lot_number"] = pod.thi_line_ref.strip()
     row = ProductionDetail(
-        production_id=production_id, **body.model_dump(exclude_unset=True)
+        production_id=production_id, **data
     )
     db.add(row)
     db.flush()

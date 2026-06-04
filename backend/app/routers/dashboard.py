@@ -10,6 +10,7 @@ from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.routers.auth import get_current_user
 from app.models import (
     Customer,
     DeliveryHeader,
@@ -211,7 +212,10 @@ def _build_delivery_digest(db: Session) -> dict[str, Any]:
 
 
 @router.get("/dashboard/invoice-summary")
-def invoice_summary(db: Session = Depends(get_db)) -> dict[str, Any]:
+def invoice_summary(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> dict[str, Any]:
     """Ringkasan invoice berdasarkan FK relationships."""
     from app.models import Customer
     
@@ -287,7 +291,10 @@ def invoice_summary(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @router.get("/dashboard/summary")
-def dashboard_summary(db: Session = Depends(get_db)) -> dict[str, Any]:
+def dashboard_summary(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> dict[str, Any]:
     n_so = db.scalar(select(func.count()).select_from(PoHeader)) or 0
     n_so_open = db.scalar(
         select(func.count()).select_from(PoHeader).where(

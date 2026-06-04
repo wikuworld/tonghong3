@@ -872,7 +872,7 @@
                 Ditampilkan: {{ draftLinesDisplay.length }} / {{ draftLines.length }}
               </el-tag>
             </div>
-            <el-table v-if="draftLinesDisplay.length" :data="draftLinesDisplay" border stripe size="small" class="mt-4" table-layout="auto">
+            <el-table v-if="draftLinesDisplay.length" :data="draftLinesDisplay" border stripe size="small" class="mt-4" table-layout="auto" :row-class-name="draftRowClassName">
               <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
               <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
               <el-table-column prop="thickness_text" :label="t('common.thickness')" width="90" />
@@ -939,9 +939,18 @@
               <el-table-column :label="'SYSTEM NO'" min-width="120" show-overflow-tooltip>
                 <template #default="{ row }">{{ row.system_reference || row.thi_line_ref || '—' }}</template>
               </el-table-column>
-              <el-table-column :label="t('common.actions')" width="70" align="center">
-                <template #default="{ $index }">
-                  <el-button link type="danger" :icon="Delete" @click="removeDraftLine($index)" />
+              <el-table-column :label="t('common.actions')" width="120" align="center">
+                <template #default="{ row }">
+                  <el-button
+                    v-if="isEditMode && draftLines.length > 1"
+                    link
+                    type="primary"
+                    size="small"
+                    @click="editDraftLine(row)"
+                  >
+                    {{ t('pages.po.editDraftLine') }}
+                  </el-button>
+                  <el-button link type="danger" :icon="Delete" @click="removeDraftLine(draftLines.indexOf(row))" />
                 </template>
               </el-table-column>
             </el-table>
@@ -1566,13 +1575,23 @@ watch([page, pageSize], () => {
 
 onMounted(async () => {
   await load()
-  const poIdRaw = route.query.po_id
-  const poId = Number(poIdRaw)
-  if (!Number.isNaN(poId) && poId > 0) {
-    const target = rows.value.find((r) => Number(r.id) === poId)
-    if (target) await openDetailDialog(target)
-  }
+  await openPoFromRouteQuery()
 })
+
+async function openPoFromRouteQuery() {
+  const poIdRaw = route.query.po_id ?? route.query.highlight
+  const poId = Number(poIdRaw)
+  if (Number.isNaN(poId) || poId <= 0) return
+  let target = rows.value.find((r) => Number(r.id) === poId)
+  if (!target) {
+    try {
+      target = await getPo(poId)
+    } catch {
+      return
+    }
+  }
+  await openEditDialog(target)
+}
 
 const brandsFiltered = computed(() => {
   if (allowedBrandIds.value.length > 0) {
@@ -1706,6 +1725,7 @@ const editingPoId = ref(null)
 const editingDetailIds = ref([])
 const draftLines = ref([])
 const draftRiskOnly = ref(false)
+const editingDraftLineIndex = ref(-1)
 const PO_DRAFT_KEY = 'po_input_dialog_draft_v1'
 const draftLinesDisplay = computed(() => {
   if (!draftRiskOnly.value) return draftLines.value
@@ -1884,6 +1904,58 @@ function autoFillEtdScheduleEvenly() {
       date,
     }
   })
+}
+
+async function syncCurrentFormToDraftLine() {
+  if (editingDraftLineIndex.value < 0) return
+  const idx = editingDraftLineIndex.value
+  if (idx >= draftLines.value.length) return
+  const cur = await buildCurrentDetailBody()
+  draftLines.value[idx] = {
+    ...draftLines.value[idx],
+    ...cur,
+    delivery_schedules: cur.delivery_schedules || [],
+  }
+}
+
+function draftRowClassName({ row }) {
+  const idx = draftLines.value.indexOf(row)
+  return idx >= 0 && idx === editingDraftLineIndex.value ? 'draft-line-active' : ''
+}
+
+async function applyLineToForm(line) {
+  formModel.master_item_id = line.master_item_id ?? null
+  formModel.material_name = line.material_name || ''
+  formModel.thickness_text = line.thickness_text || ''
+  formModel.color = line.color || ''
+  formModel.color_family = line.color_family || null
+  formModel.emboss = line.emboss || ''
+  formModel.vir_softness_type = line.vir_softness_type || ''
+  formModel.softness = line.softness || ''
+  formModel.color_reference = line.color_reference || ''
+  formModel.color_standard = line.color_standard || ''
+  formModel.backing = line.backing || ''
+  formModel.quantity_order = line.quantity_order != null ? String(line.quantity_order) : ''
+  formModel.style_article = line.style_article || ''
+  formModel.model = line.model || ''
+  formModel.detail_remark = line.detail_remark || ''
+  formModel.thi_line_ref = line.thi_line_ref || ''
+  formModel.unit_price_input = line.unit_price != null ? Number(line.unit_price) : null
+  loadEtdScheduleRowsFromApi(line.delivery_schedules || [])
+  await refreshThicknessOptionsFromApi()
+  await refreshColorOptionsFromApi()
+}
+
+async function editDraftLine(row) {
+  const idx = draftLines.value.indexOf(row)
+  if (idx < 0) return
+  if (editingDraftLineIndex.value >= 0 && editingDraftLineIndex.value !== idx) {
+    await syncCurrentFormToDraftLine()
+  }
+  editingDraftLineIndex.value = idx
+  await applyLineToForm(draftLines.value[idx])
+  currentStep.value = 1
+  ElMessage.info(t('pages.po.editingDraftLine', { n: idx + 1 }))
 }
 
 async function saveDetailSchedules(detailId, schedules) {
@@ -2637,6 +2709,7 @@ function resetForm() {
   autoFieldMeta.model = false
   editingDetailIds.value = []
   draftLines.value = []
+  editingDraftLineIndex.value = -1
   draftRiskOnly.value = false
   brandLockedCustomerId.value = null
   selectedCustomer.value = null
@@ -3417,6 +3490,7 @@ const openEditDialog = async (row) => {
       formModel.detail_remark = d0.detail_remark || ''
       formModel.thi_line_ref = d0.thi_line_ref || ''
       loadEtdScheduleRowsFromApi(scheduleLists[0] || [])
+      editingDraftLineIndex.value = 0
       loadedDetailMasterSnapshot.value = `${String(d0.material_name || '').trim()}|${String(d0.thickness_text || '').trim()}|${String(d0.color || '').trim()}|${d0.master_item_id ?? ''}`
       if (d0.master_item_id) {
         const cacheIt = masterItems.value.find((x) => x.id === d0.master_item_id)
@@ -3465,8 +3539,12 @@ const submitForm = async () => {
       header.order_date = toIsoDate(formModel.order_date) || undefined
     }
     const detailBodies = draftLines.value.length ? draftLines.value : [await buildCurrentDetailBody()]
-    await validateFluorescentLinesOrThrow(detailBodies)
-    const mismatchLines = detailBodies.filter((b) => lineHasScheduleMismatch(b))
+    if (editingDraftLineIndex.value >= 0) {
+      await syncCurrentFormToDraftLine()
+    }
+    const bodiesFinal = draftLines.value.length ? draftLines.value : [await buildCurrentDetailBody()]
+    await validateFluorescentLinesOrThrow(bodiesFinal)
+    const mismatchLines = bodiesFinal.filter((b) => lineHasScheduleMismatch(b))
     if (mismatchLines.length) {
       ElMessage.warning(t('pages.po.scheduleMismatchWarn'))
     }
@@ -3474,8 +3552,8 @@ const submitForm = async () => {
     if (isEditMode.value && editingPoId.value) {
       await updatePo(editingPoId.value, header)
       const keepIds = []
-      for (let i = 0; i < detailBodies.length; i += 1) {
-        const rowBody = { ...sanitizeNewDetailBody(detailBodies[i]) }
+      for (let i = 0; i < bodiesFinal.length; i += 1) {
+        const rowBody = { ...sanitizeNewDetailBody(bodiesFinal[i]) }
         const schedules = rowBody.delivery_schedules || []
         delete rowBody.delivery_schedules
         const existingId = editingDetailIds.value[i]
@@ -3495,7 +3573,7 @@ const submitForm = async () => {
       }
     } else {
       const created = await createPo(header)
-      for (const raw of detailBodies) {
+      for (const raw of bodiesFinal) {
         const rowBody = { ...sanitizeNewDetailBody(raw) }
         const schedules = rowBody.delivery_schedules || []
         delete rowBody.delivery_schedules
@@ -3834,6 +3912,9 @@ function addCopiedItems() {
 </script>
 
 <style scoped>
+:deep(.draft-line-active > td) {
+  background-color: rgb(239 246 255) !important;
+}
 .admin-table {
   width: 100%;
 }

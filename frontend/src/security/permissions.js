@@ -58,6 +58,12 @@ export const ACTION_MATRIX = {
     create: ['admin'],
     update: ['admin'],
   },
+  subcon_invoices: {
+    view: ['admin', 'finance'],
+    create: ['admin', 'finance'],
+    update: ['admin', 'finance'],
+    delete: ['admin'],
+  },
   specialPrices: {
     view: ['admin', 'marketing', 'sales'],
     create: ['admin', 'marketing'],

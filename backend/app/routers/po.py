@@ -894,8 +894,13 @@ def add_po_detail(
                 material_group=group,
             )
             db.flush()
-        except HTTPException:
-            pass
+        except HTTPException as exc:
+            log.warning(
+                "auto_lot_skipped po_id=%s detail_id=%s: %s",
+                po_id,
+                row.id,
+                exc.detail,
+            )
     log_change(
         db,
         entity_type="sales_order_line",

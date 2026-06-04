@@ -240,6 +240,8 @@ def list_delivery_details(
             ((pod.system_reference or pod.thi_line_ref or "").strip()) if pod else ""
         )
         d["lot_number"] = ((pd.lot_number or "").strip()) if pd else ""
+        if not d["lot_number"] and pod:
+            d["lot_number"] = (pod.thi_line_ref or "").strip()
         d["material_name_line"] = ((pod.material_name or "").strip()) if pod else ""
         d["thickness_display"] = _thickness_display(pod)
         d["color_line"] = ((pod.color or "").strip()) if pod else ""

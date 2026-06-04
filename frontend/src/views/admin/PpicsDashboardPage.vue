@@ -130,7 +130,7 @@ async function updateStatus(row, newStatus) {
 }
 
 function goPo(poId) {
-  router.push({ path: '/admin/po', query: { highlight: String(poId) } })
+  router.push({ path: '/admin/po', query: { po_id: String(poId) } })
 }
 
 onMounted(() => {

@@ -82,7 +82,7 @@ def add_so_detail(
 ) -> PoDetail:
     from app.routers.po import add_po_detail
 
-    return add_po_detail(so_id, body, db, user=None)
+    return add_po_detail(so_id, body, db, user=_user)
 
 
 @router.put("/sales-order-details/{detail_id}", response_model=PoDetailOut)

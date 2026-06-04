@@ -267,6 +267,7 @@ import { Download, Printer, DataAnalysis } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import {
   fetchReportPoOrderDescription,
+  fetchAuthenticatedDocument,
   listCustomers,
   reportPoDailyMarketingCsvPath,
   reportSalesOrderLinesExportUrl,
@@ -352,12 +353,26 @@ onMounted(async () => {
   await fetchReport()
 })
 
-function exportSoCsv() {
-  window.open(reportSalesOrdersExportUrl(), '_blank')
+async function exportSoCsv() {
+  try {
+    await fetchAuthenticatedDocument('/reports/sales-orders-export.csv', {
+      mode: 'download',
+      downloadFallbackName: 'sales-orders.csv',
+    })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 
-function exportLinesCsv() {
-  window.open(reportSalesOrderLinesExportUrl(), '_blank')
+async function exportLinesCsv() {
+  try {
+    await fetchAuthenticatedDocument('/reports/sales-order-lines-export.csv', {
+      mode: 'download',
+      downloadFallbackName: 'sales-order-lines.csv',
+    })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 
 function buildReportQuery() {

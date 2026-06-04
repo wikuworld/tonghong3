@@ -624,7 +624,7 @@ onMounted(() => {
 
 function goPoFromLine(row) {
   if (!row?.po_id) return
-  router.push({ path: '/admin/po', query: { highlight: String(row.po_id) } })
+  router.push({ path: '/admin/po', query: { po_id: String(row.po_id) } })
 }
 
 const isSentOrCancelled = computed(() => {

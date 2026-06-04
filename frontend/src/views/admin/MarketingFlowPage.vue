@@ -115,6 +115,11 @@
                 <el-icon><Document /></el-icon>
               </el-button>
             </el-tooltip>
+            <el-tooltip v-if="canEditPoDetail" :content="t('ppicWorkflow.assignToPpic')" placement="top">
+              <el-button type="warning" link size="small" @click="openAssignDialog(row)">
+                <el-icon><User /></el-icon>
+              </el-button>
+            </el-tooltip>
           </template>
         </el-table-column>
       </el-table>
@@ -132,6 +137,9 @@
             </el-button>
             <el-button size="small" type="warning" :icon="Download" :loading="outstandingReturnXlsxLoading" @click="downloadReturnXlsx">
               {{ t('pages.marketingFlow.outstandingDownloadReturXlsx') }}
+            </el-button>
+            <el-button size="small" type="primary" plain @click="proposeScheduleFromSelection">
+              {{ t('pages.marketingFlow.scheduleDraftButton') }}
             </el-button>
           </div>
         </div>
@@ -464,8 +472,10 @@ import {
   advanceMktWorkflow,
   assignPoToPpic,
   createMarketingOutstandingSnapshot,
+  fetchAuthenticatedDocument,
   getMarketingDeliveryToday,
   getMarketingOutstandingSnapshot,
+  getPpicDashboard,
   getPoPpicAssignment,
   listMarketingDeliveryLines,
   listMarketingDeliveryPlanning,
@@ -791,7 +801,7 @@ function outstandingSummary({ columns, data }) {
     if (col.type === 'index') return t('pages.marketingFlow.summaryLabel')
     const prop = col.property
     const isDeliveryQty = prop && /^delivery_\d+_qty$/.test(String(prop))
-    if (prop && (['qty_sf', 'stock_wh_qty', 'balance_qty', 'delivered_qty'].includes(prop) || isDeliveryQty)) {
+    if (prop && (['qty_sf', 'stock_wh_qty', 'balance_qty', 'delivered_qty', 'schedule_qty_total', 'schedule_unallocated_qty', 'actual_vs_schedule_qty'].includes(prop) || isDeliveryQty)) {
       let total = 0
       for (const row of data) {
         const n = parseFloat(String(row[prop] ?? '').replace(',', '.'))
@@ -811,6 +821,15 @@ function proposeScheduleFromSelection() {
   const sel = outstandingSelection.value
   if (!sel.length) {
     ElMessage.warning(t('pages.marketingFlow.selectRowsFirst'))
+    return
+  }
+  const poIds = [...new Set(sel.map((r) => r.po_id).filter(Boolean))]
+  if (poIds.length === 1) {
+    router.push({ path: '/admin/po', query: { po_id: String(poIds[0]) } })
+    return
+  }
+  if (poIds.length > 1) {
+    ElMessage.warning(t('pages.marketingFlow.scheduleOnePoOnly'))
     return
   }
   ElMessage.info(t('pages.marketingFlow.scheduleDraftHint', { n: sel.length }))
@@ -1298,7 +1317,7 @@ async function advance(row) {
 }
 
 function goPo(id) {
-  router.push({ path: '/admin/po', query: { highlight: String(id) } })
+  router.push({ path: '/admin/po', query: { po_id: String(id) } })
 }
 
 function goDelivery(row) {
@@ -1317,16 +1336,20 @@ function goDelivery(row) {
   router.push({ path: '/admin/delivery', query: q })
 }
 
-function downloadRekap() {
+async function downloadRekap() {
   const r = flowDateRange.value
   const day = Array.isArray(r) && r.length === 2 && r[1] ? r[1] : Array.isArray(r) && r[0] ? r[0] : new Date().toISOString().slice(0, 10)
-  const path = reportPoDailyRecapUrl(day)
-  window.open(path.startsWith('/') ? `/api/v1${path}` : path, '_blank')
+  const path = reportPoDailyRecapUrl(day).replace(/^\/api\/v1/, '')
+  try {
+    await fetchAuthenticatedDocument(path, { mode: 'download', downloadFallbackName: `po-daily-recap-${day}.csv` })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 
 async function pullCrToday() {
-  const t = new Date().toISOString().slice(0, 10)
-  flowDateRange.value = [t, t]
+  const today = new Date().toISOString().slice(0, 10)
+  flowDateRange.value = [today, today]
   await load()
   ElMessage.success(t('pages.marketingFlow.pullCrTodayDone'))
 }
@@ -1365,7 +1388,7 @@ async function downloadDailyPoReportXlsx() {
   }
 }
 
-function downloadOutstanding() {
+async function downloadOutstanding() {
   const od = outstandingDateRange.value
   const outstandingDateParams =
     Array.isArray(od) && od.length === 2 && od[0] && od[1] ? { order_date_from: od[0], order_date_to: od[1] } : {}
@@ -1379,17 +1402,25 @@ function downloadOutstanding() {
     po_category: outstandingPoCategory.value || undefined,
     ...outstandingDateParams,
   })
-  window.open(`/api/v1${suffix}`, '_blank')
+  try {
+    await fetchAuthenticatedDocument(suffix, { mode: 'download', downloadFallbackName: 'marketing-outstanding.csv' })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 
-function downloadDelivery() {
+async function downloadDelivery() {
   const dr = deliveryDateRange.value
   const drParams =
     Array.isArray(dr) && dr.length === 2 && dr[0] && dr[1]
       ? { delivery_date_from: dr[0], delivery_date_to: dr[1] }
       : {}
   const suffix = marketingDeliveryCsvUrl(drParams)
-  window.open(`/api/v1${suffix}`, '_blank')
+  try {
+    await fetchAuthenticatedDocument(suffix, { mode: 'download', downloadFallbackName: 'marketing-delivery.csv' })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 </script>
 

@@ -639,8 +639,10 @@ def _delivery_detail_to_row(
         system_no = (pod.system_reference or pod.thi_line_ref or "").strip()
 
     lot_no = ""
-    if pd and pd.lot_number:
+    if pd and (pd.lot_number or "").strip():
         lot_no = (pd.lot_number or "").strip()
+    elif pod and (pod.thi_line_ref or "").strip():
+        lot_no = (pod.thi_line_ref or "").strip()
 
     sj_raw = (dh.delivery_number or "").strip()
     surat_jalan_no = surat_jalan_display_number(sj_raw, ph) if sj_raw else "—"
