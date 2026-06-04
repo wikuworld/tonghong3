@@ -1043,233 +1043,50 @@
       </template>
     </el-dialog>
 
-    <el-dialog
+    <PoMarketingReviseDialog
       v-model="marketingReviseVisible"
-      :title="t('pages.po.marketingReviseTitle')"
-      width="720px"
-      destroy-on-close
-      align-center
-    >
-      <p class="text-xs text-slate-600 mb-3">{{ t('pages.po.marketingReviseHint') }}</p>
-      <el-form label-position="top" size="small">
-        <el-form-item :label="t('common.remark')">
-          <el-input v-model="marketingReviseHeader.remark" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-form-item :label="t('pages.po.headerEtd')">
-          <el-date-picker
-            v-model="marketingReviseHeader.etd"
-            type="date"
-            value-format="YYYY-MM-DD"
-            class="w-full"
-          />
-        </el-form-item>
-        <el-form-item :label="t('pages.po.deliveryAddress')">
-          <el-input v-model="marketingReviseHeader.delivery_address" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-form-item :label="t('pages.marketingFlow.materialRemark')">
-          <el-input v-model="marketingReviseHeader.material_followup_remark" type="textarea" :rows="2" />
-        </el-form-item>
-        <el-form-item :label="t('pages.marketingFlow.materialDone')">
-          <el-switch v-model="marketingReviseHeader.material_followup_done" />
-        </el-form-item>
-      </el-form>
-      <div class="text-sm font-medium mt-4 mb-2">{{ t('pages.po.lineEtd') }} / {{ t('pages.po.detailRemark') }}</div>
-      <el-table v-loading="marketingReviseLoading" :data="marketingReviseLines" border size="small" max-height="320">
-        <el-table-column prop="detail_id" label="ID" width="72" />
-        <el-table-column prop="material_name" :label="t('common.material')" min-width="120" show-overflow-tooltip />
-        <el-table-column :label="t('pages.po.lineEtd')" width="138">
-          <template #default="{ row }">
-            <el-date-picker v-model="row.line_etd" type="date" value-format="YYYY-MM-DD" size="small" class="!w-full" />
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('pages.po.detailRemark')" min-width="100">
-          <template #default="{ row }">
-            <el-input v-model="row.detail_remark" size="small" />
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('pages.po.colMarketingOutstandingRemark')" min-width="120">
-          <template #default="{ row }">
-            <el-input v-model="row.marketing_outstanding_remark" size="small" />
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('pages.marketingFlow.colRtd')" width="96">
-          <template #default="{ row }">
-            <el-input v-model="row.rtd_text" size="small" />
-          </template>
-        </el-table-column>
-      </el-table>
-      <template #footer>
-        <el-button @click="marketingReviseVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="marketingReviseSaving" @click="submitMarketingRevise">{{ t('common.save') }}</el-button>
-      </template>
-    </el-dialog>
+      v-model:header="marketingReviseHeader"
+      v-model:lines="marketingReviseLines"
+      :loading="marketingReviseLoading"
+      :saving="marketingReviseSaving"
+      @save="submitMarketingRevise"
+    />
 
-    <el-dialog
+    <PoDetailDialog
       v-model="detailDialogVisible"
-      :title="t('pages.poDetail.title')"
-      width="95%" style="max-width: 900px"
-      destroy-on-close
-      align-center
-      class="po-dialog"
-    >
-      <el-descriptions v-if="detailView" :column="2" border size="small">
-        <el-descriptions-item :label="t('common.poNo')">{{ detailView.po_number }}</el-descriptions-item>
-        <el-descriptions-item :label="t('common.status')">{{ statusLabel(detailView.status) }}</el-descriptions-item>
-        <el-descriptions-item :label="t('pages.po.poCustomerRef')">{{ detailView.po_customer_ref || t('common.emptyValue') }}</el-descriptions-item>
-        <el-descriptions-item :label="t('common.customer')">{{ detailView.customerName }}</el-descriptions-item>
-        <el-descriptions-item :label="t('common.buyer')">{{ detailView.buyer || t('common.emptyValue') }}</el-descriptions-item>
-        <el-descriptions-item :label="t('pages.po.headerEtd')">{{ detailView.etd || t('common.emptyValue') }}</el-descriptions-item>
-      </el-descriptions>
-      <p class="mt-2 text-xs text-slate-500">{{ t('pages.poDetail.lineRevisionHint') }}</p>
-      <el-table
-        v-if="detailLines.length"
-        :data="detailLines"
-        class="mt-4"
-        border
-        size="small"
-        table-layout="auto"
-        max-height="360"
-      >
-        <el-table-column prop="material_name" :label="t('common.material')" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="thickness_text" :label="t('common.thickness')" width="100" />
-        <el-table-column prop="color" :label="t('common.color')" width="88" />
-        <el-table-column prop="color_family" :label="t('pages.po.colorFamily')" width="120" show-overflow-tooltip>
-          <template #default="{ row }">{{ colorFamilyLabel(row.color_family) }}</template>
-        </el-table-column>
-        <el-table-column prop="emboss" :label="t('pages.po.emboss')" width="88" show-overflow-tooltip />
-        <el-table-column prop="color_standard" :label="t('pages.po.colorStandart')" width="120" show-overflow-tooltip />
-        <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="96" />
-        <el-table-column prop="unit_price" :label="t('pages.po.unitPriceUsd')" width="100" align="right">
-          <template #default="{ row }">{{ row.unit_price != null ? row.unit_price : t('common.emptyValue') }}</template>
-        </el-table-column>
-        <el-table-column prop="thi_line_ref" :label="t('pages.po.thiLineRef')" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="100" show-overflow-tooltip />
-        <el-table-column prop="model" :label="t('common.model')" width="96" show-overflow-tooltip />
-      </el-table>
-      <PoDetailAuditPanel :entries="detailAudit" />
-      <template #footer>
-        <el-button type="primary" :icon="Close" @click="detailDialogVisible = false">{{ t('pages.customers.closeDetail') }}</el-button>
-      </template>
-    </el-dialog>
+      :detail-view="detailView"
+      :detail-lines="detailLines"
+      :detail-audit="detailAudit"
+      :color-family-label="colorFamilyLabel"
+    />
 
-    <el-dialog
+    <PoPrintPreviewDialog
       v-model="printDialogVisible"
-      :title="`${t('common.print')} ${t('menu.po')}`"
-      width="760px"
-      destroy-on-close
-      align-center
-      class="po-dialog"
-    >
-      <div class="rounded border border-slate-200 p-4">
-        <h3 class="mb-2 text-lg font-semibold">{{ selectedRow.po_number }}</h3>
-        <p><b>{{ t('common.customer') }}:</b> {{ selectedRow.customerName }}</p>
-        <p><b>{{ t('common.buyer') }}:</b> {{ selectedRow.buyer }}</p>
-        <p><b>{{ t('common.poCategory') }}:</b> {{ statusLabel(selectedRow.po_category) }}</p>
-        <p><b>{{ t('common.material') }}:</b> {{ selectedRow.material_hint }}</p>
-        <p><b>{{ t('common.etd') }}:</b> {{ selectedRow.etd }}</p>
-      </div>
-      <template #footer>
-        <div class="po-dialog-footer">
-          <el-button :icon="Close" @click="printDialogVisible = false">{{ t('common.cancel') }}</el-button>
-          <el-button type="primary" :icon="Printer" @click="printPage">{{ t('common.print') }}</el-button>
-        </div>
-      </template>
-    </el-dialog>
+      :row="selectedRow"
+      @print="printPage"
+    />
 
-    <el-dialog
+    <PoCopyItemDialog
       v-model="copyItemDialogVisible"
-      :title="t('pages.po.copyItemFromOtherPo')"
-      width="95%" style="max-width: 900px"
-      destroy-on-close
-      align-center
-    >
-      <el-form label-position="top">
-        <el-row :gutter="12">
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('common.customer')">
-              <el-select
-                v-model="copyItemCustomerId"
-                clearable
-                filterable
-                class="w-full"
-                :placeholder="t('common.placeholder.customer')"
-                @change="onCopyItemCustomerChange"
-              >
-                <el-option
-                  v-for="c in customers"
-                  :key="c.id"
-                  :label="formatCustomerOption(c)"
-                  :value="c.id"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :md="12">
-            <el-form-item :label="t('common.placeholder.search')">
-              <el-input v-model="copyItemSearch" clearable :placeholder="t('pages.po.searchItems')" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-      </el-form>
+      :customers="customers"
+      :customer-id="copyItemCustomerId"
+      :search="copyItemSearch"
+      :source-items="copyItemSourcePo"
+      :filtered-items="copyItemFilteredPo"
+      :selected-count="copyItemSelected.length"
+      :format-customer-option="formatCustomerOption"
+      @update:customer-id="onCopyItemCustomerChange"
+      @update:search="copyItemSearch = $event"
+      @selection-change="onCopyItemSelectionChange"
+      @add-selected="addCopiedItems"
+    />
 
-      <el-table
-        v-if="copyItemSourcePo.length"
-        :data="copyItemFilteredPo"
-        border
-        size="small"
-        max-height="350"
-        @selection-change="onCopyItemSelectionChange"
-      >
-        <el-table-column type="selection" width="55" />
-        <el-table-column prop="source_po_number" :label="t('common.poNo')" width="140" />
-        <el-table-column prop="material_name" :label="t('common.material')" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="thickness_text" :label="t('common.thickness')" width="90" />
-        <el-table-column prop="color" :label="t('common.color')" width="90" />
-        <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="100" align="right" />
-        <el-table-column prop="unit_price" :label="t('pages.po.unitPriceUsd')" width="100" align="right">
-          <template #default="{ row }">{{ row.unit_price != null ? row.unit_price : '—' }}</template>
-        </el-table-column>
-      </el-table>
-      <div v-else-if="!copyItemCustomerId" class="text-center text-slate-500 py-8">
-        {{ t('pages.po.selectCustomerToSeeItems') }}
-      </div>
-      <div v-else class="text-center text-slate-500 py-8">
-        {{ t('pages.po.noItemsFound') }}
-      </div>
-      <div v-if="copyItemFilteredPo.length" class="mt-2 text-xs text-slate-500">
-        {{ t('pages.po.showingItems', { count: copyItemFilteredPo.length }) }}
-      </div>
-      <template #footer>
-        <div class="po-dialog-footer">
-          <el-button :icon="Close" @click="copyItemDialogVisible = false">{{ t('common.cancel') }}</el-button>
-          <el-button type="primary" :icon="Check" :disabled="!copyItemSelected.length" @click="addCopiedItems">
-            {{ t('pages.po.addSelectedItems') }} ({{ copyItemSelected.length }})
-          </el-button>
-        </div>
-      </template>
-    </el-dialog>
-
-    <el-dialog
+    <PoAmbiguousMasterDialog
       v-model="ambiguousMasterVisible"
-      :title="t('pages.po.ambiguousMasterTitle')"
-      width="520px"
-      destroy-on-close
-      append-to-body
-    >
-      <p class="text-sm text-slate-600 mb-3">{{ t('pages.po.ambiguousMasterHint') }}</p>
-      <el-radio-group v-model="selectedAmbiguousMasterId" class="flex flex-col gap-2">
-        <el-radio v-for="c in ambiguousMasterCandidates" :key="c.id" :value="c.id" class="!items-start !h-auto whitespace-normal">
-          <span class="font-mono text-sm">{{ c.item_code }}</span>
-          <span class="text-sm text-slate-700"> — {{ c.material_name || '—' }} / {{ c.thickness_range || c.thickness_mm || '—' }} / {{ c.color || '—' }}</span>
-        </el-radio>
-      </el-radio-group>
-      <template #footer>
-        <el-button @click="ambiguousMasterVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :disabled="!selectedAmbiguousMasterId" @click="confirmAmbiguousMasterPick">
-          {{ t('common.confirm') }}
-        </el-button>
-      </template>
-    </el-dialog>
+      v-model:selected-id="selectedAmbiguousMasterId"
+      :candidates="ambiguousMasterCandidates"
+      @confirm="confirmAmbiguousMasterPick"
+    />
   </AdminSection>
 </template>
 
@@ -1302,8 +1119,13 @@ import {
   Picture,
 } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
-import PoDetailAuditPanel from '../../components/admin/PoDetailAuditPanel.vue'
+import PoAmbiguousMasterDialog from '../../components/admin/PoAmbiguousMasterDialog.vue'
+import PoCopyItemDialog from '../../components/admin/PoCopyItemDialog.vue'
+import PoDetailDialog from '../../components/admin/PoDetailDialog.vue'
+import PoMarketingReviseDialog from '../../components/admin/PoMarketingReviseDialog.vue'
+import PoPrintPreviewDialog from '../../components/admin/PoPrintPreviewDialog.vue'
 import { usePoList } from '../../composables/usePoList.js'
+import { usePoMarketingRevise } from '../../composables/usePoMarketingRevise.js'
 import { canWrite } from '../../security/permissions'
 import { statusType, statusLabel } from '../../utils/format'
 import {
@@ -1371,7 +1193,6 @@ import {
   listPoDetails,
   listPoForCopy,
   listAuditLogs,
-  marketingRevisePo,
   resolveBuyerUnitPrice,
   salesContractDocxPath,
   salesContractPdfPath,
@@ -1604,17 +1425,6 @@ const isEditMode = ref(false)
 const savedHeaderOrderDate = ref('')
 const orderDateLocked = computed(() => isEditMode.value && Boolean(savedHeaderOrderDate.value))
 
-const marketingReviseVisible = ref(false)
-const marketingReviseLoading = ref(false)
-const marketingReviseSaving = ref(false)
-const marketingReviseHeader = reactive({
-  remark: '',
-  etd: '',
-  delivery_address: '',
-  material_followup_remark: '',
-  material_followup_done: false,
-})
-const marketingReviseLines = ref([])
 const editingPoId = ref(null)
 const editingDetailIds = ref([])
 const draftLines = ref([])
@@ -1678,6 +1488,16 @@ const formModel = reactive({
   discount_type: 'percent',
   discount_value: 0,
 })
+
+const {
+  visible: marketingReviseVisible,
+  loading: marketingReviseLoading,
+  saving: marketingReviseSaving,
+  header: marketingReviseHeader,
+  lines: marketingReviseLines,
+  open: openMarketingReviseDialog,
+  submit: submitMarketingRevise,
+} = usePoMarketingRevise({ t, editingPoId, formModel })
 
 const pricePreviewLoading = ref(false)
 const previewResolvedUnitPrice = ref(null)
@@ -3074,65 +2894,6 @@ const submitForm = async () => {
   }
 }
 
-async function openMarketingReviseDialog() {
-  if (!editingPoId.value) return
-  marketingReviseLoading.value = true
-  try {
-    const [po, details] = await Promise.all([getPo(editingPoId.value), listPoDetails(editingPoId.value)])
-    marketingReviseHeader.remark = formModel.remark || ''
-    marketingReviseHeader.etd = formModel.etd || ''
-    marketingReviseHeader.delivery_address = formModel.delivery_address || ''
-    marketingReviseHeader.material_followup_remark = po.material_followup_remark || ''
-    marketingReviseHeader.material_followup_done = Boolean(po.material_followup_done)
-    marketingReviseLines.value = details.map((d) => ({
-      detail_id: d.id,
-      material_name: d.material_name || '',
-      line_etd: d.line_etd ? String(d.line_etd).slice(0, 10) : '',
-      detail_remark: d.detail_remark || '',
-      marketing_outstanding_remark: d.marketing_outstanding_remark || '',
-      rtd_text: d.rtd_text || '',
-    }))
-    marketingReviseVisible.value = true
-  } catch (e) {
-    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
-  } finally {
-    marketingReviseLoading.value = false
-  }
-}
-
-async function submitMarketingRevise() {
-  if (!editingPoId.value) return
-  marketingReviseSaving.value = true
-  try {
-    const header = {
-      remark: marketingReviseHeader.remark?.trim() || null,
-      etd: toIsoDate(marketingReviseHeader.etd) || null,
-      delivery_address: marketingReviseHeader.delivery_address?.trim() || null,
-      material_followup_remark: marketingReviseHeader.material_followup_remark?.trim() || null,
-      material_followup_done: Boolean(marketingReviseHeader.material_followup_done),
-    }
-    const lines = marketingReviseLines.value.map((r) => {
-      const o = { detail_id: r.detail_id }
-      const le = toIsoDate(r.line_etd)
-      if (le) o.line_etd = le
-      o.detail_remark = r.detail_remark?.trim() || null
-      o.marketing_outstanding_remark = r.marketing_outstanding_remark?.trim() || null
-      o.rtd_text = r.rtd_text?.trim() || null
-      return o
-    })
-    await marketingRevisePo(editingPoId.value, { header, lines })
-    formModel.remark = marketingReviseHeader.remark || ''
-    formModel.etd = marketingReviseHeader.etd || ''
-    formModel.delivery_address = marketingReviseHeader.delivery_address || ''
-    ElMessage.success(t('pages.po.marketingReviseSaved'))
-    marketingReviseVisible.value = false
-  } catch (e) {
-    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
-  } finally {
-    marketingReviseSaving.value = false
-  }
-}
-
 const detailDialogVisible = ref(false)
 const detailView = ref(null)
 const detailLines = ref([])
@@ -3279,7 +3040,8 @@ async function loadCopyItemSourcePos() {
   }
 }
 
-async function onCopyItemCustomerChange() {
+async function onCopyItemCustomerChange(id) {
+  copyItemCustomerId.value = id ?? null
   await loadCopyItemSourcePos()
 }
 

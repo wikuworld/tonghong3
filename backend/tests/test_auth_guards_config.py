@@ -4,7 +4,7 @@ from fastapi.params import Query
 from fastapi.routing import APIRoute
 
 from app import main
-from app.routers import buyer_prices, customs, delivery, exchange_rates, invoice, packing, po, production, qc, sales_orders
+from app.routers import buyer_prices, customs, delivery, exchange_rates, invoice, marketing, packing, po, production, qc, sales_orders, subcon
 
 
 def _get_route(router, path: str, method: str) -> APIRoute:
@@ -145,6 +145,44 @@ def test_delivery_router_require_auth_and_role_guards():
         ("/delivery/{delivery_id}/mark-surat-jalan-printed", "POST"),
     ]:
         route = _get_route(delivery.router, path, method)
+        assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
+
+
+def test_subcon_router_require_auth_and_role_guards():
+    for path, method in [
+        ("/subcon-invoices", "GET"),
+        ("/subcon-invoices/{invoice_id}", "GET"),
+    ]:
+        route = _get_route(subcon.router, path, method)
+        assert _has_dep(route, "get_current_user"), f"{method} {path} harus pakai get_current_user"
+
+    for path, method in [
+        ("/subcon-invoices", "POST"),
+        ("/subcon-invoices/{invoice_id}", "PUT"),
+        ("/subcon-invoices/{invoice_id}", "DELETE"),
+        ("/subcon-invoices/generate-from-po/{po_id}", "POST"),
+    ]:
+        route = _get_route(subcon.router, path, method)
+        assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
+
+
+def test_marketing_router_require_auth_and_role_guards():
+    for path, method in [
+        ("/marketing/outstanding-lines", "GET"),
+        ("/marketing/outstanding-lines.csv", "GET"),
+        ("/marketing/delivery-lines", "GET"),
+        ("/marketing/delivery-planning", "GET"),
+        ("/marketing/delivery-today", "GET"),
+        ("/marketing/outstanding-snapshots", "GET"),
+        ("/marketing/outstanding-snapshots/{snapshot_id}", "GET"),
+    ]:
+        route = _get_route(marketing.router, path, method)
+        assert _has_dep(route, "get_current_user"), f"{method} {path} harus pakai get_current_user"
+
+    for path, method in [
+        ("/marketing/outstanding-snapshots", "POST"),
+    ]:
+        route = _get_route(marketing.router, path, method)
         assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
 
 

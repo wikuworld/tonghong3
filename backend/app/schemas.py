@@ -585,6 +585,155 @@ class MarketingOutstandingSnapshotDetailOut(MarketingOutstandingSnapshotListItem
     rows_json: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class MarketingOutstandingLineOut(BaseModel):
+    """Satu baris lembar outstanding marketing (JSON API)."""
+
+    order_date: Optional[str] = None
+    thi_order: Optional[str] = None
+    customer_name: Optional[str] = None
+    brand: Optional[str] = None
+    order_type: Optional[str] = None
+    no_po: Optional[str] = None
+    po_customer_ref: Optional[str] = None
+    material_name: Optional[str] = None
+    thickness: Optional[str] = None
+    emboss: Optional[str] = None
+    softness_type: Optional[str] = None
+    color: Optional[str] = None
+    softness: Optional[str] = None
+    qty_sf: Optional[str] = None
+    unit_price: Optional[str] = None
+    color_reference: Optional[str] = None
+    color_standard: Optional[str] = None
+    backing: Optional[str] = None
+    model: Optional[str] = None
+    style_article: Optional[str] = None
+    rtd_text: Optional[str] = None
+    line_etd: Optional[str] = None
+    stock_wh_qty: Optional[str] = None
+    balance_qty: Optional[str] = None
+    system_reference: Optional[str] = None
+    detail_remark: Optional[str] = None
+    remark_system: Optional[str] = None
+    remark_marketing: Optional[str] = None
+    material_followup_remark_header: Optional[str] = None
+    material_followup_done_header: Optional[bool] = None
+    status_material: Optional[str] = None
+    delivered_qty: Optional[str] = None
+    production_status: Optional[str] = None
+    po_id: int
+    po_detail_id: int
+    po_status: Optional[str] = None
+    mkt_stage: Optional[str] = None
+    delivery_1_qty: Optional[str] = None
+    delivery_1_date: Optional[str] = None
+    delivery_2_qty: Optional[str] = None
+    delivery_2_date: Optional[str] = None
+    delivery_3_qty: Optional[str] = None
+    delivery_3_date: Optional[str] = None
+    delivery_4_qty: Optional[str] = None
+    delivery_4_date: Optional[str] = None
+    delivery_5_qty: Optional[str] = None
+    delivery_5_date: Optional[str] = None
+    delivery_6_qty: Optional[str] = None
+    delivery_6_date: Optional[str] = None
+    delivery_7_qty: Optional[str] = None
+    delivery_7_date: Optional[str] = None
+    delivery_8_qty: Optional[str] = None
+    delivery_8_date: Optional[str] = None
+    schedule_qty_total: Optional[str] = None
+    schedule_unallocated_qty: Optional[str] = None
+    actual_vs_schedule_qty: Optional[str] = None
+
+
+class MarketingOutstandingPageOut(BaseModel):
+    data: list[MarketingOutstandingLineOut] = Field(default_factory=list)
+    total: int = 0
+
+
+class MarketingDeliveryLineOut(BaseModel):
+    surat_jalan_no: Optional[str] = None
+    delivery_date: Optional[str] = None
+    factory_name: Optional[str] = None
+    system_no: Optional[str] = None
+    po_date: Optional[str] = None
+    po_number: Optional[str] = None
+    lot_no: Optional[str] = None
+    thickness: Optional[str] = None
+    color: Optional[str] = None
+    material_type: Optional[str] = None
+    material_name: Optional[str] = None
+    qty_po: Optional[str] = None
+    unit_price: Optional[str] = None
+    qty_roll: Optional[int] = None
+    qty_pcs: Optional[int] = None
+    qty_sf: Optional[str] = None
+    gross_weight: Optional[str] = None
+    net_weight: Optional[str] = None
+    amount: Optional[str] = None
+    color_std: Optional[str] = None
+    emboss: Optional[str] = None
+    buyer: Optional[str] = None
+    style_article: Optional[str] = None
+    model: Optional[str] = None
+    invoice_number: Optional[str] = None
+    pi_no: Optional[str] = None
+    remark: Optional[str] = None
+    order_type: Optional[str] = None
+    factory_code: Optional[str] = None
+    destination: Optional[str] = None
+    delivery_id: Optional[int] = None
+    delivery_detail_id: Optional[int] = None
+    delivery_status: Optional[str] = None
+    packing_id: Optional[int] = None
+    packing_status: Optional[str] = None
+    invpl_printed: Optional[bool] = None
+    delivery_zone: Optional[str] = None
+
+
+class MarketingDeliveryLinesPageOut(BaseModel):
+    data: list[MarketingDeliveryLineOut] = Field(default_factory=list)
+    total: int = 0
+
+
+class MarketingDeliveryPlanningSlotOut(BaseModel):
+    delivery_date: Optional[str] = None
+    sequence_no: Optional[int] = None
+    qty: Optional[str] = None
+    po_id: Optional[int] = None
+    po_number: Optional[str] = None
+    factory_code: Optional[str] = None
+    material_name: Optional[str] = None
+    thi_order: Optional[str] = None
+    po_detail_id: Optional[int] = None
+    line_etd: Optional[str] = None
+
+
+class MarketingDeliveryPlanningPageOut(BaseModel):
+    date_from: str
+    date_to: str
+    data: list[MarketingDeliveryPlanningSlotOut] = Field(default_factory=list)
+    total: int = 0
+
+
+class MarketingLineEtdTodayOut(BaseModel):
+    line_etd: Optional[str] = None
+    po_id: Optional[int] = None
+    po_number: Optional[str] = None
+    factory_code: Optional[str] = None
+    customer_name: Optional[str] = None
+    material_name: Optional[str] = None
+    thi_order: Optional[str] = None
+    po_detail_id: Optional[int] = None
+
+
+class MarketingDeliveryTodayOut(BaseModel):
+    as_of: str
+    planned_delivery_slots: list[MarketingDeliveryPlanningSlotOut] = Field(default_factory=list)
+    lines_reply_etd_today: list[MarketingLineEtdTodayOut] = Field(default_factory=list)
+    surat_jalan_lines: list[MarketingDeliveryLineOut] = Field(default_factory=list)
+
+
 class PoDetailOut(ORMBase):
     id: int
     po_id: Optional[int] = None

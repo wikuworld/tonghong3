@@ -18,7 +18,6 @@ from app.schemas import (
     DeliveryHeaderCreate,
     DeliveryHeaderOut,
     DeliveryHeaderUpdate,
-    row_to_dict,
 )
 from app.services.business_rules import require_packing_ready
 from app.routers.auth import get_current_user, require_roles
@@ -29,6 +28,35 @@ from app.services.business_rules import po_numbers_from_delivery
 from app.routers.reports import _order_type_label, _thickness_display
 
 router = APIRouter(tags=["delivery"])
+
+
+def _delivery_detail_enriched(
+    dd: DeliveryDetail,
+    pd: ProductionDetail | None,
+    pod: PoDetail | None,
+    ph: PoHeader | None,
+) -> DeliveryDetailEnrichedOut:
+    lot_number = ((pd.lot_number or "").strip()) if pd else ""
+    if not lot_number and pod:
+        lot_number = (pod.thi_line_ref or "").strip()
+    return DeliveryDetailEnrichedOut(
+        id=dd.id,
+        delivery_id=dd.delivery_id,
+        production_detail_id=dd.production_detail_id,
+        qty=float(dd.qty) if dd.qty is not None else None,
+        qty_roll=dd.qty_roll,
+        qty_pcs=dd.qty_pcs,
+        weight=float(dd.weight) if dd.weight is not None else None,
+        po_id=int(ph.id) if ph else None,
+        po_number=(ph.po_number or "").strip() if ph else "",
+        po_detail_id=int(pod.id) if pod else None,
+        system_no=((pod.system_reference or pod.thi_line_ref or "").strip()) if pod else "",
+        lot_number=lot_number,
+        material_name_line=((pod.material_name or "").strip()) if pod else "",
+        thickness_display=_thickness_display(pod) if pod else "",
+        color_line=((pod.color or "").strip()) if pod else "",
+        order_type=_order_type_label(ph) if ph else "",
+    )
 
 
 def _require_details_if_sent(
@@ -222,7 +250,7 @@ def get_delivery(
 @router.get("/delivery/{delivery_id}/details", response_model=list[DeliveryDetailEnrichedOut])
 def list_delivery_details(
     delivery_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
-) -> list[dict]:
+) -> list[DeliveryDetailEnrichedOut]:
     if not db.get(DeliveryHeader, delivery_id):
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
     joined = db.execute(
@@ -233,24 +261,7 @@ def list_delivery_details(
         .where(DeliveryDetail.delivery_id == delivery_id)
         .order_by(DeliveryDetail.id.asc())
     ).all()
-    out: list[dict] = []
-    for dd, pd, pod, ph in joined:
-        d = row_to_dict(dd)
-        d["po_id"] = int(ph.id) if ph else None
-        d["po_number"] = (ph.po_number or "").strip() if ph else ""
-        d["po_detail_id"] = int(pod.id) if pod else None
-        d["system_no"] = (
-            ((pod.system_reference or pod.thi_line_ref or "").strip()) if pod else ""
-        )
-        d["lot_number"] = ((pd.lot_number or "").strip()) if pd else ""
-        if not d["lot_number"] and pod:
-            d["lot_number"] = (pod.thi_line_ref or "").strip()
-        d["material_name_line"] = ((pod.material_name or "").strip()) if pod else ""
-        d["thickness_display"] = _thickness_display(pod)
-        d["color_line"] = ((pod.color or "").strip()) if pod else ""
-        d["order_type"] = _order_type_label(ph) if ph else ""
-        out.append(d)
-    return out
+    return [_delivery_detail_enriched(dd, pd, pod, ph) for dd, pd, pod, ph in joined]
 
 
 @router.post("/delivery/{delivery_id}/details", response_model=DeliveryDetailOut)

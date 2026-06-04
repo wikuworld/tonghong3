@@ -31,6 +31,14 @@ from app.models import (
 )
 from app.routers.auth import get_current_user, require_roles
 from app.schemas import (
+    MarketingDeliveryLineOut,
+    MarketingDeliveryLinesPageOut,
+    MarketingDeliveryPlanningPageOut,
+    MarketingDeliveryPlanningSlotOut,
+    MarketingDeliveryTodayOut,
+    MarketingLineEtdTodayOut,
+    MarketingOutstandingLineOut,
+    MarketingOutstandingPageOut,
     MarketingOutstandingSnapshotCreate,
     MarketingOutstandingSnapshotDetailOut,
     MarketingOutstandingSnapshotListItem,
@@ -839,7 +847,7 @@ def _query_delivery_lines_rows(
     return out
 
 
-@router.get("/marketing/outstanding-lines")
+@router.get("/marketing/outstanding-lines", response_model=MarketingOutstandingPageOut)
 def marketing_outstanding_lines(
     db: Session = Depends(get_db),
     balance_filter: BalanceFilter = Query(
@@ -866,7 +874,7 @@ def marketing_outstanding_lines(
     skip: int = Query(0, ge=0, description="Offset for pagination"),
     limit: int = Query(100, ge=1, le=1000, description="Limit for pagination"),
     _user=Depends(get_current_user),
-) -> dict:
+) -> MarketingOutstandingPageOut:
     rows = _query_outstanding_rows(
         db,
         balance_filter,
@@ -881,7 +889,10 @@ def marketing_outstanding_lines(
     )
     total = len(rows)
     paginated = rows[skip : skip + limit]
-    return {"data": paginated, "total": total}
+    return MarketingOutstandingPageOut(
+        data=[MarketingOutstandingLineOut.model_validate(r) for r in paginated],
+        total=total,
+    )
 
 
 @router.get("/marketing/outstanding-lines.csv")
@@ -994,7 +1005,7 @@ def marketing_outstanding_return_lines_xlsx(
     )
 
 
-@router.get("/marketing/delivery-lines")
+@router.get("/marketing/delivery-lines", response_model=MarketingDeliveryLinesPageOut)
 def marketing_delivery_lines(
     db: Session = Depends(get_db),
     q: Optional[str] = Query(None, description="Saring baris (substring, case-insensitive)"),
@@ -1024,7 +1035,7 @@ def marketing_delivery_lines(
     skip: int = Query(0, ge=0, description="Offset for pagination"),
     limit: int = Query(100, ge=1, le=1000, description="Limit for pagination"),
     _user=Depends(get_current_user),
-) -> dict:
+) -> MarketingDeliveryLinesPageOut:
     rows = _query_delivery_lines_rows(
         db,
         q=q,
@@ -1039,7 +1050,10 @@ def marketing_delivery_lines(
     )
     total = len(rows)
     paginated = rows[skip : skip + limit]
-    return {"data": paginated, "total": total}
+    return MarketingDeliveryLinesPageOut(
+        data=[MarketingDeliveryLineOut.model_validate(r) for r in paginated],
+        total=total,
+    )
 
 
 @router.get("/marketing/delivery-lines.csv")
@@ -1298,37 +1312,42 @@ def get_marketing_outstanding_snapshot(
     return MarketingOutstandingSnapshotDetailOut.model_validate(row)
 
 
-@router.get("/marketing/delivery-planning")
+@router.get("/marketing/delivery-planning", response_model=MarketingDeliveryPlanningPageOut)
 def marketing_delivery_planning(
     db: Session = Depends(get_db),
     date_from: Optional[str] = Query(None, description="YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, description="YYYY-MM-DD"),
     factory_code: Optional[str] = Query(None),
     _user=Depends(get_current_user),
-) -> dict[str, Any]:
+) -> MarketingDeliveryPlanningPageOut:
     today = date.today()
     df = _parse_iso_date_optional(date_from) or today
     dt = _parse_iso_date_optional(date_to) or today
     if df > dt:
         df, dt = dt, df
     slots = _query_delivery_planning_slots(db, df, dt, factory_code=factory_code)
-    return {"date_from": df.isoformat(), "date_to": dt.isoformat(), "data": slots, "total": len(slots)}
+    return MarketingDeliveryPlanningPageOut(
+        date_from=df.isoformat(),
+        date_to=dt.isoformat(),
+        data=[MarketingDeliveryPlanningSlotOut.model_validate(s) for s in slots],
+        total=len(slots),
+    )
 
 
-@router.get("/marketing/delivery-today")
+@router.get("/marketing/delivery-today", response_model=MarketingDeliveryTodayOut)
 def marketing_delivery_today(
     db: Session = Depends(get_db),
     factory_code: Optional[str] = Query(None),
     on_date: Optional[str] = Query(None, description="Hari acuan (default hari ini), YYYY-MM-DD"),
     _user=Depends(get_current_user),
-) -> dict[str, Any]:
+) -> MarketingDeliveryTodayOut:
     d = _parse_iso_date_optional(on_date) or date.today()
     planned = _query_delivery_planning_slots(db, d, d, factory_code=factory_code)
     line_etd = _query_line_etd_on_date(db, d, factory_code=factory_code)
     sj_lines = _delivery_lines_for_header_date(db, d)
-    return {
-        "as_of": d.isoformat(),
-        "planned_delivery_slots": planned,
-        "lines_reply_etd_today": line_etd,
-        "surat_jalan_lines": sj_lines,
-    }
+    return MarketingDeliveryTodayOut(
+        as_of=d.isoformat(),
+        planned_delivery_slots=[MarketingDeliveryPlanningSlotOut.model_validate(s) for s in planned],
+        lines_reply_etd_today=[MarketingLineEtdTodayOut.model_validate(s) for s in line_etd],
+        surat_jalan_lines=[MarketingDeliveryLineOut.model_validate(s) for s in sj_lines],
+    )
