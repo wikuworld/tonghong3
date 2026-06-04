@@ -402,6 +402,7 @@ class PoDetailCreate(BaseModel):
     marketing_outstanding_remark: Optional[str] = None
     unit_price: Optional[Decimal] = None
     copied_from_detail_id: Optional[int] = None
+    color_swatch_recipe_id: Optional[int] = None
 
     @field_validator("color_family")
     @classmethod
@@ -456,6 +457,7 @@ class PoDetailUpdate(BaseModel):
     marketing_outstanding_remark: Optional[str] = None
     unit_price: Optional[Decimal] = None
     copied_from_detail_id: Optional[int] = None
+    color_swatch_recipe_id: Optional[int] = None
 
     @field_validator("color_family")
     @classmethod
@@ -614,6 +616,7 @@ class PoDetailOut(ORMBase):
     marketing_outstanding_remark: Optional[str] = None
     unit_price: Optional[Decimal] = None
     copied_from_detail_id: Optional[int] = None
+    color_swatch_recipe_id: Optional[int] = None
     delivery_schedules: list[PoDetailDeliveryOut] = Field(default_factory=list)
 
 

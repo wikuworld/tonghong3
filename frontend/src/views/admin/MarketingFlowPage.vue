@@ -164,20 +164,20 @@
       </div>
       <div class="mb-3 grid grid-cols-1 md:grid-cols-4 gap-2">
         <el-input v-model="poSearch" size="small" clearable :placeholder="t('common.poNo')" />
-        <el-input v-model="factoryCode" size="small" clearable placeholder="Factory code (LR028…)" />
-        <el-select v-model="outstandingPoCategory" size="small" clearable placeholder="Kategori">
-          <el-option label="Production" value="production" />
-          <el-option label="Sample" value="sample" />
-          <el-option label="Claim" value="claim" />
-          <el-option label="Return" value="return" />
-          <el-option label="Subcont" value="subcont" />
-          <el-option label="Suede" value="suede" />
+        <el-input v-model="factoryCode" size="small" clearable :placeholder="t('pages.marketingFlow.filterFactoryCode')" />
+        <el-select v-model="outstandingPoCategory" size="small" clearable :placeholder="t('pages.marketingFlow.filterPoCategory')">
+          <el-option :label="t('status.production')" value="production" />
+          <el-option :label="t('status.sample')" value="sample" />
+          <el-option :label="t('status.claim')" value="claim" />
+          <el-option :label="t('status.return')" value="return" />
+          <el-option :label="t('status.subcont')" value="subcont" />
+          <el-option :label="t('status.suede')" value="suede" />
         </el-select>
-        <el-select v-model="materialStatus" size="small" clearable placeholder="Status material">
-          <el-option label="All" value="all" />
-          <el-option label="Sent" value="sent" />
-          <el-option label="Not sent" value="not_sent" />
-          <el-option label="Cancelled" value="cancelled" />
+        <el-select v-model="materialStatus" size="small" clearable :placeholder="t('pages.marketingFlow.filterMaterialStatus')">
+          <el-option :label="t('pages.marketingFlow.materialFilterAll')" value="all" />
+          <el-option :label="t('pages.marketingFlow.materialFilterSent')" value="sent" />
+          <el-option :label="t('pages.marketingFlow.materialFilterNotSent')" value="not_sent" />
+          <el-option :label="t('pages.marketingFlow.materialFilterCancelled')" value="cancelled" />
         </el-select>
       </div>
 

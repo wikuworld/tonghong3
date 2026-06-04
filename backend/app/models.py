@@ -297,6 +297,7 @@ class ColorSwatchRecipe(Base):
 
     customer: Mapped[Optional["Customer"]] = relationship("Customer")
     brand: Mapped[Optional["Brand"]] = relationship("Brand")
+    po_details: Mapped[list["PoDetail"]] = relationship("PoDetail", back_populates="color_swatch_recipe")
 
 
 class FluorescentColorMaster(Base):
@@ -536,10 +537,16 @@ class PoDetail(Base):
     marketing_outstanding_remark: Mapped[Optional[str]] = mapped_column(Text)
     unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
     copied_from_detail_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    color_swatch_recipe_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("color_swatch_recipes.id", ondelete="SET NULL")
+    )
 
     po: Mapped[Optional[PoHeader]] = relationship("PoHeader", back_populates="details")
     master_item: Mapped[Optional["MasterItem"]] = relationship(
         "MasterItem", back_populates="po_details"
+    )
+    color_swatch_recipe: Mapped[Optional["ColorSwatchRecipe"]] = relationship(
+        "ColorSwatchRecipe", back_populates="po_details"
     )
     delivery_schedules: Mapped[list["PoDetailDelivery"]] = relationship(
         "PoDetailDelivery",
@@ -549,7 +556,7 @@ class PoDetail(Base):
 
 
 class PoDetailDelivery(Base):
-    """Jadwal pengiriman ke-1 … ke-12 per baris SO (sheet Master Data Marketing)."""
+    """Jadwal pengiriman gelombang 1–8 per baris SO (sheet outstanding marketing)."""
 
     __tablename__ = "po_detail_deliveries"
 

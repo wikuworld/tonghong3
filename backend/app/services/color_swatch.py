@@ -6,7 +6,7 @@ import csv
 import io
 import re
 from datetime import date, datetime
-from typing import Any, BinaryIO, Optional, TextIO
+from typing import Any, BinaryIO, TextIO
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session

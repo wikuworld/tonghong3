@@ -1941,6 +1941,7 @@ async function applyLineToForm(line) {
   formModel.detail_remark = line.detail_remark || ''
   formModel.thi_line_ref = line.thi_line_ref || ''
   formModel.unit_price_input = line.unit_price != null ? Number(line.unit_price) : null
+  selectedSwatchId.value = line.color_swatch_recipe_id ?? null
   loadEtdScheduleRowsFromApi(line.delivery_schedules || [])
   await refreshThicknessOptionsFromApi()
   await refreshColorOptionsFromApi()
@@ -2309,6 +2310,9 @@ async function applyColorSwatch(recipeId) {
     }
     if (fill.thi_line_ref) {
       formModel.thi_line_ref = fill.thi_line_ref
+    }
+    if (fill.color_swatch_recipe_id) {
+      selectedSwatchId.value = fill.color_swatch_recipe_id
     }
     ElMessage.success(t('pages.po.swatchApplied'))
   } catch (e) {
@@ -3258,6 +3262,7 @@ async function buildCurrentDetailBody() {
     detail_remark: formModel.detail_remark || undefined,
     thi_line_ref: formModel.thi_line_ref || undefined,
     delivery_schedules: etdScheduleRowsToPayload(etdScheduleRows.value),
+    color_swatch_recipe_id: selectedSwatchId.value || undefined,
   }
   const isFreePrice = formModel.po_category === 'subcont' || formModel.po_category === 'return'
   if (isFreePrice) {
@@ -3464,6 +3469,7 @@ const openEditDialog = async (row) => {
       model: d.model || undefined,
       detail_remark: d.detail_remark || undefined,
       thi_line_ref: d.thi_line_ref || undefined,
+      color_swatch_recipe_id: d.color_swatch_recipe_id || undefined,
       unit_price: d.unit_price != null ? Number(d.unit_price) : undefined,
       delivery_schedules: normalizeSchedulesFromApi(scheduleLists[idx]),
       manual_override: false,
