@@ -1374,8 +1374,9 @@ import {
   buildEvenEtdScheduleRows,
 } from '../../utils/poEtdSchedule.js'
 import {
-  auditFieldLabel,
-  auditChangedFields,
+  auditFieldLabel as resolveAuditFieldLabel,
+  auditChangedFields as resolveAuditChangedFields,
+  getPoAuditFieldLabels,
 } from '../../utils/poAudit.js'
 import {
   buildPoDraftPayload,
@@ -1392,6 +1393,20 @@ import {
   applyColorSwatchFill,
 } from '../../utils/poColorSwatch.js'
 import { parseApiErrorMessage } from '../../utils/poApi.js'
+import {
+  inferColorFamilyFromColor,
+  applyReferenceDefaults as applyReferenceDefaultsFromMaster,
+  hydrateFormFromMasterItemRow as applyMasterItemToForm,
+  resetMaterialFieldToMaster as resetMaterialFieldToMasterValues,
+  isThicknessPricingFormatValid,
+  detailMasterSnapshot,
+} from '../../utils/poMasterResolve.js'
+import {
+  buildDetailBodyCore,
+  appendDetailUnitPrice,
+  detailPayloadForUpdate,
+  sanitizeNewDetailBody,
+} from '../../utils/poDetailPayload.js'
 import {
   addPoDetail,
   createPo,
@@ -1431,6 +1446,15 @@ import {
 } from '../../api/client'
 
 const { t } = useI18n()
+
+function auditFieldLabel(key) {
+  return resolveAuditFieldLabel(key, getPoAuditFieldLabels(t))
+}
+
+function auditChangedFields(a) {
+  return resolveAuditChangedFields(a, getPoAuditFieldLabels(t))
+}
+
 const route = useRoute()
 const canManage = canWrite('po')
 
@@ -2046,14 +2070,6 @@ function colorFamilyLabel(v) {
   return String(v)
 }
 
-function inferColorFamilyFromColor(colorValue) {
-  const color = String(colorValue || '').toLowerCase()
-  if (!color) return null
-  if (color.includes('black') || color.includes('hitam')) return 'black'
-  if (color.includes('fluo') || color.includes('fluorescent') || color.includes('neon')) return 'fluorescent'
-  return 'color'
-}
-
 function materialQualityLabel(row) {
   if (row?.material_master_matched) return 'Master matched'
   if (row?.master_item_id) return 'Master override'
@@ -2320,65 +2336,8 @@ async function generateLotNumber(forceDetailId = null) {
   }
 }
 
-function normalizedText(v) {
-  return String(v || '').trim().toLowerCase()
-}
-
 function applyReferenceDefaults(forceFields = []) {
-  if (formModel.master_item_id) return
-  const material = normalizedText(formModel.material_name)
-  if (!material) return
-  const thickness = normalizedText(formModel.thickness_text)
-  const color = normalizedText(formModel.color)
-  const style = normalizedText(formModel.style_article)
-
-  let best = null
-  let bestScore = 0
-  for (const item of masterItems.value) {
-    const itemMaterial = normalizedText(item.material_name)
-    if (!itemMaterial) continue
-    let score = 0
-    if (formModel.master_item_id && item.id === formModel.master_item_id) score += 6
-    if (itemMaterial === material) score += 4
-    else if (itemMaterial.includes(material) || material.includes(itemMaterial)) score += 2
-    if (thickness && normalizedText(item.thickness_range) === thickness) score += 2
-    if (color && normalizedText(item.color) === color) score += 2
-    if (style && normalizedText(item.style_article) === style) score += 2
-    if (score > bestScore) {
-      best = item
-      bestScore = score
-    }
-  }
-
-  if (!best || bestScore < 2) return
-  const forceSet = new Set(forceFields)
-  if ((!formModel.color_standard || forceSet.has('color_standard')) && best.color_standard) {
-    formModel.color_standard = best.color_standard
-    autoFieldMeta.color_standard = true
-  }
-  if ((!formModel.color_reference || forceSet.has('color_reference')) && best.color_reference) {
-    formModel.color_reference = best.color_reference
-    autoFieldMeta.color_reference = true
-  }
-  if ((!formModel.backing || forceSet.has('backing')) && best.backing) {
-    formModel.backing = best.backing
-    autoFieldMeta.backing = true
-  }
-  if ((!formModel.model || forceSet.has('model')) && best.model) {
-    formModel.model = best.model
-    autoFieldMeta.model = true
-  }
-  if ((!formModel.style_article || forceSet.has('style_article')) && best.style_article) {
-    formModel.style_article = best.style_article
-  }
-  if ((!formModel.vir_softness_type || forceSet.has('vir_softness_type')) && best.vir_softness_type) {
-    formModel.vir_softness_type = best.vir_softness_type
-    autoFieldMeta.vir_softness_type = true
-  }
-  if ((!formModel.softness || forceSet.has('softness')) && best.softness) {
-    formModel.softness = best.softness
-    autoFieldMeta.softness = true
-  }
+  applyReferenceDefaultsFromMaster(formModel, masterItems.value, autoFieldMeta, forceFields)
 }
 
 function resetMaterialFieldOverride() {
@@ -2402,29 +2361,13 @@ function enableMaterialOverride(field) {
 }
 
 function resetMaterialFieldToMaster(field) {
-  if (!formModel.master_item_id) return
-  const item = masterItems.value.find((x) => x.id === formModel.master_item_id)
-  if (!item) return
-  if (field === 'material_name') formModel.material_name = item.material_name || ''
-  if (field === 'thickness_text') {
-    formModel.thickness_text = item.thickness_range || (item.thickness_mm != null ? String(item.thickness_mm) : '')
-  }
-  if (field === 'color') formModel.color = item.color || ''
-  if (field === 'emboss') formModel.emboss = item.emboss || ''
-  if (field === 'style_article') formModel.style_article = item.style_article || ''
-  if (field === 'color_family') {
-    formModel.color_family = inferColorFamilyFromColor(item.color) || 'color'
-    colorFamilyAutoMode.value = true
-  }
-  materialFieldOverride[field] = false
-}
-
-function isThicknessPricingFormatValid(v) {
-  const raw = String(v || '').trim()
-  if (!raw) return true
-  const single = /^\d+(\.\d+)?$/
-  const range = /^\d+(\.\d+)?\s*-\s*\d+(\.\d+)?$/
-  return single.test(raw) || range.test(raw)
+  resetMaterialFieldToMasterValues(
+    field,
+    formModel,
+    masterItems.value,
+    materialFieldOverride,
+    colorFamilyAutoMode,
+  )
 }
 
 function resetToAuto(field) {
@@ -2878,36 +2821,14 @@ async function onPickedThicknessDimension() {
 }
 
 function hydrateFormFromMasterItemRow(item, { syncDimensions = true } = {}) {
-  if (!item) return
-  colorFamilyAutoMode.value = true
-  if (syncDimensions) {
-    resetMaterialFieldOverride()
-    formModel.material_name = item.material_name || ''
-    formModel.thickness_text =
-      item.thickness_range || (item.thickness_mm != null ? String(item.thickness_mm) : '')
-    formModel.color = item.color || ''
-  }
-  formModel.emboss = item.emboss || ''
-  formModel.softness = item.softness || ''
-  autoFieldMeta.softness = Boolean(item.softness)
-  formModel.color_reference = item.color_reference || ''
-  autoFieldMeta.color_reference = Boolean(item.color_reference)
-  formModel.color_standard = item.color_standard || ''
-  autoFieldMeta.color_standard = Boolean(item.color_standard)
-  formModel.backing = item.backing || ''
-  autoFieldMeta.backing = Boolean(item.backing)
-  formModel.quantity_order = item.quantity_order_default != null ? String(item.quantity_order_default) : ''
-  formModel.style_article = item.style_article || ''
-  formModel.model = item.model || ''
-  autoFieldMeta.model = Boolean(item.model)
-  if (item.color) {
-    formModel.color_family = inferColorFamilyFromColor(item.color)
-  }
-  if (previewResolvedUnitPrice.value != null) {
-    formModel.unit_price_input = previewResolvedUnitPrice.value
-  } else {
-    formModel.unit_price_input = null
-  }
+  if (syncDimensions) resetMaterialFieldOverride()
+  applyMasterItemToForm(item, {
+    formModel,
+    autoFieldMeta,
+    previewResolvedUnitPrice: previewResolvedUnitPrice.value,
+    colorFamilyAutoMode,
+    syncDimensions,
+  })
 }
 
 function clearLinkedMasterItem() {
@@ -2925,7 +2846,7 @@ async function resolveMasterFromDimensionsTriple() {
   const mn = String(formModel.material_name || '').trim()
   const tt = String(formModel.thickness_text || '').trim()
   const co = String(formModel.color || '').trim()
-  const curSnap = `${mn}|${tt}|${co}|${formModel.master_item_id ?? ''}`
+  const curSnap = detailMasterSnapshot(formModel)
   if (
     isEditMode.value &&
     editingPoId.value &&
@@ -3025,80 +2946,11 @@ const openCreateDialog = async () => {
 }
 
 async function buildCurrentDetailBody() {
-  const body = {
-    master_item_id: formModel.master_item_id || undefined,
-    material_name: formModel.material_name || undefined,
-    thickness_text: formModel.thickness_text || undefined,
-    color: formModel.color || undefined,
-    color_family: formModel.color_family || undefined,
-    emboss: formModel.emboss || undefined,
-    vir_softness_type: formModel.vir_softness_type || undefined,
-    softness: formModel.softness || undefined,
-    color_reference: formModel.color_reference || undefined,
-    color_standard: formModel.color_standard || undefined,
-    backing: formModel.backing || undefined,
-    quantity_order: formModel.quantity_order ? Number(formModel.quantity_order) : undefined,
-    style_article: formModel.style_article || undefined,
-    model: formModel.model || undefined,
-    detail_remark: formModel.detail_remark || undefined,
-    thi_line_ref: formModel.thi_line_ref || undefined,
-    delivery_schedules: etdScheduleRowsToPayload(etdScheduleRows.value),
-    color_swatch_recipe_id: selectedSwatchId.value || undefined,
-  }
-  const isFreePrice = formModel.po_category === 'subcont' || formModel.po_category === 'return'
-  if (isFreePrice) {
-    if (formModel.unit_price_input != null) {
-      body.unit_price = Number(formModel.unit_price_input)
-    }
-  } else {
-    const b = (formModel.buyer || '').trim()
-    if (b) {
-      try {
-        const r = await resolveBuyerUnitPrice({
-          buyer_code: b,
-          material_name: formModel.material_name || null,
-          color: formModel.color || null,
-          style_article: formModel.style_article || null,
-          thickness_text: formModel.thickness_text || null,
-          color_family: formModel.color_family || null,
-        })
-        if (formModel.unit_price_input != null) {
-          body.unit_price = Number(formModel.unit_price_input)
-        } else if (r.unit_price != null) {
-          body.unit_price = Number(r.unit_price)
-        }
-      } catch {
-        if (formModel.unit_price_input != null) {
-          body.unit_price = Number(formModel.unit_price_input)
-        }
-      }
-    } else if (formModel.unit_price_input != null) {
-      body.unit_price = Number(formModel.unit_price_input)
-    }
-  }
-  if (formModel.is_special_price && formModel.unit_price_input != null) {
-    body.base_price = previewResolvedUnitPrice.value
-    body.is_special_price = true
-    body.discount_type = formModel.discount_type
-    body.discount_value = formModel.discount_value
-  }
-
-  return body
-}
-
-/** Update baris: jangan kirim ulang unit_price (kunci harga di server untuk non-finance). */
-function detailPayloadForUpdate(body) {
-  const o = { ...body }
-  delete o.unit_price
-  delete o.id
-  return o
-}
-
-function sanitizeNewDetailBody(body) {
-  const o = { ...body }
-  delete o.id
-  delete o.line_etd
-  return o
+  const body = buildDetailBodyCore(formModel, etdScheduleRows.value, selectedSwatchId.value)
+  return appendDetailUnitPrice(body, formModel, {
+    resolveBuyerUnitPrice,
+    previewResolvedUnitPrice: previewResolvedUnitPrice.value,
+  })
 }
 
 function handleEnterKey(e) {

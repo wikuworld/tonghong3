@@ -841,6 +841,73 @@ class StatusDeletedOut(BaseModel):
     status: str
 
 
+class PackingHeaderOut(ORMBase):
+    id: int
+    packing_number: Optional[str] = None
+    production_id: Optional[int] = None
+    qc_header_id: Optional[int] = None
+    status: str = "draft"
+    created_at: Optional[datetime] = None
+    invpl_printed_at: Optional[datetime] = None
+
+
+class PackingDetailOut(ORMBase):
+    id: int
+    packing_id: Optional[int] = None
+    production_detail_id: Optional[int] = None
+    qty_packed: Optional[float] = None
+
+
+class InvoiceOut(ORMBase):
+    id: int
+    delivery_id: Optional[int] = None
+    customer_id: Optional[int] = None
+    po_id: Optional[int] = None
+    invoice_number: Optional[str] = None
+    packing_list_number: Optional[str] = None
+    po_number: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_address: Optional[str] = None
+    customer_phone: Optional[str] = None
+    invoice_date: Optional[date] = None
+    description: Optional[str] = None
+    term_of_payment: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    bank_address: Optional[str] = None
+    bank_phone: Optional[str] = None
+    total_amount: Optional[float] = None
+    total_in_words: Optional[str] = None
+    due_date: Optional[date] = None
+    tax_invoice_no: Optional[str] = None
+    tax_invoice_date: Optional[date] = None
+    receipt_no: Optional[str] = None
+    received_by: Optional[str] = None
+    received_date: Optional[date] = None
+    nopen: Optional[str] = None
+    nomor_aju: Optional[str] = None
+    payment_date: Optional[date] = None
+    payment_bank_account: Optional[str] = None
+    payment_proof_url: Optional[str] = None
+    payment_status: str = "unpaid"
+    created_at: Optional[datetime] = None
+
+
+class InvoiceDetailOut(ORMBase):
+    id: int
+    invoice_id: Optional[int] = None
+    item_description: Optional[str] = None
+    color: Optional[str] = None
+    qty: Optional[float] = None
+    unit_price: Optional[float] = None
+    amount: Optional[float] = None
+    roll: Optional[int] = None
+    pcs: Optional[int] = None
+    net_weight: Optional[float] = None
+    gross_weight: Optional[float] = None
+    remark: Optional[str] = None
+
+
 # --- Invoice ---
 class InvoiceCreate(BaseModel):
     """delivery_id wajib — invoice hanya setelah delivery terkirim (status sent)."""

@@ -4,7 +4,7 @@ from fastapi.params import Query
 from fastapi.routing import APIRoute
 
 from app import main
-from app.routers import buyer_prices, customs, delivery, exchange_rates, po, qc, sales_orders
+from app.routers import buyer_prices, customs, delivery, exchange_rates, invoice, packing, po, qc, sales_orders
 
 
 def _get_route(router, path: str, method: str) -> APIRoute:
@@ -163,6 +163,44 @@ def test_qc_router_require_auth_and_role_guards():
         ("/qc-detail/{detail_id}", "PUT"),
     ]:
         route = _get_route(qc.router, path, method)
+        assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
+
+
+def test_packing_router_require_auth_and_role_guards():
+    for path, method in [
+        ("/packing", "GET"),
+        ("/packing/{packing_id}", "GET"),
+    ]:
+        route = _get_route(packing.router, path, method)
+        assert _has_dep(route, "get_current_user"), f"{method} {path} harus pakai get_current_user"
+
+    for path, method in [
+        ("/packing", "POST"),
+        ("/packing/{packing_id}", "PUT"),
+        ("/packing/{packing_id}/details", "POST"),
+        ("/packing/{packing_id}/mark-invpl-printed", "POST"),
+    ]:
+        route = _get_route(packing.router, path, method)
+        assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
+
+
+def test_invoice_router_require_auth_and_role_guards():
+    for path, method in [
+        ("/invoice", "GET"),
+        ("/invoice/outstanding", "GET"),
+        ("/invoice/{invoice_id}", "GET"),
+        ("/invoice/{invoice_id}/details", "GET"),
+    ]:
+        route = _get_route(invoice.router, path, method)
+        assert _has_dep(route, "get_current_user"), f"{method} {path} harus pakai get_current_user"
+
+    for path, method in [
+        ("/invoice", "POST"),
+        ("/invoice/{invoice_id}", "PUT"),
+        ("/invoice/{invoice_id}/details", "POST"),
+        ("/invoice/backfill-fks", "POST"),
+    ]:
+        route = _get_route(invoice.router, path, method)
         assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
 
 

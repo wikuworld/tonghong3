@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.config import settings
 from app.models import Customer, DeliveryHeader, Invoice, InvoiceDetail
-from app.schemas import InvoiceCreate, InvoiceDetailCreate, InvoiceUpdate, row_to_dict
+from app.schemas import InvoiceCreate, InvoiceDetailCreate, InvoiceDetailOut, InvoiceOut, InvoiceUpdate
 from app.services.business_rules import validate_invoice_against_delivery
 from app.services.mkt_workflow import sync_invoice_billing_from_delivery
 from app.routers.auth import get_current_user, require_roles
@@ -23,12 +23,12 @@ from app.services.notifications import create_notification_for_roles
 router = APIRouter(tags=["invoice"])
 
 
-@router.post("/invoice")
+@router.post("/invoice", response_model=InvoiceOut)
 def create_invoice(
     body: InvoiceCreate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "finance")),
-) -> dict:
+) -> Invoice:
     from app.models import DeliveryHeader, PackingHeader, ProductionOrder
     
     validate_invoice_against_delivery(db, body.delivery_id, body.po_number)
@@ -72,10 +72,10 @@ def create_invoice(
     sync_invoice_billing_from_delivery(db, body.delivery_id)
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row
 
 
-@router.get("/invoice")
+@router.get("/invoice", response_model=list[InvoiceOut])
 def list_invoice(
     db: Session = Depends(get_db),
     q: Optional[str] = Query(None, description="Search invoice no/PO/customer"),
@@ -86,7 +86,7 @@ def list_invoice(
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     _user=Depends(get_current_user),
-) -> list[dict]:
+) -> list[Invoice]:
     stmt = select(Invoice).order_by(Invoice.id.desc()).limit(limit).offset(offset)
     
     if customer_id is not None:
@@ -114,17 +114,17 @@ def list_invoice(
             )
         )
     rows = db.scalars(stmt).all()
-    return [row_to_dict(r) for r in rows]
+    return rows
 
 
-@router.get("/invoice/outstanding")
+@router.get("/invoice/outstanding", response_model=list[InvoiceOut])
 def list_outstanding_invoice(
     db: Session = Depends(get_db),
     overdue_only: bool = Query(False),
     due_within_days: Optional[int] = Query(None, ge=0, le=365),
     hide_po: bool = Query(False),
     _user=Depends(get_current_user),
-) -> list[dict]:
+) -> list[Invoice]:
     today = date.today()
     stmt = select(Invoice).order_by(Invoice.id.desc())
     if overdue_only:
@@ -138,12 +138,11 @@ def list_outstanding_invoice(
             )
         )
     rows = db.scalars(stmt).all()
-    out: list[dict] = []
+    out: list[Invoice] = []
     for r in rows:
-        x = row_to_dict(r)
         if hide_po:
-            x["po_number"] = None
-        out.append(x)
+            r.po_number = None
+        out.append(r)
     return out
 
 
@@ -194,23 +193,23 @@ def backfill_invoice_fks(
     }
 
 
-@router.get("/invoice/{invoice_id}")
+@router.get("/invoice/{invoice_id}", response_model=InvoiceOut)
 def get_invoice(
     invoice_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
-) -> dict:
+) -> Invoice:
     row = db.get(Invoice, invoice_id)
     if not row:
         raise HTTPException(status_code=404, detail="Invoice tidak ditemukan")
-    return row_to_dict(row)
+    return row
 
 
-@router.put("/invoice/{invoice_id}")
+@router.put("/invoice/{invoice_id}", response_model=InvoiceOut)
 def update_invoice(
     invoice_id: int,
     body: InvoiceUpdate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "finance")),
-) -> dict:
+) -> Invoice:
     row = db.get(Invoice, invoice_id)
     if not row:
         raise HTTPException(status_code=404, detail="Invoice tidak ditemukan")
@@ -246,7 +245,7 @@ def update_invoice(
     )
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row
 
 
 def _send_email(to_email: str, subject: str, body: str) -> None:
@@ -334,10 +333,10 @@ def run_invoice_reminders(
     db.commit()
     return {"mode": mode, "days": days, "sent": sent, "skipped": skipped, "errors": errors[:20]}
 
-@router.get("/invoice/{invoice_id}/details")
+@router.get("/invoice/{invoice_id}/details", response_model=list[InvoiceDetailOut])
 def list_invoice_details(
     invoice_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
-) -> list[dict]:
+) -> list[InvoiceDetail]:
     if not db.get(Invoice, invoice_id):
         raise HTTPException(status_code=404, detail="Invoice tidak ditemukan")
     rows = db.scalars(
@@ -345,16 +344,16 @@ def list_invoice_details(
         .where(InvoiceDetail.invoice_id == invoice_id)
         .order_by(InvoiceDetail.id.asc())
     ).all()
-    return [row_to_dict(r) for r in rows]
+    return rows
 
 
-@router.post("/invoice/{invoice_id}/details")
+@router.post("/invoice/{invoice_id}/details", response_model=InvoiceDetailOut)
 def add_invoice_detail(
     invoice_id: int,
     body: InvoiceDetailCreate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "finance")),
-) -> dict:
+) -> InvoiceDetail:
     inv = db.get(Invoice, invoice_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice tidak ditemukan")
@@ -371,4 +370,4 @@ def add_invoice_detail(
     )
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row

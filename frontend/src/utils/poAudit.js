@@ -1,5 +1,30 @@
-/** Label kolom audit revisi PO (legacy hardcoded ID — bisa dipindah i18n nanti). */
+/** Label & diff audit revisi PO. */
 
+const AUDIT_KEY_MAP = {
+  quantity_order: 'quantityOrder',
+  unit_price: 'unitPrice',
+  line_etd: 'lineEtd',
+  thi_line_ref: 'thiLineRef',
+  color_family: 'colorFamily',
+  color_standard: 'colorStandard',
+  thickness: 'thickness',
+  softness: 'softness',
+  backing: 'backing',
+  emboss: 'emboss',
+  style_article: 'styleArticle',
+  model: 'model',
+  material_name: 'materialName',
+  color: 'color',
+  remark: 'remark',
+  status: 'status',
+  delivery_schedules: 'deliverySchedules',
+  po_number: 'poNumber',
+  po_id: 'poId',
+  po_header_id: 'poHeaderId',
+  color_both: 'colorBoth',
+}
+
+/** @deprecated gunakan getPoAuditFieldLabels(t) */
 export const PO_AUDIT_FIELD_LABELS = {
   quantity_order: 'Qty Order',
   unit_price: 'Harga USD',
@@ -23,6 +48,15 @@ export const PO_AUDIT_FIELD_LABELS = {
   po_header_id: 'PO Header ID',
 }
 
+export function getPoAuditFieldLabels(t) {
+  const labels = {}
+  for (const [field, i18nKey] of Object.entries(AUDIT_KEY_MAP)) {
+    labels[field] = t(`pages.po.audit.${i18nKey}`)
+  }
+  labels.color_both = t('pages.po.audit.colorBoth')
+  return labels
+}
+
 export function auditFieldLabel(key, labels = PO_AUDIT_FIELD_LABELS) {
   return labels[key] || key
 }
@@ -34,7 +68,7 @@ export function prettyAudit(a, { beforeLabel = 'Before', afterLabel = 'After' } 
   return b || af || ''
 }
 
-export function auditChangedFields(a) {
+export function auditChangedFields(a, labels = PO_AUDIT_FIELD_LABELS) {
   const before = a.before || {}
   const after = a.after || {}
   const allKeys = new Set([...Object.keys(before), ...Object.keys(after)])
@@ -62,7 +96,7 @@ export function auditChangedFields(a) {
     const colorFamilyVal = changes[colorFamilyIdx].after
     if (colorVal === colorFamilyVal) {
       changes[colorIdx].key = 'color_both'
-      changes[colorIdx].displayLabel = 'Warna / Kategori'
+      changes[colorIdx].displayLabel = labels.color_both || auditFieldLabel('color_both', labels)
       changes.splice(colorFamilyIdx, 1)
     }
   }
