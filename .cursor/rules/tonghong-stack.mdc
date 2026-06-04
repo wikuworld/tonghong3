@@ -28,4 +28,5 @@ alwaysApply: false
 
 Saat menyentuh halaman admin baru atau mengubah UI, ikuti rule **`tonghong-admin-vue`** (file di folder yang sama, glob `frontend/src/views/admin/**/*.vue`).
 Untuk konsistensi UI/UX, ikuti rule **`tonghong-element-plus-ui`** agar tetap memakai komponen + theming Element Plus tanpa custom CSS/hardcode per halaman.
-Util PO bertahap: `frontend/src/utils/poEtdSchedule.js`, `poAudit.js`, `poDraft.js`, `poColorSwatch.js`, `poMasterResolve.js`, `poDetailPayload.js`, `poApi.js`.
+Util PO bertahap: `frontend/src/utils/poEtdSchedule.js`, `poAudit.js`, `poDraft.js`, `poColorSwatch.js`, `poMasterResolve.js`, `poDetailPayload.js`, `poApi.js`, `poList.js`; composable `usePoList.js`; komponen `PoDetailAuditPanel.vue`.
+Tes HTTP router: `test_po_http.py`, `test_delivery_http.py`, `test_qc_http.py`, `test_packing_http.py`, `test_invoice_http.py`, `test_production_http.py` (fixture `tests/http_fixtures.py`).

@@ -12,8 +12,9 @@ from app.services.numbering import next_number
 from app.schemas import (
     ProductionCreate,
     ProductionDetailCreate,
+    ProductionDetailOut,
     ProductionDetailUpdate,
-    row_to_dict,
+    ProductionOrderOut,
 )
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
@@ -32,12 +33,12 @@ def _require_po_confirmed(po: PoHeader | None) -> None:
         )
 
 
-@router.post("/production")
+@router.post("/production", response_model=ProductionOrderOut)
 def create_production(
     body: ProductionCreate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "production", "ppic")),
-) -> dict:
+) -> ProductionOrderOut:
     if body.po_id is None:
         raise HTTPException(status_code=400, detail="po_id wajib")
     po = db.get(PoHeader, body.po_id)
@@ -71,39 +72,39 @@ def create_production(
     )
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row
 
 
-@router.get("/production")
+@router.get("/production", response_model=list[ProductionOrderOut])
 def list_production(
     db: Session = Depends(get_db),
     q: Optional[str] = Query(None, description="Search production no/po id"),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     _user=Depends(get_current_user),
-) -> list[dict]:
+) -> list[ProductionOrderOut]:
     stmt = select(ProductionOrder).order_by(ProductionOrder.id.desc()).limit(limit).offset(offset)
     if q:
         like = f"%{q}%"
         stmt = stmt.where(ProductionOrder.production_number.ilike(like))
     rows = db.scalars(stmt).all()
-    return [row_to_dict(r) for r in rows]
+    return list(rows)
 
 
-@router.get("/production/{production_id}")
+@router.get("/production/{production_id}", response_model=ProductionOrderOut)
 def get_production(
     production_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
-) -> dict:
+) -> ProductionOrderOut:
     row = db.get(ProductionOrder, production_id)
     if not row:
         raise HTTPException(status_code=404, detail="Production tidak ditemukan")
-    return row_to_dict(row)
+    return row
 
 
-@router.get("/production/{production_id}/details")
+@router.get("/production/{production_id}/details", response_model=list[ProductionDetailOut])
 def list_production_details(
     production_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
-) -> list[dict]:
+) -> list[ProductionDetailOut]:
     if not db.get(ProductionOrder, production_id):
         raise HTTPException(status_code=404, detail="Production tidak ditemukan")
     rows = db.scalars(
@@ -111,16 +112,16 @@ def list_production_details(
         .where(ProductionDetail.production_id == production_id)
         .order_by(ProductionDetail.id.asc())
     ).all()
-    return [row_to_dict(r) for r in rows]
+    return list(rows)
 
 
-@router.post("/production/{production_id}/details")
+@router.post("/production/{production_id}/details", response_model=ProductionDetailOut)
 def add_production_detail(
     production_id: int,
     body: ProductionDetailCreate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "production")),
-) -> dict:
+) -> ProductionDetailOut:
     pr = db.get(ProductionOrder, production_id)
     if not pr:
         raise HTTPException(status_code=404, detail="Production tidak ditemukan")
@@ -144,16 +145,16 @@ def add_production_detail(
     )
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row
 
 
-@router.put("/production-detail/{detail_id}")
+@router.put("/production-detail/{detail_id}", response_model=ProductionDetailOut)
 def update_production_detail(
     detail_id: int,
     body: ProductionDetailUpdate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "production")),
-) -> dict:
+) -> ProductionDetailOut:
     row = db.get(ProductionDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail production tidak ditemukan")
@@ -171,4 +172,4 @@ def update_production_detail(
     )
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row

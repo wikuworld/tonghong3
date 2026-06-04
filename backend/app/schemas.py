@@ -659,6 +659,28 @@ class ProductionDetailUpdate(BaseModel):
     status: Optional[str] = None
 
 
+class ProductionOrderOut(ORMBase):
+    id: int
+    production_number: Optional[str] = None
+    po_id: Optional[int] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    status: str = "planned"
+    created_at: Optional[datetime] = None
+
+
+class ProductionDetailOut(ORMBase):
+    id: int
+    production_id: Optional[int] = None
+    po_detail_id: Optional[int] = None
+    qty_planned: Optional[float] = None
+    qty_actual: Optional[float] = None
+    lot_number: Optional[str] = None
+    batch_number: Optional[str] = None
+    status: str = "pending"
+    is_over_production: Optional[bool] = None
+
+
 # --- QC ---
 class QcHeaderCreate(BaseModel):
     qc_number: Optional[str] = None

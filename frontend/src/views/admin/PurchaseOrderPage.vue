@@ -28,7 +28,7 @@
                 <el-option
                   v-for="c in customers"
                   :key="c.id"
-                  :label="customerOptionLabel(c)"
+                  :label="formatCustomerOption(c)"
                   :value="c.id"
                 />
               </el-select>
@@ -256,7 +256,7 @@
                     <el-option
                       v-for="c in customers"
                       :key="c.id"
-                      :label="customerOptionLabel(c)"
+                      :label="formatCustomerOption(c)"
                       :value="c.id"
                     />
                   </el-select>
@@ -1146,68 +1146,7 @@
         <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="100" show-overflow-tooltip />
         <el-table-column prop="model" :label="t('common.model')" width="96" show-overflow-tooltip />
       </el-table>
-      <div v-if="detailAudit.length" class="mt-4">
-        <div class="mb-3 text-sm font-semibold text-slate-700">{{ t('pages.po.lineRevisionHistory') }}</div>
-        <div class="space-y-3">
-          <div
-            v-for="a in nonEmptyAudit"
-            :key="a.id"
-            class="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
-          >
-            <div class="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
-              <div class="flex items-center gap-2">
-                <span
-                  class="rounded-full px-2 py-0.5 text-xs font-medium"
-                  :class="{
-                    'bg-green-100 text-green-700': a.action === 'create',
-                    'bg-blue-100 text-blue-700': a.action === 'update',
-                    'bg-red-100 text-red-700': a.action === 'delete',
-                    'bg-slate-100 text-slate-600': !['create', 'update', 'delete'].includes(a.action)
-                  }"
-                >
-                  {{ a.action?.toUpperCase() }}
-                </span>
-                <span v-if="a.entity_type === 'sales_order_line'" class="text-xs text-slate-500">
-                  {{ t('pages.poDetail.auditLine') }} #{{ a.entity_id }}
-                </span>
-              </div>
-              <div class="flex items-center gap-2 text-xs text-slate-500">
-                <span v-if="a.actor">{{ a.actor }}</span>
-                <span v-else class="italic">{{ t('common.system') }}</span>
-                <span>{{ t('common.dashSeparator') }}</span>
-                <span>{{ a.created_at ? String(a.created_at).replace('T', ' ').slice(0, 16) : '' }}</span>
-              </div>
-            </div>
-            <div class="space-y-2">
-              <template v-if="auditChangedFields(a).length">
-                <div
-                  v-for="field in auditChangedFields(a)"
-                  :key="field.key"
-                  class="grid grid-cols-12 gap-2 rounded bg-slate-50 p-2 text-xs"
-                >
-                  <div class="col-span-12 font-medium text-slate-700 lg:col-span-2">
-                    {{ field.displayLabel || auditFieldLabel(field.key) }}
-                  </div>
-                  <div class="col-span-12 lg:col-span-5">
-                    <span class="text-slate-400">Sebelum: </span>
-                    <span class="text-red-600 line-through">{{ field.before ?? '—' }}</span>
-                  </div>
-                  <div class="col-span-12 hidden items-center gap-1 lg:col-span-5 lg:flex">
-                    <span class="text-slate-400">Sesudah: </span>
-                    <span class="text-green-600">{{ field.after ?? '—' }}</span>
-                    <span v-if="field.change" class="ml-auto rounded bg-green-100 px-1.5 py-0.5 text-green-700">
-                      {{ field.change }}
-                    </span>
-                  </div>
-                </div>
-              </template>
-              <div v-else class="text-xs italic text-slate-400">
-                Tidak ada detail perubahan
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <PoDetailAuditPanel :entries="detailAudit" />
       <template #footer>
         <el-button type="primary" :icon="Close" @click="detailDialogVisible = false">{{ t('pages.customers.closeDetail') }}</el-button>
       </template>
@@ -1259,7 +1198,7 @@
                 <el-option
                   v-for="c in customers"
                   :key="c.id"
-                  :label="customerOptionLabel(c)"
+                  :label="formatCustomerOption(c)"
                   :value="c.id"
                 />
               </el-select>
@@ -1363,6 +1302,8 @@ import {
   Picture,
 } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
+import PoDetailAuditPanel from '../../components/admin/PoDetailAuditPanel.vue'
+import { usePoList } from '../../composables/usePoList.js'
 import { canWrite } from '../../security/permissions'
 import { statusType, statusLabel } from '../../utils/format'
 import {
@@ -1373,11 +1314,6 @@ import {
   lineHasScheduleMismatch,
   buildEvenEtdScheduleRows,
 } from '../../utils/poEtdSchedule.js'
-import {
-  auditFieldLabel as resolveAuditFieldLabel,
-  auditChangedFields as resolveAuditChangedFields,
-  getPoAuditFieldLabels,
-} from '../../utils/poAudit.js'
 import {
   buildPoDraftPayload,
   applyPoDraftData,
@@ -1393,6 +1329,7 @@ import {
   applyColorSwatchFill,
 } from '../../utils/poColorSwatch.js'
 import { parseApiErrorMessage } from '../../utils/poApi.js'
+import { customerOptionLabel, mergeExtraBuyerCodes, parsePoRoutePoId, resolvePoDeepLinkRow } from '../../utils/poList.js'
 import {
   inferColorFamilyFromColor,
   applyReferenceDefaults as applyReferenceDefaultsFromMaster,
@@ -1447,60 +1384,28 @@ import {
 
 const { t } = useI18n()
 
-function auditFieldLabel(key) {
-  return resolveAuditFieldLabel(key, getPoAuditFieldLabels(t))
-}
-
-function auditChangedFields(a) {
-  return resolveAuditChangedFields(a, getPoAuditFieldLabels(t))
-}
-
 const route = useRoute()
 const canManage = canWrite('po')
 
-const loading = ref(false)
-const saving = ref(false)
-const keyword = ref('')
-const filterCustomerId = ref(null)
-const filterStatus = ref('')
-const filterBuyer = ref('')
-/** Rentang tanggal order (header PO); kosong = tanpa filter tanggal */
-const filterOrderDateRange = ref(null)
+const {
+  keyword,
+  filterCustomerId,
+  filterStatus,
+  filterBuyer,
+  filterOrderDateRange,
+  rows,
+  totalRows,
+  page,
+  pageSize,
+  loading,
+  poOrderDateShortcuts,
+  buildPageQuery,
+  enrichHeaders,
+  resetFilters,
+  registerFilterWatch,
+} = usePoList({ t })
 
-const poOrderDateShortcuts = computed(() => [
-  {
-    text: t('pages.marketingFlow.shortcutLast7Days'),
-    value: () => {
-      const e = new Date()
-      const s = new Date()
-      s.setDate(s.getDate() - 6)
-      return [s, e]
-    },
-  },
-  {
-    text: t('pages.marketingFlow.shortcutLast30Days'),
-    value: () => {
-      const e = new Date()
-      const s = new Date()
-      s.setDate(s.getDate() - 29)
-      return [s, e]
-    },
-  },
-  {
-    text: t('pages.marketingFlow.shortcutThisMonth'),
-    value: () => {
-      const e = new Date()
-      return [new Date(e.getFullYear(), e.getMonth(), 1), e]
-    },
-  },
-  {
-    text: t('pages.marketingFlow.shortcutThisYear'),
-    value: () => {
-      const e = new Date()
-      return [new Date(e.getFullYear(), 0, 1), e]
-    },
-  },
-])
+const saving = ref(false)
 const customers = ref([])
 const brands = ref([])
 const masterItems = ref([])
@@ -1536,30 +1441,8 @@ let lotAutoTimer = null
 let skipLotAutoUntil = 0
 let lotAutoSeq = 0
 
-const rows = ref([])
-const totalRows = ref(0)
-const page = ref(1)
-const pageSize = ref(20)
-
-const customerName = (id) => {
-  const c = customers.value.find((x) => x.id === id)
-  return c ? `${c.code || ''} ${c.name || ''}`.trim() : t('common.emptyValue')
-}
-
-function customerOptionLabel(c) {
-  const base = [c.code, c.name].filter(Boolean).join(' — ')
-  if (!base) return String(c.id)
-  return c.city ? `${base} ${t('common.dotSeparator')} ${c.city}` : base
-}
-
-async function enrichPoRows(headers) {
-  return headers.map((h) => ({
-    ...h,
-    customerName: h.customer_name_snapshot || customerName(h.customer_id),
-    material_hint: t('common.emptyValue'),
-    etd: h.etd ? String(h.etd).slice(0, 10) : '',
-    order_date_fmt: h.order_date ? String(h.order_date).slice(0, 10) : '',
-  }))
+function formatCustomerOption(c) {
+  return customerOptionLabel(c, t)
 }
 
 async function quickChangeStatus(row, newStatus) {
@@ -1580,29 +1463,15 @@ async function load() {
       listBrands(),
       listMasterItems(),
       listBuyerPriceLists().catch(() => []),
-      listPoPage({
-        q: keyword.value || undefined,
-        customer_id: filterCustomerId.value || undefined,
-        buyer: filterBuyer.value || undefined,
-        status: filterStatus.value || undefined,
-        ...(Array.isArray(filterOrderDateRange.value) &&
-        filterOrderDateRange.value.length === 2 &&
-        filterOrderDateRange.value[0] &&
-        filterOrderDateRange.value[1]
-          ? { order_date_from: filterOrderDateRange.value[0], order_date_to: filterOrderDateRange.value[1] }
-          : {}),
-        limit: pageSize.value,
-        offset: (page.value - 1) * pageSize.value,
-      }),
+      listPoPage(buildPageQuery()),
       listMasterItemDimensionValues('materials').catch(() => ({ values: [] })),
     ])
     customers.value = cust
     brands.value = br
     masterItems.value = mi
     materialDimensionOptions.value = dimMat.values || []
-    const extraBuyers = [...new Set(bpl.map((x) => x.buyer_code).filter(Boolean))]
-    buyerCodes.value = [...new Set([...buyerCodes.value, ...extraBuyers])]
-    rows.value = await enrichPoRows(poPage.items || [])
+    buyerCodes.value = mergeExtraBuyerCodes(buyerCodes.value, bpl)
+    rows.value = await enrichHeaders(poPage.items || [], cust)
     totalRows.value = Number(poPage.total || 0)
   } catch (e) {
     ElMessage.error(e.message || t('pages.po.loadFailed'))
@@ -1611,18 +1480,7 @@ async function load() {
   }
 }
 
-let filterLoadTimer = null
-watch([keyword, filterCustomerId, filterBuyer, filterStatus, filterOrderDateRange], () => {
-  page.value = 1
-  if (filterLoadTimer) clearTimeout(filterLoadTimer)
-  filterLoadTimer = setTimeout(() => {
-    load()
-  }, 300)
-})
-
-watch([page, pageSize], () => {
-  load()
-})
+registerFilterWatch(load)
 
 onMounted(async () => {
   await load()
@@ -1630,17 +1488,10 @@ onMounted(async () => {
 })
 
 async function openPoFromRouteQuery() {
-  const poIdRaw = route.query.po_id ?? route.query.highlight
-  const poId = Number(poIdRaw)
-  if (Number.isNaN(poId) || poId <= 0) return
-  let target = rows.value.find((r) => Number(r.id) === poId)
-  if (!target) {
-    try {
-      target = await getPo(poId)
-    } catch {
-      return
-    }
-  }
+  const poId = parsePoRoutePoId(route)
+  if (!poId) return
+  const target = await resolvePoDeepLinkRow({ poId, rows: rows.value, getPo })
+  if (!target) return
   await openEditDialog(target)
 }
 
@@ -1745,15 +1596,7 @@ const filteredRows = computed(() =>
   rows.value,
 )
 
-const resetFilter = () => {
-  filterCustomerId.value = null
-  filterStatus.value = ''
-  filterBuyer.value = ''
-  keyword.value = ''
-  filterOrderDateRange.value = null
-  page.value = 1
-  load()
-}
+const resetFilter = () => resetFilters(load)
 
 const formDialogVisible = ref(false)
 const isEditMode = ref(false)
@@ -3294,10 +3137,6 @@ const detailDialogVisible = ref(false)
 const detailView = ref(null)
 const detailLines = ref([])
 const detailAudit = ref([])
-
-const nonEmptyAudit = computed(() => {
-  return detailAudit.value.filter(a => a.before || a.after)
-})
 
 const openDetailDialog = async (row) => {
   detailView.value = { ...row, customerName: row.customerName }
