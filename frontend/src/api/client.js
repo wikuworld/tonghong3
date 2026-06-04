@@ -651,6 +651,71 @@ export function listFluorescentColorsPage(params = {}) {
   return apiFetch(`/masters/fluorescent-colors/page${suffix}`)
 }
 
+export function createFluorescentColor(body) {
+  return apiFetch('/masters/fluorescent-colors', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateFluorescentColor(id, body) {
+  return apiFetch(`/masters/fluorescent-colors/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteFluorescentColor(id) {
+  return apiFetch(`/masters/fluorescent-colors/${id}`, { method: 'DELETE' })
+}
+
+export function importFluorescentBundled() {
+  return apiFetch('/masters/fluorescent-colors/import-bundled', { method: 'POST' })
+}
+
+/** Master color swatch (resep pabrik × buyer × material × emboss). */
+export function listColorSwatchRecipesPage(params = {}) {
+  const q = new URLSearchParams()
+  if (params.factory_key && String(params.factory_key).trim()) q.set('factory_key', String(params.factory_key).trim())
+  if (params.buyer_code && String(params.buyer_code).trim()) q.set('buyer_code', String(params.buyer_code).trim())
+  if (params.material_name && String(params.material_name).trim()) q.set('material_name', String(params.material_name).trim())
+  if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  const suffix = q.toString() ? `?${q.toString()}` : ''
+  return apiFetch(`/masters/color-swatch-recipes/page${suffix}`)
+}
+
+export function lookupColorSwatchRecipes(params = {}) {
+  const q = new URLSearchParams()
+  q.set('factory_key', String(params.factory_key || '').trim())
+  q.set('buyer_code', String(params.buyer_code || '').trim())
+  if (params.material_name && String(params.material_name).trim()) q.set('material_name', String(params.material_name).trim())
+  if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  return apiFetch(`/masters/color-swatch-recipes/lookup?${q}`)
+}
+
+export function getColorSwatchPoFill(recipeId) {
+  return apiFetch(`/masters/color-swatch-recipes/${recipeId}/po-fill`)
+}
+
+export function createColorSwatchRecipe(body) {
+  return apiFetch('/masters/color-swatch-recipes', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateColorSwatchRecipe(id, body) {
+  return apiFetch(`/masters/color-swatch-recipes/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteColorSwatchRecipe(id) {
+  return apiFetch(`/masters/color-swatch-recipes/${id}`, { method: 'DELETE' })
+}
+
+export function importColorSwatchCsv(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/masters/color-swatch-recipes/import-csv', { method: 'POST', body: fd })
+}
+
+export function importColorSwatchBundled() {
+  return apiFetch('/masters/color-swatch-recipes/import-bundled', { method: 'POST' })
+}
+
 export function listCustomerPics() {
   return apiFetch('/masters/customer-pics')
 }

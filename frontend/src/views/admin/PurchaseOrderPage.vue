@@ -329,8 +329,29 @@
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :md="8">
-                <el-form-item label="Factory Code">
-                  <el-input v-model="formModel.factory_code" clearable maxlength="32" placeholder="Contoh: LR028" />
+                <el-form-item :label="t('common.factoryCode')">
+                  <el-input
+                    v-model="formModel.factory_code"
+                    clearable
+                    maxlength="32"
+                    :placeholder="t('common.placeholder.factoryCode')"
+                    @input="autoFieldMeta.factory_code = false"
+                  />
+                  <div class="mt-2 flex items-center gap-2">
+                    <el-tag v-if="autoFieldMeta.factory_code && formModel.factory_code" size="small" type="success">
+                      {{ t('pages.po.autoFilled') }}
+                    </el-tag>
+                    <el-button
+                      v-if="formModel.customer_id"
+                      link
+                      type="primary"
+                      size="small"
+                      @click="resetToAuto('factory_code')"
+                    >
+                      {{ t('pages.po.resetToAuto') }}
+                    </el-button>
+                  </div>
+                  <span class="text-xs text-slate-500">{{ t('pages.po.factoryCodeHint') }}</span>
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :md="8">
@@ -510,6 +531,30 @@
                   </div>
                   <div v-if="isFluorescentFamily" class="mt-1 text-xs text-slate-500">
                     Season aktif: {{ activeSeasonLabel || '-' }} · {{ t('common.masterLabel') }} fluorescent: {{ fluorescentColorOptions.length }} opsi
+                  </div>
+                  <div class="mt-2">
+                    <el-form-item :label="t('pages.po.swatchPickerLabel')" class="mb-0">
+                      <el-select
+                        v-model="selectedSwatchId"
+                        filterable
+                        clearable
+                        class="w-full"
+                        :placeholder="t('pages.po.swatchPickerPlaceholder')"
+                        :loading="colorSwatchLoading"
+                        :disabled="!poFactoryKeyForSwatch() || !formModel.buyer"
+                        @change="applyColorSwatch"
+                      >
+                        <el-option
+                          v-for="s in colorSwatchOptions"
+                          :key="s.id"
+                          :label="swatchOptionLabel(s)"
+                          :value="s.id"
+                        />
+                      </el-select>
+                      <p v-if="!colorSwatchLoading && !colorSwatchOptions.length && poFactoryKeyForSwatch() && formModel.buyer" class="mt-1 text-xs text-amber-600">
+                        {{ t('pages.po.swatchNoOptions') }}
+                      </p>
+                    </el-form-item>
                   </div>
                 </el-form-item>
               </el-col>
@@ -693,8 +738,24 @@
               <el-col :xs="24" :md="8">
                 <el-form-item label="THI ORDER / LOT NO">
                   <div class="field-stack-row">
-                    <el-input v-model="formModel.thi_line_ref" class="w-full" clearable />
-                    <el-button size="small" type="primary" class="self-start" @click="generateLotNumber">Generate</el-button>
+                    <el-input
+                      v-model="formModel.thi_line_ref"
+                      class="w-full"
+                      clearable
+                      @input="lotAutoFromMaterial = false"
+                    />
+                    <el-button
+                      size="small"
+                      type="primary"
+                      class="self-start"
+                      :loading="lotGenerateLoading"
+                      @click="generateLotNumber"
+                    >
+                      Generate
+                    </el-button>
+                  </div>
+                  <div v-if="lotAutoFromMaterial && formModel.thi_line_ref" class="mt-1">
+                    <el-tag size="small" type="success">{{ t('pages.po.autoFilled') }}</el-tag>
                   </div>
                 </el-form-item>
               </el-col>
@@ -1251,6 +1312,8 @@ import {
   listMasterItemDimensionValues,
   resolveMasterItemByDimensions,
   listFluorescentColors,
+  lookupColorSwatchRecipes,
+  getColorSwatchPoFill,
   listPoPage,
   listPoDetails,
   listPoForCopy,
@@ -1323,6 +1386,7 @@ const allowedBrandIds = ref([])
 const selectedCustomer = ref(null)
 const autoFieldMeta = reactive({
   buyer: false,
+  factory_code: false,
   vir_softness_type: false,
   softness: false,
   color_reference: false,
@@ -1340,6 +1404,11 @@ const materialFieldOverride = reactive({
   style_article: false,
 })
 const colorFamilyAutoMode = ref(true)
+const lotAutoFromMaterial = ref(false)
+const lotGenerateLoading = ref(false)
+let lotAutoTimer = null
+let skipLotAutoUntil = 0
+let lotAutoSeq = 0
 
 const rows = ref([])
 const totalRows = ref(0)
@@ -1632,6 +1701,9 @@ const formModel = reactive({
 const pricePreviewLoading = ref(false)
 const previewResolvedUnitPrice = ref(null)
 const fluorescentColorOptions = ref([])
+const colorSwatchOptions = ref([])
+const colorSwatchLoading = ref(false)
+const selectedSwatchId = ref(null)
 
 const materialDimensionOptions = ref([])
 const thicknessDimensionOptions = ref([])
@@ -1869,6 +1941,97 @@ function isSelectedFluorescentColorValid() {
   return fluorescentColorOptions.value.some((opt) => String(opt.color_name || '').trim().toLowerCase() === chosen)
 }
 
+function factoryCodeFromCustomer(customer) {
+  if (!customer) return ''
+  return String(customer.code || '').trim()
+}
+
+/** Isi factory_code dari master customer (KODE SYSTEM / customers.code). */
+function applyAutoFactoryCode(customer, { force = false } = {}) {
+  const code = factoryCodeFromCustomer(customer)
+  if (!code) return
+  const current = String(formModel.factory_code || '').trim()
+  if (force || autoFieldMeta.factory_code || !current) {
+    formModel.factory_code = code
+    autoFieldMeta.factory_code = true
+  }
+}
+
+function poFactoryKeyForSwatch() {
+  const fc = String(formModel.factory_code || '').trim()
+  if (fc) return fc.toUpperCase()
+  const c = selectedCustomer.value || customers.value.find((x) => x.id === formModel.customer_id)
+  if (!c) return ''
+  const fromCode = factoryCodeFromCustomer(c)
+  if (fromCode) return fromCode.toUpperCase()
+  return String(c.name || '').trim().toUpperCase()
+}
+
+function swatchOptionLabel(s) {
+  if (!s) return ''
+  const code = s.color_code ? ` [${s.color_code}]` : ''
+  const emb = s.emboss ? ` · ${s.emboss}` : ''
+  return `${s.color_name || ''}${code}${emb}`
+}
+
+async function loadColorSwatchOptions() {
+  const fk = poFactoryKeyForSwatch()
+  const buyer = String(formModel.buyer || '').trim().toUpperCase()
+  if (!fk || !buyer) {
+    colorSwatchOptions.value = []
+    return
+  }
+  colorSwatchLoading.value = true
+  try {
+    colorSwatchOptions.value = await lookupColorSwatchRecipes({
+      factory_key: fk,
+      buyer_code: buyer,
+      material_name: String(formModel.material_name || '').trim() || undefined,
+      limit: 60,
+    })
+  } catch {
+    colorSwatchOptions.value = []
+  } finally {
+    colorSwatchLoading.value = false
+  }
+}
+
+async function applyColorSwatch(recipeId) {
+  if (!recipeId) return
+  try {
+    const fill = await getColorSwatchPoFill(recipeId)
+    if (fill.color) {
+      formModel.color = fill.color
+      autoFieldMeta.color = false
+    }
+    if (fill.color_reference) {
+      formModel.color_reference = fill.color_reference
+      autoFieldMeta.color_reference = false
+    }
+    if (fill.color_standard) {
+      formModel.color_standard = fill.color_standard
+      autoFieldMeta.color_standard = false
+    }
+    if (fill.emboss) {
+      formModel.emboss = fill.emboss
+      materialFieldOverride.emboss = true
+    }
+    if (fill.backing) {
+      formModel.backing = fill.backing
+      autoFieldMeta.backing = false
+    }
+    if (fill.material_name && !formModel.material_name) {
+      formModel.material_name = fill.material_name
+    }
+    if (fill.thi_line_ref) {
+      formModel.thi_line_ref = fill.thi_line_ref
+    }
+    ElMessage.success(t('pages.po.swatchApplied'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
 function parseApiErrorMessage(err, fallback) {
   const raw = String(err?.message || '').trim()
   if (!raw) return fallback
@@ -1895,33 +2058,45 @@ function applyVirSoftDefault() {
   }
 }
 
-async function generateLotNumber(forceDetailId = null) {
-  const poId = editingPoId.value
-  const isPersist = Boolean(poId && forceDetailId)
-  if (!String(formModel.factory_code || '').trim()) {
-    ElMessage.warning('Factory code wajib diisi sebelum generate lot.')
-    return
-  }
-  saving.value = true
-  try {
-    if (isPersist) {
-      // mode edit: generate dan simpan ke DB per detail id
-      await updatePo(poId, { factory_code: String(formModel.factory_code || '').trim() || null })
-      const updated = await generatePoDetailLot(forceDetailId)
-      // update row draftLines
-      if (Array.isArray(draftLines.value) && draftLines.value.length) {
-        const i = draftLines.value.findIndex((d) => d && d.id === forceDetailId)
-        if (i >= 0) draftLines.value[i].thi_line_ref = updated.thi_line_ref || undefined
-      }
-      // update current input bila sedang mengedit baris pertama
-      if (editingDetailIds.value?.[0] === forceDetailId) {
-        formModel.thi_line_ref = updated.thi_line_ref || ''
-      }
-      ElMessage.success('Lot berhasil digenerate.')
-      return
-    }
+function canInferMaterialGroupForLot() {
+  const mn = String(formModel.material_name || '').trim().toLowerCase()
+  const vt = String(formModel.vir_softness_type || '').trim().toLowerCase()
+  if (formModel.master_item_id) return true
+  if (vt.includes('pu')) return true
+  if (mn.includes('pu') || mn.includes('suede') || mn.includes('suide')) return true
+  return false
+}
 
-    // mode draft (belum simpan PO/detail): generate preview dari backend dan isi field
+function pauseLotAutoBriefly(ms = 900) {
+  skipLotAutoUntil = Date.now() + ms
+}
+
+function scheduleAutoLotGenerate() {
+  if (Date.now() < skipLotAutoUntil) return
+  if (!String(formModel.material_name || '').trim()) return
+  if (!String(formModel.factory_code || '').trim()) return
+  if (!canInferMaterialGroupForLot()) return
+  clearTimeout(lotAutoTimer)
+  lotAutoTimer = setTimeout(() => {
+    void autoGenerateLotFromMaterial({ showSuccess: false, showError: false })
+  }, 380)
+}
+
+async function autoGenerateLotFromMaterial({ showSuccess = false, showError = false } = {}) {
+  if (!String(formModel.factory_code || '').trim()) {
+    if (showError) ElMessage.warning('Factory code wajib diisi sebelum generate lot.')
+    return false
+  }
+  if (!String(formModel.material_name || '').trim()) return false
+  if (!canInferMaterialGroupForLot()) {
+    if (showError) {
+      ElMessage.warning('Material harus mengandung PU/Suede atau terhubung master item agar lot bisa dibentuk.')
+    }
+    return false
+  }
+  const seq = ++lotAutoSeq
+  lotGenerateLoading.value = true
+  try {
     const r = await generateLotPreview({
       po_category: formModel.po_category,
       factory_code: String(formModel.factory_code || '').trim(),
@@ -1929,12 +2104,49 @@ async function generateLotNumber(forceDetailId = null) {
       material_name: formModel.material_name || undefined,
       vir_softness_type: formModel.vir_softness_type || undefined,
     })
+    if (seq !== lotAutoSeq) return false
     formModel.thi_line_ref = r.lot_number || ''
-    ElMessage.success('Lot draft berhasil digenerate.')
+    lotAutoFromMaterial.value = true
+    if (showSuccess) ElMessage.success('Lot draft berhasil digenerate.')
+    return true
   } catch (e) {
-    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
+    if (seq !== lotAutoSeq) return false
+    if (showError) ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
+    return false
   } finally {
-    saving.value = false
+    if (seq === lotAutoSeq) lotGenerateLoading.value = false
+  }
+}
+
+async function generateLotNumber(forceDetailId = null) {
+  const poId = editingPoId.value
+  const isPersist = Boolean(poId && forceDetailId)
+  if (!String(formModel.factory_code || '').trim()) {
+    ElMessage.warning('Factory code wajib diisi sebelum generate lot.')
+    return
+  }
+  const loadingFlag = isPersist ? saving : lotGenerateLoading
+  loadingFlag.value = true
+  try {
+    if (isPersist) {
+      await updatePo(poId, { factory_code: String(formModel.factory_code || '').trim() || null })
+      const updated = await generatePoDetailLot(forceDetailId)
+      if (Array.isArray(draftLines.value) && draftLines.value.length) {
+        const i = draftLines.value.findIndex((d) => d && d.id === forceDetailId)
+        if (i >= 0) draftLines.value[i].thi_line_ref = updated.thi_line_ref || undefined
+      }
+      if (editingDetailIds.value?.[0] === forceDetailId) {
+        formModel.thi_line_ref = updated.thi_line_ref || ''
+        lotAutoFromMaterial.value = true
+      }
+      ElMessage.success('Lot berhasil digenerate.')
+      return
+    }
+
+    const ok = await autoGenerateLotFromMaterial({ showSuccess: true, showError: true })
+    if (ok) lotAutoFromMaterial.value = true
+  } finally {
+    loadingFlag.value = false
   }
 }
 
@@ -2055,6 +2267,13 @@ function resetToAuto(field) {
     return
   }
 
+  if (field === 'factory_code') {
+    const cust =
+      selectedCustomer.value || customers.value.find((x) => x.id === formModel.customer_id) || null
+    applyAutoFactoryCode(cust, { force: true })
+    return
+  }
+
   if (field === 'vir_softness_type') {
     formModel.vir_softness_type = ''
     autoFieldMeta.vir_softness_type = false
@@ -2135,6 +2354,14 @@ watch(
 )
 
 watch(
+  () => [formModel.customer_id, formModel.factory_code, formModel.buyer, formModel.material_name],
+  () => {
+    selectedSwatchId.value = null
+    loadColorSwatchOptions()
+  },
+)
+
+watch(
   () => formModel.po_category,
   (newCategory) => {
     const isSubkonOrRetur = newCategory === 'subcont' || newCategory === 'return'
@@ -2158,6 +2385,7 @@ function resetForm() {
   formModel.brand_id = null
   formModel.po_category = 'production'
   formModel.factory_code = ''
+  autoFieldMeta.factory_code = false
   formModel.order_date = ''
   formModel.buyer = ''
   formModel.etd = ''
@@ -2188,6 +2416,7 @@ function resetForm() {
   formModel.discount_type = 'percent'
   formModel.discount_value = 0
   autoFieldMeta.buyer = false
+  autoFieldMeta.factory_code = false
   autoFieldMeta.vir_softness_type = false
   autoFieldMeta.softness = false
   autoFieldMeta.color_reference = false
@@ -2210,6 +2439,7 @@ function resetForm() {
   thicknessDimensionOptions.value = []
   colorDimensionOptions.value = []
   colorFamilyAutoMode.value = true
+  lotAutoFromMaterial.value = false
   materialAdvancedOpen.value = []
   resetMaterialFieldOverride()
   formErrors.customer_id = ''
@@ -2286,6 +2516,8 @@ function applyPoDraft(data) {
   formModel.customer_id = header.customer_id ?? null
   formModel.brand_id = header.brand_id ?? null
   formModel.po_category = header.po_category || 'production'
+  formModel.factory_code = header.factory_code || ''
+  autoFieldMeta.factory_code = false
   formModel.order_date = header.order_date || ''
   formModel.buyer = header.buyer || ''
   formModel.etd = header.etd || ''
@@ -2440,6 +2672,7 @@ async function onCustomerChange() {
         }
       }
       if (customer) {
+        applyAutoFactoryCode(customer)
         formModel.billing_address = customer.address || ''
         formModel.delivery_address = customer.address || ''
       }
@@ -2450,6 +2683,8 @@ async function onCustomerChange() {
   } else {
     formModel.billing_address = ''
     formModel.delivery_address = ''
+    formModel.factory_code = ''
+    autoFieldMeta.factory_code = false
     customerBuyerCodes.value = []
     selectedCustomer.value = null
   }
@@ -2464,6 +2699,12 @@ async function onBrandChange(brandId) {
     if (selectedBrand?.customer_id) {
       brandLockedCustomerId.value = selectedBrand.customer_id
       formModel.customer_id = selectedBrand.customer_id
+      const cust =
+        selectedCustomer.value || customers.value.find((x) => x.id === selectedBrand.customer_id)
+      if (cust) {
+        selectedCustomer.value = cust
+        applyAutoFactoryCode(cust)
+      }
     }
     const rows = await listBrandBuyers(brandId)
     brandBuyerCodes.value = rows.map((x) => x.buyer_code).filter(Boolean)
@@ -2531,12 +2772,17 @@ async function onPickedMaterialDimension() {
   formModel.thickness_text = ''
   formModel.color = ''
   formModel.master_item_id = null
+  formModel.thi_line_ref = ''
+  lotAutoFromMaterial.value = false
   skipMasterResolve.value = false
   lastResolveHadNoMaster.value = false
   thicknessDimensionOptions.value = []
   colorDimensionOptions.value = []
   const m = String(formModel.material_name || '').trim()
-  if (m) await refreshThicknessOptionsFromApi()
+  if (m) {
+    await refreshThicknessOptionsFromApi()
+    scheduleAutoLotGenerate()
+  }
 }
 
 async function onPickedThicknessDimension() {
@@ -2624,6 +2870,7 @@ async function resolveMasterFromDimensionsTriple() {
       colorFamilyAutoMode.value = true
       formModel.master_item_id = res.item.id
       hydrateFormFromMasterItemRow(res.item, { syncDimensions: false })
+      scheduleAutoLotGenerate()
     } else if (res.status === 'ambiguous' && (res.candidates || []).length) {
       formModel.master_item_id = null
       skipMasterResolve.value = true
@@ -2654,7 +2901,18 @@ function confirmAmbiguousMasterPick() {
   colorFamilyAutoMode.value = true
   hydrateFormFromMasterItemRow(c, { syncDimensions: false })
   lastResolveHadNoMaster.value = false
+  scheduleAutoLotGenerate()
 }
+
+watch(
+  () => [
+    formModel.factory_code,
+    formModel.po_category,
+    formModel.master_item_id,
+    formModel.vir_softness_type,
+  ],
+  () => scheduleAutoLotGenerate(),
+)
 
 watch(
   () => [formModel.material_name, formModel.thickness_text, formModel.color],
@@ -2680,6 +2938,7 @@ const openCreateDialog = async () => {
   brandLockedCustomerId.value = null
   currentStep.value = 0
   formDialogVisible.value = true
+  pauseLotAutoBriefly()
   await restorePoDraftIfAny()
 }
 
@@ -2862,6 +3121,7 @@ const openEditDialog = async (row) => {
   formModel.brand_id = row.brand_id ?? null
   formModel.po_category = row.po_category || 'production'
   formModel.factory_code = row.factory_code || ''
+  autoFieldMeta.factory_code = false
   formModel.order_date = row.order_date ? String(row.order_date).slice(0, 10) : ''
   formModel.buyer = row.buyer || ''
   formModel.etd = row.etd ? String(row.etd).slice(0, 10) : ''
@@ -2875,6 +3135,10 @@ const openEditDialog = async (row) => {
   } catch {
     selectedCustomer.value = null
   }
+  if (!String(formModel.factory_code || '').trim() && selectedCustomer.value) {
+    applyAutoFactoryCode(selectedCustomer.value, { force: true })
+  }
+  pauseLotAutoBriefly()
   await onBrandChange(formModel.brand_id)
   schedulePricePreview()
   try {

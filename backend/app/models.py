@@ -252,6 +252,53 @@ class BrandBuyerMap(Base):
     buyer_code: Mapped[str] = mapped_column(String(32))
 
 
+class ColorSwatchRecipe(Base):
+    """Resep warna operasional (pabrik × buyer × material × emboss × kode warna)."""
+
+    __tablename__ = "color_swatch_recipes"
+    __table_args__ = (
+        UniqueConstraint(
+            "factory_key",
+            "buyer_code",
+            "color_code",
+            "material_name",
+            "emboss",
+            name="uq_color_swatch_recipe_key",
+        ),
+        Index("ix_color_swatch_factory_key", "factory_key"),
+        Index("ix_color_swatch_buyer_code", "buyer_code"),
+        Index("ix_color_swatch_material_name", "material_name", mysql_length=191),
+        Index("ix_color_swatch_color_code", "color_code"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    factory_key: Mapped[str] = mapped_column(String(80))
+    customer_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("customers.id", ondelete="SET NULL")
+    )
+    buyer_code: Mapped[str] = mapped_column(String(32))
+    brand_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("brands.id", ondelete="SET NULL")
+    )
+    color_code: Mapped[str] = mapped_column(String(64), default="")
+    color_name: Mapped[str] = mapped_column(String(255), default="")
+    emboss: Mapped[str] = mapped_column(String(255), default="")
+    color_standard: Mapped[Optional[str]] = mapped_column(String(255))
+    backing: Mapped[Optional[str]] = mapped_column(String(120))
+    material_name: Mapped[str] = mapped_column(String(500), default="")
+    legacy_urut: Mapped[Optional[str]] = mapped_column(String(32))
+    entered_at: Mapped[Optional[date]] = mapped_column(Date)
+    source_file: Mapped[Optional[str]] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    customer: Mapped[Optional["Customer"]] = relationship("Customer")
+    brand: Mapped[Optional["Brand"]] = relationship("Brand")
+
+
 class FluorescentColorMaster(Base):
     """Master warna fluorescent/metallic per buyer + season."""
 

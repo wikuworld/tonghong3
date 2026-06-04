@@ -21,6 +21,7 @@ import MarketingFlowPage from '../views/admin/MarketingFlowPage.vue'
 import MasterImportPage from '../views/admin/MasterImportPage.vue'
 import MasterItemsPage from '../views/admin/MasterItemsPage.vue'
 import FluorescentColorMasterPage from '../views/admin/FluorescentColorMasterPage.vue'
+import ColorSwatchMasterPage from '../views/admin/ColorSwatchMasterPage.vue'
 import UserAccessPage from '../views/admin/UserAccessPage.vue'
 import CustomerBrandMappingPage from '../views/admin/CustomerBrandMappingPage.vue'
 import SubconInvoicePage from '../views/admin/SubconInvoicePage.vue'
@@ -86,6 +87,7 @@ const router = createRouter({
         { path: 'master-import', component: MasterImportPage, meta: { titleKey: 'menu.masterImport', roles: ROUTE_ROLES.masterImport } },
         { path: 'master-items', component: MasterItemsPage, meta: { titleKey: 'menu.masterItems', roles: ROUTE_ROLES.masterItems } },
         { path: 'fluorescent-colors', component: FluorescentColorMasterPage, meta: { titleKey: 'menu.fluorescentColors', roles: ROUTE_ROLES.fluorescentColors } },
+        { path: 'color-swatch', component: ColorSwatchMasterPage, meta: { titleKey: 'menu.colorSwatch', roles: ROUTE_ROLES.colorSwatch } },
         { path: 'user-access', component: UserAccessPage, meta: { titleKey: 'menu.userAccess', roles: ROUTE_ROLES.userAccess } },
         { path: 'customer-brand-mapping', component: CustomerBrandMappingPage, meta: { titleKey: 'menu.customerBrandMapping', roles: ROUTE_ROLES.customerBrandMapping } },
         { path: 'subcon-invoices', component: SubconInvoicePage, meta: { titleKey: 'menu.subconInvoice', roles: ROUTE_ROLES.subconInvoice } },

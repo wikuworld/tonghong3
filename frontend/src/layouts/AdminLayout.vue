@@ -266,6 +266,7 @@ const erpMasterMenus = [
   { path: '/admin/customs', labelKey: 'menu.customs', icon: FolderOpened },
   { path: '/admin/master-items', labelKey: 'menu.masterItems', icon: Box },
   { path: '/admin/fluorescent-colors', labelKey: 'menu.fluorescentColors', icon: CollectionTag },
+  { path: '/admin/color-swatch', labelKey: 'menu.colorSwatch', icon: CollectionTag },
   { path: '/admin/exchange-rates', labelKey: 'menu.exchangeRate', icon: Coin },
   { path: '/admin/master-import', labelKey: 'menu.masterImport', icon: FolderOpened },
   { path: '/admin/inventory', labelKey: 'menu.inventory', icon: Goods },

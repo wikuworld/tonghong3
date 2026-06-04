@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 
 logger = logging.getLogger(__name__)
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from app.schemas import (
     MasterItemCreate,
     MasterItemDimensionValuesOut,
@@ -38,6 +38,12 @@ from app.models import (
 )
 from app.routers.auth import get_current_user, require_roles
 from app.utils.excel_utils import export_to_excel, import_from_excel
+from app.services.fluorescent_color import (
+    apply_fluorescent_fields,
+    find_existing,
+    gather_bundled_rows,
+    upsert_fluorescent_rows,
+)
 from app.services.master_item_dimensions import (
     distinct_colors,
     distinct_material_names,
@@ -120,6 +126,26 @@ class FluorescentColorPageOut(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class FluorescentColorIn(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    buyer_code: str = Field(..., min_length=1, max_length=32)
+    season_label: Optional[str] = Field(default=None, max_length=64)
+    season_year: Optional[int] = None
+    season_type: Optional[str] = Field(default=None, max_length=16)
+    color_name: str = Field(..., min_length=1, max_length=255)
+    color_code: Optional[str] = Field(default=None, max_length=64)
+    color_class: str = Field(default="fluorescent", max_length=32)
+    source_file: Optional[str] = Field(default=None, max_length=255)
+    is_active: bool = True
+
+
+class FluorescentImportResultOut(BaseModel):
+    inserted: int
+    updated: int
+    total: int
 
 
 @router.get("/masters/brands", response_model=list[BrandOut])
@@ -365,6 +391,101 @@ def list_fluorescent_colors_page(
         ).all()
     )
     return FluorescentColorPageOut(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/masters/fluorescent-colors/{row_id}", response_model=FluorescentColorOut)
+def get_fluorescent_color(
+    row_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> FluorescentColorMaster:
+    row = db.get(FluorescentColorMaster, row_id)
+    if not row or not row.is_active:
+        raise HTTPException(status_code=404, detail="Master fluorescent tidak ditemukan")
+    return row
+
+
+@router.post("/masters/fluorescent-colors", response_model=FluorescentColorOut)
+def create_fluorescent_color(
+    body: FluorescentColorIn,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+) -> FluorescentColorMaster:
+    data = apply_fluorescent_fields(body.model_dump())
+    if not data["color_name"]:
+        raise HTTPException(status_code=400, detail="Nama warna wajib diisi")
+    dup = find_existing(
+        db,
+        buyer_code=data["buyer_code"],
+        season_label=data["season_label"],
+        color_code=data["color_code"],
+        color_name=data["color_name"],
+    )
+    if dup:
+        raise HTTPException(status_code=400, detail="Kombinasi buyer/season/kode/nama sudah ada")
+    row = FluorescentColorMaster(**data)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.put("/masters/fluorescent-colors/{row_id}", response_model=FluorescentColorOut)
+def update_fluorescent_color(
+    row_id: int,
+    body: FluorescentColorIn,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+) -> FluorescentColorMaster:
+    row = db.get(FluorescentColorMaster, row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Master fluorescent tidak ditemukan")
+    data = apply_fluorescent_fields(body.model_dump())
+    dup = find_existing(
+        db,
+        buyer_code=data["buyer_code"],
+        season_label=data["season_label"],
+        color_code=data["color_code"],
+        color_name=data["color_name"],
+        exclude_id=row_id,
+    )
+    if dup:
+        raise HTTPException(status_code=400, detail="Kombinasi buyer/season/kode/nama bentrok")
+    for key, val in data.items():
+        setattr(row, key, val)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/masters/fluorescent-colors/{row_id}")
+def delete_fluorescent_color(
+    row_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> dict[str, str]:
+    row = db.get(FluorescentColorMaster, row_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Master fluorescent tidak ditemukan")
+    row.is_active = False
+    db.commit()
+    return {"status": "deactivated"}
+
+
+@router.post("/masters/fluorescent-colors/import-bundled", response_model=FluorescentImportResultOut)
+def import_fluorescent_bundled(
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> FluorescentImportResultOut:
+    """Upsert dari CSV dokumentasi (NB, ADIDAS, GLOBAL, UA)."""
+    try:
+        rows = gather_bundled_rows()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if not rows:
+        raise HTTPException(status_code=400, detail="Tidak ada baris valid")
+    stats = upsert_fluorescent_rows(db, rows)
+    return FluorescentImportResultOut(**stats)
 
 
 @router.get("/masters/customer-pics", response_model=list[PicOut])
