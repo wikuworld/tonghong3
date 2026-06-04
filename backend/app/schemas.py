@@ -759,6 +759,54 @@ class DeliveryDetailUpdate(BaseModel):
     weight: Optional[Decimal] = None
 
 
+class DeliveryHeaderOut(ORMBase):
+    id: int
+    delivery_number: Optional[str] = None
+    customer_id: Optional[int] = None
+    delivery_date: Optional[date] = None
+    driver_name: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    destination: Optional[str] = None
+    bc_number: Optional[str] = None
+    bc_date: Optional[date] = None
+    status: str = "draft"
+    created_at: Optional[datetime] = None
+    packing_id: Optional[int] = None
+    surat_jalan_printed_at: Optional[datetime] = None
+    delivery_zone: Optional[str] = None
+    delivery_type: Optional[str] = None
+
+
+class DeliveryDetailOut(ORMBase):
+    id: int
+    delivery_id: Optional[int] = None
+    production_detail_id: Optional[int] = None
+    qty: Optional[float] = None
+    qty_roll: Optional[int] = None
+    qty_pcs: Optional[int] = None
+    weight: Optional[float] = None
+
+
+class DeliveryDetailEnrichedOut(DeliveryDetailOut):
+    po_id: Optional[int] = None
+    po_number: str = ""
+    po_detail_id: Optional[int] = None
+    system_no: str = ""
+    lot_number: str = ""
+    material_name_line: str = ""
+    thickness_display: str = ""
+    color_line: str = ""
+    order_type: str = ""
+
+
+class MktWorkflowStagesOut(BaseModel):
+    stages: list[str]
+
+
+class StatusDeletedOut(BaseModel):
+    status: str
+
+
 # --- Invoice ---
 class InvoiceCreate(BaseModel):
     """delivery_id wajib — invoice hanya setelah delivery terkirim (status sent)."""

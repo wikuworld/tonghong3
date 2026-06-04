@@ -1366,6 +1366,14 @@ import AdminSection from '../../components/AdminSection.vue'
 import { canWrite } from '../../security/permissions'
 import { statusType, statusLabel } from '../../utils/format'
 import {
+  emptyEtdScheduleRows,
+  normalizeSchedulesFromApi,
+  etdScheduleRowsToPayload,
+  loadEtdScheduleRowsFromApi,
+  lineHasScheduleMismatch,
+  buildEvenEtdScheduleRows,
+} from '../../utils/poEtdSchedule.js'
+import {
   addPoDetail,
   createPo,
   deletePoDetail,
@@ -1795,66 +1803,11 @@ const swatchAllMaterials = ref(false)
 const swatchRetriedWithoutMaterial = ref(false)
 const selectedSwatchId = ref(null)
 
-const ETD_SCHEDULE_SLOTS = 8
 const etdScheduleOpen = ref(['schedule'])
 const etdScheduleRows = ref(emptyEtdScheduleRows())
 
-function emptyEtdScheduleRows() {
-  return Array.from({ length: ETD_SCHEDULE_SLOTS }, (_, i) => ({
-    sequence_no: i + 1,
-    qty: null,
-    date: '',
-  }))
-}
-
 function clearEtdScheduleRows() {
   etdScheduleRows.value = emptyEtdScheduleRows()
-}
-
-function normalizeSchedulesFromApi(rows) {
-  return (rows || []).map((s) => ({
-    sequence_no: Number(s.sequence_no),
-    qty: s.qty != null ? Number(s.qty) : null,
-    delivery_date: s.delivery_date ? String(s.delivery_date).slice(0, 10) : null,
-  }))
-}
-
-function etdScheduleRowsToPayload(rows) {
-  return (rows || [])
-    .filter((r) => (r.qty != null && r.qty !== '') || r.date)
-    .map((r, i) => ({
-      sequence_no: r.sequence_no ?? i + 1,
-      qty: r.qty != null && r.qty !== '' ? Number(r.qty) : null,
-      delivery_date: r.date || null,
-    }))
-}
-
-function loadEtdScheduleRowsFromApi(schedules) {
-  const rows = emptyEtdScheduleRows()
-  for (const s of schedules || []) {
-    const idx = Number(s.sequence_no) - 1
-    if (idx >= 0 && idx < rows.length) {
-      rows[idx].qty = s.qty != null ? Number(s.qty) : null
-      rows[idx].date = s.delivery_date ? String(s.delivery_date).slice(0, 10) : ''
-    }
-  }
-  etdScheduleRows.value = rows
-}
-
-function schedulePayloadTotal(schedules) {
-  return (schedules || []).reduce((sum, s) => sum + (Number(s.qty) || 0), 0)
-}
-
-function lineHasScheduleMismatch(line) {
-  const orderQty = Number(line?.quantity_order)
-  if (!orderQty) return false
-  const schedules = line.delivery_schedules?.length
-    ? line.delivery_schedules
-    : etdScheduleRowsToPayload(etdScheduleRows.value)
-  if (!schedules.length) return false
-  const total = schedulePayloadTotal(schedules)
-  if (!total) return false
-  return Math.abs(total - orderQty) > 0.001
 }
 
 const etdScheduleTotal = computed(() =>
@@ -1869,7 +1822,7 @@ const etdScheduleTotalDisplay = computed(() => {
 const etdScheduleMismatch = computed(() => lineHasScheduleMismatch({
   quantity_order: formModel.quantity_order,
   delivery_schedules: etdScheduleRowsToPayload(etdScheduleRows.value),
-}))
+}, etdScheduleRows.value))
 
 function autoFillEtdScheduleWave1() {
   const qty = Number(formModel.quantity_order)
@@ -1888,22 +1841,7 @@ function autoFillEtdScheduleEvenly() {
     ElMessage.warning(t('pages.po.scheduleNeedQty'))
     return
   }
-  const base = Math.floor(qty / ETD_SCHEDULE_SLOTS)
-  const rem = qty % ETD_SCHEDULE_SLOTS
-  const startRaw = formModel.etd ? String(formModel.etd).slice(0, 10) : ''
-  etdScheduleRows.value = Array.from({ length: ETD_SCHEDULE_SLOTS }, (_, i) => {
-    let date = ''
-    if (startRaw) {
-      const d = new Date(startRaw)
-      d.setDate(d.getDate() + i * 7)
-      date = d.toISOString().slice(0, 10)
-    }
-    return {
-      sequence_no: i + 1,
-      qty: base + (i < rem ? 1 : 0),
-      date,
-    }
-  })
+  etdScheduleRows.value = buildEvenEtdScheduleRows(qty, formModel.etd)
 }
 
 async function syncCurrentFormToDraftLine() {
@@ -1942,7 +1880,7 @@ async function applyLineToForm(line) {
   formModel.thi_line_ref = line.thi_line_ref || ''
   formModel.unit_price_input = line.unit_price != null ? Number(line.unit_price) : null
   selectedSwatchId.value = line.color_swatch_recipe_id ?? null
-  loadEtdScheduleRowsFromApi(line.delivery_schedules || [])
+  etdScheduleRows.value = loadEtdScheduleRowsFromApi(line.delivery_schedules || [])
   await refreshThicknessOptionsFromApi()
   await refreshColorOptionsFromApi()
 }
@@ -3495,7 +3433,7 @@ const openEditDialog = async (row) => {
       formModel.model = d0.model || ''
       formModel.detail_remark = d0.detail_remark || ''
       formModel.thi_line_ref = d0.thi_line_ref || ''
-      loadEtdScheduleRowsFromApi(scheduleLists[0] || [])
+      etdScheduleRows.value = loadEtdScheduleRowsFromApi(scheduleLists[0] || [])
       editingDraftLineIndex.value = 0
       loadedDetailMasterSnapshot.value = `${String(d0.material_name || '').trim()}|${String(d0.thickness_text || '').trim()}|${String(d0.color || '').trim()}|${d0.master_item_id ?? ''}`
       if (d0.master_item_id) {

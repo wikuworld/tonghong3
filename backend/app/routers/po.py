@@ -27,6 +27,8 @@ from app.schemas import (
     PoHeaderPageOut,
     PoHeaderUpdate,
     PoMarketingReviseBody,
+    MktWorkflowStagesOut,
+    StatusDeletedOut,
 )
 from app.services.business_rules import validate_po_status_transition
 from app.services.mkt_workflow import (
@@ -195,9 +197,9 @@ def _validate_fluorescent_color_master(
     )
 
 
-@router.get("/po/mkt-workflow-stages")
-def mkt_workflow_stages(_user=Depends(get_current_user)) -> dict:
-    return {"stages": list(MKT_STAGES_ORDER)}
+@router.get("/po/mkt-workflow-stages", response_model=MktWorkflowStagesOut)
+def mkt_workflow_stages(_user=Depends(get_current_user)) -> MktWorkflowStagesOut:
+    return MktWorkflowStagesOut(stages=list(MKT_STAGES_ORDER))
 
 
 class NextPoNumberOut(BaseModel):
@@ -815,12 +817,12 @@ def marketing_revise_po(
     return row
 
 
-@router.delete("/po/{po_id}")
+@router.delete("/po/{po_id}", response_model=StatusDeletedOut)
 def delete_po(
     po_id: int,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin")),
-) -> dict[str, str]:
+) -> StatusDeletedOut:
     row = db.get(PoHeader, po_id)
     if not row:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
@@ -855,7 +857,7 @@ def delete_po(
     )
     db.delete(row)
     db.commit()
-    return {"status": "deleted"}
+    return StatusDeletedOut(status="deleted")
 
 
 @router.post("/po/{po_id}/details", response_model=PoDetailOut)
@@ -1046,12 +1048,12 @@ def generate_lot_preview(
     return LotGenerateOut(lot_number=lot)
 
 
-@router.delete("/po-detail/{detail_id}")
+@router.delete("/po-detail/{detail_id}", response_model=StatusDeletedOut)
 def delete_po_detail(
     detail_id: int,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin")),
-) -> dict[str, str]:
+) -> StatusDeletedOut:
     row = db.get(PoDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail PO tidak ditemukan")
@@ -1065,7 +1067,7 @@ def delete_po_detail(
     )
     db.delete(row)
     db.commit()
-    return {"status": "deleted"}
+    return StatusDeletedOut(status="deleted")
 
 
 @router.put("/po-detail/{detail_id}/delivery-schedules", response_model=list[PoDetailDeliveryOut])
@@ -1118,6 +1120,7 @@ def set_po_detail_delivery_schedules(
 def get_po_detail_delivery_schedules(
     detail_id: int,
     db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
 ) -> list:
     row = db.get(PoDetail, detail_id)
     if not row:

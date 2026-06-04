@@ -242,12 +242,17 @@ def import_recipes(
     inserted = 0
     updated = 0
     skipped = 0
+    deactivated = 0
+    imported_keys: set[tuple[str, str, str, str, str]] = set()
     customer_cache: dict[str, int | None] = {}
     brand_cache: dict[str, int | None] = {}
 
     for data in recipes:
         fk = data["factory_key"]
         buyer = data["buyer_code"]
+        imported_keys.add(
+            (fk, buyer, data["color_code"], data["material_name"], data["emboss"])
+        )
         if fk not in customer_cache:
             customer_cache[fk] = _resolve_customer_id(db, fk)
         if buyer not in brand_cache:
@@ -298,10 +303,37 @@ def import_recipes(
             inserted += 1
             db.flush()
 
-    if replace_inactive:
-        skipped = 0
+    if replace_inactive and imported_keys:
+        touched_pairs = {(d["factory_key"], d["buyer_code"]) for d in recipes}
+        for fk, buyer in touched_pairs:
+            rows = db.scalars(
+                select(ColorSwatchRecipe).where(
+                    ColorSwatchRecipe.factory_key == fk,
+                    ColorSwatchRecipe.buyer_code == buyer,
+                    ColorSwatchRecipe.is_active.is_(True),
+                )
+            ).all()
+            for recipe in rows:
+                rk = (
+                    recipe.factory_key,
+                    recipe.buyer_code,
+                    recipe.color_code,
+                    recipe.material_name,
+                    recipe.emboss,
+                )
+                if rk not in imported_keys:
+                    recipe.is_active = False
+                    recipe.updated_at = datetime.utcnow()
+                    deactivated += 1
+
     db.commit()
-    return {"inserted": inserted, "updated": updated, "skipped": skipped, "total": len(recipes)}
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "skipped": skipped,
+        "deactivated": deactivated,
+        "total": len(recipes),
+    }
 
 
 def recipe_to_po_fill(recipe: ColorSwatchRecipe) -> dict[str, Any]:

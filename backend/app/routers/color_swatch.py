@@ -74,6 +74,7 @@ class ImportResultOut(BaseModel):
     inserted: int
     updated: int
     skipped: int
+    deactivated: int = 0
     total: int
 
 
@@ -295,6 +296,10 @@ def delete_color_swatch(
 @router.post("/masters/color-swatch-recipes/import-csv", response_model=ImportResultOut)
 async def import_color_swatch_csv(
     file: UploadFile = File(...),
+    replace_inactive: bool = Query(
+        False,
+        description="Nonaktifkan resep aktif (factory+buyer sama) yang tidak ada di file import",
+    ),
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin", "marketing")),
 ) -> ImportResultOut:
@@ -303,12 +308,13 @@ async def import_color_swatch_csv(
     recipes = iter_csv_recipes(io.BytesIO(raw), source)
     if not recipes:
         raise HTTPException(status_code=400, detail="Tidak ada baris valid dalam file CSV")
-    stats = import_recipes(db, recipes)
+    stats = import_recipes(db, recipes, replace_inactive=replace_inactive)
     return ImportResultOut(**stats)
 
 
 @router.post("/masters/color-swatch-recipes/import-bundled", response_model=ImportResultOut)
 def import_color_swatch_bundled(
+    replace_inactive: bool = Query(False, description="Nonaktifkan resep yang tidak ada di file bundled"),
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin")),
 ) -> ImportResultOut:
@@ -320,5 +326,5 @@ def import_color_swatch_bundled(
     recipes = iter_csv_recipes(io.StringIO(text), str(path.name))
     if not recipes:
         raise HTTPException(status_code=400, detail="Tidak ada baris valid")
-    stats = import_recipes(db, recipes)
+    stats = import_recipes(db, recipes, replace_inactive=replace_inactive)
     return ImportResultOut(**stats)

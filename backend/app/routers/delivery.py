@@ -12,8 +12,11 @@ from app.models import DeliveryDetail, DeliveryHeader, PoDetail, PoHeader, Produ
 from app.services.po_delivery_balance import validate_delivery_qty_against_po_balance
 from app.schemas import (
     DeliveryDetailCreate,
+    DeliveryDetailEnrichedOut,
+    DeliveryDetailOut,
     DeliveryDetailUpdate,
     DeliveryHeaderCreate,
+    DeliveryHeaderOut,
     DeliveryHeaderUpdate,
     row_to_dict,
 )
@@ -67,12 +70,12 @@ def _has_qc_ok(db: Session, production_detail_id: int | None) -> bool:
     return row is not None
 
 
-@router.post("/delivery/{delivery_id}/mark-surat-jalan-printed")
+@router.post("/delivery/{delivery_id}/mark-surat-jalan-printed", response_model=DeliveryHeaderOut)
 def mark_surat_jalan_printed(
     delivery_id: int,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse", "marketing")),
-) -> dict:
+) -> DeliveryHeader:
     row = db.get(DeliveryHeader, delivery_id)
     if not row:
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
@@ -89,15 +92,15 @@ def mark_surat_jalan_printed(
     )
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row
 
 
-@router.post("/delivery")
+@router.post("/delivery", response_model=DeliveryHeaderOut)
 def create_delivery(
     body: DeliveryHeaderCreate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse")),
-) -> dict:
+) -> DeliveryHeader:
     require_packing_ready(db, body.packing_id)
     row = DeliveryHeader(**body.model_dump(exclude_unset=True))
     db.add(row)
@@ -129,32 +132,32 @@ def create_delivery(
 
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row
 
 
-@router.get("/delivery")
+@router.get("/delivery", response_model=list[DeliveryHeaderOut])
 def list_delivery(
     db: Session = Depends(get_db),
     q: Optional[str] = Query(None, description="Search delivery number/destination"),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     _user=Depends(get_current_user),
-) -> list[dict]:
+) -> list[DeliveryHeader]:
     stmt = select(DeliveryHeader).order_by(DeliveryHeader.id.desc()).limit(limit).offset(offset)
     if q:
         like = f"%{q}%"
         stmt = stmt.where(or_(DeliveryHeader.delivery_number.ilike(like), DeliveryHeader.destination.ilike(like)))
     rows = db.scalars(stmt).all()
-    return [row_to_dict(r) for r in rows]
+    return rows
 
 
-@router.put("/delivery/{delivery_id}")
+@router.put("/delivery/{delivery_id}", response_model=DeliveryHeaderOut)
 def update_delivery(
     delivery_id: int,
     body: DeliveryHeaderUpdate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse")),
-) -> dict:
+) -> DeliveryHeader:
     row = db.get(DeliveryHeader, delivery_id)
     if not row:
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
@@ -203,20 +206,20 @@ def update_delivery(
     )
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row
 
 
-@router.get("/delivery/{delivery_id}")
+@router.get("/delivery/{delivery_id}", response_model=DeliveryHeaderOut)
 def get_delivery(
     delivery_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
-) -> dict:
+) -> DeliveryHeader:
     row = db.get(DeliveryHeader, delivery_id)
     if not row:
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
-    return row_to_dict(row)
+    return row
 
 
-@router.get("/delivery/{delivery_id}/details")
+@router.get("/delivery/{delivery_id}/details", response_model=list[DeliveryDetailEnrichedOut])
 def list_delivery_details(
     delivery_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
 ) -> list[dict]:
@@ -250,14 +253,14 @@ def list_delivery_details(
     return out
 
 
-@router.post("/delivery/{delivery_id}/details")
+@router.post("/delivery/{delivery_id}/details", response_model=DeliveryDetailOut)
 def add_delivery_detail(
     delivery_id: int,
     body: DeliveryDetailCreate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse")),
     bypass_qc: bool = Query(False, description="Admin: izinkan baris tanpa QC OK"),
-) -> dict:
+) -> DeliveryDetail:
     hdr = db.get(DeliveryHeader, delivery_id)
     if not hdr:
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
@@ -289,17 +292,17 @@ def add_delivery_detail(
     )
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row
 
 
-@router.put("/delivery-detail/{detail_id}")
+@router.put("/delivery-detail/{detail_id}", response_model=DeliveryDetailOut)
 def update_delivery_detail(
     detail_id: int,
     body: DeliveryDetailUpdate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse")),
     bypass_qc: bool = Query(False, description="Admin: izinkan baris tanpa QC OK"),
-) -> dict:
+) -> DeliveryDetail:
     row = db.get(DeliveryDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail delivery tidak ditemukan")
@@ -336,4 +339,4 @@ def update_delivery_detail(
     )
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row

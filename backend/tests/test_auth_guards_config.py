@@ -4,7 +4,7 @@ from fastapi.params import Query
 from fastapi.routing import APIRoute
 
 from app import main
-from app.routers import buyer_prices, customs, exchange_rates, sales_orders
+from app.routers import buyer_prices, customs, delivery, exchange_rates, po, sales_orders
 
 
 def _get_route(router, path: str, method: str) -> APIRoute:
@@ -103,6 +103,49 @@ def test_customs_require_auth_and_role_guards_and_limit_bounds():
     le_values = [getattr(m, "le", None) for m in getattr(limit_default, "metadata", [])]
     assert 1 in ge_values
     assert 1000 in le_values
+
+
+def test_po_router_require_auth_and_role_guards():
+    for path, method in [
+        ("/po", "GET"),
+        ("/po/page", "GET"),
+        ("/po/mkt-workflow-stages", "GET"),
+        ("/po/next-number", "GET"),
+        ("/po/{po_id}", "GET"),
+    ]:
+        route = _get_route(po.router, path, method)
+        assert _has_dep(route, "get_current_user"), f"{method} {path} harus pakai get_current_user"
+
+    route = _get_route(po.router, "/po-detail/{detail_id}/delivery-schedules", "GET")
+    assert _has_dep(route, "get_current_user"), "GET delivery-schedules harus pakai get_current_user"
+
+    for path, method in [
+        ("/po", "POST"),
+        ("/po/{po_id}", "DELETE"),
+        ("/po/{po_id}/mkt-workflow/advance", "POST"),
+        ("/po/{po_id}/details", "POST"),
+    ]:
+        route = _get_route(po.router, path, method)
+        assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
+
+
+def test_delivery_router_require_auth_and_role_guards():
+    for path, method in [
+        ("/delivery", "GET"),
+        ("/delivery/{delivery_id}", "GET"),
+        ("/delivery/{delivery_id}/details", "GET"),
+    ]:
+        route = _get_route(delivery.router, path, method)
+        assert _has_dep(route, "get_current_user"), f"{method} {path} harus pakai get_current_user"
+
+    for path, method in [
+        ("/delivery", "POST"),
+        ("/delivery/{delivery_id}", "PUT"),
+        ("/delivery/{delivery_id}/details", "POST"),
+        ("/delivery/{delivery_id}/mark-surat-jalan-printed", "POST"),
+    ]:
+        route = _get_route(delivery.router, path, method)
+        assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
 
 
 def test_startup_hardening_rejects_any_default_auth_in_non_dev_env():
