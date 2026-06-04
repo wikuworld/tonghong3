@@ -193,855 +193,8 @@
       />
     </div>
 
-    <el-dialog
-      v-model="formDialogVisible"
-      :fullscreen="false"
-      width="90%"
-      top="3vh"
-      destroy-on-close
-      class="po-fullscreen-dialog"
-      :before-close="handlePoDialogBeforeClose"
-    >
-      <template #header>
-        <div class="po-dialog-header">
-          <el-icon class="po-dialog-close" @click="requestCloseFormDialog"><Close /></el-icon>
-          <div class="po-dialog-title-area">
-            <el-icon class="po-dialog-icon"><DocumentAdd /></el-icon>
-            <span class="po-dialog-title">
-              {{ isEditMode ? t('pages.poEntry.title') + ' ' + t('pages.po.editSuffix') : t('pages.poEntry.title') }}
-            </span>
-            <el-tag v-if="!isEditMode" type="info" effect="plain" size="small">
-              {{ nextPoNumberDisplay }}
-            </el-tag>
-            <el-tag v-else type="primary" effect="plain" size="small">
-              {{ formModel.po_number }}
-            </el-tag>
-            <el-button
-              v-if="isEditMode && canManage"
-              type="warning"
-              size="small"
-              class="ml-2 shrink-0"
-              @click="openMarketingReviseDialog"
-            >
-              {{ t('pages.po.marketingReviseOpen') }}
-            </el-button>
-          </div>
-          <div class="po-dialog-steps-wrapper">
-            <el-steps class="mb-4 po-dialog-steps w-full" :space="100" :active="currentStep" simple>
-              <el-step :title="t('pages.po.step1Title')" :icon="Edit" />
-              <el-step :title="t('pages.po.step2Title')" :icon="UploadFilled" />
-              <el-step :title="t('pages.po.step3Title')" :icon="Picture" />
-            </el-steps>
-          </div>
-        </div>
-      </template>
+    <PoFormWizardDialog />
 
-      <div class="po-dialog-content">
-        <el-form label-position="top" class="po-dialog-form" @keydown.enter.prevent="handleEnterKey">
-          <div v-show="currentStep === 0" class="step-content">
-            <h3 class="text-lg font-semibold mb-4">{{ t('pages.po.customerSoSection') }}</h3>
-            <el-row :gutter="16" class="material-step-grid">
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('common.customer')" required>
-                  <el-select
-                    v-model="formModel.customer_id"
-                    filterable
-                    clearable
-                    class="w-full"
-                    :placeholder="t('common.placeholder.customer')"
-                    :disabled="Boolean(brandLockedCustomerId)"
-                    :error="formErrors.customer_id"
-                    @change="onCustomerChange"
-                  >
-                    <el-option
-                      v-for="c in customers"
-                      :key="c.id"
-                      :label="formatCustomerOption(c)"
-                      :value="c.id"
-                    />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('pages.po.customerPic')">
-                  <el-input :model-value="customerPicDisplay" readonly />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('pages.po.brand')">
-                  <el-select
-                    v-model="formModel.brand_id"
-                    clearable
-                    filterable
-                    class="w-full"
-                    :placeholder="t('pages.po.brand')"
-                    :disabled="isBrandDisabled"
-                    @change="onBrandChange"
-                  >
-                    <el-option
-                      v-for="b in brandsFiltered"
-                      :key="b.id"
-                      :label="`${b.code || b.id} — ${b.name || ''}`"
-                      :value="b.id"
-                    />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('common.buyer')">
-                  <el-select
-                    v-model="formModel.buyer"
-                    filterable
-                    class="w-full"
-                    :placeholder="t('common.placeholder.buyer')"
-                    :disabled="isBuyerDisabled"
-                    @change="autoFieldMeta.buyer = false"
-                  >
-                    <el-option v-for="b in buyerCodesFiltered" :key="b" :label="b" :value="b" />
-                  </el-select>
-                  <div class="mt-2 flex items-center gap-2">
-                    <el-tag v-if="autoFieldMeta.buyer && formModel.buyer" size="small" type="success">
-                      {{ t('pages.po.autoFilled') }}
-                    </el-tag>
-                    <el-button v-if="formModel.buyer" link type="primary" size="small" @click="resetToAuto('buyer')">
-                      {{ t('pages.po.resetToAuto') }}
-                    </el-button>
-                  </div>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('common.poCategory')">
-                  <el-select v-model="formModel.po_category" class="w-full" :placeholder="t('common.category')" :disabled="isPoCategoryDisabled">
-                    <el-option :label="t('status.production')" value="production" />
-                    <el-option :label="t('status.subkon')" value="subcont" />
-                    <el-option :label="t('status.retur')" value="return" />
-                    <el-option :label="t('status.sample')" value="sample" />
-                    <el-option :label="t('status.claim')" value="claim" />
-                    <el-option :label="t('status.suede')" value="suede" />
-                  </el-select>
-                  <el-radio-group v-model="formModel.po_category" size="small" class="mt-2" :disabled="isPoCategoryDisabled">
-                    <el-radio-button value="production">{{ t('status.production') }}</el-radio-button>
-                    <el-radio-button value="sample">{{ t('status.sample') }}</el-radio-button>
-                    <el-radio-button value="subcont">{{ t('status.subcont') }}</el-radio-button>
-                    <el-radio-button value="return">{{ t('status.return') }}</el-radio-button>
-                    <el-radio-button value="claim">{{ t('status.claim') }}</el-radio-button>
-                  </el-radio-group>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('common.factoryCode')">
-                  <el-input
-                    v-model="formModel.factory_code"
-                    clearable
-                    maxlength="32"
-                    :placeholder="t('common.placeholder.factoryCode')"
-                    @input="autoFieldMeta.factory_code = false"
-                  />
-                  <div class="mt-2 flex items-center gap-2">
-                    <el-tag v-if="autoFieldMeta.factory_code && formModel.factory_code" size="small" type="success">
-                      {{ t('pages.po.autoFilled') }}
-                    </el-tag>
-                    <el-button
-                      v-if="formModel.customer_id"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="resetToAuto('factory_code')"
-                    >
-                      {{ t('pages.po.resetToAuto') }}
-                    </el-button>
-                  </div>
-                  <span class="text-xs text-slate-500">{{ t('pages.po.factoryCodeHint') }}</span>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('common.poNo')">
-                  <el-input :model-value="isEditMode ? formModel.po_number : nextPoNumberDisplay" disabled />
-                  <span class="text-xs text-slate-500">{{ t('pages.po.autoGenerateHint') }}</span>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('pages.po.poCustomerRef')">
-                  <el-input v-model="formModel.po_customer_ref" clearable maxlength="255" />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('common.orderDate')">
-                  <el-date-picker
-                    v-model="formModel.order_date"
-                    type="date"
-                    class="w-full"
-                    value-format="YYYY-MM-DD"
-                    :disabled="orderDateLocked"
-                  />
-                  <div v-if="orderDateLocked" class="text-xs text-slate-500 mt-1">{{ t('pages.po.orderDateLockedHint') }}</div>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('pages.po.billingAddress')">
-                  <el-input v-model="formModel.billing_address" type="textarea" :rows="2" />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('pages.po.deliveryAddress')">
-                  <el-input v-model="formModel.delivery_address" type="textarea" :rows="2" />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('common.remark')">
-                  <el-input v-model="formModel.remark" type="textarea" :rows="2" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-          </div>
-
-          <div v-show="currentStep === 1" class="step-content">
-            <h3 class="text-lg font-semibold mb-4">{{ t('pages.po.step2Title') }}</h3>
-            <el-row :gutter="16" class="material-step-grid">
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('common.material')" :error="formErrors.material_name">
-                  <div class="field-lock-row">
-                    <el-select
-                      v-model="formModel.material_name"
-                      filterable
-                      allow-create
-                      default-first-option
-                      clearable
-                      class="w-full"
-                      :placeholder="t('pages.po.materialCascadePlaceholder')"
-                      :disabled="isMaterialFieldLocked('material_name')"
-                      @change="onPickedMaterialDimension"
-                    >
-                      <el-option v-for="opt in materialDimensionOptions" :key="opt" :label="opt" :value="opt" />
-                    </el-select>
-                    <div class="mt-1 flex items-center gap-2">
-                      <el-button
-                        v-if="isMaterialFieldLocked('material_name')"
-                        link
-                        type="primary"
-                        size="small"
-                        @click="enableMaterialOverride('material_name')"
-                      >
-                        Override
-                      </el-button>
-                      <el-button
-                        v-else-if="formModel.master_item_id && materialFieldOverride.material_name"
-                        link
-                        type="primary"
-                        size="small"
-                        @click="resetMaterialFieldToMaster('material_name')"
-                      >
-                        Reset
-                      </el-button>
-                    </div>
-                  </div>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('common.thickness')">
-                  <div class="field-lock-row">
-                    <el-select
-                      v-model="formModel.thickness_text"
-                      clearable
-                      filterable
-                      allow-create
-                      default-first-option
-                      class="w-full"
-                      :placeholder="t('pages.po.thicknessCascadePlaceholder')"
-                      :disabled="isMaterialFieldLocked('thickness_text') || !String(formModel.material_name || '').trim()"
-                      @change="onPickedThicknessDimension"
-                    >
-                      <el-option v-for="opt in thicknessDimensionOptions" :key="opt" :label="opt" :value="opt" />
-                    </el-select>
-                    <div class="mt-1 flex items-center gap-2">
-                      <el-button
-                        v-if="isMaterialFieldLocked('thickness_text')"
-                        link
-                        type="primary"
-                        size="small"
-                        @click="enableMaterialOverride('thickness_text')"
-                      >
-                        Override
-                      </el-button>
-                      <el-button
-                        v-else-if="formModel.master_item_id && materialFieldOverride.thickness_text"
-                        link
-                        type="primary"
-                        size="small"
-                        @click="resetMaterialFieldToMaster('thickness_text')"
-                      >
-                        Reset
-                      </el-button>
-                    </div>
-                  </div>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('common.color')">
-                  <div class="field-lock-row">
-                    <el-select
-                      v-if="isFluorescentFamily"
-                      v-model="formModel.color"
-                      clearable
-                      filterable
-                      class="w-full"
-                      :placeholder="t('common.placeholder.color')"
-                      :disabled="isMaterialFieldLocked('color') || !String(formModel.material_name || '').trim() || !String(formModel.thickness_text || '').trim()"
-                    >
-                      <el-option
-                        v-for="opt in poColorCascadeOptions"
-                        :key="opt.id"
-                        :label="opt._label"
-                        :value="opt.color_name"
-                      />
-                    </el-select>
-                    <el-select
-                      v-else
-                      v-model="formModel.color"
-                      filterable
-                      allow-create
-                      default-first-option
-                      clearable
-                      class="w-full"
-                      :placeholder="t('common.placeholder.color')"
-                      :disabled="isMaterialFieldLocked('color') || !String(formModel.material_name || '').trim() || !String(formModel.thickness_text || '').trim()"
-                    >
-                      <el-option v-for="c in colorDimensionOptions" :key="c" :label="c" :value="c" />
-                    </el-select>
-                    <div class="mt-1">
-                      <el-button
-                        v-if="isMaterialFieldLocked('color')"
-                        link
-                        type="primary"
-                        size="small"
-                        @click="enableMaterialOverride('color')"
-                      >
-                        Override warna
-                      </el-button>
-                      <el-button
-                        v-else-if="formModel.master_item_id && materialFieldOverride.color"
-                        link
-                        type="primary"
-                        size="small"
-                        @click="resetMaterialFieldToMaster('color')"
-                      >
-                        Reset warna
-                      </el-button>
-                    </div>
-                  </div>
-                  <div v-if="isFluorescentFamily" class="mt-1 text-xs text-slate-500">
-                    Season aktif: {{ activeSeasonLabel || '-' }} · {{ t('common.masterLabel') }} fluorescent: {{ fluorescentColorOptions.length }} opsi
-                  </div>
-                  <div class="mt-2">
-                    <el-form-item :label="t('pages.po.swatchPickerLabel')" class="mb-0">
-                      <el-select
-                        v-model="selectedSwatchId"
-                        filterable
-                        clearable
-                        class="w-full"
-                        :placeholder="t('pages.po.swatchPickerPlaceholder')"
-                        :loading="colorSwatchLoading"
-                        :disabled="!poFactoryKeyForSwatch() || !formModel.buyer"
-                        @change="applyColorSwatch"
-                      >
-                        <el-option
-                          v-for="s in colorSwatchOptions"
-                          :key="s.id"
-                          :label="swatchOptionLabel(s)"
-                          :value="s.id"
-                        />
-                      </el-select>
-                      <div class="mt-1 flex flex-wrap items-center gap-2">
-                        <el-checkbox v-model="swatchAllMaterials" @change="loadColorSwatchOptions">
-                          {{ t('pages.po.swatchAllMaterials') }}
-                        </el-checkbox>
-                      </div>
-                      <p v-if="swatchRetriedWithoutMaterial" class="mt-1 text-xs text-slate-500">
-                        {{ t('pages.po.swatchRetriedHint') }}
-                      </p>
-                      <p v-if="!colorSwatchLoading && !colorSwatchOptions.length && poFactoryKeyForSwatch() && formModel.buyer" class="mt-1 text-xs text-amber-600">
-                        {{ t('pages.po.swatchNoOptions') }}
-                      </p>
-                    </el-form-item>
-                  </div>
-                </el-form-item>
-              </el-col>
-              <el-col :span="24">
-                <div v-if="formModel.master_item_id" class="flex flex-wrap items-center gap-2 mb-2">
-                  <el-tag type="success" closable @close="clearLinkedMasterItem">
-                    {{ t('pages.po.masterLinkedTag') }}: {{ resolvedMasterItemLabel }}
-                  </el-tag>
-                  <span v-if="masterResolveLoading" class="text-xs text-slate-500">{{ t('pages.po.resolvingMaster') }}</span>
-                </div>
-                <el-alert
-                  v-else-if="lastResolveHadNoMaster && materialThicknessColorComplete"
-                  type="warning"
-                  :closable="false"
-                  show-icon
-                  class="mb-2"
-                  :title="t('pages.po.masterNotMatchedHint')"
-                />
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('pages.po.colorFamily')">
-                  <div class="field-lock-row">
-                    <el-select
-                      v-model="formModel.color_family"
-                      clearable
-                      class="w-full"
-                      :disabled="isMaterialFieldLocked('color_family')"
-                      @change="colorFamilyAutoMode = false"
-                    >
-                      <el-option :label="t('pages.po.colorFamilyBlack')" value="black" />
-                      <el-option :label="t('pages.po.colorFamilyColor')" value="color" />
-                      <el-option :label="t('pages.po.colorFamilyFluorescent')" value="fluorescent" />
-                    </el-select>
-                    <el-button
-                      v-if="isMaterialFieldLocked('color_family')"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="enableMaterialOverride('color_family')"
-                    >
-                      Override
-                    </el-button>
-                    <el-button
-                      v-else-if="formModel.master_item_id && materialFieldOverride.color_family"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="resetMaterialFieldToMaster('color_family')"
-                    >
-                      Reset
-                    </el-button>
-                  </div>
-                  <div class="mt-1 text-xs text-slate-500">
-                    Auto-kategori warna: {{ colorFamilyAutoMode ? 'aktif' : 'manual' }}
-                  </div>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('pages.po.emboss')">
-                  <div class="field-lock-row">
-                    <el-input v-model="formModel.emboss" class="w-full" clearable :disabled="isMaterialFieldLocked('emboss')" />
-                    <el-button
-                      v-if="isMaterialFieldLocked('emboss')"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="enableMaterialOverride('emboss')"
-                    >
-                      Override
-                    </el-button>
-                    <el-button
-                      v-else-if="formModel.master_item_id && materialFieldOverride.emboss"
-                      link
-                      type="primary"
-                      size="small"
-                      @click="resetMaterialFieldToMaster('emboss')"
-                    >
-                      Reset
-                    </el-button>
-                  </div>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24">
-                <el-alert
-                  v-if="pricingKeyIncomplete"
-                  title="Pricing key belum lengkap: buyer + material + ketebalan + kategori warna wajib terisi."
-                  type="warning"
-                  :closable="false"
-                  show-icon
-                  class="mb-2"
-                />
-                <el-collapse v-model="materialAdvancedOpen">
-                  <el-collapse-item name="advanced-material">
-                    <template #title>
-                      <span class="font-medium">{{ t('pages.po.materialExtraGroupTitle') }}</span>
-                    </template>
-                    <el-row :gutter="16">
-                      <el-col :xs="24" :md="6">
-                        <el-form-item :label="t('pages.po.colorStandart')">
-                          <el-input v-model="formModel.color_standard" @input="autoFieldMeta.color_standard = false" />
-                          <div class="mt-2 flex items-center gap-2">
-                            <el-tag v-if="autoFieldMeta.color_standard && formModel.color_standard" size="small" type="success">
-                              {{ t('pages.po.autoFilled') }}
-                            </el-tag>
-                            <el-button
-                              v-if="formModel.color_standard"
-                              link
-                              type="primary"
-                              size="small"
-                              @click="resetToAuto('color_standard')"
-                            >
-                              {{ t('pages.po.resetToAuto') }}
-                            </el-button>
-                          </div>
-                        </el-form-item>
-                      </el-col>
-                      <el-col :xs="24" :md="6">
-                        <el-form-item :label="t('common.backing')">
-                          <el-input v-model="formModel.backing" @input="autoFieldMeta.backing = false" />
-                          <div class="mt-2 flex items-center gap-2">
-                            <el-tag v-if="autoFieldMeta.backing && formModel.backing" size="small" type="success">
-                              {{ t('pages.po.autoFilled') }}
-                            </el-tag>
-                            <el-button v-if="formModel.backing" link type="primary" size="small" @click="resetToAuto('backing')">
-                              {{ t('pages.po.resetToAuto') }}
-                            </el-button>
-                          </div>
-                        </el-form-item>
-                      </el-col>
-                      <el-col :xs="24" :md="6">
-                        <el-form-item :label="t('common.model')">
-                          <el-input v-model="formModel.model" :placeholder="t('common.placeholder.model')" @input="autoFieldMeta.model = false" />
-                          <div class="mt-2 flex items-center gap-2">
-                            <el-tag v-if="autoFieldMeta.model && formModel.model" size="small" type="success">
-                              {{ t('pages.po.autoFilled') }}
-                            </el-tag>
-                            <el-button v-if="formModel.model" link type="primary" size="small" @click="resetToAuto('model')">
-                              {{ t('pages.po.resetToAuto') }}
-                            </el-button>
-                          </div>
-                        </el-form-item>
-                      </el-col>
-                      <el-col :xs="24" :md="6">
-                        <el-form-item :label="t('pages.po.articleShort')">
-                          <div class="field-lock-row">
-                            <el-input v-model="formModel.style_article" class="w-full" :disabled="isMaterialFieldLocked('style_article')" />
-                            <div class="mt-1 flex items-center gap-2">
-                              <el-button
-                                v-if="isMaterialFieldLocked('style_article')"
-                                link
-                                type="primary"
-                                size="small"
-                                @click="enableMaterialOverride('style_article')"
-                              >
-                                Override
-                              </el-button>
-                              <el-button
-                                v-else-if="formModel.master_item_id && materialFieldOverride.style_article"
-                                link
-                                type="primary"
-                                size="small"
-                                @click="resetMaterialFieldToMaster('style_article')"
-                              >
-                                Reset
-                              </el-button>
-                            </div>
-                          </div>
-                        </el-form-item>
-                      </el-col>
-                    </el-row>
-                  </el-collapse-item>
-                </el-collapse>
-              </el-col>
-            </el-row>
-            <el-row :gutter="16" class="material-step-grid">
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('common.quantityOrder')" :error="formErrors.quantity_order">
-                  <el-input v-model="formModel.quantity_order" type="number" />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item label="THI ORDER / LOT NO">
-                  <div class="field-stack-row">
-                    <el-input
-                      v-model="formModel.thi_line_ref"
-                      class="w-full"
-                      clearable
-                      @input="lotAutoFromMaterial = false"
-                    />
-                    <el-button
-                      size="small"
-                      type="primary"
-                      class="self-start"
-                      :loading="lotGenerateLoading"
-                      @click="generateLotNumber"
-                    >
-                      Generate
-                    </el-button>
-                  </div>
-                  <div v-if="lotAutoFromMaterial && formModel.thi_line_ref" class="mt-1">
-                    <el-tag size="small" type="success">{{ t('pages.po.autoFilled') }}</el-tag>
-                  </div>
-                  <p class="mt-1 text-xs text-slate-500">{{ t('pages.po.lotPreviewHint') }}</p>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :md="8">
-                <el-form-item :label="t('pages.po.unitPriceUsd')">
-                  <div class="field-stack-row">
-                    <el-input v-model.number="formModel.unit_price_input" class="w-full" type="number" :step="0.01" :controls="false" />
-                    <el-checkbox v-model="formModel.is_special_price" @change="onSpecialPriceChange">
-                      {{ t('pages.po.specialPrice') }}
-                    </el-checkbox>
-                  </div>
-                  <div v-if="formModel.is_special_price" class="mt-2 flex items-center gap-2">
-                    <el-input-number
-                      v-model="formModel.discount_value"
-                      :min="formModel.discount_type === 'percent' ? -100 : -999999"
-                      :max="formModel.discount_type === 'percent' ? 100 : 999999"
-                      :controls="false"
-                      class="flex-1"
-                      @change="calculateSpecialPrice"
-                    />
-                    <el-radio-group v-model="formModel.discount_type" size="default" @change="calculateSpecialPrice">
-                      <el-radio-button value="percent">{{ t('pages.po.percent') }}</el-radio-button>
-                      <el-radio-button value="nominal">USD</el-radio-button>
-                    </el-radio-group>
-                  </div>
-                  <div class="mt-1 flex items-center gap-2 flex-wrap">
-                    <span v-if="previewResolvedUnitPrice != null" class="text-xs text-slate-500">
-                      {{ t('pages.po.autoResolved') }}: {{ previewResolvedUnitPrice }}
-                    </span>
-                    <el-tag v-if="formModel.unit_price_input && previewResolvedUnitPrice != null && formModel.unit_price_input !== previewResolvedUnitPrice" size="small" type="warning">{{ t('pages.po.overridden') }}</el-tag>
-                    <el-tag v-if="formModel.is_special_price && formModel.unit_price_input" size="small" type="success">
-                      Final: ${{ formModel.unit_price_input?.toFixed(2) }}
-                    </el-tag>
-                  </div>
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <el-collapse v-model="etdScheduleOpen" class="mt-2">
-              <el-collapse-item name="schedule" :title="t('pages.po.etdSchedule')">
-                <p class="mb-2 text-xs text-slate-500">{{ t('pages.po.etdScheduleHint') }}</p>
-                <el-table :data="etdScheduleRows" border size="small" class="etd-schedule-table">
-                  <el-table-column :label="t('common.noLabel')" width="56" align="center">
-                    <template #default="{ $index }">{{ $index + 1 }}</template>
-                  </el-table-column>
-                  <el-table-column :label="t('pages.po.etdQty')" width="130">
-                    <template #default="{ $index }">
-                      <el-input-number
-                        v-model="etdScheduleRows[$index].qty"
-                        :min="0"
-                        :controls="false"
-                        size="small"
-                        class="w-full"
-                      />
-                    </template>
-                  </el-table-column>
-                  <el-table-column :label="t('pages.po.etdDate')">
-                    <template #default="{ $index }">
-                      <el-date-picker
-                        v-model="etdScheduleRows[$index].date"
-                        type="date"
-                        size="small"
-                        class="w-full"
-                        value-format="YYYY-MM-DD"
-                      />
-                    </template>
-                  </el-table-column>
-                </el-table>
-                <div class="mt-2 flex flex-wrap items-center gap-2">
-                  <el-button size="small" @click="clearEtdScheduleRows">{{ t('common.clear') }}</el-button>
-                  <el-button size="small" type="primary" plain @click="autoFillEtdScheduleWave1">
-                    {{ t('pages.po.autoFillScheduleWave1') }}
-                  </el-button>
-                  <el-button size="small" type="primary" plain @click="autoFillEtdScheduleEvenly">
-                    {{ t('pages.po.autoFillScheduleEvenly') }}
-                  </el-button>
-                  <span class="text-xs text-slate-600">
-                    {{ t('pages.po.scheduleTotal') }}: {{ etdScheduleTotalDisplay }}
-                    <template v-if="formModel.quantity_order">
-                      / {{ formModel.quantity_order }} SF
-                    </template>
-                  </span>
-                </div>
-                <el-alert
-                  v-if="etdScheduleMismatch"
-                  type="warning"
-                  :closable="false"
-                  show-icon
-                  class="mt-2"
-                  :title="t('pages.po.scheduleMismatch')"
-                />
-              </el-collapse-item>
-            </el-collapse>
-            <div class="mt-1 text-sm font-semibold text-slate-700">Daftar Material</div>
-            <div class="mt-1 flex gap-2 flex-wrap">
-              <el-button :icon="Plus" @click="pushCurrentLine(false)">{{ t('common.add') }}</el-button>
-              <el-button :icon="TopRight" @click="pushCurrentLine(true)">{{ t('pages.po.addAndContinue') }}</el-button>
-              <el-button :icon="DocumentCopy" @click="openCopyItemDialog">{{ t('pages.po.copyItemFromOtherPo') }}</el-button>
-              <el-switch
-                v-model="draftRiskOnly"
-                inline-prompt
-                active-text="Override saja"
-                inactive-text="Semua line"
-              />
-              <el-tag size="small" type="info" effect="plain">
-                Ditampilkan: {{ draftLinesDisplay.length }} / {{ draftLines.length }}
-              </el-tag>
-            </div>
-            <el-table v-if="draftLinesDisplay.length" :data="draftLinesDisplay" border stripe size="small" class="mt-4" table-layout="auto" :row-class-name="draftRowClassName">
-              <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
-              <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
-              <el-table-column prop="thickness_text" :label="t('common.thickness')" width="90" />
-              <el-table-column prop="color" :label="t('common.color')" width="80" />
-              <el-table-column prop="color_family" :label="t('pages.po.colorFamily')" width="100">
-                <template #default="{ row }">{{ colorFamilyLabel(row.color_family) }}</template>
-              </el-table-column>
-              <el-table-column label="Kualitas Data" width="190" align="center">
-                <template #default="{ row }">
-                  <div class="flex flex-col items-center gap-1">
-                    <el-tooltip :content="materialQualityTooltip(row)" placement="top">
-                      <el-tag
-                        :type="materialQualityType(row)"
-                        size="small"
-                        effect="plain"
-                      >
-                        {{ materialQualityLabel(row) }}
-                      </el-tag>
-                    </el-tooltip>
-                    <el-tooltip v-if="row.manual_override" content="Harga line ini diubah manual dari harga auto-resolve buyer." placement="top">
-                      <el-tag size="small" type="danger" effect="plain">
-                        Harga override
-                      </el-tag>
-                    </el-tooltip>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="90" />
-              <el-table-column :label="t('pages.po.unitPriceUsd')" width="100" align="right">
-                <template #default="{ row }">
-                  <div class="flex flex-col items-end">
-                    <span v-if="row.is_special_price" class="text-xs text-slate-400 line-through">
-                      {{ row.base_price?.toFixed(2) || '—' }}
-                    </span>
-                    <span :class="row.is_special_price ? 'text-green-600 font-semibold' : ''">
-                      {{ row.unit_price != null ? '$' + row.unit_price.toFixed(2) : '—' }}
-                    </span>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column v-if="hasSpecialPriceInLines" label="Adj" width="80" align="center">
-                <template #default="{ row }">
-                  <el-tag v-if="row.is_special_price" size="small" type="warning">
-                    {{ row.discount_value >= 0 ? '+' : '' }}{{ row.discount_value }}{{ row.discount_type === 'percent' ? '%' : '$' }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column prop="thi_line_ref" label="THI ORDER / LOT NO" min-width="160">
-                <template #default="{ row }">
-                  <div class="flex items-center gap-2">
-                    <span class="truncate">{{ row.thi_line_ref || '—' }}</span>
-                    <el-button
-                      v-if="isEditMode && row.id"
-                      size="small"
-                      type="primary"
-                      plain
-                      @click="generateLotNumber(row.id)"
-                    >
-                      Gen
-                    </el-button>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column :label="'SYSTEM NO'" min-width="120" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.system_reference || row.thi_line_ref || '—' }}</template>
-              </el-table-column>
-              <el-table-column :label="t('common.actions')" width="120" align="center">
-                <template #default="{ row }">
-                  <el-button
-                    v-if="isEditMode && draftLines.length > 1"
-                    link
-                    type="primary"
-                    size="small"
-                    @click="editDraftLine(row)"
-                  >
-                    {{ t('pages.po.editDraftLine') }}
-                  </el-button>
-                  <el-button link type="danger" :icon="Delete" @click="removeDraftLine(draftLines.indexOf(row))" />
-                </template>
-              </el-table-column>
-            </el-table>
-            <div class="mt-2 text-sm font-semibold text-slate-700">Catatan</div>
-            <div class="mt-1">
-              <el-form-item label="REMARK">
-                <el-input v-model="formModel.detail_remark" type="textarea" :rows="2" />
-              </el-form-item>
-            </div>
-          </div>
-
-          <div v-show="currentStep === 2" class="step-content">
-            <h3 class="text-lg font-semibold mb-4">{{ t('pages.po.reviewTitle') }}</h3>
-            <el-descriptions :column="2" border class="mb-6">
-              <el-descriptions-item :label="t('common.customer')">
-                {{ customers.find(c => c.id === formModel.customer_id)?.name || '-' }}
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('pages.po.brand')">
-                {{ brands.find(b => b.id === formModel.brand_id)?.name || '-' }}
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('common.buyer')">{{ formModel.buyer || '-' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('common.poCategory')">{{ formModel.po_category }}</el-descriptions-item>
-              <el-descriptions-item :label="t('common.poNo')">{{ formModel.po_number || nextPoNumberDisplay }}</el-descriptions-item>
-              <el-descriptions-item label="NO PO CUSTOMER">{{ formModel.po_customer_ref || '-' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('common.orderDate')">{{ formModel.order_date || '-' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('pages.po.headerEtd')">{{ formModel.etd || '-' }}</el-descriptions-item>
-              <el-descriptions-item :label="t('common.status')">
-                <el-tag size="small">{{ formModel.status }}</el-tag>
-              </el-descriptions-item>
-              <el-descriptions-item :label="t('common.remark')" :span="2">{{ formModel.remark || '-' }}</el-descriptions-item>
-            </el-descriptions>
-
-            <h4 class="text-md font-semibold mb-2">{{ t('pages.po.itemsSummary', { count: draftLinesDisplay.length }) }}</h4>
-            <el-table v-if="draftLinesDisplay.length" :data="draftLinesDisplay" border stripe size="small" table-layout="auto">
-              <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
-              <el-table-column prop="material_name" :label="t('common.material')" min-width="140" />
-              <el-table-column prop="thickness_text" :label="t('common.thickness')" width="90" />
-              <el-table-column prop="color" :label="t('common.color')" width="80" />
-              <el-table-column :label="'Kualitas'" width="150" align="center">
-                <template #default="{ row }">
-                  <el-tooltip :content="materialQualityTooltip(row)" placement="top">
-                    <el-tag :type="materialQualityType(row)" size="small" effect="plain">
-                      {{ materialQualityLabel(row) }}
-                    </el-tag>
-                  </el-tooltip>
-                </template>
-              </el-table-column>
-              <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="100" align="right" />
-              <el-table-column prop="unit_price" :label="t('pages.po.unitPriceUsd')" width="100" align="right">
-                <template #default="{ row }">{{ row.unit_price != null ? `$${row.unit_price}` : '—' }}</template>
-              </el-table-column>
-              <el-table-column :label="'Total'" width="120" align="right">
-                <template #default="{ row }">
-                  {{ row.unit_price != null && row.quantity_order ? `$${(row.unit_price * row.quantity_order).toFixed(2)}` : '—' }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="thi_line_ref" label="THI ORDER / LOT NO" min-width="130" />
-              <el-table-column :label="'SYSTEM NO'" min-width="120" show-overflow-tooltip>
-                <template #default="{ row }">{{ row.system_reference || row.thi_line_ref || '—' }}</template>
-              </el-table-column>
-            </el-table>
-            <el-empty v-else :description="t('pages.po.noItemsYet')" />
-          </div>
-        </el-form>
-      </div>
-
-      <template #footer>
-        <div class="po-dialog-footer">
-          <el-button type="danger" @click="requestCloseFormDialog">
-            <el-icon><Close /></el-icon>
-            {{ t('common.cancel') }}
-          </el-button>
-          <el-button v-if="!isEditMode" type="warning" @click="saveDraftAndClose">
-            Simpan Draft
-          </el-button>
-
-          <div class="footer-nav">
-            <el-button :disabled="currentStep === 0" @click="prevStep">&lt;</el-button>
-            <span class="step-label">
-              {{ currentStep === 0 ? t('pages.po.step1Title') : currentStep === 1 ? t('pages.po.step2Title') : t('pages.po.step3Title') }}
-            </span>
-            <el-button :disabled="currentStep === 2" type="primary" @click="nextStep">&gt;</el-button>
-          </div>
-
-          <el-button :disabled="currentStep !== 2 || !canManage" type="success" :loading="saving" @click="submitForm">
-            <el-icon><Check /></el-icon>
-            {{ t('common.savePo') }}
-          </el-button>
-        </div>
-      </template>
-    </el-dialog>
 
     <PoMarketingReviseDialog
       v-model="marketingReviseVisible"
@@ -1102,23 +255,15 @@ import {
   EditPen,
   Delete,
   Printer,
-  DocumentCopy,
-  CopyDocument,
   RefreshLeft,
-  Close,
   Search,
-  Check,
-  DocumentAdd,
   Document,
   FolderOpened,
   ArrowLeft,
   ArrowRight,
-  TopRight,
-  Edit,
-  UploadFilled,
-  Picture,
 } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
+import PoFormWizardDialog from '../../components/admin/PoFormWizardDialog.vue'
 import PoAmbiguousMasterDialog from '../../components/admin/PoAmbiguousMasterDialog.vue'
 import PoCopyItemDialog from '../../components/admin/PoCopyItemDialog.vue'
 import PoDetailDialog from '../../components/admin/PoDetailDialog.vue'
@@ -1126,6 +271,7 @@ import PoMarketingReviseDialog from '../../components/admin/PoMarketingReviseDia
 import PoPrintPreviewDialog from '../../components/admin/PoPrintPreviewDialog.vue'
 import { usePoList } from '../../composables/usePoList.js'
 import { usePoMarketingRevise } from '../../composables/usePoMarketingRevise.js'
+import { providePoWizardContext } from '../../composables/poFormWizardContext.js'
 import { canWrite } from '../../security/permissions'
 import { statusType, statusLabel } from '../../utils/format'
 import {
@@ -2894,6 +2040,96 @@ const submitForm = async () => {
   }
 }
 
+providePoWizardContext({
+  formDialogVisible,
+  formModel,
+  formErrors,
+  currentStep,
+  isEditMode,
+  canManage,
+  nextPoNumberDisplay,
+  customers,
+  formatCustomerOption,
+  brandLockedCustomerId,
+  onCustomerChange,
+  customerPicDisplay,
+  brandsFiltered,
+  onBrandChange,
+  isBrandDisabled,
+  buyerCodesFiltered,
+  isBuyerDisabled,
+  autoFieldMeta,
+  resetToAuto,
+  isPoCategoryDisabled,
+  orderDateLocked,
+  brands,
+  materialDimensionOptions,
+  onPickedMaterialDimension,
+  thicknessDimensionOptions,
+  onPickedThicknessDimension,
+  isFluorescentFamily,
+  poColorCascadeOptions,
+  colorDimensionOptions,
+  enableMaterialOverride,
+  isMaterialFieldLocked,
+  materialFieldOverride,
+  resetMaterialFieldToMaster,
+  activeSeasonLabel,
+  fluorescentColorOptions,
+  selectedSwatchId,
+  colorSwatchLoading,
+  colorSwatchOptions,
+  swatchOptionLabel,
+  poFactoryKeyForSwatch,
+  applyColorSwatch,
+  swatchAllMaterials,
+  loadColorSwatchOptions,
+  swatchRetriedWithoutMaterial,
+  masterResolveLoading,
+  resolvedMasterItemLabel,
+  clearLinkedMasterItem,
+  lastResolveHadNoMaster,
+  materialThicknessColorComplete,
+  colorFamilyAutoMode,
+  materialAdvancedOpen,
+  pricingKeyIncomplete,
+  etdScheduleOpen,
+  etdScheduleRows,
+  clearEtdScheduleRows,
+  autoFillEtdScheduleWave1,
+  autoFillEtdScheduleEvenly,
+  etdScheduleTotalDisplay,
+  etdScheduleMismatch,
+  draftLinesDisplay,
+  draftLines,
+  draftRiskOnly,
+  draftRowClassName,
+  pushCurrentLine,
+  openCopyItemDialog,
+  colorFamilyLabel,
+  materialQualityTooltip,
+  materialQualityType,
+  materialQualityLabel,
+  hasSpecialPriceInLines,
+  generateLotNumber,
+  removeDraftLine,
+  editDraftLine,
+  previewResolvedUnitPrice,
+  onSpecialPriceChange,
+  calculateSpecialPrice,
+  lotGenerateLoading,
+  lotAutoFromMaterial,
+  handleEnterKey,
+  handlePoDialogBeforeClose,
+  requestCloseFormDialog,
+  openMarketingReviseDialog,
+  nextStep,
+  prevStep,
+  submitForm,
+  saveDraftAndClose,
+  saving,
+})
+
 const detailDialogVisible = ref(false)
 const detailView = ref(null)
 const detailLines = ref([])
@@ -3080,9 +2316,6 @@ function addCopiedItems() {
 </script>
 
 <style scoped>
-:deep(.draft-line-active > td) {
-  background-color: rgb(239 246 255) !important;
-}
 .admin-table {
   width: 100%;
 }
@@ -3093,221 +2326,6 @@ function addCopiedItems() {
   align-items: center;
   justify-content: center;
   gap: 2px 4px;
-}
-
-:deep(.po-fullscreen-dialog.el-dialog) {
-  border-radius: 14px;
-  overflow: hidden !important;
-  box-shadow: 0 16px 44px rgba(15, 23, 42, 0.18);
-  max-height: 92vh;
-  display: flex !important;
-  flex-direction: column !important;
-}
-
-:deep(.po-fullscreen-dialog .el-dialog__header) {
-  padding: 0;
-  margin: 0;
-  background: transparent;
-  border-bottom: 1px solid var(--el-border-color-light);
-  flex-shrink: 0;
-}
-
-:deep(.po-fullscreen-dialog .el-dialog__headerbtn) {
-  display: none !important;
-}
-
-:deep(.po-fullscreen-dialog .el-dialog__body) {
-  flex: 1 !important;
-  padding: 0 !important;
-  background: var(--el-bg-color-page);
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-  min-height: 0 !important;
-}
-
-.po-dialog-header {
-  padding: 16px 20px 12px;
-  color: var(--el-text-color-primary);
-  position: relative;
-}
-
-.po-dialog-close {
-  position: absolute;
-  top: 12px;
-  right: 14px;
-  font-size: 18px;
-  color: var(--el-text-color-primary);
-  cursor: pointer;
-  opacity: 0.9;
-  border-radius: 999px;
-  padding: 4px;
-  background: var(--el-fill-color-light);
-}
-
-.po-dialog-close:hover {
-  opacity: 1;
-  background: var(--el-fill-color);
-}
-
-.po-dialog-title-area {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.po-dialog-icon {
-  font-size: 20px;
-  color: var(--el-color-primary);
-}
-
-.po-dialog-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-
-.po-dialog-steps-wrapper {
-  width: 100%;
-  margin: 8px 0 4px;
-  padding: 0 4px;
-  display: flex;
-  justify-content: center;
-}
-
-:deep(.po-dialog-steps .el-step.is-simple .el-step__title) {
-  font-size: 13px;
-}
-
-.po-dialog-content {
-  width: 100%;
-  background: var(--el-bg-color);
-  padding: 20px 22px;
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.step-content {
-  min-height: 320px;
-}
-
-.step-content :deep(h3) {
-  margin-bottom: 14px;
-}
-
-.step-content :deep(.el-form-item) {
-  margin-bottom: 10px;
-}
-
-.material-step-grid :deep(.el-form-item__label) {
-  line-height: 1.35;
-  margin-bottom: 2px;
-}
-
-.material-step-grid :deep(.el-input),
-.material-step-grid :deep(.el-select),
-.material-step-grid :deep(.el-date-editor),
-.material-step-grid :deep(.el-input-number) {
-  width: 100%;
-}
-
-.material-step-grid :deep(.el-form-item__content) {
-  width: 100%;
-}
-
-.field-lock-row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  width: 100%;
-}
-
-.field-lock-row :deep(.el-input),
-.field-lock-row :deep(.el-select) {
-  width: 100%;
-  min-width: 0;
-}
-
-.field-lock-row :deep(.el-button) {
-  align-self: flex-start;
-  margin-top: 0;
-}
-
-.field-stack-row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  width: 100%;
-}
-
-.field-stack-row :deep(.el-input),
-.field-stack-row :deep(.el-select),
-.field-stack-row :deep(.el-date-editor),
-.field-stack-row :deep(.el-input-number) {
-  width: 100%;
-}
-
-.po-dialog-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 18px;
-  background: var(--el-bg-color);
-  border-top: 1px solid var(--el-border-color-light);
-  flex-shrink: 0;
-  gap: 10px;
-}
-
-.footer-nav {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-}
-
-.step-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--el-color-primary);
-  min-width: 120px;
-  text-align: center;
-}
-
-:deep(.footer-nav .el-button) {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 50%;
-  font-size: 14px;
-  font-weight: bold;
-}
-
-:deep(.po-dialog-footer .el-button) {
-  padding: 8px 14px;
-}
-
-:deep(.po-dialog-footer .el-button .el-icon) {
-  margin-right: 4px;
-}
-
-.po-price-readonly :deep(.el-input__wrapper) {
-  background-color: var(--el-fill-color-light);
-}
-
-:deep(.po-fullscreen-dialog .el-divider__text) {
-  font-weight: 600;
-}
-
-.etd-schedule-table {
-  width: 100%;
-}
-
-.etd-schedule-table :deep(.el-table__header-wrapper) {
-  display: none;
 }
 
 </style>
