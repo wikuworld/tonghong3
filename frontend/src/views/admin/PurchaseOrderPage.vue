@@ -1374,6 +1374,25 @@ import {
   buildEvenEtdScheduleRows,
 } from '../../utils/poEtdSchedule.js'
 import {
+  auditFieldLabel,
+  auditChangedFields,
+} from '../../utils/poAudit.js'
+import {
+  buildPoDraftPayload,
+  applyPoDraftData,
+  savePoDraftLocalStorage,
+  clearPoDraftLocalStorage,
+  readPoDraftRaw,
+} from '../../utils/poDraft.js'
+import {
+  factoryCodeFromCustomer,
+  swatchFactoryHint,
+  swatchOptionLabel,
+  fetchColorSwatchOptionList,
+  applyColorSwatchFill,
+} from '../../utils/poColorSwatch.js'
+import { parseApiErrorMessage } from '../../utils/poApi.js'
+import {
   addPoDetail,
   createPo,
   deletePoDetail,
@@ -1734,7 +1753,6 @@ const editingDetailIds = ref([])
 const draftLines = ref([])
 const draftRiskOnly = ref(false)
 const editingDraftLineIndex = ref(-1)
-const PO_DRAFT_KEY = 'po_input_dialog_draft_v1'
 const draftLinesDisplay = computed(() => {
   if (!draftRiskOnly.value) return draftLines.value
   return draftLines.value.filter((line) => Boolean(line.manual_override) || Boolean(line.material_master_override))
@@ -2143,12 +2161,6 @@ function isSelectedFluorescentColorValid() {
   return fluorescentColorOptions.value.some((opt) => String(opt.color_name || '').trim().toLowerCase() === chosen)
 }
 
-function factoryCodeFromCustomer(customer) {
-  if (!customer) return ''
-  return String(customer.code || '').trim()
-}
-
-/** Isi factory_code dari master customer (KODE SYSTEM / customers.code). */
 function applyAutoFactoryCode(customer, { force = false } = {}) {
   const code = factoryCodeFromCustomer(customer)
   if (!code) return
@@ -2159,58 +2171,25 @@ function applyAutoFactoryCode(customer, { force = false } = {}) {
   }
 }
 
-/** Hint untuk lookup swatch (KODE SYSTEM); backend memetakan ke factory_key CSV. */
-function swatchFactoryHint() {
-  const fc = String(formModel.factory_code || '').trim()
-  if (fc) return fc.toUpperCase()
-  const c = selectedCustomer.value || customers.value.find((x) => x.id === formModel.customer_id)
-  if (!c) return ''
-  return factoryCodeFromCustomer(c) || String(c.name || '').trim().slice(0, 80).toUpperCase()
-}
-
 function poFactoryKeyForSwatch() {
-  return swatchFactoryHint()
-}
-
-function swatchOptionLabel(s) {
-  if (!s) return ''
-  const code = s.color_code ? ` [${s.color_code}]` : ''
-  const emb = s.emboss ? ` · ${s.emboss}` : ''
-  return `${s.color_name || ''}${code}${emb}`
+  return swatchFactoryHint(formModel, {
+    customers: customers.value,
+    selectedCustomer: selectedCustomer.value,
+  })
 }
 
 async function loadColorSwatchOptions() {
-  const fk = swatchFactoryHint()
-  const buyer = String(formModel.buyer || '').trim().toUpperCase()
-  if ((!fk && !formModel.customer_id) || !buyer) {
-    colorSwatchOptions.value = []
-    swatchRetriedWithoutMaterial.value = false
-    return
-  }
-  const material = String(formModel.material_name || '').trim()
   colorSwatchLoading.value = true
   try {
-    const base = {
-      factory_key: fk || undefined,
-      customer_id: formModel.customer_id || undefined,
-      buyer_code: buyer,
-      limit: 60,
-    }
-    const withMaterial = !swatchAllMaterials.value && material
-    colorSwatchOptions.value = await lookupColorSwatchRecipes({
-      ...base,
-      material_name: withMaterial ? material : undefined,
-      include_all_materials: swatchAllMaterials.value || undefined,
+    const { options, retriedWithoutMaterial } = await fetchColorSwatchOptionList({
+      formModel,
+      swatchAllMaterials: swatchAllMaterials.value,
+      lookupColorSwatchRecipes,
+      customers: customers.value,
+      selectedCustomer: selectedCustomer.value,
     })
-    if (!colorSwatchOptions.value.length && withMaterial) {
-      colorSwatchOptions.value = await lookupColorSwatchRecipes({
-        ...base,
-        include_all_materials: true,
-      })
-      swatchRetriedWithoutMaterial.value = colorSwatchOptions.value.length > 0
-    } else {
-      swatchRetriedWithoutMaterial.value = false
-    }
+    colorSwatchOptions.value = options
+    swatchRetriedWithoutMaterial.value = retriedWithoutMaterial
   } catch {
     colorSwatchOptions.value = []
     swatchRetriedWithoutMaterial.value = false
@@ -2223,51 +2202,16 @@ async function applyColorSwatch(recipeId) {
   if (!recipeId) return
   try {
     const fill = await getColorSwatchPoFill(recipeId)
-    if (fill.color) {
-      formModel.color = fill.color
-      autoFieldMeta.color = false
-    }
-    if (fill.color_reference) {
-      formModel.color_reference = fill.color_reference
-      autoFieldMeta.color_reference = false
-    }
-    if (fill.color_standard) {
-      formModel.color_standard = fill.color_standard
-      autoFieldMeta.color_standard = false
-    }
-    if (fill.emboss) {
-      formModel.emboss = fill.emboss
-      materialFieldOverride.emboss = true
-    }
-    if (fill.backing) {
-      formModel.backing = fill.backing
-      autoFieldMeta.backing = false
-    }
-    if (fill.material_name && !formModel.material_name) {
-      formModel.material_name = fill.material_name
-    }
-    if (fill.thi_line_ref) {
-      formModel.thi_line_ref = fill.thi_line_ref
-    }
-    if (fill.color_swatch_recipe_id) {
-      selectedSwatchId.value = fill.color_swatch_recipe_id
-    }
+    applyColorSwatchFill(fill, {
+      formModel,
+      autoFieldMeta,
+      materialFieldOverride,
+      selectedSwatchId,
+    })
     ElMessage.success(t('pages.po.swatchApplied'))
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   }
-}
-
-function parseApiErrorMessage(err, fallback) {
-  const raw = String(err?.message || '').trim()
-  if (!raw) return fallback
-  try {
-    const parsed = JSON.parse(raw)
-    if (typeof parsed?.detail === 'string') return parsed.detail
-  } catch {
-    // gunakan raw
-  }
-  return raw
 }
 
 function applyVirSoftDefault() {
@@ -2678,124 +2622,23 @@ function resetForm() {
 }
 
 function getPoDraftPayload() {
-  return {
-    header: {
-      po_number: formModel.po_number,
-      customer_id: formModel.customer_id,
-      brand_id: formModel.brand_id,
-      po_category: formModel.po_category,
-      factory_code: formModel.factory_code,
-      order_date: formModel.order_date,
-      buyer: formModel.buyer,
-      etd: formModel.etd,
-      po_customer_ref: formModel.po_customer_ref,
-      remark: formModel.remark,
-      billing_address: formModel.billing_address,
-      delivery_address: formModel.delivery_address,
-      status: formModel.status,
-    },
-    currentLine: {
-      master_item_id: formModel.master_item_id,
-      material_name: formModel.material_name,
-      thickness_text: formModel.thickness_text,
-      color: formModel.color,
-      color_family: formModel.color_family,
-      emboss: formModel.emboss,
-      vir_softness_type: formModel.vir_softness_type,
-      softness: formModel.softness,
-      color_reference: formModel.color_reference,
-      color_standard: formModel.color_standard,
-      backing: formModel.backing,
-      quantity_order: formModel.quantity_order,
-      style_article: formModel.style_article,
-      model: formModel.model,
-      detail_remark: formModel.detail_remark,
-      thi_line_ref: formModel.thi_line_ref,
-      unit_price_input: formModel.unit_price_input,
-      is_special_price: formModel.is_special_price,
-      discount_type: formModel.discount_type,
-      discount_value: formModel.discount_value,
-      etdScheduleRows: etdScheduleRows.value,
-    },
-    draftLines: draftLines.value,
-  }
+  return buildPoDraftPayload(formModel, etdScheduleRows.value, draftLines.value)
 }
 
 function savePoDraftToLocal() {
-  try {
-    localStorage.setItem(PO_DRAFT_KEY, JSON.stringify(getPoDraftPayload()))
-  } catch {
-    // ignore local storage write error
-  }
+  savePoDraftLocalStorage(getPoDraftPayload())
 }
 
 function clearPoDraftLocal() {
-  try {
-    localStorage.removeItem(PO_DRAFT_KEY)
-  } catch {
-    // ignore
-  }
+  clearPoDraftLocalStorage()
 }
 
 function applyPoDraft(data) {
-  if (!data || typeof data !== 'object') return
-  const header = data.header || {}
-  const line = data.currentLine || {}
-  formModel.po_number = header.po_number || ''
-  formModel.customer_id = header.customer_id ?? null
-  formModel.brand_id = header.brand_id ?? null
-  formModel.po_category = header.po_category || 'production'
-  formModel.factory_code = header.factory_code || ''
-  autoFieldMeta.factory_code = false
-  formModel.order_date = header.order_date || ''
-  formModel.buyer = header.buyer || ''
-  formModel.etd = header.etd || ''
-  formModel.po_customer_ref = header.po_customer_ref || ''
-  formModel.remark = header.remark || ''
-  formModel.billing_address = header.billing_address || ''
-  formModel.delivery_address = header.delivery_address || ''
-  formModel.status = header.status || 'draft'
-
-  formModel.master_item_id = line.master_item_id ?? null
-  formModel.material_name = line.material_name || ''
-  formModel.thickness_text = line.thickness_text || ''
-  formModel.color = line.color || ''
-  formModel.color_family = line.color_family || null
-  formModel.emboss = line.emboss || ''
-  formModel.vir_softness_type = line.vir_softness_type || ''
-  formModel.softness = line.softness || ''
-  formModel.color_reference = line.color_reference || ''
-  formModel.color_standard = line.color_standard || ''
-  formModel.backing = line.backing || ''
-  formModel.quantity_order = line.quantity_order || ''
-  formModel.style_article = line.style_article || ''
-  formModel.model = line.model || ''
-  formModel.detail_remark = line.detail_remark || ''
-  formModel.thi_line_ref = line.thi_line_ref || ''
-  formModel.unit_price_input = line.unit_price_input ?? null
-  formModel.is_special_price = Boolean(line.is_special_price)
-  formModel.discount_type = line.discount_type || 'percent'
-  formModel.discount_value = Number(line.discount_value || 0)
-  if (Array.isArray(line.etdScheduleRows) && line.etdScheduleRows.length) {
-    etdScheduleRows.value = line.etdScheduleRows.map((r, i) => ({
-      sequence_no: r.sequence_no ?? i + 1,
-      qty: r.qty != null ? Number(r.qty) : null,
-      date: r.date || '',
-    }))
-  } else {
-    clearEtdScheduleRows()
-  }
-
-  draftLines.value = Array.isArray(data.draftLines) ? data.draftLines : []
+  applyPoDraftData(data, { formModel, autoFieldMeta, etdScheduleRows, draftLines })
 }
 
 async function restorePoDraftIfAny() {
-  let raw = ''
-  try {
-    raw = localStorage.getItem(PO_DRAFT_KEY) || ''
-  } catch {
-    raw = ''
-  }
+  const raw = readPoDraftRaw()
   if (!raw) return
   try {
     await ElMessageBox.confirm(
@@ -3627,78 +3470,6 @@ const openDetailDialog = async (row) => {
     detailAudit.value = []
   }
   detailDialogVisible.value = true
-}
-
-function prettyAudit(a) {
-  const b = a.before ? JSON.stringify(a.before, null, 2) : ''
-  const af = a.after ? JSON.stringify(a.after, null, 2) : ''
-  if (b && af) return `${t('common.beforeLabel')}:\\n${b}\\n\\n${t('common.afterLabel')}:\\n${af}`
-  return b || af || ''
-}
-
-const FIELD_LABELS = {
-  quantity_order: 'Qty Order',
-  unit_price: 'Harga USD',
-  line_etd: 'ETD Baris',
-  thi_line_ref: 'THI/Lot',
-  color_family: 'Kategori Warna',
-  color_standard: 'Color standart',
-  thickness: 'Ketebalan',
-  softness: 'Kelembutan',
-  backing: 'Backing',
-  emboss: 'Timbulan',
-  style_article: 'Style/Article',
-  model: 'Model',
-  material_name: 'Material',
-  color: 'Warna',
-  remark: 'Catatan',
-  status: 'Status',
-  delivery_schedules: 'Jadwal Pengiriman',
-  po_number: 'No. PO',
-  po_id: 'PO ID',
-  po_header_id: 'PO Header ID',
-}
-
-function auditFieldLabel(key) {
-  return FIELD_LABELS[key] || key
-}
-
-function auditChangedFields(a) {
-  const before = a.before || {}
-  const after = a.after || {}
-  const allKeys = new Set([...Object.keys(before), ...Object.keys(after)])
-  const changes = []
-  const skipKeys = new Set(['id', 'created_at', 'updated_at', 'po_header_id'])
-
-  for (const key of allKeys) {
-    if (skipKeys.has(key)) continue
-    const b = before[key]
-    const af = after[key]
-    if (JSON.stringify(b) !== JSON.stringify(af)) {
-      let change = null
-      if (typeof b === 'number' && typeof af === 'number') {
-        const diff = af - b
-        change = diff > 0 ? `+${diff}` : `${diff}`
-      }
-      changes.push({ key, before: b, after: af, change })
-    }
-  }
-
-  // Deduplicate: combine color and color_family if both changed to same display value
-  const colorIdx = changes.findIndex(c => c.key === 'color')
-  const colorFamilyIdx = changes.findIndex(c => c.key === 'color_family')
-  if (colorIdx !== -1 && colorFamilyIdx !== -1) {
-    const colorVal = changes[colorIdx].after
-    const colorFamilyVal = changes[colorFamilyIdx].after
-    if (colorVal === colorFamilyVal) {
-      // Merge into color, remove color_family
-      changes[colorIdx].key = 'color_both'
-      changes[colorIdx].displayLabel = 'Warna / Kategori'
-      changes.splice(colorFamilyIdx, 1)
-    }
-  }
-
-  return changes
 }
 
 const printDialogVisible = ref(false)

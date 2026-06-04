@@ -710,6 +710,40 @@ class QcDetailUpdate(BaseModel):
     reject_reason: Optional[str] = None
 
 
+class QcHeaderOut(ORMBase):
+    id: int
+    qc_number: Optional[str] = None
+    production_id: Optional[int] = None
+    po_id: Optional[int] = None
+    qc_date: Optional[date] = None
+    operator_name: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+
+class QcDetailOut(ORMBase):
+    id: int
+    qc_id: Optional[int] = None
+    production_detail_id: Optional[int] = None
+    roll_number: Optional[str] = None
+    batch_number: Optional[str] = None
+    thickness_actual: Optional[float] = None
+    softness_actual: Optional[str] = None
+    thickness_min: Optional[float] = None
+    thickness_max: Optional[float] = None
+    softness_standard: Optional[str] = None
+    result: Optional[str] = None
+    is_ok: Optional[bool] = None
+    device_id: Optional[str] = None
+    port: Optional[str] = None
+    raw_value: Optional[str] = None
+    remark: Optional[str] = None
+    measured_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    qty_checked: Optional[float] = None
+    qty_reject: Optional[float] = None
+    reject_reason: Optional[str] = None
+
+
 # --- Delivery ---
 class DeliveryHeaderCreate(BaseModel):
     """packing_id wajib — kirim hanya dari packing yang sudah selesai (done)."""

@@ -4,7 +4,7 @@ from fastapi.params import Query
 from fastapi.routing import APIRoute
 
 from app import main
-from app.routers import buyer_prices, customs, delivery, exchange_rates, po, sales_orders
+from app.routers import buyer_prices, customs, delivery, exchange_rates, po, qc, sales_orders
 
 
 def _get_route(router, path: str, method: str) -> APIRoute:
@@ -145,6 +145,24 @@ def test_delivery_router_require_auth_and_role_guards():
         ("/delivery/{delivery_id}/mark-surat-jalan-printed", "POST"),
     ]:
         route = _get_route(delivery.router, path, method)
+        assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
+
+
+def test_qc_router_require_auth_and_role_guards():
+    for path, method in [
+        ("/qc", "GET"),
+        ("/qc/{qc_id}", "GET"),
+        ("/qc/{qc_id}/details", "GET"),
+    ]:
+        route = _get_route(qc.router, path, method)
+        assert _has_dep(route, "get_current_user"), f"{method} {path} harus pakai get_current_user"
+
+    for path, method in [
+        ("/qc", "POST"),
+        ("/qc/{qc_id}/details", "POST"),
+        ("/qc-detail/{detail_id}", "PUT"),
+    ]:
+        route = _get_route(qc.router, path, method)
         assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
 
 
