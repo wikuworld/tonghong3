@@ -551,6 +551,14 @@
                           :value="s.id"
                         />
                       </el-select>
+                      <div class="mt-1 flex flex-wrap items-center gap-2">
+                        <el-checkbox v-model="swatchAllMaterials" @change="loadColorSwatchOptions">
+                          {{ t('pages.po.swatchAllMaterials') }}
+                        </el-checkbox>
+                      </div>
+                      <p v-if="swatchRetriedWithoutMaterial" class="mt-1 text-xs text-slate-500">
+                        {{ t('pages.po.swatchRetriedHint') }}
+                      </p>
                       <p v-if="!colorSwatchLoading && !colorSwatchOptions.length && poFactoryKeyForSwatch() && formModel.buyer" class="mt-1 text-xs text-amber-600">
                         {{ t('pages.po.swatchNoOptions') }}
                       </p>
@@ -757,6 +765,7 @@
                   <div v-if="lotAutoFromMaterial && formModel.thi_line_ref" class="mt-1">
                     <el-tag size="small" type="success">{{ t('pages.po.autoFilled') }}</el-tag>
                   </div>
+                  <p class="mt-1 text-xs text-slate-500">{{ t('pages.po.lotPreviewHint') }}</p>
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :md="8">
@@ -1300,6 +1309,7 @@ import {
   duplicatePo,
   generatePoDetailLot,
   generateLotPreview,
+  fetchNextPoNumber,
   fetchAuthenticatedDocument,
   getAllowedBrands,
   getCustomer,
@@ -1555,20 +1565,22 @@ const softnessRangeWarning = computed(() => {
   return ''
 })
 
+const nextPoNumberPreview = ref('')
+
 const nextPoNumberDisplay = computed(() => {
   if (isEditMode.value) return formModel.po_number || ''
-  const now = new Date()
-  const period = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`
-  const maxSeq = rows.value.reduce((max, row) => {
-    const match = row.po_number?.match(/SO-\d+-(\d+)/)
-    if (match) {
-      const seq = parseInt(match[1], 10)
-      return Math.max(max, seq)
-    }
-    return max
-  }, 0)
-  return `SO-${period}-${String(maxSeq + 1).padStart(5, '0')}`
+  return nextPoNumberPreview.value || '…'
 })
+
+async function refreshNextPoNumberPreview() {
+  if (isEditMode.value) return
+  try {
+    const r = await fetchNextPoNumber()
+    nextPoNumberPreview.value = r?.po_number || ''
+  } catch {
+    nextPoNumberPreview.value = ''
+  }
+}
 
 const currentStep = ref(0)
 
@@ -1703,6 +1715,8 @@ const previewResolvedUnitPrice = ref(null)
 const fluorescentColorOptions = ref([])
 const colorSwatchOptions = ref([])
 const colorSwatchLoading = ref(false)
+const swatchAllMaterials = ref(false)
+const swatchRetriedWithoutMaterial = ref(false)
 const selectedSwatchId = ref(null)
 
 const materialDimensionOptions = ref([])
@@ -1957,14 +1971,17 @@ function applyAutoFactoryCode(customer, { force = false } = {}) {
   }
 }
 
-function poFactoryKeyForSwatch() {
+/** Hint untuk lookup swatch (KODE SYSTEM); backend memetakan ke factory_key CSV. */
+function swatchFactoryHint() {
   const fc = String(formModel.factory_code || '').trim()
   if (fc) return fc.toUpperCase()
   const c = selectedCustomer.value || customers.value.find((x) => x.id === formModel.customer_id)
   if (!c) return ''
-  const fromCode = factoryCodeFromCustomer(c)
-  if (fromCode) return fromCode.toUpperCase()
-  return String(c.name || '').trim().toUpperCase()
+  return factoryCodeFromCustomer(c) || String(c.name || '').trim().slice(0, 80).toUpperCase()
+}
+
+function poFactoryKeyForSwatch() {
+  return swatchFactoryHint()
 }
 
 function swatchOptionLabel(s) {
@@ -1975,22 +1992,40 @@ function swatchOptionLabel(s) {
 }
 
 async function loadColorSwatchOptions() {
-  const fk = poFactoryKeyForSwatch()
+  const fk = swatchFactoryHint()
   const buyer = String(formModel.buyer || '').trim().toUpperCase()
-  if (!fk || !buyer) {
+  if ((!fk && !formModel.customer_id) || !buyer) {
     colorSwatchOptions.value = []
+    swatchRetriedWithoutMaterial.value = false
     return
   }
+  const material = String(formModel.material_name || '').trim()
   colorSwatchLoading.value = true
   try {
-    colorSwatchOptions.value = await lookupColorSwatchRecipes({
-      factory_key: fk,
+    const base = {
+      factory_key: fk || undefined,
+      customer_id: formModel.customer_id || undefined,
       buyer_code: buyer,
-      material_name: String(formModel.material_name || '').trim() || undefined,
       limit: 60,
+    }
+    const withMaterial = !swatchAllMaterials.value && material
+    colorSwatchOptions.value = await lookupColorSwatchRecipes({
+      ...base,
+      material_name: withMaterial ? material : undefined,
+      include_all_materials: swatchAllMaterials.value || undefined,
     })
+    if (!colorSwatchOptions.value.length && withMaterial) {
+      colorSwatchOptions.value = await lookupColorSwatchRecipes({
+        ...base,
+        include_all_materials: true,
+      })
+      swatchRetriedWithoutMaterial.value = colorSwatchOptions.value.length > 0
+    } else {
+      swatchRetriedWithoutMaterial.value = false
+    }
   } catch {
     colorSwatchOptions.value = []
+    swatchRetriedWithoutMaterial.value = false
   } finally {
     colorSwatchLoading.value = false
   }
@@ -2939,6 +2974,7 @@ const openCreateDialog = async () => {
   currentStep.value = 0
   formDialogVisible.value = true
   pauseLotAutoBriefly()
+  void refreshNextPoNumberPreview()
   await restorePoDraftIfAny()
 }
 
@@ -3104,6 +3140,7 @@ async function pushCurrentLine(copyCurrent = false) {
     colorDimensionOptions.value = []
     formErrors.material_name = ''
     formErrors.quantity_order = ''
+    scheduleAutoLotGenerate()
   }
 }
 

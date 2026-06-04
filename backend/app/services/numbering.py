@@ -14,6 +14,19 @@ def _period() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m")
 
 
+def peek_number(db: Session, doc_type: str, prefix: str) -> str:
+    """Preview nomor berikutnya tanpa increment (untuk form draft)."""
+    period = _period()
+    seq = db.scalars(
+        select(DocumentSequence).where(
+            DocumentSequence.doc_type == doc_type,
+            DocumentSequence.period == period,
+        )
+    ).first()
+    n = (int(seq.last_value) + 1) if seq else 1
+    return f"{prefix}-{period}-{n:05d}"
+
+
 def next_number(db: Session, doc_type: str, prefix: str) -> str:
     """Contoh: SO-202604-00001, PRD-202604-00001, PACK-202604-00001."""
     period = _period()

@@ -81,6 +81,43 @@ def _material_group_from_inputs(
     raise HTTPException(status_code=400, detail="Material group tidak bisa ditentukan (butuh master item PU/Suide).")
 
 
+def _lot_number_format(
+    *,
+    prefix: str,
+    factory: str,
+    date_yymmdd: str,
+    seq_value: int,
+) -> str:
+    return f"{prefix}{factory}{date_yymmdd}{seq_value:03d}"
+
+
+def peek_lot_number(
+    db: Session,
+    *,
+    po_category: str,
+    factory_code: str,
+    material_group: str,
+    at: datetime | None = None,
+) -> str:
+    """Preview nomor lot berikutnya tanpa menaikkan sequence (untuk draft UI)."""
+    now = at or datetime.now()
+    date_ymd = now.strftime("%Y%m%d")
+    date_yymmdd = now.strftime("%y%m%d")
+    prefix = _prefix_for(material_group, po_category)
+    factory = (factory_code or "").strip()
+    if not factory:
+        raise HTTPException(status_code=400, detail="Factory code PO belum diisi.")
+    seq = db.scalars(
+        select(LotSequence).where(
+            LotSequence.prefix == prefix,
+            LotSequence.factory_code == factory,
+            LotSequence.date_ymd == date_ymd,
+        )
+    ).first()
+    n = (int(seq.last_value) + 1) if seq else 1
+    return _lot_number_format(prefix=prefix, factory=factory, date_yymmdd=date_yymmdd, seq_value=n)
+
+
 def generate_lot_number(
     db: Session,
     *,
@@ -117,7 +154,7 @@ def generate_lot_number(
         n = int(seq.last_value)
         db.flush()
 
-    return f"{prefix}{factory}{date_yymmdd}{n:03d}"
+    return _lot_number_format(prefix=prefix, factory=factory, date_yymmdd=date_yymmdd, seq_value=n)
 
 
 def generate_po_detail_lot_number(db: Session, detail_id: int, *, at: datetime | None = None) -> str:

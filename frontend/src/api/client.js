@@ -292,6 +292,10 @@ export function listPoMktStages() {
   return apiFetch('/po/mkt-workflow-stages')
 }
 
+export function fetchNextPoNumber() {
+  return apiFetch('/po/next-number')
+}
+
 export function generatePoDetailLot(detailId) {
   return apiFetch(`/po-detail/${detailId}/generate-lot`, { method: 'POST' })
 }
@@ -667,6 +671,12 @@ export function importFluorescentBundled() {
   return apiFetch('/masters/fluorescent-colors/import-bundled', { method: 'POST' })
 }
 
+export function importFluorescentCsv(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/masters/fluorescent-colors/import-csv', { method: 'POST', body: fd })
+}
+
 /** Master color swatch (resep pabrik × buyer × material × emboss). */
 export function listColorSwatchRecipesPage(params = {}) {
   const q = new URLSearchParams()
@@ -682,9 +692,12 @@ export function listColorSwatchRecipesPage(params = {}) {
 
 export function lookupColorSwatchRecipes(params = {}) {
   const q = new URLSearchParams()
-  q.set('factory_key', String(params.factory_key || '').trim())
+  const fk = String(params.factory_key || '').trim()
+  if (fk) q.set('factory_key', fk)
   q.set('buyer_code', String(params.buyer_code || '').trim())
+  if (params.customer_id != null && params.customer_id !== '') q.set('customer_id', String(params.customer_id))
   if (params.material_name && String(params.material_name).trim()) q.set('material_name', String(params.material_name).trim())
+  if (params.include_all_materials) q.set('include_all_materials', 'true')
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
   if (params.limit != null) q.set('limit', String(params.limit))
   return apiFetch(`/masters/color-swatch-recipes/lookup?${q}`)

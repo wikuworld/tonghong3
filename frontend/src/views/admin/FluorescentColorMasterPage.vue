@@ -15,6 +15,9 @@
       <el-input v-model="keyword" clearable :placeholder="t('pages.fluorescentColors.searchPlaceholder')" class="w-56" />
       <el-button :icon="Refresh" @click="reload">{{ t('common.refresh') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
+      <el-upload v-if="canCreate" :auto-upload="false" :show-file-list="false" accept=".csv" @change="onUploadCsv">
+        <el-button type="success" :loading="importing">{{ t('pages.fluorescentColors.importCsv') }}</el-button>
+      </el-upload>
       <el-button v-if="isAdmin" type="warning" plain :loading="importingBundled" @click="importBundled">
         {{ t('pages.fluorescentColors.importBundled') }}
       </el-button>
@@ -119,6 +122,7 @@ import {
   createFluorescentColor,
   deleteFluorescentColor,
   importFluorescentBundled,
+  importFluorescentCsv,
   listFluorescentColorsPage,
   me,
   updateFluorescentColor,
@@ -132,6 +136,7 @@ const isAdmin = ref(false)
 
 const loading = ref(false)
 const saving = ref(false)
+const importing = ref(false)
 const importingBundled = ref(false)
 const rows = ref([])
 const total = ref(0)
@@ -271,6 +276,28 @@ async function remove(row) {
     await loadSummary()
   } catch (e) {
     if (e !== 'cancel') ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function onUploadCsv(uploadFile) {
+  const file = uploadFile?.raw
+  if (!file) return
+  importing.value = true
+  try {
+    const r = await importFluorescentCsv(file)
+    ElMessage.success(
+      t('pages.fluorescentColors.importDone', {
+        inserted: r.inserted,
+        updated: r.updated,
+        total: r.total,
+      }),
+    )
+    await load()
+    await loadSummary()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    importing.value = false
   }
 }
 

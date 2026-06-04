@@ -23,6 +23,107 @@ def normalize_factory_key(raw: str | None) -> str:
     return re.sub(r"\s+", " ", (raw or "").strip()).upper()
 
 
+def _compact_alnum(value: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", (value or "").upper())
+
+
+def _strip_company_prefix(name: str) -> str:
+    return re.sub(
+        r"^(PT\.?|CV\.?|TBK\.?|PD\.?|CO\.?|LTD\.?)\s+",
+        "",
+        (name or "").upper(),
+        flags=re.IGNORECASE,
+    ).strip()
+
+
+def resolve_swatch_factory_keys(
+    db: Session,
+    *,
+    factory_hint: str | None,
+    customer_id: int | None = None,
+) -> list[str]:
+    """
+    Kandidat factory_key untuk lookup swatch.
+    Memetakan KODE SYSTEM (mis. CS004) ke nama pabrik di CSV (mis. CHANGSHIN) via customer.
+    """
+    hint = normalize_factory_key(factory_hint)
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(key: str | None) -> None:
+        if not key:
+            return
+        k = normalize_factory_key(key)
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+
+    if hint:
+        exact = db.scalar(
+            select(ColorSwatchRecipe.factory_key)
+            .where(
+                ColorSwatchRecipe.is_active.is_(True),
+                ColorSwatchRecipe.factory_key == hint,
+            )
+            .limit(1)
+        )
+        if exact:
+            add(exact)
+            return out
+
+    customer = db.get(Customer, customer_id) if customer_id else None
+    if customer is None and hint:
+        customer = db.scalars(select(Customer).where(Customer.code.ilike(hint)).limit(1)).first()
+
+    if customer and (customer.name or "").strip():
+        name_upper = _strip_company_prefix(customer.name or "")
+        name_compact = _compact_alnum(name_upper)
+        recipe_keys = list(
+            db.scalars(
+                select(ColorSwatchRecipe.factory_key)
+                .where(ColorSwatchRecipe.is_active.is_(True))
+                .distinct()
+            ).all()
+        )
+        best_key: str | None = None
+        best_score = 0
+        for rk in recipe_keys:
+            if not rk:
+                continue
+            rk_norm = normalize_factory_key(rk)
+            rk_compact = _compact_alnum(rk_norm)
+            if len(rk_compact) < 4:
+                continue
+            score = 0
+            if rk_compact in name_compact:
+                score = len(rk_compact) + 20
+            elif rk_norm in name_upper:
+                score = len(rk_compact) + 10
+            if score > best_score:
+                best_score = score
+                best_key = rk_norm
+        if best_key and best_score >= 10:
+            add(best_key)
+
+        words = [w for w in re.split(r"[\s.,()/]+", name_upper) if len(w) >= 3]
+        if words:
+            for candidate in (
+                _compact_alnum("".join(words[:2])),
+                _compact_alnum(words[0]),
+                _compact_alnum("".join(words[:3])),
+            ):
+                if len(candidate) < 4:
+                    continue
+                for rk in recipe_keys:
+                    if _compact_alnum(normalize_factory_key(rk)) == candidate:
+                        add(rk)
+                        break
+
+    if hint:
+        add(hint)
+    return out
+
+
 def normalize_buyer_code(raw: str | None) -> str:
     b = (raw or "").strip().upper()
     if b in {"WHITE", "BLACK", "GREY", "GRAY", "PINK", "YELLOW", "RED", "BLUE", "3MR", "3GU", "4AU"}:
@@ -89,17 +190,38 @@ def iter_csv_recipes(stream: TextIO | BinaryIO, source_file: str) -> list[dict[s
 
 
 def _resolve_customer_id(db: Session, factory_key: str) -> int | None:
-    fk = factory_key.strip().upper()
-    cust = db.scalars(
-        select(Customer).where(
-            (Customer.code.ilike(fk)) | (Customer.name.ilike(fk))
-        ).limit(1)
-    ).first()
+    fk = normalize_factory_key(factory_key)
+    if not fk:
+        return None
+    cust = db.scalars(select(Customer).where(Customer.code.ilike(fk)).limit(1)).first()
+    if cust:
+        return int(cust.id)
+    cust = db.scalars(select(Customer).where(Customer.name.ilike(fk)).limit(1)).first()
     if cust:
         return int(cust.id)
     like = f"%{fk}%"
     cust = db.scalars(select(Customer).where(Customer.name.ilike(like)).limit(1)).first()
-    return int(cust.id) if cust else None
+    if cust:
+        return int(cust.id)
+    fk_compact = _compact_alnum(fk)
+    if len(fk_compact) < 4:
+        return None
+    best: Customer | None = None
+    best_score = 0
+    for c in db.scalars(select(Customer).where(Customer.is_active.is_(True))).all():
+        name_compact = _compact_alnum(_strip_company_prefix(c.name or ""))
+        code_compact = _compact_alnum(c.code or "")
+        score = 0
+        if fk_compact == code_compact and code_compact:
+            return int(c.id)
+        if fk_compact in name_compact:
+            score = len(fk_compact) + 10
+        elif name_compact and name_compact in fk_compact:
+            score = len(name_compact)
+        if score > best_score:
+            best_score = score
+            best = c
+    return int(best.id) if best and best_score >= 8 else None
 
 
 def _resolve_brand_id(db: Session, buyer_code: str) -> int | None:

@@ -134,3 +134,57 @@ def gather_bundled_rows() -> list[dict[str, Any]]:
     for r in rows:
         r["source_file"] = r.get("source_file") or "fluorescent_csv_pack"
     return rows
+
+
+def parse_fluorescent_upload(raw: bytes, filename: str) -> list[dict[str, Any]]:
+    """Parse upload CSV fluorescent (format NB/ADIDAS/GLOBAL/UA atau generic)."""
+    import csv
+    import io
+    import tempfile
+
+    imp = _load_import_module()
+    suffix = Path(filename).suffix or ".csv"
+    path = Path(tempfile.mkstemp(suffix=suffix)[1])
+    try:
+        path.write_bytes(raw)
+        merged: list[dict[str, Any]] = []
+        for loader in (imp.load_nb, imp.load_adidas, imp.load_global, imp.load_ua):
+            try:
+                part = loader(path)
+                if part:
+                    merged.extend(part)
+            except Exception:
+                continue
+        if merged:
+            rows = imp.dedup(merged)
+            for r in rows:
+                r["source_file"] = filename
+            return rows
+    finally:
+        path.unlink(missing_ok=True)
+
+    text = raw.decode("utf-8-sig", errors="replace")
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return []
+    delim = ";" if ";" in lines[0] else ","
+    reader = csv.DictReader(io.StringIO(text), delimiter=delim)
+    out: list[dict[str, Any]] = []
+    for row in reader:
+        name = (row.get("color_name") or row.get("COLOR NAME") or row.get("Color Name") or "").strip()
+        if not name:
+            continue
+        buyer = (row.get("buyer_code") or row.get("BUYER") or row.get("buyer") or "GLOBAL").strip()
+        out.append(
+            {
+                "buyer_code": buyer,
+                "season_label": (row.get("season_label") or row.get("season") or row.get("SEASON") or "").strip()
+                or None,
+                "color_name": name,
+                "color_code": (row.get("color_code") or row.get("COLOR CODE") or row.get("code") or "").strip()
+                or None,
+                "color_class": (row.get("color_class") or row.get("class") or "fluorescent").strip(),
+                "source_file": filename,
+            }
+        )
+    return imp.dedup(out) if out else []

@@ -42,6 +42,7 @@ from app.services.fluorescent_color import (
     apply_fluorescent_fields,
     find_existing,
     gather_bundled_rows,
+    parse_fluorescent_upload,
     upsert_fluorescent_rows,
 )
 from app.services.master_item_dimensions import (
@@ -484,6 +485,22 @@ def import_fluorescent_bundled(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if not rows:
         raise HTTPException(status_code=400, detail="Tidak ada baris valid")
+    stats = upsert_fluorescent_rows(db, rows)
+    return FluorescentImportResultOut(**stats)
+
+
+@router.post("/masters/fluorescent-colors/import-csv", response_model=FluorescentImportResultOut)
+async def import_fluorescent_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+) -> FluorescentImportResultOut:
+    """Upload CSV fluorescent (format NB/ADIDAS/GLOBAL/UA atau kolom generic)."""
+    raw = await file.read()
+    filename = file.filename or "upload.csv"
+    rows = parse_fluorescent_upload(raw, filename)
+    if not rows:
+        raise HTTPException(status_code=400, detail="Tidak ada baris valid dalam file CSV")
     stats = upsert_fluorescent_rows(db, rows)
     return FluorescentImportResultOut(**stats)
 

@@ -4,6 +4,7 @@ from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
@@ -11,7 +12,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.db import get_db
 from app.models import Brand, CustomerBrandMapping, FluorescentColorMaster, PoDetail, PoDetailDelivery, PoHeader, SubconInvoice, PpicsAssignment
 from app.services.audit import log_change
-from app.services.numbering import next_number
+from app.services.numbering import next_number, peek_number
 from app.schemas import (
     DeliveryScheduleItem,
     DeliverySchedulesPayload,
@@ -41,6 +42,7 @@ from app.services.lot_numbers import (
     _material_group_from_inputs,
     generate_lot_number,
     generate_po_detail_lot_number,
+    peek_lot_number,
 )
 from app.routers.auth import get_current_user, require_roles
 
@@ -196,6 +198,19 @@ def _validate_fluorescent_color_master(
 @router.get("/po/mkt-workflow-stages")
 def mkt_workflow_stages(_user=Depends(get_current_user)) -> dict:
     return {"stages": list(MKT_STAGES_ORDER)}
+
+
+class NextPoNumberOut(BaseModel):
+    po_number: str
+
+
+@router.get("/po/next-number", response_model=NextPoNumberOut)
+def preview_next_po_number(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> NextPoNumberOut:
+    """Preview nomor SO berikutnya tanpa increment sequence."""
+    return NextPoNumberOut(po_number=peek_number(db, "SO", "SO"))
 
 
 @router.get("/po", response_model=list[PoHeaderOut])
@@ -863,6 +878,24 @@ def add_po_detail(
     row = PoDetail(po_id=po_id, **payload)
     db.add(row)
     db.flush()
+    factory = (po.factory_code or "").strip()
+    if factory:
+        try:
+            group = _material_group_from_inputs(
+                db,
+                master_item_id=row.master_item_id,
+                material_name=row.material_name,
+                vir_softness_type=row.vir_softness_type,
+            )
+            row.thi_line_ref = generate_lot_number(
+                db,
+                po_category=po.po_category or "production",
+                factory_code=factory,
+                material_group=group,
+            )
+            db.flush()
+        except HTTPException:
+            pass
     log_change(
         db,
         entity_type="sales_order_line",
@@ -999,13 +1032,12 @@ def generate_lot_preview(
         material_name=data.get("material_name"),
         vir_softness_type=data.get("vir_softness_type"),
     )
-    lot = generate_lot_number(
+    lot = peek_lot_number(
         db,
         po_category=data.get("po_category") or "production",
         factory_code=data.get("factory_code") or "",
         material_group=group,
     )
-    db.commit()
     return LotGenerateOut(lot_number=lot)
 
 
