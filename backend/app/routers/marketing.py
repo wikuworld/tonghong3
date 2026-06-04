@@ -214,6 +214,27 @@ def _delivery_slots(ln: PoDetail) -> dict[str, Any]:
     return out
 
 
+def _schedule_summary(ln: PoDetail, delivered: Decimal) -> dict[str, str]:
+    """Ringkasan rencana jadwal vs order vs aktual terkirim."""
+    total = Decimal(0)
+    for d in ln.delivery_schedules or []:
+        if d.qty is not None:
+            total += d.qty
+    order = ln.quantity_order
+    out = {
+        "schedule_qty_total": _dec_str(total) if total else "",
+        "schedule_unallocated_qty": "",
+        "actual_vs_schedule_qty": "",
+    }
+    if order is not None:
+        if total:
+            out["schedule_unallocated_qty"] = _dec_str(order - total)
+            out["actual_vs_schedule_qty"] = _dec_str(delivered - total)
+        else:
+            out["schedule_unallocated_qty"] = _dec_str(order)
+    return out
+
+
 def _latest_production_status_by_pod(db: Session, pod_ids: set[int]) -> dict[int, str]:
     if not pod_ids:
         return {}
@@ -280,6 +301,7 @@ def _line_to_row(
         "mkt_stage": h.mkt_workflow_stage or "",
     }
     row.update(_delivery_slots(ln))
+    row.update(_schedule_summary(ln, delivered))
     return row
 
 
@@ -417,6 +439,9 @@ _OUTSTANDING_XLS_COLUMNS: list[tuple[str, str]] = [
     ("detail_remark", "CATATAN BARIS PO"),
     ("status_material", "STATUS MATERIAL"),
     ("delivered_qty", "QTY TERKIRIM"),
+    ("schedule_qty_total", "JADWAL TOTAL"),
+    ("schedule_unallocated_qty", "BELUM DIJADWAL"),
+    ("actual_vs_schedule_qty", "AKTUAL vs JADWAL"),
     ("production_status", "STATUS PRODUKSI"),
     ("delivery_1_qty", "1st Qty"),
     ("delivery_1_date", "1st Date"),

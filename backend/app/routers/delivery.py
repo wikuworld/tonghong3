@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import DeliveryDetail, DeliveryHeader, PoDetail, PoHeader, ProductionDetail, QcDetail
+from app.services.po_delivery_balance import validate_delivery_qty_against_po_balance
 from app.schemas import (
     DeliveryDetailCreate,
     DeliveryDetailUpdate,
@@ -266,6 +267,11 @@ def add_delivery_detail(
             status_code=400,
             detail="Hanya production detail yang sudah QC OK yang boleh dikirim",
         )
+    validate_delivery_qty_against_po_balance(
+        db,
+        production_detail_id=body.production_detail_id,
+        qty=body.qty,
+    )
     row = DeliveryDetail(
         delivery_id=delivery_id, **body.model_dump(exclude_unset=True)
     )
@@ -306,6 +312,15 @@ def update_delivery_detail(
                 status_code=400,
                 detail="Hanya production detail yang sudah QC OK yang boleh dikirim",
             )
+    target_pd = new_pd if new_pd is not None else row.production_detail_id
+    target_qty = body.qty if body.qty is not None else row.qty
+    if target_pd is not None:
+        validate_delivery_qty_against_po_balance(
+            db,
+            production_detail_id=int(target_pd),
+            qty=target_qty,
+            exclude_delivery_detail_id=detail_id,
+        )
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(row, k, v)
     log_change(

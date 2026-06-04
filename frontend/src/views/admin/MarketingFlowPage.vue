@@ -211,6 +211,10 @@
           />
         </template>
         <el-table-column prop="qty_sf" :label="t('pages.marketingFlow.colQtySf')" width="110" />
+        <el-table-column prop="schedule_qty_total" :label="t('pages.marketingFlow.colScheduleQtyTotal')" width="100" align="right" />
+        <el-table-column prop="schedule_unallocated_qty" :label="t('pages.marketingFlow.colScheduleUnallocated')" width="110" align="right" />
+        <el-table-column prop="delivered_qty" :label="t('pages.marketingFlow.colDeliveredQty')" width="96" align="right" />
+        <el-table-column prop="actual_vs_schedule_qty" :label="t('pages.marketingFlow.colActualVsSchedule')" width="110" align="right" />
         <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="110" />
         <el-table-column prop="status_material" :label="t('pages.marketingFlow.colStatusMaterial')" min-width="200" show-overflow-tooltip />
         <el-table-column prop="remark_system" :label="t('pages.marketingFlow.colRemarkSystem')" min-width="220" show-overflow-tooltip />
@@ -632,6 +636,10 @@ const OUTSTANDING_TEXT_FILTER_KEYS = [
   'color',
   'softness',
   'qty_sf',
+  'schedule_qty_total',
+  'schedule_unallocated_qty',
+  'delivered_qty',
+  'actual_vs_schedule_qty',
   'unit_price',
   'color_reference',
   'color_standard',
@@ -688,6 +696,9 @@ const outstandingTextFilterFields = computed(() => {
     color: 'common.color',
     softness: 'common.softness',
     qty_sf: 'pages.marketingFlow.colQtySf',
+    schedule_qty_total: 'pages.marketingFlow.colScheduleQtyTotal',
+    schedule_unallocated_qty: 'pages.marketingFlow.colScheduleUnallocated',
+    actual_vs_schedule_qty: 'pages.marketingFlow.colActualVsSchedule',
     unit_price: 'pages.marketingFlow.colUnitPrice',
     color_reference: 'common.colorReference',
     color_standard: 'pages.marketingFlow.colColorStd',

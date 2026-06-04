@@ -802,6 +802,61 @@
                 </el-form-item>
               </el-col>
             </el-row>
+            <el-collapse v-model="etdScheduleOpen" class="mt-2">
+              <el-collapse-item name="schedule" :title="t('pages.po.etdSchedule')">
+                <p class="mb-2 text-xs text-slate-500">{{ t('pages.po.etdScheduleHint') }}</p>
+                <el-table :data="etdScheduleRows" border size="small" class="etd-schedule-table">
+                  <el-table-column :label="t('common.noLabel')" width="56" align="center">
+                    <template #default="{ $index }">{{ $index + 1 }}</template>
+                  </el-table-column>
+                  <el-table-column :label="t('pages.po.etdQty')" width="130">
+                    <template #default="{ $index }">
+                      <el-input-number
+                        v-model="etdScheduleRows[$index].qty"
+                        :min="0"
+                        :controls="false"
+                        size="small"
+                        class="w-full"
+                      />
+                    </template>
+                  </el-table-column>
+                  <el-table-column :label="t('pages.po.etdDate')">
+                    <template #default="{ $index }">
+                      <el-date-picker
+                        v-model="etdScheduleRows[$index].date"
+                        type="date"
+                        size="small"
+                        class="w-full"
+                        value-format="YYYY-MM-DD"
+                      />
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                  <el-button size="small" @click="clearEtdScheduleRows">{{ t('common.clear') }}</el-button>
+                  <el-button size="small" type="primary" plain @click="autoFillEtdScheduleWave1">
+                    {{ t('pages.po.autoFillScheduleWave1') }}
+                  </el-button>
+                  <el-button size="small" type="primary" plain @click="autoFillEtdScheduleEvenly">
+                    {{ t('pages.po.autoFillScheduleEvenly') }}
+                  </el-button>
+                  <span class="text-xs text-slate-600">
+                    {{ t('pages.po.scheduleTotal') }}: {{ etdScheduleTotalDisplay }}
+                    <template v-if="formModel.quantity_order">
+                      / {{ formModel.quantity_order }} SF
+                    </template>
+                  </span>
+                </div>
+                <el-alert
+                  v-if="etdScheduleMismatch"
+                  type="warning"
+                  :closable="false"
+                  show-icon
+                  class="mt-2"
+                  :title="t('pages.po.scheduleMismatch')"
+                />
+              </el-collapse-item>
+            </el-collapse>
             <div class="mt-1 text-sm font-semibold text-slate-700">Daftar Material</div>
             <div class="mt-1 flex gap-2 flex-wrap">
               <el-button :icon="Plus" @click="pushCurrentLine(false)">{{ t('common.add') }}</el-button>
@@ -1333,6 +1388,7 @@ import {
   salesContractDocxPath,
   salesContractPdfPath,
   setPoDetailDeliverySchedules,
+  listPoDetailDeliverySchedules,
   toIsoDate,
   updatePo,
   updatePoDetail,
@@ -1718,6 +1774,127 @@ const colorSwatchLoading = ref(false)
 const swatchAllMaterials = ref(false)
 const swatchRetriedWithoutMaterial = ref(false)
 const selectedSwatchId = ref(null)
+
+const ETD_SCHEDULE_SLOTS = 8
+const etdScheduleOpen = ref(['schedule'])
+const etdScheduleRows = ref(emptyEtdScheduleRows())
+
+function emptyEtdScheduleRows() {
+  return Array.from({ length: ETD_SCHEDULE_SLOTS }, (_, i) => ({
+    sequence_no: i + 1,
+    qty: null,
+    date: '',
+  }))
+}
+
+function clearEtdScheduleRows() {
+  etdScheduleRows.value = emptyEtdScheduleRows()
+}
+
+function normalizeSchedulesFromApi(rows) {
+  return (rows || []).map((s) => ({
+    sequence_no: Number(s.sequence_no),
+    qty: s.qty != null ? Number(s.qty) : null,
+    delivery_date: s.delivery_date ? String(s.delivery_date).slice(0, 10) : null,
+  }))
+}
+
+function etdScheduleRowsToPayload(rows) {
+  return (rows || [])
+    .filter((r) => (r.qty != null && r.qty !== '') || r.date)
+    .map((r, i) => ({
+      sequence_no: r.sequence_no ?? i + 1,
+      qty: r.qty != null && r.qty !== '' ? Number(r.qty) : null,
+      delivery_date: r.date || null,
+    }))
+}
+
+function loadEtdScheduleRowsFromApi(schedules) {
+  const rows = emptyEtdScheduleRows()
+  for (const s of schedules || []) {
+    const idx = Number(s.sequence_no) - 1
+    if (idx >= 0 && idx < rows.length) {
+      rows[idx].qty = s.qty != null ? Number(s.qty) : null
+      rows[idx].date = s.delivery_date ? String(s.delivery_date).slice(0, 10) : ''
+    }
+  }
+  etdScheduleRows.value = rows
+}
+
+function schedulePayloadTotal(schedules) {
+  return (schedules || []).reduce((sum, s) => sum + (Number(s.qty) || 0), 0)
+}
+
+function lineHasScheduleMismatch(line) {
+  const orderQty = Number(line?.quantity_order)
+  if (!orderQty) return false
+  const schedules = line.delivery_schedules?.length
+    ? line.delivery_schedules
+    : etdScheduleRowsToPayload(etdScheduleRows.value)
+  if (!schedules.length) return false
+  const total = schedulePayloadTotal(schedules)
+  if (!total) return false
+  return Math.abs(total - orderQty) > 0.001
+}
+
+const etdScheduleTotal = computed(() =>
+  etdScheduleRows.value.reduce((sum, r) => sum + (Number(r.qty) || 0), 0),
+)
+
+const etdScheduleTotalDisplay = computed(() => {
+  const t = etdScheduleTotal.value
+  return t ? String(t) : '0'
+})
+
+const etdScheduleMismatch = computed(() => lineHasScheduleMismatch({
+  quantity_order: formModel.quantity_order,
+  delivery_schedules: etdScheduleRowsToPayload(etdScheduleRows.value),
+}))
+
+function autoFillEtdScheduleWave1() {
+  const qty = Number(formModel.quantity_order)
+  if (!qty) {
+    ElMessage.warning(t('pages.po.scheduleNeedQty'))
+    return
+  }
+  clearEtdScheduleRows()
+  etdScheduleRows.value[0].qty = qty
+  etdScheduleRows.value[0].date = formModel.etd ? String(formModel.etd).slice(0, 10) : ''
+}
+
+function autoFillEtdScheduleEvenly() {
+  const qty = Number(formModel.quantity_order)
+  if (!qty) {
+    ElMessage.warning(t('pages.po.scheduleNeedQty'))
+    return
+  }
+  const base = Math.floor(qty / ETD_SCHEDULE_SLOTS)
+  const rem = qty % ETD_SCHEDULE_SLOTS
+  const startRaw = formModel.etd ? String(formModel.etd).slice(0, 10) : ''
+  etdScheduleRows.value = Array.from({ length: ETD_SCHEDULE_SLOTS }, (_, i) => {
+    let date = ''
+    if (startRaw) {
+      const d = new Date(startRaw)
+      d.setDate(d.getDate() + i * 7)
+      date = d.toISOString().slice(0, 10)
+    }
+    return {
+      sequence_no: i + 1,
+      qty: base + (i < rem ? 1 : 0),
+      date,
+    }
+  })
+}
+
+async function saveDetailSchedules(detailId, schedules) {
+  await setPoDetailDeliverySchedules(detailId, etdScheduleRowsToPayload(
+    (schedules || []).map((s) => ({
+      sequence_no: s.sequence_no,
+      qty: s.qty,
+      date: s.delivery_date || s.date || '',
+    })),
+  ))
+}
 
 const materialDimensionOptions = ref([])
 const thicknessDimensionOptions = ref([])
@@ -2482,6 +2659,7 @@ function resetForm() {
   formErrors.material_name = ''
   formErrors.quantity_order = ''
   savedHeaderOrderDate.value = ''
+  clearEtdScheduleRows()
 }
 
 function getPoDraftPayload() {
@@ -2522,6 +2700,7 @@ function getPoDraftPayload() {
       is_special_price: formModel.is_special_price,
       discount_type: formModel.discount_type,
       discount_value: formModel.discount_value,
+      etdScheduleRows: etdScheduleRows.value,
     },
     draftLines: draftLines.value,
   }
@@ -2582,6 +2761,15 @@ function applyPoDraft(data) {
   formModel.is_special_price = Boolean(line.is_special_price)
   formModel.discount_type = line.discount_type || 'percent'
   formModel.discount_value = Number(line.discount_value || 0)
+  if (Array.isArray(line.etdScheduleRows) && line.etdScheduleRows.length) {
+    etdScheduleRows.value = line.etdScheduleRows.map((r, i) => ({
+      sequence_no: r.sequence_no ?? i + 1,
+      qty: r.qty != null ? Number(r.qty) : null,
+      date: r.date || '',
+    }))
+  } else {
+    clearEtdScheduleRows()
+  }
 
   draftLines.value = Array.isArray(data.draftLines) ? data.draftLines : []
 }
@@ -2996,6 +3184,7 @@ async function buildCurrentDetailBody() {
     model: formModel.model || undefined,
     detail_remark: formModel.detail_remark || undefined,
     thi_line_ref: formModel.thi_line_ref || undefined,
+    delivery_schedules: etdScheduleRowsToPayload(etdScheduleRows.value),
   }
   const isFreePrice = formModel.po_category === 'subcont' || formModel.po_category === 'return'
   if (isFreePrice) {
@@ -3133,6 +3322,7 @@ async function pushCurrentLine(copyCurrent = false) {
     autoFieldMeta.model = false
     formModel.detail_remark = ''
     formModel.thi_line_ref = ''
+    clearEtdScheduleRows()
     resetMaterialFieldOverride()
     colorFamilyAutoMode.value = true
     lastResolveHadNoMaster.value = false
@@ -3180,7 +3370,10 @@ const openEditDialog = async (row) => {
   schedulePricePreview()
   try {
     const details = await listPoDetails(row.id)
-    draftLines.value = details.map((d) => ({
+    const scheduleLists = await Promise.all(
+      details.map((d) => listPoDetailDeliverySchedules(d.id).catch(() => [])),
+    )
+    draftLines.value = details.map((d, idx) => ({
       id: d.id,
       master_item_id: d.master_item_id || undefined,
       material_name: d.material_name || undefined,
@@ -3199,6 +3392,7 @@ const openEditDialog = async (row) => {
       detail_remark: d.detail_remark || undefined,
       thi_line_ref: d.thi_line_ref || undefined,
       unit_price: d.unit_price != null ? Number(d.unit_price) : undefined,
+      delivery_schedules: normalizeSchedulesFromApi(scheduleLists[idx]),
       manual_override: false,
       material_master_override: false,
       material_master_matched: Boolean(d.master_item_id),
@@ -3222,6 +3416,7 @@ const openEditDialog = async (row) => {
       formModel.model = d0.model || ''
       formModel.detail_remark = d0.detail_remark || ''
       formModel.thi_line_ref = d0.thi_line_ref || ''
+      loadEtdScheduleRowsFromApi(scheduleLists[0] || [])
       loadedDetailMasterSnapshot.value = `${String(d0.material_name || '').trim()}|${String(d0.thickness_text || '').trim()}|${String(d0.color || '').trim()}|${d0.master_item_id ?? ''}`
       if (d0.master_item_id) {
         const cacheIt = masterItems.value.find((x) => x.id === d0.master_item_id)
@@ -3271,21 +3466,26 @@ const submitForm = async () => {
     }
     const detailBodies = draftLines.value.length ? draftLines.value : [await buildCurrentDetailBody()]
     await validateFluorescentLinesOrThrow(detailBodies)
+    const mismatchLines = detailBodies.filter((b) => lineHasScheduleMismatch(b))
+    if (mismatchLines.length) {
+      ElMessage.warning(t('pages.po.scheduleMismatchWarn'))
+    }
 
     if (isEditMode.value && editingPoId.value) {
       await updatePo(editingPoId.value, header)
       const keepIds = []
       for (let i = 0; i < detailBodies.length; i += 1) {
         const rowBody = { ...sanitizeNewDetailBody(detailBodies[i]) }
+        const schedules = rowBody.delivery_schedules || []
         delete rowBody.delivery_schedules
         const existingId = editingDetailIds.value[i]
         if (existingId) {
           await updatePoDetail(existingId, detailPayloadForUpdate(rowBody))
-          await setPoDetailDeliverySchedules(existingId, [])
+          await saveDetailSchedules(existingId, schedules)
           keepIds.push(existingId)
         } else {
           const createdDetail = await addPoDetail(editingPoId.value, rowBody)
-          await setPoDetailDeliverySchedules(createdDetail.id, [])
+          await saveDetailSchedules(createdDetail.id, schedules)
           keepIds.push(createdDetail.id)
         }
       }
@@ -3297,9 +3497,10 @@ const submitForm = async () => {
       const created = await createPo(header)
       for (const raw of detailBodies) {
         const rowBody = { ...sanitizeNewDetailBody(raw) }
+        const schedules = rowBody.delivery_schedules || []
         delete rowBody.delivery_schedules
         const createdDetail = await addPoDetail(created.id, rowBody)
-        await setPoDetailDeliverySchedules(createdDetail.id, [])
+        await saveDetailSchedules(createdDetail.id, schedules)
       }
     }
     ElMessage.success(t('pages.customers.saved'))
