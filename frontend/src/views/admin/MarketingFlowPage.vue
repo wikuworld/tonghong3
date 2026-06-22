@@ -1,41 +1,5 @@
 <template>
   <AdminSection :title="t('pages.marketingFlow.title')" :subtitle="t('pages.marketingFlow.subtitle')">
-    <el-collapse v-model="guideOpen" class="mb-4 mkt-operator-guide">
-      <el-collapse-item :title="t('pages.marketingFlow.guideTitle')" name="guide">
-        <el-alert type="info" :closable="false" show-icon class="mb-4">
-          <template #title>{{ t('pages.marketingFlow.hintTitle') }}</template>
-          <p class="text-sm leading-relaxed m-0">{{ t('pages.marketingFlow.hintBody') }}</p>
-        </el-alert>
-
-        <p class="text-sm font-semibold text-slate-800 mb-2">{{ t('pages.marketingFlow.guideStepsTitle') }}</p>
-        <ol class="mkt-guide-steps space-y-2.5 text-sm text-slate-700 mb-4">
-          <li v-for="(step, i) in guideSteps" :key="step.stage" class="flex gap-2">
-            <span class="mkt-guide-step-no">{{ i + 1 }}</span>
-            <div>
-              <span class="font-medium text-slate-900">{{ labelFor(step.stage) }}</span>
-              <span class="text-slate-500"> — </span>
-              <span>{{ t(step.actionKey) }}</span>
-            </div>
-          </li>
-        </ol>
-
-        <p class="text-sm font-semibold text-slate-800 mb-2">{{ t('pages.marketingFlow.guideLegendTitle') }}</p>
-        <ul class="mkt-guide-legend space-y-1.5 text-sm text-slate-700 mb-4">
-          <li><el-icon class="align-middle text-primary"><DArrowRight /></el-icon> {{ t('pages.marketingFlow.guideLegendAdvance') }}</li>
-          <li><el-icon class="align-middle text-warning"><DArrowLeft /></el-icon> {{ t('pages.marketingFlow.guideLegendRollback') }}</li>
-          <li><el-icon class="align-middle"><Document /></el-icon> {{ t('pages.marketingFlow.guideLegendOpenPo') }}</li>
-          <li><el-icon class="align-middle text-warning"><User /></el-icon> {{ t('pages.marketingFlow.guideLegendAssignPpic') }}</li>
-          <li><el-icon class="align-middle text-warning"><Warning /></el-icon> {{ t('pages.marketingFlow.guideLegendStuck') }}</li>
-          <li><el-icon class="align-middle text-success"><CircleCheck /></el-icon> {{ t('pages.marketingFlow.guideLegendReady') }}</li>
-        </ul>
-
-        <el-alert type="success" :closable="false" plain>
-          <template #title>{{ t('pages.marketingFlow.guideOutstandingTitle') }}</template>
-          <p class="text-sm leading-relaxed m-0">{{ t('pages.marketingFlow.guideOutstandingBody') }}</p>
-        </el-alert>
-      </el-collapse-item>
-    </el-collapse>
-
     <el-card shadow="never" class="mb-4">
       <template #header>
         <div class="flex items-center justify-between flex-wrap gap-2">
@@ -606,26 +570,6 @@ const rollingBack = ref(null)
 const rows = ref([])
 const stageList = ref([])
 const filterStage = ref(null)
-const guideOpen = ref(['guide'])
-
-const MKT_GUIDE_ACTION_KEYS = {
-  input_system: 'pages.marketingFlow.guideAction.input_system',
-  rekap_printed: 'pages.marketingFlow.guideAction.rekap_printed',
-  with_ppic: 'pages.marketingFlow.guideAction.with_ppic',
-  back_to_mkt: 'pages.marketingFlow.guideAction.back_to_mkt',
-  in_outstanding: 'pages.marketingFlow.guideAction.in_outstanding',
-  material_followup: 'pages.marketingFlow.guideAction.material_followup',
-  delivery_arranged: 'pages.marketingFlow.guideAction.delivery_arranged',
-  sj_invpl: 'pages.marketingFlow.guideAction.sj_invpl',
-  invoice_billing: 'pages.marketingFlow.guideAction.invoice_billing',
-}
-
-const guideSteps = computed(() =>
-  stageList.value.map((stage) => ({
-    stage,
-    actionKey: MKT_GUIDE_ACTION_KEYS[stage] || 'pages.marketingFlow.guideAction.default',
-  })),
-)
 
 function isoDateLocal(d) {
   const x = new Date(d)
@@ -1608,27 +1552,5 @@ async function downloadDeliveryXlsx() {
 .mkt-stuck-empty {
   color: var(--el-text-color-placeholder);
   font-size: 12px;
-}
-.mkt-operator-guide :deep(.el-collapse-item__header) {
-  font-weight: 600;
-  color: #0f172a;
-}
-.mkt-guide-step-no {
-  flex-shrink: 0;
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 9999px;
-  background: #2563eb;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 1px;
-}
-.mkt-guide-legend :deep(.el-icon) {
-  margin-right: 6px;
-  vertical-align: -2px;
 }
 </style>

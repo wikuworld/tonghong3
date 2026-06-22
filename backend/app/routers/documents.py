@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.routers.auth import get_current_user
 from app.services import marketing_documents as md
+from app.services import proforma_invoice_documents as pi
 from app.services import sales_contract_documents as sc
 
 router = APIRouter(tags=["documents"])
@@ -104,6 +105,43 @@ def document_sales_contract_docx(
         raise
     data = sc.render_sales_contract_docx(ctx)
     fn = f"sales_contract_{ctx['po_number']}.docx"
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
+
+
+def _proforma_invoice_ctx(db: Session, po_id: int) -> dict:
+    try:
+        return pi.gather_proforma_invoice_ctx(db, po_id)
+    except ValueError as e:
+        if str(e) == "po_not_found":
+            raise HTTPException(status_code=404, detail="PO tidak ditemukan") from e
+        raise
+
+
+@router.get("/documents/proforma-invoice/{po_id}/pdf")
+def document_proforma_invoice_pdf(
+    po_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> Response:
+    ctx = _proforma_invoice_ctx(db, po_id)
+    data = pi.render_proforma_invoice_pdf(ctx)
+    fn = f"proforma_invoice_{ctx['po_number']}.pdf"
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
+
+
+@router.get("/documents/proforma-invoice/{po_id}/docx")
+def document_proforma_invoice_docx(
+    po_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> Response:
+    ctx = _proforma_invoice_ctx(db, po_id)
+    data = pi.render_proforma_invoice_docx(ctx)
+    fn = f"proforma_invoice_{ctx['po_number']}.docx"
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",

@@ -525,6 +525,16 @@ export function salesContractDocxPath(poId) {
   return `/documents/sales-contract/${poId}/docx`
 }
 
+/** Unduhan PDF Proforma Invoice per PO. */
+export function proformaInvoicePdfPath(poId) {
+  return `/documents/proforma-invoice/${poId}/pdf`
+}
+
+/** Unduhan Word (.docx) Proforma Invoice per PO. */
+export function proformaInvoiceDocxPath(poId) {
+  return `/documents/proforma-invoice/${poId}/docx`
+}
+
 export function advanceMktWorkflow(poId) {
   return apiFetch(`/po/${poId}/mkt-workflow/advance`, { method: 'POST' })
 }

@@ -211,6 +211,12 @@
             <el-tooltip :content="t('pages.po.salesContractDocx')" placement="top">
               <el-button :icon="FolderOpened" link type="primary" :aria-label="t('pages.po.salesContractDocx')" @click="downloadSalesContractDocx(row)" />
             </el-tooltip>
+            <el-tooltip :content="t('pages.po.proformaInvoicePdf')" placement="top">
+              <el-button :icon="Tickets" link type="primary" :aria-label="t('pages.po.proformaInvoicePdf')" @click="downloadProformaInvoicePdf(row)" />
+            </el-tooltip>
+            <el-tooltip :content="t('pages.po.proformaInvoiceDocx')" placement="top">
+              <el-button :icon="Memo" link type="primary" :aria-label="t('pages.po.proformaInvoiceDocx')" @click="downloadProformaInvoiceDocx(row)" />
+            </el-tooltip>
             <el-tooltip :content="t('common.print')" placement="top">
               <el-button :icon="Printer" link :aria-label="t('common.print')" @click="openPrintDialog(row)" />
             </el-tooltip>
@@ -298,6 +304,8 @@ import {
   Document,
   FolderOpened,
   CopyDocument,
+  Tickets,
+  Memo,
 } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import PoFormWizardDialog from '../../components/admin/PoFormWizardDialog.vue'
@@ -337,6 +345,8 @@ import {
   fetchPoMaterialHints,
   salesContractDocxPath,
   salesContractPdfPath,
+  proformaInvoiceDocxPath,
+  proformaInvoicePdfPath,
   updatePo,
 } from '../../api/client'
 
@@ -551,6 +561,24 @@ async function downloadSalesContractDocx(row) {
   try {
     const path = salesContractDocxPath(row.id)
     await fetchAuthenticatedDocument(path, `sales-contract-${row.po_number || row.id}.docx`)
+  } catch (e) {
+    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
+  }
+}
+
+async function downloadProformaInvoicePdf(row) {
+  try {
+    const path = proformaInvoicePdfPath(row.id)
+    await fetchAuthenticatedDocument(path, `proforma-invoice-${row.po_number || row.id}.pdf`)
+  } catch (e) {
+    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
+  }
+}
+
+async function downloadProformaInvoiceDocx(row) {
+  try {
+    const path = proformaInvoiceDocxPath(row.id)
+    await fetchAuthenticatedDocument(path, `proforma-invoice-${row.po_number || row.id}.docx`)
   } catch (e) {
     ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
   }

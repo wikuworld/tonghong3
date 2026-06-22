@@ -16,8 +16,9 @@ fi
 echo "==> Stop build statis (web) agar port $WEB_HMR_PORT bebas untuk HMR..."
 docker compose stop web 2>/dev/null || true
 
-echo "==> Pastikan backend + mariadb jalan..."
+echo "==> Pastikan backend + mariadb jalan (restart backend agar route API terbaru ter-load)..."
 docker compose up -d mariadb backend
+docker compose restart backend
 
 echo "==> Start Vite HMR + nginx proxy (profile dev)..."
 docker compose --profile dev up -d frontend-dev web-hmr
