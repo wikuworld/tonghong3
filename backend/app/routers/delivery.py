@@ -23,7 +23,7 @@ from app.services.business_rules import require_packing_ready
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
 from app.services.notifications import create_notification_for_roles
-from app.services.mkt_workflow import auto_advance_if_ready
+from app.services.mkt_workflow import sync_mkt_for_delivery, sync_mkt_workflow_auto_advance
 from app.services.business_rules import po_numbers_from_delivery
 from app.routers.reports import _order_type_label, _thickness_display
 
@@ -118,6 +118,7 @@ def mark_surat_jalan_printed(
         after={"surat_jalan_printed_at": row.surat_jalan_printed_at},
         actor=user.username,
     )
+    sync_mkt_for_delivery(db, delivery_id, actor=user.username)
     db.commit()
     db.refresh(row)
     return row
@@ -147,16 +148,7 @@ def create_delivery(
         from app.models import PoHeader
         ph = db.scalars(select(PoHeader).where(PoHeader.po_number == pn).limit(1)).first()
         if ph:
-            new_stage = auto_advance_if_ready(db, ph.id)
-            if new_stage:
-                log_change(
-                    db,
-                    entity_type="sales_order",
-                    entity_id=ph.id,
-                    action="auto_advance",
-                    after={"mkt_workflow_stage": new_stage},
-                    actor="system",
-                )
+            sync_mkt_workflow_auto_advance(db, ph.id, actor=user.username)
 
     db.commit()
     db.refresh(row)

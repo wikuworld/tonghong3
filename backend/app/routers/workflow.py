@@ -73,6 +73,10 @@ def assign_po_to_ppic(
         assigned_at=datetime.utcnow(),
     )
     db.add(assignment)
+    db.flush()
+    from app.services.mkt_workflow import sync_mkt_workflow_auto_advance
+
+    sync_mkt_workflow_auto_advance(db, po_id, actor=_user.username)
     db.commit()
     db.refresh(assignment)
 
@@ -424,6 +428,9 @@ def update_assignment_status(
     if body.notes is not None:
         assignment.notes = body.notes
 
+    from app.services.mkt_workflow import sync_mkt_workflow_auto_advance
+
+    sync_mkt_workflow_auto_advance(db, assignment.po_id, actor=_user.username)
     db.commit()
     db.refresh(assignment)
 

@@ -297,7 +297,6 @@ class PoHeaderCreate(BaseModel):
     buyer: Optional[str] = None
     order_date: Optional[date] = None
     etd: Optional[date] = None
-    remark: Optional[str] = None
     status: str = "draft"
     billing_address: Optional[str] = None
     delivery_address: Optional[str] = None
@@ -338,7 +337,6 @@ class PoHeaderUpdate(BaseModel):
     buyer: Optional[str] = None
     order_date: Optional[date] = None
     etd: Optional[date] = None
-    remark: Optional[str] = None
     status: Optional[str] = None
     billing_address: Optional[str] = None
     delivery_address: Optional[str] = None
@@ -480,7 +478,6 @@ class PoHeaderOut(ORMBase):
     buyer: Optional[str] = None
     order_date: Optional[date] = None
     etd: Optional[date] = None
-    remark: Optional[str] = None
     status: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
@@ -499,6 +496,9 @@ class PoHeaderOut(ORMBase):
     material_followup_remark: Optional[str] = None
     material_followup_done: Optional[bool] = None
     stuck_reason: Optional[str] = None
+    material_hint: Optional[str] = None
+    detail_line_count: Optional[int] = None
+    etd_display: Optional[str] = None
 
     @computed_field
     @property
@@ -511,6 +511,17 @@ class PoHeaderPageOut(BaseModel):
     total: int = 0
     limit: int = 20
     offset: int = 0
+
+
+class PoMaterialHintItemOut(BaseModel):
+    po_id: int
+    detail_line_count: int = 0
+    material_hint: Optional[str] = None
+    etd_display: Optional[str] = None
+
+
+class PoMaterialHintsOut(BaseModel):
+    items: list[PoMaterialHintItemOut] = Field(default_factory=list)
 
 
 class PoDetailDeliveryOut(ORMBase):
@@ -534,7 +545,6 @@ class DeliverySchedulesPayload(BaseModel):
 class PoMarketingReviseHeader(BaseModel):
     """Revisi marketing: tidak mengubah customer, brand, nomor PO, tanggal order, status, harga."""
 
-    remark: Optional[str] = None
     etd: Optional[date] = None
     delivery_address: Optional[str] = None
     material_followup_remark: Optional[str] = None
@@ -625,6 +635,8 @@ class MarketingOutstandingLineOut(BaseModel):
     po_detail_id: int
     po_status: Optional[str] = None
     mkt_stage: Optional[str] = None
+    po_category: Optional[str] = None
+    factory_code: Optional[str] = None
     delivery_1_qty: Optional[str] = None
     delivery_1_date: Optional[str] = None
     delivery_2_qty: Optional[str] = None
@@ -641,6 +653,32 @@ class MarketingOutstandingLineOut(BaseModel):
     delivery_7_date: Optional[str] = None
     delivery_8_qty: Optional[str] = None
     delivery_8_date: Optional[str] = None
+    delivery_9_qty: Optional[str] = None
+    delivery_9_date: Optional[str] = None
+    delivery_10_qty: Optional[str] = None
+    delivery_10_date: Optional[str] = None
+    delivery_11_qty: Optional[str] = None
+    delivery_11_date: Optional[str] = None
+    delivery_12_qty: Optional[str] = None
+    delivery_12_date: Optional[str] = None
+    delivery_13_qty: Optional[str] = None
+    delivery_13_date: Optional[str] = None
+    delivery_14_qty: Optional[str] = None
+    delivery_14_date: Optional[str] = None
+    delivery_15_qty: Optional[str] = None
+    delivery_15_date: Optional[str] = None
+    delivery_16_qty: Optional[str] = None
+    delivery_16_date: Optional[str] = None
+    delivery_17_qty: Optional[str] = None
+    delivery_17_date: Optional[str] = None
+    delivery_18_qty: Optional[str] = None
+    delivery_18_date: Optional[str] = None
+    delivery_19_qty: Optional[str] = None
+    delivery_19_date: Optional[str] = None
+    delivery_20_qty: Optional[str] = None
+    delivery_20_date: Optional[str] = None
+    delivery_21_qty: Optional[str] = None
+    delivery_21_date: Optional[str] = None
     schedule_qty_total: Optional[str] = None
     schedule_unallocated_qty: Optional[str] = None
     actual_vs_schedule_qty: Optional[str] = None
@@ -1364,6 +1402,8 @@ class BrandOut(ORMBase):
     id: int
     code: Optional[str] = None
     name: Optional[str] = None
+    customer_id: Optional[int] = None
+    customer_ids: Optional[list[int]] = None
 
 
 class CustomerBrandMappingCreate(BaseModel):

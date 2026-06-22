@@ -39,6 +39,7 @@ from app.models import (
 from app.routers.auth import get_current_user, require_roles
 from app.utils.excel_utils import export_to_excel, import_from_excel
 from app.services.fluorescent_color import (
+    VALID_COLOR_CLASSES,
     apply_fluorescent_fields,
     find_existing,
     gather_bundled_rows,
@@ -127,6 +128,18 @@ class FluorescentColorPageOut(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class FluorescentColorFormOptionsOut(BaseModel):
+    buyer_codes: list[str] = Field(default_factory=list)
+    color_classes: list[str] = Field(default_factory=list)
+    season_labels: list[str] = Field(default_factory=list)
+    season_labels_by_buyer: dict[str, list[str]] = Field(default_factory=dict)
+    season_years: list[int] = Field(default_factory=list)
+    season_types: list[str] = Field(default_factory=list)
+    color_names_by_buyer: dict[str, list[str]] = Field(default_factory=dict)
+    color_codes_by_buyer: dict[str, list[str]] = Field(default_factory=dict)
+    color_names_by_buyer_season: dict[str, dict[str, list[str]]] = Field(default_factory=dict)
 
 
 class FluorescentColorIn(BaseModel):
@@ -392,6 +405,67 @@ def list_fluorescent_colors_page(
         ).all()
     )
     return FluorescentColorPageOut(items=items, total=total, limit=limit, offset=offset)
+
+
+@router.get("/masters/fluorescent-colors/form-options", response_model=FluorescentColorFormOptionsOut)
+def fluorescent_color_form_options(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> FluorescentColorFormOptionsOut:
+    """Opsi dropdown form tambah/edit fluorescent — dari master buyer & data existing."""
+    rows = list(
+        db.scalars(
+            select(FluorescentColorMaster).where(FluorescentColorMaster.is_active.is_(True))
+        ).all()
+    )
+    buyer_codes: set[str] = {"GLOBAL", "NB", "ADIDAS", "UA", "NIKE", "PUMA", "REEBOK"}
+    for bb in db.scalars(select(BrandBuyerMap.buyer_code).distinct()).all():
+        if bb:
+            buyer_codes.add(str(bb).strip().upper())
+
+    season_labels: set[str] = set()
+    season_labels_by_buyer: dict[str, set[str]] = {}
+    season_years: set[int] = set()
+    season_types: set[str] = set()
+    color_names_by_buyer: dict[str, set[str]] = {}
+    color_codes_by_buyer: dict[str, set[str]] = {}
+    color_names_by_buyer_season: dict[str, dict[str, set[str]]] = {}
+
+    for row in rows:
+        buyer = (row.buyer_code or "GLOBAL").strip().upper()
+        buyer_codes.add(buyer)
+        season = (row.season_label or "").strip()
+        if season:
+            season_labels.add(season)
+            season_labels_by_buyer.setdefault(buyer, set()).add(season)
+        if row.season_year is not None:
+            season_years.add(int(row.season_year))
+        st = (row.season_type or "").strip().upper()
+        if st:
+            season_types.add(st)
+        if row.color_name:
+            color_names_by_buyer.setdefault(buyer, set()).add(row.color_name.strip())
+            if season:
+                color_names_by_buyer_season.setdefault(buyer, {}).setdefault(season, set()).add(
+                    row.color_name.strip()
+                )
+        if row.color_code:
+            color_codes_by_buyer.setdefault(buyer, set()).add(row.color_code.strip())
+
+    return FluorescentColorFormOptionsOut(
+        buyer_codes=sorted(buyer_codes),
+        color_classes=sorted(VALID_COLOR_CLASSES),
+        season_labels=sorted(season_labels),
+        season_labels_by_buyer={k: sorted(v) for k, v in sorted(season_labels_by_buyer.items())},
+        season_years=sorted(season_years, reverse=True),
+        season_types=sorted(season_types),
+        color_names_by_buyer={k: sorted(v) for k, v in sorted(color_names_by_buyer.items())},
+        color_codes_by_buyer={k: sorted(v) for k, v in sorted(color_codes_by_buyer.items())},
+        color_names_by_buyer_season={
+            buyer: {season: sorted(names) for season, names in sorted(seasons.items())}
+            for buyer, seasons in sorted(color_names_by_buyer_season.items())
+        },
+    )
 
 
 @router.get("/masters/fluorescent-colors/{row_id}", response_model=FluorescentColorOut)

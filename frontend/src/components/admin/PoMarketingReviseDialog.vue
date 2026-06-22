@@ -9,9 +9,6 @@
   >
     <p class="text-xs text-slate-600 mb-3">{{ t('pages.po.marketingReviseHint') }}</p>
     <el-form label-position="top" size="small">
-      <el-form-item :label="t('common.remark')">
-        <el-input v-model="header.remark" type="textarea" :rows="2" />
-      </el-form-item>
       <el-form-item :label="t('pages.po.headerEtd')">
         <el-date-picker
           v-model="header.etd"

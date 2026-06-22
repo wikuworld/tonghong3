@@ -47,6 +47,31 @@ from app.services.document_numbers import invoice_display_number, surat_jalan_di
 
 router = APIRouter(tags=["marketing"])
 
+# Selaras lembar manual «DATA OUTSTANDING ORDER» (PROD 21 gelombang, claim/sample 5, retur 3).
+OUTSTANDING_DELIVERY_SLOTS_PROD = 21
+OUTSTANDING_DELIVERY_SLOTS_CLAIM_SAMPLE = 5
+OUTSTANDING_DELIVERY_SLOTS_RETURN = 3
+PO_MAX_DELIVERY_SCHEDULES = 21
+
+
+def _ordinal_delivery_label(n: int) -> str:
+    if n == 1:
+        return "1st"
+    if n == 2:
+        return "2nd"
+    if n == 3:
+        return "3rd"
+    return f"{n}th"
+
+
+def _delivery_export_column_pairs(max_slots: int) -> list[tuple[str, str]]:
+    cols: list[tuple[str, str]] = []
+    for i in range(1, max_slots + 1):
+        lab = _ordinal_delivery_label(i)
+        cols.append((f"delivery_{i}_qty", f"{lab} Qty"))
+        cols.append((f"delivery_{i}_date", f"{lab} Date"))
+    return cols
+
 
 def _parse_iso_date_optional(s: Optional[str]) -> Optional[date]:
     if not s or not str(s).strip():
@@ -210,12 +235,12 @@ def _remark_system_text(ln: PoDetail, delivered: Decimal, balance: Decimal) -> s
     return " | ".join(parts)
 
 
-def _delivery_slots(ln: PoDetail) -> dict[str, Any]:
+def _delivery_slots(ln: PoDetail, max_slots: int = OUTSTANDING_DELIVERY_SLOTS_PROD) -> dict[str, Any]:
     by_seq: dict[int, Any] = {}
     for d in ln.delivery_schedules or []:
         by_seq[int(d.sequence_no)] = d
     out: dict[str, Any] = {}
-    for i in range(1, 9):
+    for i in range(1, max_slots + 1):
         d = by_seq.get(i)
         out[f"delivery_{i}_qty"] = _dec_str(d.qty) if d and d.qty is not None else ""
         out[f"delivery_{i}_date"] = d.delivery_date.isoformat() if d and d.delivery_date else ""
@@ -268,15 +293,18 @@ def _line_to_row(
 ) -> dict[str, Any]:
     brand = (h.brand_name_snapshot or "").strip() or "—"
     cust = (h.customer_name_snapshot or h.customer_code or "").strip() or "—"
-    thi = (ln.thi_line_ref or "").strip() or "—"
+    thi_order = (h.po_number or "").strip() or "—"
+    system_no = (ln.system_reference or ln.thi_line_ref or "").strip()
     row: dict[str, Any] = {
         "order_date": h.order_date.isoformat() if h.order_date else None,
-        "thi_order": thi,
+        "thi_order": thi_order,
         "customer_name": cust,
         "brand": brand,
         "order_type": _order_type_marketing(h),
-        "no_po": (h.po_number or "").strip() or "—",
+        "no_po": (h.po_customer_ref or "").strip() or "—",
         "po_customer_ref": (h.po_customer_ref or "").strip() or "",
+        "po_category": (h.po_category or "production").strip().lower(),
+        "factory_code": ((h.factory_code or h.customer_code or "").strip()),
         "material_name": (ln.material_name or "").strip() or "—",
         "thickness": _thickness_display(ln),
         "emboss": (ln.emboss or "").strip() or "",
@@ -294,7 +322,7 @@ def _line_to_row(
         "line_etd": ln.line_etd.isoformat() if ln.line_etd else None,
         "stock_wh_qty": _dec_str(ln.stock_wh_qty),
         "balance_qty": _dec_str(balance),
-        "system_reference": (ln.system_reference or "").strip() or "",
+        "system_reference": system_no,
         "detail_remark": (ln.detail_remark or "").strip() or "",
         "remark_system": _remark_system_text(ln, delivered, balance),
         "remark_marketing": (ln.marketing_outstanding_remark or "").strip() or "",
@@ -415,15 +443,13 @@ def _query_outstanding_rows(
     return out
 
 
-# Kolom unduhan Excel (label mengikuti lembar marketing; tanpa id internal).
-_OUTSTANDING_XLS_COLUMNS: list[tuple[str, str]] = [
+# Kolom inti outstanding (tanpa gelombang kirim).
+_OUTSTANDING_CORE_COLUMNS: list[tuple[str, str]] = [
     ("order_date", "DATE"),
     ("thi_order", "THI ORDER"),
     ("customer_name", "CUSTOMER NAME"),
     ("brand", "BRAND"),
     ("order_type", "ORDER TYPE"),
-    ("no_po", "NO PO"),
-    ("po_customer_ref", "PO CUST"),
     ("material_name", "MATERIAL NAME"),
     ("thickness", "THICKNESS"),
     ("emboss", "EMBOSS"),
@@ -442,32 +468,51 @@ _OUTSTANDING_XLS_COLUMNS: list[tuple[str, str]] = [
     ("stock_wh_qty", "STOCK WH"),
     ("balance_qty", "BALANCE"),
     ("system_reference", "SYSTEM NO"),
-    ("remark_system", "REMARK (SISTEM)"),
-    ("remark_marketing", "REMARK (MARKETING)"),
-    ("detail_remark", "CATATAN BARIS PO"),
-    ("status_material", "STATUS MATERIAL"),
-    ("delivered_qty", "QTY TERKIRIM"),
-    ("schedule_qty_total", "JADWAL TOTAL"),
-    ("schedule_unallocated_qty", "BELUM DIJADWAL"),
-    ("actual_vs_schedule_qty", "AKTUAL vs JADWAL"),
-    ("production_status", "STATUS PRODUKSI"),
-    ("delivery_1_qty", "1st Qty"),
-    ("delivery_1_date", "1st Date"),
-    ("delivery_2_qty", "2nd Qty"),
-    ("delivery_2_date", "2nd Date"),
-    ("delivery_3_qty", "3rd Qty"),
-    ("delivery_3_date", "3rd Date"),
-    ("delivery_4_qty", "4th Qty"),
-    ("delivery_4_date", "4th Date"),
-    ("delivery_5_qty", "5th Qty"),
-    ("delivery_5_date", "5th Date"),
-    ("delivery_6_qty", "6th Qty"),
-    ("delivery_6_date", "6th Date"),
-    ("delivery_7_qty", "7th Qty"),
-    ("delivery_7_date", "7th Date"),
-    ("delivery_8_qty", "8th Qty"),
-    ("delivery_8_date", "8th Date"),
 ]
+
+# Lembar PROD — NO PO + STATUS MATERIAL + 21 gelombang (mirip PROD SUEDE manual).
+_PROD_OUTSTANDING_COLUMNS: list[tuple[str, str]] = (
+    _OUTSTANDING_CORE_COLUMNS[:5]
+    + [("no_po", "NO PO")]
+    + _OUTSTANDING_CORE_COLUMNS[5:]
+    + [
+        ("detail_remark", "REMARK PO"),
+        ("remark_marketing", "REMARK"),
+        ("status_material", "STATUS MATERIAL"),
+    ]
+    + _delivery_export_column_pairs(OUTSTANDING_DELIVERY_SLOTS_PROD)
+)
+
+# Lembar CLAIM / SAMPLE / SUBCONT — PO CUST, tanpa STATUS MATERIAL, 5 gelombang.
+_CLAIM_SAMPLE_OUTSTANDING_COLUMNS: list[tuple[str, str]] = (
+    _OUTSTANDING_CORE_COLUMNS[:5]
+    + [("po_customer_ref", "PO CUST")]
+    + _OUTSTANDING_CORE_COLUMNS[5:]
+    + [
+        ("detail_remark", "REMARK PO"),
+        ("remark_marketing", "REMARK"),
+    ]
+    + _delivery_export_column_pairs(OUTSTANDING_DELIVERY_SLOTS_CLAIM_SAMPLE)
+)
+
+# Kolom unduhan Excel gabungan (API legacy) — 21 gelombang + kolom audit internal.
+_OUTSTANDING_XLS_COLUMNS: list[tuple[str, str]] = (
+    _OUTSTANDING_CORE_COLUMNS[:5]
+    + [("no_po", "NO PO"), ("po_customer_ref", "PO CUST")]
+    + _OUTSTANDING_CORE_COLUMNS[5:]
+    + [
+        ("remark_system", "REMARK (SISTEM)"),
+        ("remark_marketing", "REMARK (MARKETING)"),
+        ("detail_remark", "CATATAN BARIS PO"),
+        ("status_material", "STATUS MATERIAL"),
+        ("delivered_qty", "QTY TERKIRIM"),
+        ("schedule_qty_total", "JADWAL TOTAL"),
+        ("schedule_unallocated_qty", "BELUM DIJADWAL"),
+        ("actual_vs_schedule_qty", "AKTUAL vs JADWAL"),
+        ("production_status", "STATUS PRODUKSI"),
+    ]
+    + _delivery_export_column_pairs(OUTSTANDING_DELIVERY_SLOTS_PROD)
+)
 
 
 # Lembar «RETUR» — mapping dari baris outstanding (kategori return) ke kolom mirip Excel.
@@ -572,6 +617,61 @@ def _outstanding_rows_to_xlsx_bytes(rows: list[dict[str, Any]]) -> bytes:
     return buf.getvalue()
 
 
+def _write_outstanding_sheet(
+    wb: Workbook,
+    *,
+    title: str,
+    columns: list[tuple[str, str]],
+    rows: list[dict[str, Any]],
+    row_mapper: Optional[Any] = None,
+    active: bool = False,
+) -> None:
+    keys = [k for k, _ in columns]
+    if active:
+        ws = wb.active
+        ws.title = title[:31]
+    else:
+        ws = wb.create_sheet(title[:31])
+    ws.append([label for _, label in columns])
+    for r in rows:
+        src = row_mapper(r) if row_mapper else r
+        ws.append([src.get(k) for k in keys])
+
+
+def _outstanding_manual_workbook_bytes(rows: list[dict[str, Any]]) -> bytes:
+    """Workbook multi-lembar selaras file manual marketing (PROD / CLAIM / SAMPLE / SUBCONT / RETUR)."""
+    wb = Workbook()
+    by_cat: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for r in rows:
+        cat = (r.get("po_category") or "production").strip().lower()
+        by_cat[cat].append(r)
+
+    sheets: list[tuple[str, str, list[tuple[str, str]], Optional[Any]]] = [
+        ("PROD SUEDE", "production", _PROD_OUTSTANDING_COLUMNS, None),
+        ("CLAIM SUEDE", "claim", _CLAIM_SAMPLE_OUTSTANDING_COLUMNS, None),
+        ("SAMPLE SUEDE", "sample", _CLAIM_SAMPLE_OUTSTANDING_COLUMNS, None),
+        ("SUBCONT", "subcont", _CLAIM_SAMPLE_OUTSTANDING_COLUMNS, None),
+        ("RETUR", "return", _RETURN_XLS_COLUMNS, _outstanding_row_to_retur_export_row),
+    ]
+    first = True
+    for sheet_title, category, columns, mapper in sheets:
+        cat_rows = by_cat.get(category, [])
+        _write_outstanding_sheet(
+            wb,
+            title=sheet_title,
+            columns=columns,
+            rows=cat_rows,
+            row_mapper=mapper,
+            active=first,
+        )
+        first = False
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 # Kolom unduhan Excel — selaras lembar «DELIVERY LIST DARI SISTEM» (label Indonesia).
 _DELIVERY_LIST_XLS_COLUMNS: list[tuple[str, str]] = [
     ("surat_jalan_no", "NO SJ"),
@@ -643,8 +743,10 @@ def _delivery_detail_to_row(
         factory = (dh.destination or "")[:255]
 
     system_no = ""
-    if pod:
-        system_no = (pod.system_reference or pod.thi_line_ref or "").strip()
+    if ph and (ph.po_number or "").strip():
+        system_no = (ph.po_number or "").strip()
+    elif pod and (pod.system_reference or "").strip():
+        system_no = (pod.system_reference or "").strip()
 
     lot_no = ""
     if pd and (pd.lot_number or "").strip():
@@ -675,7 +777,7 @@ def _delivery_detail_to_row(
         "factory_name": factory or "—",
         "system_no": system_no or "—",
         "po_date": ph.order_date.isoformat() if ph and ph.order_date else None,
-        "po_number": (ph.po_number or "").strip() if ph else "",
+        "po_number": (ph.po_customer_ref or "").strip() if ph else "",
         "lot_no": lot_no,
         "thickness": _thickness_display(pod) if pod else "",
         "color": (pod.color or "").strip() if pod else "",
@@ -691,16 +793,12 @@ def _delivery_detail_to_row(
         "amount": _dec_str(amt) if amt is not None else "",
         "color_std": ((pod.color_standard or pod.color_reference) or "").strip() if pod else "",
         "emboss": (pod.emboss or "").strip() if pod else "",
-        "buyer": (ph.buyer or "").strip() if ph else "",
+        "buyer": ((ph.brand_name_snapshot or ph.buyer or "").strip() if ph else ""),
         "style_article": (pod.style_article or "").strip() if pod else "",
         "model": (pod.model or "").strip() if pod else "",
         "invoice_number": invoice_number,
         "pi_no": (ph.po_customer_ref or "").strip() if ph else "",
-        "remark": (
-            (pod.detail_remark or "").strip()
-            if pod and (pod.detail_remark or "").strip()
-            else ((ph.remark or "").strip() if ph and (ph.remark or "").strip() else "")
-        ),
+        "remark": ((pod.detail_remark or "").strip() if pod else ""),
         "order_type": _order_type_marketing(ph) if ph else "",
         "factory_code": ((ph.factory_code or ph.customer_code or "").strip() if ph else "")
         or ((cust.code or "").strip() if cust else ""),
@@ -1005,6 +1103,40 @@ def marketing_outstanding_return_lines_xlsx(
     )
 
 
+@router.get("/marketing/outstanding-manual.xlsx")
+def marketing_outstanding_manual_workbook_xlsx(
+    db: Session = Depends(get_db),
+    balance_filter: BalanceFilter = Query(default=BalanceFilter.exclude_zero),
+    computed_balance: bool = Query(True),
+    po_q: Optional[str] = Query(None),
+    shipment_status: ShipmentStatusFilter = Query(default=ShipmentStatusFilter.all),
+    material_status: Optional[MaterialStatusFilter] = Query(default=None),
+    factory_code: Optional[str] = Query(None),
+    order_date_from: Optional[str] = Query(None),
+    order_date_to: Optional[str] = Query(None),
+    _user=Depends(get_current_user),
+) -> Response:
+    """Unduh workbook multi-lembar (PROD / CLAIM / SAMPLE / SUBCONT / RETUR) seperti Excel manual marketing."""
+    rows = _query_outstanding_rows(
+        db,
+        balance_filter,
+        computed_balance,
+        po_q=po_q,
+        shipment_status=shipment_status,
+        material_status=material_status,
+        factory_code=factory_code,
+        po_category=None,
+        order_date_from=_parse_iso_date_optional(order_date_from),
+        order_date_to=_parse_iso_date_optional(order_date_to),
+    )
+    data = _outstanding_manual_workbook_bytes(rows)
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="data_outstanding_order.xlsx"'},
+    )
+
+
 @router.get("/marketing/delivery-lines", response_model=MarketingDeliveryLinesPageOut)
 def marketing_delivery_lines(
     db: Session = Depends(get_db),
@@ -1201,7 +1333,8 @@ def _query_delivery_planning_slots(
                 "po_number": (ph.po_number or "").strip(),
                 "factory_code": (ph.factory_code or "").strip(),
                 "material_name": (pod.material_name or "").strip(),
-                "thi_order": (pod.thi_line_ref or "").strip(),
+                "thi_order": (ph.po_number or "").strip(),
+                "lot_no": (pod.thi_line_ref or "").strip(),
                 "po_detail_id": pod.id,
                 "line_etd": pod.line_etd.isoformat() if pod.line_etd else None,
             }
@@ -1233,7 +1366,8 @@ def _query_line_etd_on_date(db: Session, on_date: date, factory_code: Optional[s
                 "factory_code": (ph.factory_code or "").strip(),
                 "customer_name": cust,
                 "material_name": (pod.material_name or "").strip(),
-                "thi_order": (pod.thi_line_ref or "").strip(),
+                "thi_order": (ph.po_number or "").strip(),
+                "lot_no": (pod.thi_line_ref or "").strip(),
                 "po_detail_id": pod.id,
             }
         )

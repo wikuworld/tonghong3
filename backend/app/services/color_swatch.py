@@ -23,6 +23,107 @@ def normalize_factory_key(raw: str | None) -> str:
     return re.sub(r"\s+", " ", (raw or "").strip()).upper()
 
 
+_PAREN_SUFFIX_RE = re.compile(r"\s*\([^)]*\)\s*$")
+_PM_PREFIX_RE = re.compile(r"^\(PM\)\s*", re.IGNORECASE)
+_EMBOSS_CODE_RE = re.compile(r"^([A-Z]{1,4}-\d+[A-Z]?)", re.IGNORECASE)
+_MATERIAL_TRIM_SUFFIXES = (
+    " coated leather",
+    " coated",
+    " leather",
+    " split suede",
+)
+
+
+def normalize_swatch_color_name(text: str | None) -> str:
+    """WOLF GREY (01V) → wolf grey"""
+    s = re.sub(r"\s+", " ", (text or "").strip())
+    s = _PAREN_SUFFIX_RE.sub("", s).strip()
+    return s.lower()
+
+
+def _extract_emboss_code_token(token: str) -> str | None:
+    raw = (token or "").strip().upper()
+    if not raw:
+        return None
+    m = _EMBOSS_CODE_RE.match(raw)
+    if m:
+        return m.group(1).upper()
+    compact = re.sub(r"\s+", "", raw)
+    m2 = _EMBOSS_CODE_RE.match(compact)
+    return m2.group(1).upper() if m2 else None
+
+
+def swatch_emboss_code(text: str | None) -> str:
+    """AR-167 DM / R-8 M / UM-34T → kode dasar emboss (finish SM/M/DM diabaikan)."""
+    s = re.sub(r"\s+", " ", (text or "").strip())
+    s = _PAREN_SUFFIX_RE.sub("", s).strip()
+    if not s:
+        return ""
+    for token in s.split():
+        code = _extract_emboss_code_token(token)
+        if code:
+            return code
+    code = _extract_emboss_code_token(s)
+    return code or s.split()[0].upper()
+
+
+def swatch_colors_match(a: str | None, b: str | None) -> bool:
+    na = normalize_swatch_color_name(a)
+    nb = normalize_swatch_color_name(b)
+    if not na or not nb:
+        return False
+    return na == nb or na.startswith(nb) or nb.startswith(na)
+
+
+def swatch_emboss_match(a: str | None, b: str | None) -> bool:
+    ca = swatch_emboss_code(a)
+    cb = swatch_emboss_code(b)
+    if not ca or not cb:
+        return False
+    if ca == cb:
+        return True
+    # R-8M vs R-8, UM-34T vs UM-34 (jarang, tapi tetap longgar)
+    return ca.startswith(cb) or cb.startswith(ca)
+
+
+def normalize_swatch_material_name(text: str | None) -> str:
+    """(PM) GENERIC PU COATED LEATHER → generic pu"""
+    s = _PM_PREFIX_RE.sub("", (text or "").strip())
+    s = re.sub(r"\s+", " ", s).strip().lower()
+    for suffix in _MATERIAL_TRIM_SUFFIXES:
+        if s.endswith(suffix):
+            s = s[: -len(suffix)].strip()
+    return s
+
+
+def swatch_materials_match(a: str | None, b: str | None) -> bool:
+    na = normalize_swatch_material_name(a)
+    nb = normalize_swatch_material_name(b)
+    if not na or not nb:
+        return True
+    return na == nb or na in nb or nb in na
+
+
+def filter_swatch_recipes_by_dimensions(
+    rows: list[ColorSwatchRecipe],
+    *,
+    material_name: str | None = None,
+    color_name: str | None = None,
+    emboss: str | None = None,
+) -> list[ColorSwatchRecipe]:
+    """Filter resep setelah query DB — toleran suffix master item (warna/emboss)."""
+    out: list[ColorSwatchRecipe] = []
+    for row in rows:
+        if material_name and not swatch_materials_match(row.material_name, material_name):
+            continue
+        if color_name and not swatch_colors_match(row.color_name, color_name):
+            continue
+        if emboss and not swatch_emboss_match(row.emboss, emboss):
+            continue
+        out.append(row)
+    return out
+
+
 def _compact_alnum(value: str) -> str:
     return re.sub(r"[^A-Z0-9]", "", (value or "").upper())
 
@@ -36,6 +137,54 @@ def _strip_company_prefix(name: str) -> str:
     ).strip()
 
 
+def _customer_factory_tags(name_upper: str) -> list[str]:
+    tags: list[str] = []
+    for tag in ("WEST", "EAST", "NORTH", "SOUTH"):
+        if tag in name_upper:
+            tags.append(tag)
+    if "REKSA JAYA" in name_upper:
+        tags.append("RJ")
+    if re.search(r"\bUA\b", name_upper) or name_upper.rstrip().endswith("-UA"):
+        tags.append("UA")
+    return tags
+
+
+def _factory_key_match_score(
+    rk_norm: str,
+    *,
+    name_upper: str,
+    name_compact: str,
+    hint: str,
+    tags: list[str],
+) -> int:
+    rk_compact = _compact_alnum(rk_norm)
+    if len(rk_compact) < 3:
+        return 0
+    score = 0
+    if hint and rk_norm == hint:
+        score += 100
+    if rk_compact in name_compact:
+        score += len(rk_compact) + 20
+    elif rk_norm in name_upper:
+        score += len(rk_compact) + 10
+    for word in re.split(r"[\s/()]+", rk_norm):
+        if len(word) >= 4 and word in name_upper:
+            score += len(word)
+    if hint:
+        hint_compact = _compact_alnum(hint)
+        if len(hint_compact) >= 3 and (
+            rk_norm.startswith(hint + " ")
+            or rk_norm.startswith(hint + "(")
+            or rk_compact.startswith(hint_compact)
+            or hint_compact in rk_compact
+        ):
+            score += 25
+    for tag in tags:
+        if tag in rk_norm:
+            score += 35
+    return score
+
+
 def resolve_swatch_factory_keys(
     db: Session,
     *,
@@ -44,32 +193,40 @@ def resolve_swatch_factory_keys(
 ) -> list[str]:
     """
     Kandidat factory_key untuk lookup swatch.
-    Memetakan KODE SYSTEM (mis. CS004) ke nama pabrik di CSV (mis. CHANGSHIN) via customer.
+    Memetakan KODE SYSTEM (mis. CS004) ke semua varian nama pabrik di CSV
+    (mis. FENGTAY, FENGTAY (WEST), CHANGSHIN RJ) via customer.
     """
     hint = normalize_factory_key(factory_hint)
-    out: list[str] = []
+    scored: list[tuple[int, str]] = []
     seen: set[str] = set()
 
-    def add(key: str | None) -> None:
+    def add_scored(score: int, key: str | None) -> None:
         if not key:
             return
         k = normalize_factory_key(key)
-        if k and k not in seen:
-            seen.add(k)
-            out.append(k)
+        if not k or k in seen:
+            return
+        seen.add(k)
+        scored.append((score, k))
+
+    recipe_keys = list(
+        db.scalars(
+            select(ColorSwatchRecipe.factory_key)
+            .where(ColorSwatchRecipe.is_active.is_(True))
+            .distinct()
+        ).all()
+    )
 
     if hint:
-        exact = db.scalar(
-            select(ColorSwatchRecipe.factory_key)
-            .where(
-                ColorSwatchRecipe.is_active.is_(True),
-                ColorSwatchRecipe.factory_key == hint,
-            )
-            .limit(1)
-        )
-        if exact:
-            add(exact)
-            return out
+        for rk in recipe_keys:
+            if not rk:
+                continue
+            rk_norm = normalize_factory_key(rk)
+            if rk_norm == hint:
+                add_scored(100, rk_norm)
+        if scored:
+            scored.sort(key=lambda x: (-x[0], x[1]))
+            return [k for _, k in scored]
 
     customer = db.get(Customer, customer_id) if customer_id else None
     if customer is None and hint:
@@ -78,50 +235,39 @@ def resolve_swatch_factory_keys(
     if customer and (customer.name or "").strip():
         name_upper = _strip_company_prefix(customer.name or "")
         name_compact = _compact_alnum(name_upper)
-        recipe_keys = list(
-            db.scalars(
-                select(ColorSwatchRecipe.factory_key)
-                .where(ColorSwatchRecipe.is_active.is_(True))
-                .distinct()
-            ).all()
-        )
-        best_key: str | None = None
-        best_score = 0
+        tags = _customer_factory_tags(name_upper)
+
         for rk in recipe_keys:
             if not rk:
                 continue
             rk_norm = normalize_factory_key(rk)
-            rk_compact = _compact_alnum(rk_norm)
-            if len(rk_compact) < 4:
-                continue
-            score = 0
-            if rk_compact in name_compact:
-                score = len(rk_compact) + 20
-            elif rk_norm in name_upper:
-                score = len(rk_compact) + 10
-            if score > best_score:
-                best_score = score
-                best_key = rk_norm
-        if best_key and best_score >= 10:
-            add(best_key)
+            score = _factory_key_match_score(
+                rk_norm,
+                name_upper=name_upper,
+                name_compact=name_compact,
+                hint=hint,
+                tags=tags,
+            )
+            if score >= 10:
+                add_scored(score, rk_norm)
 
         words = [w for w in re.split(r"[\s.,()/]+", name_upper) if len(w) >= 3]
-        if words:
-            for candidate in (
-                _compact_alnum("".join(words[:2])),
-                _compact_alnum(words[0]),
-                _compact_alnum("".join(words[:3])),
-            ):
-                if len(candidate) < 4:
-                    continue
-                for rk in recipe_keys:
-                    if _compact_alnum(normalize_factory_key(rk)) == candidate:
-                        add(rk)
-                        break
+        for candidate in (
+            _compact_alnum("".join(words[:2])),
+            _compact_alnum(words[0]),
+            _compact_alnum("".join(words[:3])),
+        ):
+            if len(candidate) < 4:
+                continue
+            for rk in recipe_keys:
+                if _compact_alnum(normalize_factory_key(rk)) == candidate:
+                    add_scored(15, rk)
 
     if hint:
-        add(hint)
-    return out
+        add_scored(5, hint)
+
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return [k for _, k in scored]
 
 
 def normalize_buyer_code(raw: str | None) -> str:
@@ -189,39 +335,17 @@ def iter_csv_recipes(stream: TextIO | BinaryIO, source_file: str) -> list[dict[s
     return out
 
 
-def _resolve_customer_id(db: Session, factory_key: str) -> int | None:
-    fk = normalize_factory_key(factory_key)
-    if not fk:
-        return None
-    cust = db.scalars(select(Customer).where(Customer.code.ilike(fk)).limit(1)).first()
-    if cust:
-        return int(cust.id)
-    cust = db.scalars(select(Customer).where(Customer.name.ilike(fk)).limit(1)).first()
-    if cust:
-        return int(cust.id)
-    like = f"%{fk}%"
-    cust = db.scalars(select(Customer).where(Customer.name.ilike(like)).limit(1)).first()
-    if cust:
-        return int(cust.id)
-    fk_compact = _compact_alnum(fk)
-    if len(fk_compact) < 4:
-        return None
-    best: Customer | None = None
-    best_score = 0
-    for c in db.scalars(select(Customer).where(Customer.is_active.is_(True))).all():
-        name_compact = _compact_alnum(_strip_company_prefix(c.name or ""))
-        code_compact = _compact_alnum(c.code or "")
-        score = 0
-        if fk_compact == code_compact and code_compact:
-            return int(c.id)
-        if fk_compact in name_compact:
-            score = len(fk_compact) + 10
-        elif name_compact and name_compact in fk_compact:
-            score = len(name_compact)
-        if score > best_score:
-            best_score = score
-            best = c
-    return int(best.id) if best and best_score >= 8 else None
+def _resolve_customer_id(
+    db: Session,
+    factory_key: str,
+    *,
+    color_standard: str | None = None,
+) -> int | None:
+    from app.services.swatch_factory_map import resolve_swatch_customer_id
+
+    return resolve_swatch_customer_id(
+        db, factory_key, color_standard=color_standard
+    )
 
 
 def _resolve_brand_id(db: Session, buyer_code: str) -> int | None:
@@ -244,7 +368,7 @@ def import_recipes(
     skipped = 0
     deactivated = 0
     imported_keys: set[tuple[str, str, str, str, str]] = set()
-    customer_cache: dict[str, int | None] = {}
+    customer_cache: dict[tuple[str, str | None], int | None] = {}
     brand_cache: dict[str, int | None] = {}
 
     for data in recipes:
@@ -253,8 +377,11 @@ def import_recipes(
         imported_keys.add(
             (fk, buyer, data["color_code"], data["material_name"], data["emboss"])
         )
-        if fk not in customer_cache:
-            customer_cache[fk] = _resolve_customer_id(db, fk)
+        cust_cache_key = (fk, data.get("color_standard"))
+        if cust_cache_key not in customer_cache:
+            customer_cache[cust_cache_key] = _resolve_customer_id(
+                db, fk, color_standard=data.get("color_standard")
+            )
         if buyer not in brand_cache:
             brand_cache[buyer] = _resolve_brand_id(db, buyer)
 
@@ -275,7 +402,7 @@ def import_recipes(
             existing.legacy_urut = data.get("legacy_urut")
             existing.entered_at = data.get("entered_at")
             existing.source_file = data.get("source_file")
-            existing.customer_id = customer_cache[fk]
+            existing.customer_id = customer_cache[cust_cache_key]
             existing.brand_id = brand_cache[buyer]
             existing.is_active = True
             existing.updated_at = datetime.utcnow()
@@ -295,7 +422,7 @@ def import_recipes(
                     legacy_urut=data.get("legacy_urut"),
                     entered_at=data.get("entered_at"),
                     source_file=data.get("source_file"),
-                    customer_id=customer_cache[fk],
+                    customer_id=customer_cache[cust_cache_key],
                     brand_id=brand_cache[buyer],
                     is_active=True,
                 )

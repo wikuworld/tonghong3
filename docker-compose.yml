@@ -60,9 +60,8 @@ services:
       retries: 18
       start_period: 120s
 
-  # Dev backend + auto reload: docker compose --profile dev up backend-dev
+  # Backend dev + auto reload (dipakai web-hmr / HMR lewat domain)
   backend-dev:
-    profiles: ["dev"]
     build: ./backend
     restart: unless-stopped
     privileged: true
@@ -94,7 +93,70 @@ services:
       retries: 12
       start_period: 90s
 
+  trello:
+    build: ./trello
+    restart: unless-stopped
+    privileged: true
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    ports:
+      - "${TRELLO_PORT:-8003}:8000"
+    environment:
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081,https://tonghong.creativedigitalsolutions.id}
+      TRELLO_API_KEY: ${TRELLO_API_KEY:-}
+      TRELLO_API_SECRET: ${TRELLO_API_SECRET:-}
+      TRELLO_ACCESS_TOKEN: ${TRELLO_ACCESS_TOKEN:-}
+      TRELLO_APP_NAME: ${TRELLO_APP_NAME:-Tonghong ERP}
+      TRELLO_DEFAULT_BOARD_ID: ${TRELLO_DEFAULT_BOARD_ID:-}
+      TRELLO_DEFAULT_LIST_ID: ${TRELLO_DEFAULT_LIST_ID:-}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # Dev + auto reload
+  trello-dev:
+    profiles: ["dev"]
+    build: ./trello
+    restart: unless-stopped
+    privileged: true
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    ports:
+      - "${TRELLO_PORT_DEV:-8004}:8000"
+    environment:
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8080,http://localhost:8001,http://127.0.0.1:8001,http://localhost:8081,http://127.0.0.1:8081,https://tonghong.creativedigitalsolutions.id}
+      TRELLO_API_KEY: ${TRELLO_API_KEY:-}
+      TRELLO_API_SECRET: ${TRELLO_API_SECRET:-}
+      TRELLO_ACCESS_TOKEN: ${TRELLO_ACCESS_TOKEN:-}
+      TRELLO_APP_NAME: ${TRELLO_APP_NAME:-Tonghong ERP}
+      TRELLO_DEFAULT_BOARD_ID: ${TRELLO_DEFAULT_BOARD_ID:-}
+      TRELLO_DEFAULT_LIST_ID: ${TRELLO_DEFAULT_LIST_ID:-}
+    volumes:
+      - ./trello:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --loop asyncio
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # Build statis production — hanya: docker compose --profile production up web
   web:
+    profiles: ["production"]
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -104,16 +166,14 @@ services:
       - seccomp=unconfined
       - apparmor=unconfined
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "${WEB_STATIC_PORT:-8090}:80"
     depends_on:
       backend:
         condition: service_healthy
 
-  # Dev reverse proxy untuk domain + HMR (WebSocket).
-  # Cloudflare Orange Cloud (Flexible): origin HTTP biasanya ke port 80 host — set WEB_HMR_PORT=80 jika tidak ada reverse proxy lain di :80.
-  # Tanpa itu, pakai Tunnel ke http://HOST_IP:8081 atau reverse proxy host :80 -> :8081.
+  # Reverse proxy domain + HMR (Vite + WebSocket). Default di WEB_PORT (8080).
+  # Cloudflare Flexible → origin HTTP port 8080; set WEB_PORT=80 jika host :80 kosong.
   web-hmr:
-    profiles: ["dev"]
     image: nginx:1.27-alpine
     restart: unless-stopped
     privileged: true
@@ -121,7 +181,7 @@ services:
       - seccomp=unconfined
       - apparmor=unconfined
     ports:
-      - "${WEB_HMR_PORT:-8081}:80"
+      - "${WEB_PORT:-8080}:80"
     volumes:
       - ./frontend/nginx.hmr.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
@@ -130,9 +190,8 @@ services:
       backend-dev:
         condition: service_healthy
 
-  # Dev + HMR: docker compose --profile dev up frontend-dev
+  # Vite dev server + HMR (proxy API ke backend-dev)
   frontend-dev:
-    profiles: ["dev"]
     image: node:22-alpine
     working_dir: /app
     volumes:

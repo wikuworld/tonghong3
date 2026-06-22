@@ -26,6 +26,8 @@ from app.schemas import (
     PoHeaderOut,
     PoHeaderPageOut,
     PoHeaderUpdate,
+    PoMaterialHintsOut,
+    PoMaterialHintItemOut,
     PoMarketingReviseBody,
     MktWorkflowStagesOut,
     StatusDeletedOut,
@@ -37,18 +39,23 @@ from app.services.mkt_workflow import (
     get_stuck_reason,
     next_mkt_stage,
     prev_mkt_stage,
+    sync_mkt_workflow_auto_advance,
     validate_mkt_advance,
 )
-from app.services.notifications import create_notification_for_roles
+from app.services.po_header_snapshots import apply_header_snapshots, resolve_header_snapshots_for_list
+from app.services.po_list_summary import attach_po_list_summaries, compute_po_list_summaries, serialize_po_headers_for_list
 from app.services.lot_numbers import (
     _material_group_from_inputs,
     generate_lot_number,
     generate_po_detail_lot_number,
     peek_lot_number,
 )
+from app.services.notifications import create_notification_for_roles
 from app.routers.auth import get_current_user, require_roles
 
 router = APIRouter(tags=["po"])
+
+PO_MAX_DELIVERY_SCHEDULES = 21
 log = logging.getLogger(__name__)
 
 
@@ -105,6 +112,53 @@ def _detail_loaded(db: Session, detail_id: int) -> Optional[PoDetail]:
         .options(selectinload(PoDetail.delivery_schedules))
         .where(PoDetail.id == detail_id)
     ).first()
+
+
+def _normalize_po_customer_ref(raw: Optional[str]) -> str:
+    return (raw or "").strip()
+
+
+def _find_po_customer_ref_conflict(
+    db: Session,
+    *,
+    customer_id: Optional[int],
+    po_customer_ref: Optional[str],
+    exclude_po_id: Optional[int] = None,
+) -> Optional[PoHeader]:
+    ref = _normalize_po_customer_ref(po_customer_ref)
+    if not ref or customer_id is None:
+        return None
+    stmt = select(PoHeader).where(
+        PoHeader.customer_id == customer_id,
+        func.lower(func.trim(PoHeader.po_customer_ref)) == ref.lower(),
+    )
+    if exclude_po_id is not None:
+        stmt = stmt.where(PoHeader.id != exclude_po_id)
+    return db.scalars(stmt).first()
+
+
+def _validate_po_customer_ref_unique(
+    db: Session,
+    *,
+    customer_id: Optional[int],
+    po_customer_ref: Optional[str],
+    exclude_po_id: Optional[int] = None,
+) -> None:
+    ref = _normalize_po_customer_ref(po_customer_ref)
+    if not ref or customer_id is None:
+        return
+    existing = _find_po_customer_ref_conflict(
+        db,
+        customer_id=customer_id,
+        po_customer_ref=ref,
+        exclude_po_id=exclude_po_id,
+    )
+    if existing:
+        po_label = existing.po_number or f"ID {existing.id}"
+        raise HTTPException(
+            status_code=409,
+            detail=f"No. PO customer '{ref}' sudah dipakai pada {po_label}.",
+        )
 
 
 def _validate_customer_brand_buyer(db: Session, data: dict) -> None:
@@ -206,6 +260,12 @@ class NextPoNumberOut(BaseModel):
     po_number: str
 
 
+class PoCustomerRefCheckOut(BaseModel):
+    exists: bool
+    po_number: Optional[str] = None
+    po_id: Optional[int] = None
+
+
 @router.get("/po/next-number", response_model=NextPoNumberOut)
 def preview_next_po_number(
     db: Session = Depends(get_db),
@@ -213,6 +273,30 @@ def preview_next_po_number(
 ) -> NextPoNumberOut:
     """Preview nomor SO berikutnya tanpa increment sequence."""
     return NextPoNumberOut(po_number=peek_number(db, "SO", "SO"))
+
+
+@router.get("/po/check-customer-ref", response_model=PoCustomerRefCheckOut)
+def check_po_customer_ref(
+    customer_id: int = Query(..., ge=1),
+    po_customer_ref: str = Query(..., min_length=1),
+    exclude_po_id: Optional[int] = Query(None, ge=1),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> PoCustomerRefCheckOut:
+    """Cek apakah No. PO customer sudah dipakai untuk customer yang sama."""
+    existing = _find_po_customer_ref_conflict(
+        db,
+        customer_id=customer_id,
+        po_customer_ref=po_customer_ref,
+        exclude_po_id=exclude_po_id,
+    )
+    if existing:
+        return PoCustomerRefCheckOut(
+            exists=True,
+            po_number=existing.po_number,
+            po_id=existing.id,
+        )
+    return PoCustomerRefCheckOut(exists=False)
 
 
 @router.get("/po", response_model=list[PoHeaderOut])
@@ -259,7 +343,6 @@ def list_po(
             or_(
                 PoHeader.po_number.ilike(like),
                 PoHeader.buyer.ilike(like),
-                PoHeader.remark.ilike(like),
                 PoHeader.po_customer_ref.ilike(like),
                 PoHeader.customer_name_snapshot.ilike(like),
                 PoHeader.customer_code.ilike(like),
@@ -267,11 +350,7 @@ def list_po(
             )
         )
     results = list(db.scalars(stmt).all())
-
-    for po in results:
-        po.stuck_reason = get_stuck_reason(db, po.id)
-
-    return results
+    return serialize_po_headers_for_list(db, results)
 
 
 @router.get("/po/page", response_model=PoHeaderPageOut)
@@ -328,7 +407,6 @@ def list_po_page(
         where_clause = or_(
             PoHeader.po_number.ilike(like),
             PoHeader.buyer.ilike(like),
-            PoHeader.remark.ilike(like),
             PoHeader.po_customer_ref.ilike(like),
             PoHeader.customer_name_snapshot.ilike(like),
             PoHeader.customer_code.ilike(like),
@@ -342,9 +420,36 @@ def list_po_page(
             stmt.order_by(PoHeader.id.desc()).limit(limit).offset(offset)
         ).all()
     )
-    for po in items:
-        po.stuck_reason = get_stuck_reason(db, po.id)
-    return PoHeaderPageOut(items=items, total=total, limit=limit, offset=offset)
+    items_out = serialize_po_headers_for_list(db, items)
+    return PoHeaderPageOut(items=items_out, total=total, limit=limit, offset=offset)
+
+
+@router.get("/po/material-hints", response_model=PoMaterialHintsOut)
+def list_po_material_hints(
+    po_ids: str = Query(..., description="ID PO dipisah koma, mis. 1,2,3"),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> PoMaterialHintsOut:
+    parsed: list[int] = []
+    for part in po_ids.split(","):
+        part = part.strip()
+        if part.isdigit():
+            parsed.append(int(part))
+    if not parsed:
+        return PoMaterialHintsOut(items=[])
+    parsed = parsed[:200]
+    summaries = compute_po_list_summaries(db, parsed)
+    return PoMaterialHintsOut(
+        items=[
+            PoMaterialHintItemOut(
+                po_id=po_id,
+                detail_line_count=summary["detail_line_count"],
+                material_hint=summary["material_hint"],
+                etd_display=summary["etd_display"],
+            )
+            for po_id, summary in summaries.items()
+        ]
+    )
 
 
 @router.post("/po/{po_id}/mkt-workflow/advance", response_model=PoHeaderOut)
@@ -431,6 +536,12 @@ def create_po(
     try:
         data = body.model_dump(exclude_unset=True)
         _validate_customer_brand_buyer(db, data)
+        _validate_po_customer_ref_unique(
+            db,
+            customer_id=data.get("customer_id"),
+            po_customer_ref=data.get("po_customer_ref"),
+        )
+        apply_header_snapshots(db, data, force=True)
         if not data.get("po_number"):
             data["po_number"] = next_number(db, "SO", "SO")
         else:
@@ -521,17 +632,24 @@ def duplicate_po(
     _validate_customer_brand_buyer(db, merged)
 
     po_category = _normalize_po_category_duplicate(getattr(src, "po_category", None))
+    snapshot_data = {
+        "customer_id": src.customer_id,
+        "customer_code": src.customer_code,
+        "brand_id": src.brand_id,
+        "brand_name_snapshot": src.brand_name_snapshot,
+        "customer_name_snapshot": src.customer_name_snapshot,
+    }
+    apply_header_snapshots(db, snapshot_data, force=True)
 
     try:
         new_po = PoHeader(
             po_number=next_number(db, "SO", "SO"),
             customer_id=src.customer_id,
-            customer_code=src.customer_code,
+            customer_code=snapshot_data.get("customer_code") or src.customer_code,
             po_category=po_category,
             buyer=src.buyer,
             order_date=src.order_date,
             etd=src.etd,
-            remark=src.remark,
             status="draft",
             billing_address=src.billing_address,
             delivery_address=src.delivery_address,
@@ -539,8 +657,8 @@ def duplicate_po(
             marketing_excel_date_serial=None,
             po_customer_ref=src.po_customer_ref or None,
             order_type_label=src.order_type_label,
-            brand_name_snapshot=src.brand_name_snapshot,
-            customer_name_snapshot=src.customer_name_snapshot,
+            brand_name_snapshot=snapshot_data.get("brand_name_snapshot"),
+            customer_name_snapshot=snapshot_data.get("customer_name_snapshot"),
             customs_declaration_id=src.customs_declaration_id,
             mkt_workflow_stage="input_system",
             mkt_workflow_updated_at=None,
@@ -629,7 +747,7 @@ def get_po(
     row = db.get(PoHeader, po_id)
     if not row:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
-    return row
+    return serialize_po_headers_for_list(db, [row])[0]
 
 
 @router.get("/po/{po_id}/details", response_model=list[PoDetailOut])
@@ -673,9 +791,20 @@ def update_po(
         "customer_id": row.customer_id,
         "brand_id": row.brand_id,
         "buyer": row.buyer,
+        "po_customer_ref": row.po_customer_ref,
         **data,
     }
     _validate_customer_brand_buyer(db, merged)
+    _validate_po_customer_ref_unique(
+        db,
+        customer_id=merged.get("customer_id"),
+        po_customer_ref=merged.get("po_customer_ref"),
+        exclude_po_id=po_id,
+    )
+    apply_header_snapshots(db, merged, force="brand_id" in data or "customer_id" in data)
+    for snap_key in ("brand_name_snapshot", "customer_name_snapshot", "customer_code"):
+        if merged.get(snap_key) is not None:
+            data[snap_key] = merged[snap_key]
     if "status" in data:
         validate_po_status_transition(row.status, data["status"])
     for k, v in data.items():
@@ -701,6 +830,7 @@ def update_po(
         after={"status": row.status, "mkt_workflow_stage": row.mkt_workflow_stage},
         actor=user.username,
     )
+    sync_mkt_workflow_auto_advance(db, po_id, actor=user.username)
     db.commit()
     db.refresh(row)
     return row
@@ -711,10 +841,10 @@ def _validate_delivery_schedule_items(schedules: list[DeliveryScheduleItem]) -> 
     for item in schedules:
         if item.sequence_no <= 0:
             raise HTTPException(status_code=400, detail="Nomor urutan delivery harus lebih dari 0")
-        if item.sequence_no > 8:
+        if item.sequence_no > PO_MAX_DELIVERY_SCHEDULES:
             raise HTTPException(
                 status_code=400,
-                detail="Nomor urutan delivery maksimal 8 (selaras lembar outstanding marketing).",
+                detail=f"Nomor urutan delivery maksimal {PO_MAX_DELIVERY_SCHEDULES} (selaras lembar outstanding marketing).",
             )
         if item.sequence_no in seq_seen:
             raise HTTPException(
@@ -760,7 +890,6 @@ def marketing_revise_po(
         if body.header:
             h = body.header.model_dump(exclude_unset=True)
             allowed = {
-                "remark",
                 "etd",
                 "delivery_address",
                 "material_followup_remark",
@@ -801,6 +930,7 @@ def marketing_revise_po(
             },
             actor=user.username,
         )
+        sync_mkt_workflow_auto_advance(db, po_id, actor=user.username)
         db.commit()
     except IntegrityError as e:
         db.rollback()

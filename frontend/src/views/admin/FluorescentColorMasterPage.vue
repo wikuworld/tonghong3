@@ -2,15 +2,10 @@
   <AdminSection :title="t('pages.fluorescentColors.title')" :subtitle="t('pages.fluorescentColors.subtitle')">
     <template #actions>
       <el-select v-model="filterBuyer" clearable filterable :placeholder="t('common.buyer')" class="w-40">
-        <el-option label="GLOBAL" value="GLOBAL" />
-        <el-option label="NB" value="NB" />
-        <el-option label="ADIDAS" value="ADIDAS" />
-        <el-option label="UA" value="UA" />
-        <el-option label="NIKE" value="NIKE" />
+        <el-option v-for="b in formOptions.buyer_codes" :key="b" :label="b" :value="b" />
       </el-select>
       <el-select v-model="filterClass" clearable :placeholder="t('pages.fluorescentColors.colClass')" class="w-36">
-        <el-option label="fluorescent" value="fluorescent" />
-        <el-option label="metallic" value="metallic" />
+        <el-option v-for="c in formOptions.color_classes" :key="c" :label="c" :value="c" />
       </el-select>
       <el-input v-model="keyword" clearable :placeholder="t('pages.fluorescentColors.searchPlaceholder')" class="w-56" />
       <el-button :icon="Refresh" @click="reload">{{ t('common.refresh') }}</el-button>
@@ -60,45 +55,102 @@
       />
     </div>
 
-    <el-dialog v-model="formVisible" :title="editId ? t('common.edit') : t('common.create')" width="560px" destroy-on-close>
+    <el-dialog v-model="formVisible" :title="editId ? t('common.edit') : t('common.create')" width="600px" destroy-on-close>
       <el-form label-position="top">
         <el-row :gutter="12">
           <el-col :span="12">
             <el-form-item :label="t('common.buyer')" required>
-              <el-input v-model="form.buyer_code" maxlength="32" placeholder="NB / ADIDAS / GLOBAL" />
+              <el-select
+                v-model="form.buyer_code"
+                filterable
+                class="w-full"
+                :placeholder="t('pages.fluorescentColors.formBuyerPlaceholder')"
+                @change="onBuyerChange"
+              >
+                <el-option v-for="b in formOptions.buyer_codes" :key="b" :label="b" :value="b" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item :label="t('pages.fluorescentColors.colClass')" required>
               <el-select v-model="form.color_class" class="w-full">
-                <el-option label="fluorescent" value="fluorescent" />
-                <el-option label="metallic" value="metallic" />
+                <el-option v-for="c in formOptions.color_classes" :key="c" :label="c" :value="c" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item :label="t('pages.fluorescentColors.colSeason')">
-              <el-input v-model="form.season_label" maxlength="64" placeholder="SS26 / FW25" />
+              <el-select
+                v-model="form.season_label"
+                filterable
+                allow-create
+                default-first-option
+                clearable
+                class="w-full"
+                :placeholder="t('pages.fluorescentColors.formSeasonPlaceholder')"
+                @change="onSeasonChange"
+              >
+                <el-option v-for="s in seasonLabelOptions" :key="s" :label="s" :value="s" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="6">
             <el-form-item :label="t('pages.fluorescentColors.colYear')">
-              <el-input-number v-model="form.season_year" :min="2000" :max="2100" class="w-full" controls-position="right" />
+              <el-select
+                v-model="form.season_year"
+                filterable
+                allow-create
+                default-first-option
+                clearable
+                class="w-full"
+                :placeholder="t('pages.fluorescentColors.formYearPlaceholder')"
+              >
+                <el-option v-for="y in formOptions.season_years" :key="y" :label="String(y)" :value="y" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="6">
             <el-form-item :label="t('pages.fluorescentColors.colSeasonType')">
-              <el-input v-model="form.season_type" maxlength="16" placeholder="SS / FW" />
+              <el-select
+                v-model="form.season_type"
+                filterable
+                allow-create
+                default-first-option
+                clearable
+                class="w-full"
+                :placeholder="t('pages.fluorescentColors.formSeasonTypePlaceholder')"
+              >
+                <el-option v-for="st in seasonTypeOptions" :key="st" :label="st" :value="st" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item :label="t('pages.fluorescentColors.colCode')">
-              <el-input v-model="form.color_code" maxlength="64" />
+              <el-select
+                v-model="form.color_code"
+                filterable
+                allow-create
+                default-first-option
+                clearable
+                class="w-full"
+                :placeholder="t('pages.fluorescentColors.formCodePlaceholder')"
+              >
+                <el-option v-for="c in colorCodeOptions" :key="c" :label="c" :value="c" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item :label="t('common.color')" required>
-              <el-input v-model="form.color_name" maxlength="255" />
+              <el-select
+                v-model="form.color_name"
+                filterable
+                allow-create
+                default-first-option
+                class="w-full"
+                :placeholder="t('pages.fluorescentColors.formColorPlaceholder')"
+              >
+                <el-option v-for="c in colorNameOptions" :key="c" :label="c" :value="c" />
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
@@ -112,7 +164,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
@@ -124,6 +176,7 @@ import {
   importFluorescentBundled,
   importFluorescentCsv,
   listFluorescentColorsPage,
+  listFluorescentFormOptions,
   me,
   updateFluorescentColor,
 } from '../../api/client'
@@ -147,6 +200,19 @@ const filterBuyer = ref('')
 const filterClass = ref('')
 const formVisible = ref(false)
 const editId = ref(null)
+
+const formOptions = reactive({
+  buyer_codes: [],
+  color_classes: ['fluorescent', 'metallic'],
+  season_labels: [],
+  season_labels_by_buyer: {},
+  season_years: [],
+  season_types: [],
+  color_names_by_buyer: {},
+  color_codes_by_buyer: {},
+  color_names_by_buyer_season: {},
+})
+
 const form = reactive({
   buyer_code: '',
   season_label: '',
@@ -158,6 +224,73 @@ const form = reactive({
 })
 
 const summary = ref({ GLOBAL: 0, NB: 0, ADIDAS: 0, UA: 0 })
+
+const seasonLabelOptions = computed(() => {
+  const buyer = String(form.buyer_code || '').trim().toUpperCase()
+  if (buyer && formOptions.season_labels_by_buyer[buyer]?.length) {
+    const list = [...formOptions.season_labels_by_buyer[buyer]]
+    if (form.season_label && !list.includes(form.season_label)) list.unshift(form.season_label)
+    return list
+  }
+  return formOptions.season_labels
+})
+
+const seasonTypeOptions = computed(() => {
+  const defaults = ['SS', 'FW']
+  const merged = new Set([...defaults, ...formOptions.season_types])
+  return [...merged]
+})
+
+const colorNameOptions = computed(() => {
+  const buyer = String(form.buyer_code || '').trim().toUpperCase()
+  const season = String(form.season_label || '').trim()
+  const bySeason = formOptions.color_names_by_buyer_season[buyer]
+  if (bySeason && season && bySeason[season]?.length) {
+    const list = [...bySeason[season]]
+    if (form.color_name && !list.includes(form.color_name)) list.unshift(form.color_name)
+    return list
+  }
+  const byBuyer = formOptions.color_names_by_buyer[buyer] || []
+  if (form.color_name && !byBuyer.includes(form.color_name)) return [form.color_name, ...byBuyer]
+  return byBuyer
+})
+
+const colorCodeOptions = computed(() => {
+  const buyer = String(form.buyer_code || '').trim().toUpperCase()
+  const list = [...(formOptions.color_codes_by_buyer[buyer] || [])]
+  if (form.color_code && !list.includes(form.color_code)) list.unshift(form.color_code)
+  return list
+})
+
+async function loadFormOptions() {
+  try {
+    const r = await listFluorescentFormOptions()
+    formOptions.buyer_codes = r.buyer_codes || []
+    formOptions.color_classes = r.color_classes || ['fluorescent', 'metallic']
+    formOptions.season_labels = r.season_labels || []
+    formOptions.season_labels_by_buyer = r.season_labels_by_buyer || {}
+    formOptions.season_years = r.season_years || []
+    formOptions.season_types = r.season_types || []
+    formOptions.color_names_by_buyer = r.color_names_by_buyer || {}
+    formOptions.color_codes_by_buyer = r.color_codes_by_buyer || {}
+    formOptions.color_names_by_buyer_season = r.color_names_by_buyer_season || {}
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+function onBuyerChange() {
+  const seasons = form.buyer_code
+    ? formOptions.season_labels_by_buyer[form.buyer_code]
+    : null
+  if (form.season_label && seasons?.length && !seasons.includes(form.season_label)) {
+    form.season_label = ''
+  }
+}
+
+function onSeasonChange() {
+  // color options refresh via computed
+}
 
 async function loadSummary() {
   try {
@@ -232,10 +365,12 @@ function openEdit(row) {
 }
 
 function buildBody() {
+  const seasonYear = form.season_year
+  const parsedYear = seasonYear === '' || seasonYear == null ? null : Number(seasonYear)
   return {
     buyer_code: form.buyer_code.trim(),
     season_label: form.season_label.trim() || null,
-    season_year: form.season_year ?? null,
+    season_year: Number.isFinite(parsedYear) ? parsedYear : null,
     season_type: form.season_type.trim() || null,
     color_code: form.color_code.trim() || null,
     color_name: form.color_name.trim(),
@@ -258,8 +393,7 @@ async function save() {
     }
     ElMessage.success(t('common.saveSuccess'))
     formVisible.value = false
-    await load()
-    await loadSummary()
+    await Promise.all([load(), loadSummary(), loadFormOptions()])
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
@@ -292,8 +426,7 @@ async function onUploadCsv(uploadFile) {
         total: r.total,
       }),
     )
-    await load()
-    await loadSummary()
+    await Promise.all([load(), loadSummary(), loadFormOptions()])
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
@@ -317,8 +450,7 @@ async function importBundled() {
         total: r.total,
       }),
     )
-    await load()
-    await loadSummary()
+    await Promise.all([load(), loadSummary(), loadFormOptions()])
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
@@ -339,7 +471,6 @@ onMounted(async () => {
   } catch {
     isAdmin.value = false
   }
-  load()
-  loadSummary()
+  await Promise.all([loadFormOptions(), load(), loadSummary()])
 })
 </script>

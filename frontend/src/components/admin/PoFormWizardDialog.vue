@@ -110,7 +110,7 @@
                     {{ t('pages.po.autoFilled') }}
                   </el-tag>
                   <el-button v-if="w.formModel.buyer" link type="primary" size="small" @click="w.resetToAuto('buyer')">
-                    {{ t('pages.po.w.resetToAuto') }}
+                    {{ t('pages.po.resetToAuto') }}
                   </el-button>
                 </div>
               </el-form-item>
@@ -138,24 +138,15 @@
               <el-form-item :label="t('common.factoryCode')">
                 <el-input
                   v-model="w.formModel.factory_code"
-                  clearable
+                  readonly
+                  disabled
                   maxlength="32"
                   :placeholder="t('common.placeholder.factoryCode')"
-                  @input="w.autoFieldMeta.factory_code = false"
                 />
                 <div class="mt-2 flex items-center gap-2">
-                  <el-tag v-if="w.autoFieldMeta.factory_code && w.formModel.factory_code" size="small" type="success">
+                  <el-tag v-if="w.formModel.factory_code" size="small" type="success">
                     {{ t('pages.po.autoFilled') }}
                   </el-tag>
-                  <el-button
-                    v-if="w.formModel.customer_id"
-                    link
-                    type="primary"
-                    size="small"
-                    @click="w.resetToAuto('factory_code')"
-                  >
-                    {{ t('pages.po.w.resetToAuto') }}
-                  </el-button>
                 </div>
                 <span class="text-xs text-slate-500">{{ t('pages.po.factoryCodeHint') }}</span>
               </el-form-item>
@@ -167,8 +158,12 @@
               </el-form-item>
             </el-col>
             <el-col :xs="24" :md="8">
-              <el-form-item :label="t('pages.po.poCustomerRef')">
+              <el-form-item
+                :label="t('pages.po.poCustomerRef')"
+                :error="w.formErrors.po_customer_ref || undefined"
+              >
                 <el-input v-model="w.formModel.po_customer_ref" clearable maxlength="255" />
+                <span v-if="!w.formErrors.po_customer_ref" class="text-xs text-slate-500">{{ t('pages.po.poCustomerRefHint') }}</span>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :md="8">
@@ -191,11 +186,6 @@
             <el-col :xs="24" :md="8">
               <el-form-item :label="t('pages.po.deliveryAddress')">
                 <el-input v-model="w.formModel.delivery_address" type="textarea" :rows="2" />
-              </el-form-item>
-            </el-col>
-            <el-col :xs="24" :md="8">
-              <el-form-item :label="t('common.remark')">
-                <el-input v-model="w.formModel.remark" type="textarea" :rows="2" />
               </el-form-item>
             </el-col>
           </el-row>
@@ -257,7 +247,12 @@
                     :disabled="w.isMaterialFieldLocked('thickness_text') || !String(w.formModel.material_name || '').trim()"
                     @change="w.onPickedThicknessDimension"
                   >
-                    <el-option v-for="opt in w.thicknessDimensionOptions" :key="opt" :label="opt" :value="opt" />
+                    <el-option
+                      v-for="opt in w.thicknessDimensionOptions"
+                      :key="opt"
+                      :label="w.formatThicknessDisplay(opt)"
+                      :value="opt"
+                    />
                   </el-select>
                   <div class="mt-1 flex items-center gap-2">
                     <el-button
@@ -280,6 +275,7 @@
                     </el-button>
                   </div>
                 </div>
+                <span class="text-xs text-slate-500">{{ t('pages.po.thicknessRangeFormatHint') }}</span>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :md="8">
@@ -338,55 +334,32 @@
                 <div v-if="w.isFluorescentFamily" class="mt-1 text-xs text-slate-500">
                   Season aktif: {{ w.activeSeasonLabel || '-' }} · {{ t('common.masterLabel') }} fluorescent: {{ w.fluorescentColorOptions.length }} opsi
                 </div>
-                <div class="mt-2">
-                  <el-form-item :label="t('pages.po.swatchPickerLabel')" class="mb-0">
-                    <el-select
-                      v-model="w.selectedSwatchId"
-                      filterable
-                      clearable
-                      class="w-full"
-                      :placeholder="t('pages.po.swatchPickerPlaceholder')"
-                      :loading="w.colorSwatchLoading"
-                      :disabled="!w.poFactoryKeyForSwatch() || !w.formModel.buyer"
-                      @change="w.applyColorSwatch"
-                    >
-                      <el-option
-                        v-for="s in w.colorSwatchOptions"
-                        :key="s.id"
-                        :label="w.swatchOptionLabel(s)"
-                        :value="s.id"
-                      />
-                    </el-select>
-                    <div class="mt-1 flex flex-wrap items-center gap-2">
-                      <el-checkbox v-model="w.swatchAllMaterials" @change="w.loadColorSwatchOptions">
-                        {{ t('pages.po.w.swatchAllMaterials') }}
-                      </el-checkbox>
-                    </div>
-                    <p v-if="w.swatchRetriedWithoutMaterial" class="mt-1 text-xs text-slate-500">
-                      {{ t('pages.po.swatchRetriedHint') }}
-                    </p>
-                    <p v-if="!w.colorSwatchLoading && !w.colorSwatchOptions.length && w.poFactoryKeyForSwatch() && w.formModel.buyer" class="mt-1 text-xs text-amber-600">
-                      {{ t('pages.po.swatchNoOptions') }}
-                    </p>
-                  </el-form-item>
-                </div>
               </el-form-item>
             </el-col>
-            <el-col :span="24">
-              <div v-if="w.formModel.master_item_id" class="flex flex-wrap items-center gap-2 mb-2">
-                <el-tag type="success" closable @close="w.clearLinkedMasterItem">
-                  {{ t('pages.po.masterLinkedTag') }}: {{ w.resolvedMasterItemLabel }}
-                </el-tag>
-                <span v-if="w.masterResolveLoading" class="text-xs text-slate-500">{{ t('pages.po.resolvingMaster') }}</span>
-              </div>
-              <el-alert
-                v-else-if="w.lastResolveHadNoMaster && w.materialThicknessColorComplete"
-                type="warning"
-                :closable="false"
-                show-icon
-                class="mb-2"
-                :title="t('pages.po.masterNotMatchedHint')"
-              />
+            <el-col :xs="24" :md="8">
+              <el-form-item :label="t('pages.po.emboss')">
+                <div class="field-lock-row">
+                  <el-input v-model="w.formModel.emboss" class="w-full" clearable :disabled="w.isMaterialFieldLocked('emboss')" />
+                  <el-button
+                    v-if="w.isMaterialFieldLocked('emboss')"
+                    link
+                    type="primary"
+                    size="small"
+                    @click="w.enableMaterialOverride('emboss')"
+                  >
+                    Override
+                  </el-button>
+                  <el-button
+                    v-else-if="w.formModel.master_item_id && w.materialFieldOverride.emboss"
+                    link
+                    type="primary"
+                    size="small"
+                    @click="w.resetMaterialFieldToMaster('emboss')"
+                  >
+                    Reset
+                  </el-button>
+                </div>
+              </el-form-item>
             </el-col>
             <el-col :xs="24" :md="8">
               <el-form-item :label="t('pages.po.colorFamily')">
@@ -421,35 +394,96 @@
                     Reset
                   </el-button>
                 </div>
-                <div class="mt-1 text-xs text-slate-500">
-                  Auto-kategori warna: {{ w.colorFamilyAutoMode ? 'aktif' : 'manual' }}
-                </div>
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :md="8">
-              <el-form-item :label="t('pages.po.emboss')">
-                <div class="field-lock-row">
-                  <el-input v-model="w.formModel.emboss" class="w-full" clearable :disabled="w.isMaterialFieldLocked('emboss')" />
-                  <el-button
-                    v-if="w.isMaterialFieldLocked('emboss')"
-                    link
-                    type="primary"
-                    size="small"
-                    @click="w.enableMaterialOverride('emboss')"
-                  >
-                    Override
+            <el-col v-if="w.materialStepFillStep > 0" :span="24">
+              <el-alert
+                type="info"
+                :closable="false"
+                show-icon
+                class="mb-2"
+                :title="t('pages.po.materialStepFillOrderTitle', { step: w.materialStepFillStep })"
+              >
+                <p class="text-sm mb-1">{{ t('pages.po.materialStepFillOrder1') }}</p>
+                <p v-if="w.materialStepFillStep === 2" class="text-sm">{{ t('pages.po.materialStepFillOrder2') }}</p>
+                <p v-else-if="w.materialStepFillStep === 3" class="text-sm">{{ t('pages.po.materialStepFillOrder3') }}</p>
+                <p v-else-if="w.materialStepFillStep === 4" class="text-sm">{{ t('pages.po.materialStepFillOrder4') }}</p>
+                <p v-else-if="w.materialStepFillStep === 5" class="text-sm">{{ t('pages.po.materialStepFillOrder5') }}</p>
+              </el-alert>
+            </el-col>
+            <el-col :span="24">
+              <div v-if="w.formModel.master_item_id" class="flex flex-wrap items-center gap-2 mb-2">
+                <el-tag type="success" closable @close="w.clearLinkedMasterItem">
+                  {{ t('pages.po.masterLinkedTag') }}: {{ w.resolvedMasterItemLabel }}
+                </el-tag>
+                <span v-if="w.masterResolveLoading" class="text-xs text-slate-500">{{ t('pages.po.resolvingMaster') }}</span>
+              </div>
+              <el-alert
+                v-else-if="w.lastResolveHadNoMaster && w.materialThicknessColorComplete"
+                type="warning"
+                :closable="false"
+                show-icon
+                class="mb-2"
+                :title="t('pages.po.masterNotMatchedHint')"
+              />
+            </el-col>
+            <el-col :span="24">
+              <div class="mb-2">
+                <div
+                  v-if="w.selectedSwatchRecipe && !w.swatchPickerOpen"
+                  class="flex flex-wrap items-center gap-2 rounded border border-emerald-200 bg-emerald-50/80 px-3 py-2"
+                >
+                  <el-tag type="success" size="small">{{ t('pages.po.swatchActiveTag') }}</el-tag>
+                  <span class="text-sm text-slate-700">
+                    {{ w.swatchOptionLabel(w.selectedSwatchRecipe) }}
+                    <template v-if="w.formModel.backing">
+                      · {{ t('common.backing') }}: {{ w.formModel.backing }}
+                    </template>
+                  </span>
+                  <el-button link type="primary" size="small" @click="w.openSwatchPicker">
+                    {{ t('pages.po.swatchChangeRecipe') }}
                   </el-button>
-                  <el-button
-                    v-else-if="w.formModel.master_item_id && w.materialFieldOverride.emboss"
-                    link
-                    type="primary"
-                    size="small"
-                    @click="w.resetMaterialFieldToMaster('emboss')"
-                  >
-                    Reset
+                  <el-button link type="danger" size="small" @click="w.clearSwatchSelection">
+                    {{ t('pages.po.swatchClearRecipe') }}
                   </el-button>
                 </div>
-              </el-form-item>
+                <template v-else>
+                  <el-select
+                    v-model="w.selectedSwatchId"
+                    filterable
+                    clearable
+                    class="w-full"
+                    :placeholder="t('pages.po.swatchPickerPlaceholder')"
+                    :loading="w.colorSwatchLoading"
+                    :disabled="!w.poFactoryKeyForSwatch() || !w.formModel.buyer"
+                    @change="w.applyColorSwatch"
+                  >
+                    <el-option
+                      v-for="s in w.colorSwatchOptions"
+                      :key="s.id"
+                      :label="w.swatchOptionLabel(s)"
+                      :value="s.id"
+                    />
+                  </el-select>
+                  <div class="mt-1 flex flex-wrap items-center gap-2">
+                    <el-checkbox v-model="w.swatchAllMaterials" @change="w.loadColorSwatchOptions">
+                      {{ t('pages.po.swatchAllMaterials') }}
+                    </el-checkbox>
+                  </div>
+                </template>
+                <p v-if="w.swatchRetriedWithoutMaterial" class="mt-1 text-xs text-slate-500">
+                  {{ t('pages.po.swatchRetriedHint') }}
+                </p>
+                <p v-if="w.swatchHelperMessage && !w.selectedSwatchRecipe" class="mt-1 text-xs text-amber-600">
+                  {{ w.swatchHelperMessage }}
+                </p>
+                <p
+                  v-if="w.swatchFieldsLocked && w.swatchPickerOpen && !w.selectedSwatchRecipe"
+                  class="mt-1 text-xs text-slate-500"
+                >
+                  {{ t('pages.po.swatchFieldsLockedHint') }}
+                </p>
+              </div>
             </el-col>
             <el-col :xs="24">
               <el-alert
@@ -460,97 +494,129 @@
                 show-icon
                 class="mb-2"
               />
-              <el-collapse v-model="w.materialAdvancedOpen">
-                <el-collapse-item name="advanced-material">
-                  <template #title>
-                    <span class="font-medium">{{ t('pages.po.materialExtraGroupTitle') }}</span>
-                  </template>
-                  <el-row :gutter="16">
-                    <el-col :xs="24" :md="6">
-                      <el-form-item :label="t('pages.po.colorStandart')">
-                        <el-input v-model="w.formModel.color_standard" @input="w.autoFieldMeta.color_standard = false" />
-                        <div class="mt-2 flex items-center gap-2">
-                          <el-tag v-if="w.autoFieldMeta.color_standard && w.formModel.color_standard" size="small" type="success">
-                            {{ t('pages.po.autoFilled') }}
-                          </el-tag>
-                          <el-button
-                            v-if="w.formModel.color_standard"
-                            link
-                            type="primary"
-                            size="small"
-                            @click="w.resetToAuto('color_standard')"
-                          >
-                            {{ t('pages.po.w.resetToAuto') }}
-                          </el-button>
-                        </div>
-                      </el-form-item>
-                    </el-col>
-                    <el-col :xs="24" :md="6">
-                      <el-form-item :label="t('common.backing')">
-                        <el-input v-model="w.formModel.backing" @input="w.autoFieldMeta.backing = false" />
-                        <div class="mt-2 flex items-center gap-2">
-                          <el-tag v-if="w.autoFieldMeta.backing && w.formModel.backing" size="small" type="success">
-                            {{ t('pages.po.autoFilled') }}
-                          </el-tag>
-                          <el-button v-if="w.formModel.backing" link type="primary" size="small" @click="w.resetToAuto('backing')">
-                            {{ t('pages.po.w.resetToAuto') }}
-                          </el-button>
-                        </div>
-                      </el-form-item>
-                    </el-col>
-                    <el-col :xs="24" :md="6">
-                      <el-form-item :label="t('common.model')">
-                        <el-input v-model="w.formModel.model" :placeholder="t('common.placeholder.model')" @input="w.autoFieldMeta.model = false" />
-                        <div class="mt-2 flex items-center gap-2">
-                          <el-tag v-if="w.autoFieldMeta.model && w.formModel.model" size="small" type="success">
-                            {{ t('pages.po.autoFilled') }}
-                          </el-tag>
-                          <el-button v-if="w.formModel.model" link type="primary" size="small" @click="w.resetToAuto('model')">
-                            {{ t('pages.po.w.resetToAuto') }}
-                          </el-button>
-                        </div>
-                      </el-form-item>
-                    </el-col>
-                    <el-col :xs="24" :md="6">
-                      <el-form-item :label="t('pages.po.articleShort')">
-                        <div class="field-lock-row">
-                          <el-input v-model="w.formModel.style_article" class="w-full" :disabled="w.isMaterialFieldLocked('style_article')" />
-                          <div class="mt-1 flex items-center gap-2">
-                            <el-button
-                              v-if="w.isMaterialFieldLocked('style_article')"
-                              link
-                              type="primary"
-                              size="small"
-                              @click="w.enableMaterialOverride('style_article')"
-                            >
-                              Override
-                            </el-button>
-                            <el-button
-                              v-else-if="w.formModel.master_item_id && w.materialFieldOverride.style_article"
-                              link
-                              type="primary"
-                              size="small"
-                              @click="w.resetMaterialFieldToMaster('style_article')"
-                            >
-                              Reset
-                            </el-button>
-                          </div>
-                        </div>
-                      </el-form-item>
-                    </el-col>
-                  </el-row>
-                </el-collapse-item>
-              </el-collapse>
+              <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <span class="font-medium text-slate-700">
+                  {{
+                    w.showColorStandardBackingFields
+                      ? t('pages.po.materialExtraGroupTitle')
+                      : t('pages.po.materialModelArticleTitle')
+                  }}
+                </span>
+                <div class="flex flex-wrap items-center gap-2">
+                  <el-button
+                    v-if="w.swatchFieldsLocked"
+                    link
+                    type="primary"
+                    size="small"
+                    @click="w.enableSwatchManualEdit"
+                  >
+                    {{ t('pages.po.swatchEditFieldsManual') }}
+                  </el-button>
+                  <el-button
+                    v-else-if="w.selectedSwatchRecipe && w.swatchFieldsManualEdit"
+                    link
+                    type="primary"
+                    size="small"
+                    @click="w.reapplySelectedSwatchRecipe()"
+                  >
+                    {{ t('pages.po.swatchResyncFromRecipe') }}
+                  </el-button>
+                </div>
+              </div>
+              <el-row :gutter="16">
+                <el-col v-if="w.showColorStandardBackingFields" :xs="24" :md="6">
+                  <el-form-item :label="t('pages.po.colorStandart')">
+                    <el-input
+                      v-model="w.formModel.color_standard"
+                      :readonly="w.swatchFieldsLocked"
+                      :disabled="w.swatchFieldsLocked"
+                      @input="w.autoFieldMeta.color_standard = false"
+                    />
+                    <div class="mt-2 flex items-center gap-2">
+                      <el-tag v-if="w.swatchFieldsLocked && w.formModel.color_standard" size="small" type="success">
+                        {{ t('pages.po.swatchFilledFromRecipe') }}
+                      </el-tag>
+                      <el-tag v-else-if="w.autoFieldMeta.color_standard && w.formModel.color_standard" size="small" type="success">
+                        {{ t('pages.po.autoFilled') }}
+                      </el-tag>
+                    </div>
+                  </el-form-item>
+                </el-col>
+                <el-col v-if="w.showColorStandardBackingFields" :xs="24" :md="6">
+                  <el-form-item :label="t('common.backing')">
+                    <el-input
+                      v-model="w.formModel.backing"
+                      :readonly="w.swatchFieldsLocked"
+                      :disabled="w.swatchFieldsLocked"
+                      @input="w.autoFieldMeta.backing = false"
+                    />
+                    <div class="mt-2 flex items-center gap-2">
+                      <el-tag v-if="w.swatchFieldsLocked && w.formModel.backing" size="small" type="success">
+                        {{ t('pages.po.swatchFilledFromRecipe') }}
+                      </el-tag>
+                      <el-tag v-else-if="w.autoFieldMeta.backing && w.formModel.backing" size="small" type="success">
+                        {{ t('pages.po.autoFilled') }}
+                      </el-tag>
+                    </div>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="w.showColorStandardBackingFields ? 6 : 12">
+                  <el-form-item :label="t('common.model')">
+                    <el-input v-model="w.formModel.model" :placeholder="t('common.placeholder.model')" @input="w.autoFieldMeta.model = false" />
+                    <div class="mt-2 flex items-center gap-2">
+                      <el-tag v-if="w.autoFieldMeta.model && w.formModel.model" size="small" type="success">
+                        {{ t('pages.po.autoFilled') }}
+                      </el-tag>
+                      <el-button v-if="w.formModel.model" link type="primary" size="small" @click="w.resetToAuto('model')">
+                        {{ t('pages.po.resetToAuto') }}
+                      </el-button>
+                    </div>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="w.showColorStandardBackingFields ? 6 : 12">
+                  <el-form-item :label="t('pages.po.articleShort')">
+                    <div class="field-lock-row">
+                      <el-input v-model="w.formModel.style_article" class="w-full" :disabled="w.isMaterialFieldLocked('style_article')" />
+                      <div class="mt-1 flex items-center gap-2">
+                        <el-button
+                          v-if="w.isMaterialFieldLocked('style_article')"
+                          link
+                          type="primary"
+                          size="small"
+                          @click="w.enableMaterialOverride('style_article')"
+                        >
+                          Override
+                        </el-button>
+                        <el-button
+                          v-else-if="w.formModel.master_item_id && w.materialFieldOverride.style_article"
+                          link
+                          type="primary"
+                          size="small"
+                          @click="w.resetMaterialFieldToMaster('style_article')"
+                        >
+                          Reset
+                        </el-button>
+                      </div>
+                    </div>
+                  </el-form-item>
+                </el-col>
+              </el-row>
             </el-col>
           </el-row>
           <el-row :gutter="16" class="material-step-grid">
-            <el-col :xs="24" :md="8">
+            <el-col :xs="24" :md="6">
               <el-form-item :label="t('common.quantityOrder')" :error="w.formErrors.quantity_order">
                 <el-input v-model="w.formModel.quantity_order" type="number" />
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :md="8">
-              <el-form-item label="THI ORDER / LOT NO">
+            <el-col :xs="24" :md="6">
+              <el-form-item :label="t('pages.po.thiOrder')">
+                <el-input :model-value="w.nextPoNumberDisplay" disabled />
+                <p class="mt-1 text-xs text-slate-500">{{ t('pages.po.thiOrderSoHint') }}</p>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="6">
+              <el-form-item :label="t('common.lotNo')">
                 <div class="field-stack-row">
                   <el-input
                     v-model="w.formModel.thi_line_ref"
@@ -574,7 +640,7 @@
                 <p class="mt-1 text-xs text-slate-500">{{ t('pages.po.lotPreviewHint') }}</p>
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :md="8">
+            <el-col :xs="24" :md="6">
               <el-form-item :label="t('pages.po.unitPriceUsd')">
                 <div class="field-stack-row">
                   <el-input v-model.number="w.formModel.unit_price_input" class="w-full" type="number" :step="0.01" :controls="false" />
@@ -608,10 +674,22 @@
               </el-form-item>
             </el-col>
           </el-row>
-          <el-collapse v-model="w.etdScheduleOpen" class="mt-2">
-            <el-collapse-item name="schedule" :title="t('pages.po.etdSchedule')">
-              <p class="mb-2 text-xs text-slate-500">{{ t('pages.po.etdScheduleHint') }}</p>
-              <el-table :data="w.etdScheduleRows" border size="small" class="etd-schedule-table">
+          <el-row :gutter="16" class="material-step-grid">
+            <el-col :span="24">
+              <el-form-item :label="t('pages.po.detailRemark')">
+                <el-input
+                  v-model="w.formModel.detail_remark"
+                  type="textarea"
+                  :rows="2"
+                  :placeholder="t('pages.po.detailRemarkHint')"
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <div class="mt-4">
+            <div class="text-sm font-semibold text-slate-700">{{ t('pages.po.etdSchedule') }}</div>
+            <p class="mb-2 mt-1 text-xs text-slate-500">{{ t('pages.po.etdScheduleHint') }}</p>
+            <el-table :data="w.etdScheduleRows" border size="small" class="etd-schedule-table">
                 <el-table-column :label="t('common.noLabel')" width="56" align="center">
                   <template #default="{ $index }">{{ $index + 1 }}</template>
                 </el-table-column>
@@ -637,8 +715,22 @@
                     />
                   </template>
                 </el-table-column>
+                <el-table-column :label="t('common.actions')" width="72" align="center">
+                  <template #default="{ $index }">
+                    <el-button
+                      v-if="w.etdScheduleRows.length > 1"
+                      link
+                      type="danger"
+                      :icon="Delete"
+                      @click="w.removeEtdScheduleRow($index)"
+                    />
+                  </template>
+                </el-table-column>
               </el-table>
               <div class="mt-2 flex flex-wrap items-center gap-2">
+                <el-button size="small" :icon="Plus" :disabled="!w.etdScheduleCanAdd" @click="w.addEtdScheduleRow">
+                  {{ t('pages.po.addScheduleWave') }}
+                </el-button>
                 <el-button size="small" @click="w.clearEtdScheduleRows">{{ t('common.clear') }}</el-button>
                 <el-button size="small" type="primary" plain @click="w.autoFillEtdScheduleWave1">
                   {{ t('pages.po.autoFillScheduleWave1') }}
@@ -661,8 +753,7 @@
                 class="mt-2"
                 :title="t('pages.po.scheduleMismatch')"
               />
-            </el-collapse-item>
-          </el-collapse>
+          </div>
           <div class="mt-1 text-sm font-semibold text-slate-700">Daftar Material</div>
           <div class="mt-1 flex gap-2 flex-wrap">
             <el-button :icon="Plus" @click="w.pushCurrentLine(false)">{{ t('common.add') }}</el-button>
@@ -707,6 +798,12 @@
               </template>
             </el-table-column>
             <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="90" />
+            <el-table-column :label="t('pages.po.lineEtd')" min-width="130" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ w.formatLineEtdScheduleDisplay(row.delivery_schedules) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="detail_remark" :label="t('pages.po.detailRemark')" min-width="140" show-overflow-tooltip />
             <el-table-column :label="t('pages.po.unitPriceUsd')" width="100" align="right">
               <template #default="{ row }">
                 <div class="flex flex-col items-end">
@@ -726,7 +823,10 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="thi_line_ref" label="THI ORDER / LOT NO" min-width="160">
+            <el-table-column :label="t('pages.po.thiOrder')" min-width="150" show-overflow-tooltip>
+              <template #default>{{ w.nextPoNumberDisplay || '—' }}</template>
+            </el-table-column>
+            <el-table-column prop="thi_line_ref" :label="t('common.lotNo')" min-width="160">
               <template #default="{ row }">
                 <div class="flex items-center gap-2">
                   <span class="truncate">{{ row.thi_line_ref || '—' }}</span>
@@ -741,9 +841,6 @@
                   </el-button>
                 </div>
               </template>
-            </el-table-column>
-            <el-table-column :label="'SYSTEM NO'" min-width="120" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.system_reference || row.thi_line_ref || '—' }}</template>
             </el-table-column>
             <el-table-column :label="t('common.actions')" width="120" align="center">
               <template #default="{ row }">
@@ -760,12 +857,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <div class="mt-2 text-sm font-semibold text-slate-700">Catatan</div>
-          <div class="mt-1">
-            <el-form-item label="REMARK">
-              <el-input v-model="w.formModel.detail_remark" type="textarea" :rows="2" />
-            </el-form-item>
-          </div>
+          <el-empty v-if="!w.draftLinesDisplay.length" :description="t('pages.po.noItemsYet')" class="mt-2" />
         </div>
 
         <div v-show="w.currentStep === 2" class="step-content">
@@ -786,7 +878,6 @@
             <el-descriptions-item :label="t('common.status')">
               <el-tag size="small">{{ w.formModel.status }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item :label="t('common.remark')" :span="2">{{ w.formModel.remark || '-' }}</el-descriptions-item>
           </el-descriptions>
 
           <h4 class="text-md font-semibold mb-2">{{ t('pages.po.itemsSummary', { count: w.draftLinesDisplay.length }) }}</h4>
@@ -805,6 +896,12 @@
               </template>
             </el-table-column>
             <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="100" align="right" />
+            <el-table-column :label="t('pages.po.lineEtd')" min-width="130" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ w.formatLineEtdScheduleDisplay(row.delivery_schedules) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="detail_remark" :label="t('pages.po.detailRemark')" min-width="140" show-overflow-tooltip />
             <el-table-column prop="unit_price" :label="t('pages.po.unitPriceUsd')" width="100" align="right">
               <template #default="{ row }">{{ row.unit_price != null ? `$${row.unit_price}` : '—' }}</template>
             </el-table-column>
@@ -813,10 +910,12 @@
                 {{ row.unit_price != null && row.quantity_order ? `$${(row.unit_price * row.quantity_order).toFixed(2)}` : '—' }}
               </template>
             </el-table-column>
-            <el-table-column prop="thi_line_ref" label="THI ORDER / LOT NO" min-width="130" />
-            <el-table-column :label="'SYSTEM NO'" min-width="120" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.system_reference || row.thi_line_ref || '—' }}</template>
+            <el-table-column :label="t('pages.po.materialGroupLabel')" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" type="info" effect="plain">{{ w.materialGroupLabel(row) }}</el-tag>
+              </template>
             </el-table-column>
+            <el-table-column prop="thi_line_ref" :label="t('common.lotNo')" min-width="130" show-overflow-tooltip />
           </el-table>
           <el-empty v-else :description="t('pages.po.noItemsYet')" />
         </div>

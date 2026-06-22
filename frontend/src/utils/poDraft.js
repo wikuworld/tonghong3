@@ -1,6 +1,6 @@
 /** LocalStorage draft dialog input PO. */
 
-import { emptyEtdScheduleRows } from './poEtdSchedule.js'
+import { emptyEtdScheduleRows, etdScheduleRowsToPayload, loadEtdScheduleRowsFromApi } from './poEtdSchedule.js'
 
 export const PO_DRAFT_STORAGE_KEY = 'po_input_dialog_draft_v1'
 
@@ -15,7 +15,6 @@ function extractHeader(formModel) {
     buyer: formModel.buyer,
     etd: formModel.etd,
     po_customer_ref: formModel.po_customer_ref,
-    remark: formModel.remark,
     billing_address: formModel.billing_address,
     delivery_address: formModel.delivery_address,
     status: formModel.status,
@@ -71,7 +70,6 @@ export function applyPoDraftData(data, { formModel, autoFieldMeta, etdScheduleRo
   formModel.buyer = header.buyer || ''
   formModel.etd = header.etd || ''
   formModel.po_customer_ref = header.po_customer_ref || ''
-  formModel.remark = header.remark || ''
   formModel.billing_address = header.billing_address || ''
   formModel.delivery_address = header.delivery_address || ''
   formModel.status = header.status || 'draft'
@@ -98,11 +96,9 @@ export function applyPoDraftData(data, { formModel, autoFieldMeta, etdScheduleRo
   formModel.discount_value = Number(line.discount_value || 0)
 
   if (Array.isArray(line.etdScheduleRows) && line.etdScheduleRows.length) {
-    etdScheduleRows.value = line.etdScheduleRows.map((r, i) => ({
-      sequence_no: r.sequence_no ?? i + 1,
-      qty: r.qty != null ? Number(r.qty) : null,
-      date: r.date || '',
-    }))
+    etdScheduleRows.value = loadEtdScheduleRowsFromApi(
+      etdScheduleRowsToPayload(line.etdScheduleRows),
+    )
   } else {
     etdScheduleRows.value = emptyEtdScheduleRows()
   }

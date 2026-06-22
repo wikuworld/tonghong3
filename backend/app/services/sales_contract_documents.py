@@ -73,7 +73,6 @@ def gather_sales_contract_ctx(db: Session, po_id: int) -> dict[str, Any]:
         "customer_name": (cust.name if cust and cust.name else ph.customer_name_snapshot or "").strip() or "—",
         "billing_address": (ph.billing_address or "").strip(),
         "delivery_address": (ph.delivery_address or "").strip(),
-        "remark": (ph.remark or "").strip(),
         "lines": lines,
         "total_amount": total,
     }
@@ -108,8 +107,6 @@ def render_sales_contract_pdf(ctx: dict[str, Any]) -> bytes:
         story.append(Paragraph(f"<b>Bill to:</b> {escape(ctx['billing_address'])}", small))
     if ctx.get("delivery_address"):
         story.append(Paragraph(f"<b>Ship to:</b> {escape(ctx['delivery_address'])}", small))
-    if ctx.get("remark"):
-        story.append(Paragraph(f"<b>Remark:</b> {escape(ctx['remark'])}", small))
     story.append(Spacer(1, 5 * mm))
 
     head = ["#", "Material", "Color", "Qty", "U.Price", "Amount", "Line rmk."]
@@ -171,8 +168,6 @@ def render_sales_contract_docx(ctx: dict[str, Any]) -> bytes:
         d.add_paragraph(f"Bill to: {ctx['billing_address']}")
     if ctx.get("delivery_address"):
         d.add_paragraph(f"Ship to: {ctx['delivery_address']}")
-    if ctx.get("remark"):
-        d.add_paragraph(f"Remark: {ctx['remark']}")
     d.add_paragraph()
 
     table = d.add_table(rows=1 + len(ctx["lines"]) + 1, cols=7)

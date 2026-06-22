@@ -4,6 +4,22 @@ export function normalizedText(v) {
   return String(v || '').trim().toLowerCase()
 }
 
+/** PU atau Suede — untuk kolom keterangan baris (ganti System No di ringkasan PO). */
+export function resolveMaterialGroupLabel(row, masterItems = []) {
+  const masterId = row?.master_item_id
+  if (masterId) {
+    const mi = masterItems.find((x) => x.id === masterId)
+    const cat = normalizedText(mi?.category)
+    if (cat === 'suide' || cat === 'suede') return 'Suede'
+    if (cat === 'pu') return 'PU'
+  }
+  if (normalizedText(row?.vir_softness_type).includes('pu')) return 'PU'
+  const mn = normalizedText(row?.material_name)
+  if (mn.includes('suede') || mn.includes('suide')) return 'Suede'
+  if (mn.includes('pu')) return 'PU'
+  return '—'
+}
+
 export function inferColorFamilyFromColor(colorValue) {
   const color = String(colorValue || '').toLowerCase()
   if (!color) return null
@@ -139,11 +155,21 @@ export function resetMaterialFieldToMaster(field, formModel, masterItems, materi
   materialFieldOverride[field] = false
 }
 
+export function formatThicknessDisplay(v) {
+  const raw = String(v || '').trim()
+  if (!raw) return ''
+  const range = raw.match(/^(\d+(?:\.\d+)?)\s*[-–]\s*(\d+(?:\.\d+)?)$/)
+  if (range) return `${range[1]} - ${range[2]}`
+  const single = raw.match(/^(\d+(?:\.\d+)?)$/)
+  if (single) return single[1]
+  return raw
+}
+
 export function isThicknessPricingFormatValid(v) {
   const raw = String(v || '').trim()
   if (!raw) return true
   const single = /^\d+(\.\d+)?$/
-  const range = /^\d+(\.\d+)?\s*-\s*\d+(\.\d+)?$/
+  const range = /^\d+(\.\d+)?\s*[-–]\s*\d+(\.\d+)?$/
   return single.test(raw) || range.test(raw)
 }
 

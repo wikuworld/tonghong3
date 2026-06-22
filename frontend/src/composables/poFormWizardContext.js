@@ -1,9 +1,10 @@
-import { inject, provide } from 'vue'
+import { inject, provide, reactive } from 'vue'
 
 export const PO_FORM_WIZARD_KEY = Symbol('poFormWizard')
 
 export function providePoWizardContext(ctx) {
-  provide(PO_FORM_WIZARD_KEY, ctx)
+  // reactive() agar ref di context ter-unwrap di template (v-model el-dialog).
+  provide(PO_FORM_WIZARD_KEY, reactive(ctx))
 }
 
 export function usePoWizardContext() {

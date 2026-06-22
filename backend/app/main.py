@@ -107,6 +107,15 @@ def _bootstrap_admin() -> None:
         db = SessionLocal()
         try:
             ensure_default_permissions(db)
+            if str(settings.app_env or "dev").strip().lower() in {
+                "dev",
+                "local",
+                "development",
+                "test",
+            }:
+                from app.services.demo_users import ensure_demo_role_users
+
+                ensure_demo_role_users(db)
         finally:
             db.close()
     except Exception:

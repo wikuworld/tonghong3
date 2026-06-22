@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from app.models import MasterItem
+from app.services.thickness_format import (
+    canonical_thickness_range,
+    display_thickness_range,
+    thickness_ranges_equivalent,
+)
 
 
 def _norm_text(value: str | None) -> str:
@@ -11,10 +16,15 @@ def _norm_text(value: str | None) -> str:
 
 def master_item_thickness_display(row: MasterItem) -> str:
     if row.thickness_range and str(row.thickness_range).strip():
-        return str(row.thickness_range).strip()
+        return canonical_thickness_range(str(row.thickness_range).strip())
     if row.thickness_mm is not None:
-        return str(row.thickness_mm).strip()
+        return canonical_thickness_range(str(row.thickness_mm).strip())
     return ""
+
+
+def master_item_thickness_label(row: MasterItem) -> str:
+    disp = master_item_thickness_display(row)
+    return display_thickness_range(disp) if disp else ""
 
 
 def thickness_matches(row: MasterItem, thickness_text: str | None) -> bool:
@@ -24,9 +34,7 @@ def thickness_matches(row: MasterItem, thickness_text: str | None) -> bool:
     disp = master_item_thickness_display(row)
     if not disp:
         return False
-    if _norm_text(disp) == _norm_text(u):
-        return True
-    return disp.replace(" ", "") == u.replace(" ", "")
+    return thickness_ranges_equivalent(disp, u)
 
 
 def filter_by_material(rows: list[MasterItem], material_name: str) -> list[MasterItem]:
@@ -61,7 +69,7 @@ def distinct_thicknesses(rows: list[MasterItem], material_name: str) -> list[str
         if k in seen:
             continue
         seen.add(k)
-        out.append(d)
+        out.append(display_thickness_range(d))
     return sorted(out, key=lambda s: s.lower())
 
 

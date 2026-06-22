@@ -109,6 +109,7 @@ def test_po_router_require_auth_and_role_guards():
     for path, method in [
         ("/po", "GET"),
         ("/po/page", "GET"),
+        ("/po/material-hints", "GET"),
         ("/po/mkt-workflow-stages", "GET"),
         ("/po/next-number", "GET"),
         ("/po/{po_id}", "GET"),

@@ -104,20 +104,20 @@ def po_has_invoice_for_po(db: "Session", po_id: int) -> bool:
 
 
 def po_has_ppic_assignment(db: "Session", po_id: int) -> bool:
-    from app.models import PoPpicAssignment
+    from app.models import PpicsAssignment
 
     row = db.scalars(
-        select(PoPpicAssignment).where(PoPpicAssignment.po_id == po_id).limit(1)
+        select(PpicsAssignment).where(PpicsAssignment.po_id == po_id).limit(1)
     ).first()
     return row is not None
 
 
 def po_ppic_is_complete(db: "Session", po_id: int) -> bool:
-    from app.models import PoPpicAssignment
+    from app.models import PpicsAssignment
 
     row = db.scalars(
-        select(PoPpicAssignment)
-        .where(PoPpicAssignment.po_id == po_id, PoPpicAssignment.status == "completed")
+        select(PpicsAssignment)
+        .where(PpicsAssignment.po_id == po_id, PpicsAssignment.status == "completed")
         .limit(1)
     ).first()
     return row is not None
@@ -146,8 +146,6 @@ def get_stuck_reason(db: "Session", po_id: int) -> str | None:
     elif nxt == "with_ppic":
         if not po_has_ppic_assignment(db, po_id):
             return "Belum di-assign ke PPIC"
-        if not po_ppic_is_complete(db, po_id):
-            return "PPIC belum menyelesaikan tugas"
 
     elif nxt == "back_to_mkt":
         if not po_ppic_is_complete(db, po_id):
@@ -206,6 +204,65 @@ def auto_advance_if_ready(db: "Session", po_id: int) -> str | None:
     return nxt
 
 
+def sync_mkt_workflow_auto_advance(
+    db: "Session",
+    po_id: int,
+    *,
+    actor: str = "system",
+) -> list[str]:
+    """Naikkan tahap MKT berurutan selama syarat terpenuhi (maks. satu putaran penuh)."""
+    from app.services.audit import log_change
+
+    advanced: list[str] = []
+    for _ in range(len(MKT_STAGES_ORDER)):
+        new_stage = auto_advance_if_ready(db, po_id)
+        if not new_stage:
+            break
+        advanced.append(new_stage)
+        log_change(
+            db,
+            entity_type="sales_order",
+            entity_id=po_id,
+            action="auto_advance",
+            after={"mkt_workflow_stage": new_stage},
+            actor=actor,
+        )
+    return advanced
+
+
+def sync_mkt_for_delivery(
+    db: "Session",
+    delivery_id: int,
+    *,
+    actor: str = "system",
+) -> None:
+    """Auto-advance semua PO pada delivery."""
+    from app.models import PoHeader
+
+    from app.services.business_rules import po_numbers_from_delivery
+
+    for pn in po_numbers_from_delivery(db, delivery_id):
+        ph = db.scalars(select(PoHeader).where(PoHeader.po_number == pn).limit(1)).first()
+        if ph:
+            sync_mkt_workflow_auto_advance(db, ph.id, actor=actor)
+
+
+def sync_mkt_for_packing(
+    db: "Session",
+    packing_id: int,
+    *,
+    actor: str = "system",
+) -> None:
+    """Auto-advance PO terkait packing (via delivery yang memakai packing ini)."""
+    from app.models import DeliveryHeader
+
+    rows = db.scalars(
+        select(DeliveryHeader).where(DeliveryHeader.packing_id == packing_id)
+    ).all()
+    for dh in rows:
+        sync_mkt_for_delivery(db, dh.id, actor=actor)
+
+
 def validate_mkt_advance(
     db: "Session",
     po_id: int,
@@ -227,34 +284,9 @@ def validate_mkt_advance(
             detail=f"Langkah MKT berikutnya harus {nxt!r}, bukan {target!r}",
         )
 
-    if target == "delivery_arranged":
-        if not row.material_followup_done:
-            raise HTTPException(
-                status_code=400,
-                detail="Tandai «follow up material selesai» di data PO sebelum arrange delivery",
-            )
-        if not po_has_delivery_for_po(db, po_id):
-            raise HTTPException(
-                status_code=400,
-                detail="Buat delivery (dengan baris detail) untuk PO ini dulu",
-            )
-
-    if target == "sj_invpl":
-        if not po_has_sj_invpl_prints(db, po_id):
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "Cetak INVPL lalu tandai dicetak di packing; untuk customer non-ekspor cetak Surat Jalan "
-                    "lalu tandai di delivery. Customer ekspor: INVPL saja cukup (SJ opsional)."
-                ),
-            )
-
-    if target == "invoice_billing":
-        if not po_has_invoice_for_po(db, po_id):
-            raise HTTPException(
-                status_code=400,
-                detail="Buat invoice penagihan (terhubung delivery PO ini) dulu",
-            )
+    stuck = get_stuck_reason(db, po_id)
+    if stuck:
+        raise HTTPException(status_code=400, detail=stuck)
 
 
 def apply_mkt_stage(
@@ -272,6 +304,40 @@ def apply_mkt_stage(
     row.mkt_workflow_updated_at = now
     if target == "rekap_printed" and row.rekap_printed_at is None:
         row.rekap_printed_at = now
+
+
+def stamp_rekap_printed_for_recap(
+    db: "Session",
+    headers: list,
+    *,
+    actor: str | None = None,
+) -> int:
+    """Tandai rekap PO sudah dicetak/diunduh untuk header yang belum punya timestamp."""
+    from app.models import PoHeader
+
+    now = datetime.utcnow()
+    stamped = 0
+    for row in headers:
+        if not isinstance(row, PoHeader):
+            continue
+        if row.rekap_printed_at is not None:
+            continue
+        row.rekap_printed_at = now
+        stamped += 1
+        if actor:
+            from app.services.audit import log_change
+
+            log_change(
+                db,
+                entity_type="sales_order",
+                entity_id=row.id,
+                action="rekap_printed",
+                after={"rekap_printed_at": now.isoformat(), "po_number": row.po_number},
+                actor=actor,
+            )
+    if stamped:
+        db.commit()
+    return stamped
 
 
 def sync_invoice_billing_from_delivery(db: "Session", delivery_id: int) -> None:

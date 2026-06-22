@@ -16,8 +16,9 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
-from app.models import PoDetail, PoHeader
+from app.models import PoDetail, PoHeader, User
 from app.routers.auth import get_current_user
+from app.services.mkt_workflow import stamp_rekap_printed_for_recap, sync_mkt_workflow_auto_advance
 
 router = APIRouter(tags=["reports"])
 
@@ -414,7 +415,7 @@ def export_po_daily_marketing_xlsx(
 def export_po_daily_recap_csv(
     report_date: Optional[date] = Query(None, alias="date"),
     db: Session = Depends(get_db),
-    _user=Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ) -> Response:
     """Rekap laporan PO hari ini (filter tanggal order atau tanggal input = hari tersebut)."""
     d = report_date or date.today()
@@ -428,6 +429,10 @@ def export_po_daily_recap_csv(
         )
         .order_by(PoHeader.id.desc())
     ).all()
+    stamp_rekap_printed_for_recap(db, headers, actor=user.username)
+    for h in headers:
+        sync_mkt_workflow_auto_advance(db, h.id, actor=user.username)
+    db.commit()
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(
@@ -489,7 +494,6 @@ def export_sales_orders_csv(
             "status",
             "order_date",
             "etd",
-            "remark",
             "billing_address",
             "delivery_address",
             "marketing_excel_date_serial",
@@ -507,7 +511,6 @@ def export_sales_orders_csv(
                 h.status or "",
                 h.order_date or "",
                 h.etd or "",
-                (h.remark or "").replace("\n", " ")[:500],
                 (h.billing_address or "").replace("\n", " ")[:300],
                 (h.delivery_address or "").replace("\n", " ")[:300],
                 h.marketing_excel_date_serial or "",

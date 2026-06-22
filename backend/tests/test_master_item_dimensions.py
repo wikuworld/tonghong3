@@ -43,8 +43,8 @@ def test_distinct_materials_and_cascade() -> None:
         _mi(id=3, item_code="B1", material_name="SUEDE Y", thickness_range="1.4-1.6", color="Navy"),
     ]
     assert distinct_material_names(rows) == ["PU X", "SUEDE Y"]
-    assert distinct_thicknesses(rows, "PU X") == ["1.2-1.4"]
-    assert set(distinct_colors(rows, "PU X", "1.2-1.4")) == {"Black", "White"}
+    assert distinct_thicknesses(rows, "PU X") == ["1.2 - 1.4"]
+    assert set(distinct_colors(rows, "PU X", "1.2 - 1.4")) == {"Black", "White"}
 
 
 def test_resolve_single_and_ambiguous() -> None:
@@ -52,7 +52,7 @@ def test_resolve_single_and_ambiguous() -> None:
         _mi(id=1, item_code="A1", material_name="PU X", thickness_range="1.2-1.4", color="Black"),
         _mi(id=2, item_code="A2", material_name="PU X", thickness_range="1.2-1.4", color="White"),
     ]
-    black = resolve_by_dimensions(rows, material_name="PU X", thickness_text="1.2-1.4", color="Black")
+    black = resolve_by_dimensions(rows, material_name="PU X", thickness_text="1.2 - 1.4", color="Black")
     assert len(black) == 1 and black[0].id == 1
     white = resolve_by_dimensions(rows, material_name="PU X", thickness_text="1.2-1.4", color="white")
     assert len(white) == 1 and white[0].id == 2
@@ -62,6 +62,6 @@ def test_thickness_mm_fallback() -> None:
     rows = [
         _mi(id=1, item_code="Z1", material_name="M", thickness_range="", thickness_mm=Decimal("1.5"), color="Red"),
     ]
-    assert distinct_thicknesses(rows, "M") == ["1.5"]
-    hits = resolve_by_dimensions(rows, material_name="M", thickness_text="1.5", color="Red")
+    assert distinct_thicknesses(rows, "M") == ["1.4 - 1.6"]
+    hits = resolve_by_dimensions(rows, material_name="M", thickness_text="1.4 - 1.6", color="Red")
     assert len(hits) == 1

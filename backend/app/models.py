@@ -458,7 +458,6 @@ class PoHeader(Base):
     buyer: Mapped[Optional[str]] = mapped_column(String(100))
     order_date: Mapped[Optional[date]] = mapped_column(Date)
     etd: Mapped[Optional[date]] = mapped_column(Date)
-    remark: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(32), default="draft")
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()

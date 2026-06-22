@@ -35,7 +35,7 @@
         <template v-for="(s, i) in stageList" :key="s">
           <div v-if="i > 0" class="text-gray-400 flex-shrink-0 text-lg leading-none">›</div>
           <div class="flex flex-col items-center flex-shrink-0 cursor-pointer" @click="toggleStageFilter(s)">
-            <el-tag :type="filterStage === s ? 'primary' : (i <= activeStep ? 'success' : 'info')" effect="light" size="small">
+            <el-tag :type="stageTagType(s)" effect="light" size="small">
               {{ labelFor(s) }}
             </el-tag>
             <el-badge :value="stageCounts[s]" :max="99" :type="stageCounts[s] > 0 ? 'primary' : 'info'" class="mt-1" />
@@ -83,20 +83,38 @@
             <span v-else class="text-gray-400 text-xs">—</span>
           </template>
         </el-table-column>
-        <el-table-column :label="t('pages.marketingFlow.stuckReason')" min-width="200">
+        <el-table-column :label="t('pages.marketingFlow.stuckReason')" min-width="220">
           <template #default="{ row }">
-            <el-tag v-if="row.stuck_reason" type="warning" size="small" effect="plain">
-              <el-icon class="mr-1"><Warning /></el-icon>
-              {{ row.stuck_reason }}
-            </el-tag>
-            <el-tag v-else-if="isStageComplete(row)" type="success" size="small" effect="plain">
-              <el-icon class="mr-1"><CircleCheck /></el-icon>
-              {{ t('pages.marketingFlow.readyToAdvance') }}
-            </el-tag>
-            <span v-else class="text-gray-400 text-xs">—</span>
+            <div class="mkt-stuck-cell">
+              <el-tag
+                v-if="row.stuck_reason"
+                type="warning"
+                size="small"
+                effect="light"
+                class="mkt-stuck-tag mkt-stuck-tag--blocked"
+              >
+                <span class="mkt-stuck-tag__inner">
+                  <el-icon><Warning /></el-icon>
+                  <span class="mkt-stuck-tag__text">{{ stuckReasonLabel(row.stuck_reason) }}</span>
+                </span>
+              </el-tag>
+              <el-tag
+                v-else-if="isStageComplete(row)"
+                type="success"
+                size="small"
+                effect="light"
+                class="mkt-stuck-tag mkt-stuck-tag--ready"
+              >
+                <span class="mkt-stuck-tag__inner">
+                  <el-icon><CircleCheck /></el-icon>
+                  <span class="mkt-stuck-tag__text">{{ t('pages.marketingFlow.readyToAdvance') }}</span>
+                </span>
+              </el-tag>
+              <span v-else class="mkt-stuck-empty">{{ t('common.emptyValue') }}</span>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="120" fixed="right" align="center">
+        <el-table-column :label="t('common.actions')" width="150" fixed="right" align="center">
           <template #default="{ row }">
             <el-tooltip v-if="canAdvance" :content="t('pages.marketingFlow.advanceStageHint')" placement="top">
               <el-button
@@ -104,10 +122,22 @@
                 link
                 size="small"
                 :loading="advancing === row.id"
-                :disabled="advancing != null && advancing !== row.id"
+                :disabled="Boolean(row.stuck_reason) || (advancing != null && advancing !== row.id)"
                 @click="advance(row)"
               >
                 <el-icon><DArrowRight /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <el-tooltip v-if="canAdvance && canRollbackRow(row)" :content="t('pages.marketingFlow.rollbackStageHint')" placement="top">
+              <el-button
+                type="warning"
+                link
+                size="small"
+                :loading="rollingBack === row.id"
+                :disabled="rollingBack != null && rollingBack !== row.id"
+                @click="rollback(row)"
+              >
+                <el-icon><DArrowLeft /></el-icon>
               </el-button>
             </el-tooltip>
             <el-tooltip :content="t('pages.marketingFlow.openPoDetail')" placement="top">
@@ -138,6 +168,9 @@
             <el-button size="small" type="warning" :icon="Download" :loading="outstandingReturnXlsxLoading" @click="downloadReturnXlsx">
               {{ t('pages.marketingFlow.outstandingDownloadReturXlsx') }}
             </el-button>
+            <el-button size="small" type="success" plain :icon="Download" :loading="outstandingManualXlsxLoading" @click="downloadManualWorkbook">
+              {{ t('pages.marketingFlow.outstandingDownloadManualXlsx') }}
+            </el-button>
             <el-button size="small" type="primary" plain @click="proposeScheduleFromSelection">
               {{ t('pages.marketingFlow.scheduleDraftButton') }}
             </el-button>
@@ -162,18 +195,29 @@
           @change="loadOutstanding"
         />
       </div>
-      <div class="mb-3 grid grid-cols-1 md:grid-cols-4 gap-2">
-        <el-input v-model="poSearch" size="small" clearable :placeholder="t('common.poNo')" />
-        <el-input v-model="factoryCode" size="small" clearable :placeholder="t('pages.marketingFlow.filterFactoryCode')" />
-        <el-select v-model="outstandingPoCategory" size="small" clearable :placeholder="t('pages.marketingFlow.filterPoCategory')">
-          <el-option :label="t('status.production')" value="production" />
-          <el-option :label="t('status.sample')" value="sample" />
-          <el-option :label="t('status.claim')" value="claim" />
-          <el-option :label="t('status.return')" value="return" />
-          <el-option :label="t('status.subcont')" value="subcont" />
-          <el-option :label="t('status.suede')" value="suede" />
-        </el-select>
-        <el-select v-model="materialStatus" size="small" clearable :placeholder="t('pages.marketingFlow.filterMaterialStatus')">
+      <div class="mb-2 flex flex-wrap items-center gap-2">
+        <span class="text-sm text-slate-600 shrink-0">{{ t('pages.marketingFlow.outstandingSheetFilter') }}</span>
+        <el-radio-group v-model="outstandingPoCategory" size="small" @change="loadOutstanding">
+          <el-radio-button label="">{{ t('pages.marketingFlow.outstandingSheetAll') }}</el-radio-button>
+          <el-radio-button label="production">{{ t('pages.marketingFlow.outstandingSheetProd') }}</el-radio-button>
+          <el-radio-button label="claim">{{ t('pages.marketingFlow.outstandingSheetClaim') }}</el-radio-button>
+          <el-radio-button label="sample">{{ t('pages.marketingFlow.outstandingSheetSample') }}</el-radio-button>
+          <el-radio-button label="subcont">{{ t('pages.marketingFlow.outstandingSheetSubcont') }}</el-radio-button>
+          <el-radio-button label="return">{{ t('pages.marketingFlow.outstandingSheetReturn') }}</el-radio-button>
+        </el-radio-group>
+      </div>
+      <div class="mb-2 flex flex-wrap items-center gap-2">
+        <span class="text-sm text-slate-600 shrink-0">{{ t('pages.marketingFlow.balanceFilter') }}</span>
+        <el-radio-group v-model="balanceFilter" size="small" @change="loadOutstanding">
+          <el-radio-button label="exclude_zero">{{ t('pages.marketingFlow.balanceFilterExcludeZero') }}</el-radio-button>
+          <el-radio-button label="all">{{ t('pages.marketingFlow.balanceFilterAll') }}</el-radio-button>
+          <el-radio-button label="positive_only">{{ t('pages.marketingFlow.balanceFilterPositiveOnly') }}</el-radio-button>
+        </el-radio-group>
+      </div>
+      <div class="mb-3 grid grid-cols-1 md:grid-cols-3 gap-2">
+        <el-input v-model="poSearch" size="small" clearable :placeholder="t('common.poNo')" @keyup.enter="loadOutstanding" />
+        <el-input v-model="factoryCode" size="small" clearable :placeholder="t('pages.marketingFlow.filterFactoryCode')" @keyup.enter="loadOutstanding" />
+        <el-select v-model="materialStatus" size="small" clearable :placeholder="t('pages.marketingFlow.filterMaterialStatus')" @change="loadOutstanding">
           <el-option :label="t('pages.marketingFlow.materialFilterAll')" value="all" />
           <el-option :label="t('pages.marketingFlow.materialFilterSent')" value="sent" />
           <el-option :label="t('pages.marketingFlow.materialFilterNotSent')" value="not_sent" />
@@ -205,14 +249,13 @@
         <el-table-column prop="customer_name" :label="t('common.customerName')" min-width="180" show-overflow-tooltip />
         <el-table-column prop="brand" :label="t('pages.marketingFlow.colBrand')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="order_type" :label="t('pages.marketingFlow.colOrderType')" width="110" />
-        <el-table-column prop="no_po" :label="t('common.poNo')" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="po_customer_ref" :label="t('pages.marketingFlow.colPoCustomer')" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="po_customer_ref" :label="outstandingPoRefLabel" min-width="140" show-overflow-tooltip />
         <el-table-column prop="material_name" :label="t('common.material')" min-width="180" show-overflow-tooltip />
         <template v-for="col in outstandingExtraColumnDefs" :key="col.prop">
           <el-table-column
             v-if="outstandingShowAllColumns"
             :prop="col.prop"
-            :label="t(col.labelKey)"
+            :label="col.label || (col.labelKey ? t(col.labelKey) : col.prop)"
             :width="col.width"
             :min-width="col.minWidth"
             show-overflow-tooltip
@@ -224,7 +267,15 @@
         <el-table-column prop="delivered_qty" :label="t('pages.marketingFlow.colDeliveredQty')" width="96" align="right" />
         <el-table-column prop="actual_vs_schedule_qty" :label="t('pages.marketingFlow.colActualVsSchedule')" width="110" align="right" />
         <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="110" />
-        <el-table-column prop="status_material" :label="t('pages.marketingFlow.colStatusMaterial')" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="system_reference" :label="t('pages.marketingFlow.colSystemNo')" min-width="150" show-overflow-tooltip />
+        <el-table-column
+          v-if="outstandingShowStatusMaterial"
+          prop="status_material"
+          :label="t('pages.marketingFlow.colStatusMaterial')"
+          min-width="200"
+          show-overflow-tooltip
+        />
+        <el-table-column prop="detail_remark" :label="t('pages.marketingFlow.colRemarkPo')" min-width="160" show-overflow-tooltip />
         <el-table-column prop="remark_system" :label="t('pages.marketingFlow.colRemarkSystem')" min-width="220" show-overflow-tooltip />
         <el-table-column :label="t('pages.marketingFlow.colRemarkMarketing')" min-width="220">
           <template #default="{ row }">
@@ -279,7 +330,7 @@
             <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
             <el-table-column prop="factory_code" label="Factory" width="88" show-overflow-tooltip />
             <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="thi_order" :label="t('pages.marketingFlow.colThiOrder')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="lot_no" :label="t('common.lotNo')" min-width="140" show-overflow-tooltip />
             <el-table-column prop="qty" :label="t('pages.marketingFlow.colQtyShip')" width="88" />
             <el-table-column prop="line_etd" :label="t('pages.po.lineEtd')" width="110" />
           </el-table>
@@ -381,14 +432,20 @@
             />
             <el-button size="small" :icon="Search" @click="loadDelivery">{{ t('pages.marketingFlow.deliveryRefresh') }}</el-button>
             <el-button size="small" :icon="Download" @click="downloadDelivery">{{ t('pages.marketingFlow.deliveryDownloadCsv') }}</el-button>
+            <el-button size="small" :icon="Download" @click="downloadDeliveryXlsx">{{ t('pages.marketingFlow.deliveryDownloadXlsx') }}</el-button>
           </div>
           <el-table :data="deliveryRows" v-loading="deliveryLoading" border stripe size="small" max-height="400">
             <el-table-column prop="surat_jalan_no" :label="t('pages.marketingFlow.colSuratJalan')" min-width="120" show-overflow-tooltip />
             <el-table-column prop="delivery_date" :label="t('pages.marketingFlow.colShipDate')" width="110" />
             <el-table-column prop="factory_name" :label="t('pages.marketingFlow.colFactoryName')" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="system_no" :label="t('pages.marketingFlow.colSystemNo')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="po_number" :label="t('pages.marketingFlow.colPoCustomerRef')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="lot_no" :label="t('pages.marketingFlow.colLotNo')" min-width="130" show-overflow-tooltip />
             <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
             <el-table-column prop="qty_sf" :label="t('pages.marketingFlow.colQtyShip')" width="90" />
+            <el-table-column prop="gross_weight" :label="t('pages.marketingFlow.colGrossWeight')" width="72" />
+            <el-table-column prop="net_weight" :label="t('pages.marketingFlow.colNetWeight')" width="72" />
+            <el-table-column prop="amount" :label="t('pages.marketingFlow.colAmount')" width="96" />
             <el-table-column :label="t('common.actions')" width="100" align="center" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="goDelivery(row)">{{ t('pages.marketingFlow.openDelivery') }}</el-button>
@@ -413,7 +470,8 @@
       <el-table v-if="snapshotDetailRows.length" :data="snapshotDetailRows" border stripe size="small" max-height="560">
         <el-table-column type="index" width="48" align="center" />
         <el-table-column prop="order_date" :label="t('common.orderDate')" width="100" />
-        <el-table-column prop="no_po" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="thi_order" :label="t('pages.marketingFlow.colThiOrder')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="po_customer_ref" :label="t('pages.marketingFlow.colPoCustomer')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="customer_name" :label="t('common.customerName')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
         <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="96" />
@@ -466,17 +524,17 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DArrowRight, Document, Download, Van, User, Search, Close, Check, Warning, CircleCheck } from '@element-plus/icons-vue'
+import { DArrowLeft, DArrowRight, Document, Download, User, Search, Close, Check, Warning, CircleCheck } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import {
   advanceMktWorkflow,
+  rollbackMktWorkflow,
   assignPoToPpic,
   createMarketingOutstandingSnapshot,
   fetchAuthenticatedDocument,
   getMarketingDeliveryToday,
   getMarketingOutstandingSnapshot,
   getPpicDashboard,
-  getPoPpicAssignment,
   listMarketingDeliveryLines,
   listMarketingDeliveryPlanning,
   listMarketingOutstandingLines,
@@ -485,8 +543,10 @@ import {
   listPoMktStages,
   listPpicUsers,
   marketingDeliveryCsvUrl,
+  marketingDeliveryXlsxPath,
   marketingOutstandingCsvUrl,
   marketingOutstandingReturnXlsxPath,
+  marketingOutstandingManualXlsxPath,
   marketingOutstandingXlsxPath,
   reportPoDailyMarketingXlsxPath,
   reportPoDailyRecapUrl,
@@ -494,7 +554,8 @@ import {
   updatePoDetail,
 } from '../../api/client'
 import { can } from '../../security/permissions'
-import { formatNumber } from '../../utils/format'
+
+const OUTSTANDING_LINES_LIMIT = 1000
 
 const { t } = useI18n()
 const canAdvance = can('po', 'advance')
@@ -502,6 +563,7 @@ const canEditPoDetail = can('po', 'update')
 const router = useRouter()
 const loading = ref(false)
 const advancing = ref(null)
+const rollingBack = ref(null)
 const rows = ref([])
 const stageList = ref([])
 const filterStage = ref(null)
@@ -575,6 +637,7 @@ const outstandingRows = ref([])
 const outstandingLoading = ref(false)
 const outstandingXlsxLoading = ref(false)
 const outstandingReturnXlsxLoading = ref(false)
+const outstandingManualXlsxLoading = ref(false)
 const outstandingShowAllColumns = ref(false)
 const poDailyXlsxLoading = ref(false)
 const balanceFilter = ref('exclude_zero')
@@ -583,7 +646,6 @@ const poSearch = ref('')
 const factoryCode = ref('')
 const outstandingPoCategory = ref('')
 const materialStatus = ref('')
-const outstandingViewMode = ref('all')
 const outstandingTableRef = ref(null)
 const outstandingSelection = ref([])
 const savingRemarkId = ref(null)
@@ -600,12 +662,19 @@ const materialFollowUpForm = reactive({ done: false, remark: '' })
 const selectedPoForMaterialFollowUp = ref(null)
 const savingMaterialFollowUp = ref(false)
 
-function buildOutstandingExtraColumnDefs() {
+function buildOutstandingExtraColumnDefs(maxDeliverySlots = 8) {
+  const ord = (n) => {
+    if (n === 1) return '1st'
+    if (n === 2) return '2nd'
+    if (n === 3) return '3rd'
+    return `${n}th`
+  }
   const d = []
-  for (let i = 1; i <= 8; i += 1) {
+  for (let i = 1; i <= maxDeliverySlots; i += 1) {
+    const lab = ord(i)
     d.push(
-      { prop: `delivery_${i}_qty`, labelKey: `pages.marketingFlow.filterDelivery${i}Qty`, width: 82 },
-      { prop: `delivery_${i}_date`, labelKey: `pages.marketingFlow.filterDelivery${i}Date`, width: 108 },
+      { prop: `delivery_${i}_qty`, label: `${lab} Qty`, width: 82 },
+      { prop: `delivery_${i}_date`, label: `${lab} Date`, width: 108 },
     )
   }
   return [
@@ -629,7 +698,28 @@ function buildOutstandingExtraColumnDefs() {
   ]
 }
 
-const outstandingExtraColumnDefs = buildOutstandingExtraColumnDefs()
+const outstandingDeliverySlotCount = computed(() => {
+  const cat = outstandingPoCategory.value
+  if (cat === 'production' || cat === 'suede') return 21
+  if (['claim', 'sample', 'subcont'].includes(cat)) return 5
+  if (cat === 'return') return 3
+  return 8
+})
+
+const outstandingExtraColumnDefs = computed(() =>
+  buildOutstandingExtraColumnDefs(outstandingDeliverySlotCount.value),
+)
+
+const outstandingPoRefLabel = computed(() => {
+  const cat = outstandingPoCategory.value
+  if (['claim', 'sample', 'subcont'].includes(cat)) return t('pages.marketingFlow.colPoCustomer')
+  return t('pages.marketingFlow.colNoPoCustomer')
+})
+
+const outstandingShowStatusMaterial = computed(() => {
+  const cat = outstandingPoCategory.value
+  return !cat || cat === 'production' || cat === 'suede'
+})
 
 const OUTSTANDING_TEXT_FILTER_KEYS = [
   'order_date',
@@ -660,7 +750,6 @@ const OUTSTANDING_TEXT_FILTER_KEYS = [
   'line_etd',
   'stock_wh_qty',
   'balance_qty',
-  'delivered_qty',
   'system_reference',
   'production_status',
   'status_material',
@@ -750,43 +839,42 @@ const outstandingTextFilterFields = computed(() => {
   }))
 })
 
-function parseOutstandingBalance(row) {
-  const n = parseFloat(String(row.balance_qty ?? '').replace(',', '.'))
-  return Number.isFinite(n) ? n : 0
-}
-
-function outstandingHasSchedule(row) {
-  for (let i = 1; i <= 8; i += 1) {
-    const q = row[`delivery_${i}_qty`]
-    const d = row[`delivery_${i}_date`]
-    if ((q != null && String(q).trim() !== '') || (d != null && String(d).trim() !== '')) return true
-  }
-  return false
-}
-
-function isOutstandingProdFinished(st) {
-  const s = String(st || '').toLowerCase()
-  return ['done', 'completed', 'packed', 'released', 'finished'].includes(s)
-}
-
 function outstandingRowTextMatches(row, key, needle) {
   if (!needle || !String(needle).trim()) return true
   const q = String(needle).trim().toLowerCase()
   return String(row[key] ?? '').toLowerCase().includes(q)
 }
 
+function buildOutstandingDateParams() {
+  const od = outstandingDateRange.value
+  if (Array.isArray(od) && od.length === 2 && od[0] && od[1]) {
+    return { order_date_from: od[0], order_date_to: od[1] }
+  }
+  return {}
+}
+
+function buildOutstandingQueryParams(extra = {}) {
+  return {
+    balance_filter: balanceFilter.value,
+    computed_balance: true,
+    po_q: poSearch.value,
+    shipment_status: shipmentTab.value,
+    material_status: materialStatus.value || undefined,
+    factory_code: factoryCode.value || undefined,
+    po_category: outstandingPoCategory.value || undefined,
+    limit: OUTSTANDING_LINES_LIMIT,
+    ...buildOutstandingDateParams(),
+    ...extra,
+  }
+}
+
+function unwrapOutstandingLines(resp) {
+  if (Array.isArray(resp)) return resp
+  return Array.isArray(resp?.data) ? resp.data : []
+}
+
 const outstandingDisplayRows = computed(() => {
   let list = outstandingRows.value
-  if (outstandingViewMode.value === 'warehouse_qc') {
-    list = list.filter(
-      (r) =>
-        parseOutstandingBalance(r) > 0 &&
-        outstandingHasSchedule(r) &&
-        !isOutstandingProdFinished(r.production_status),
-    )
-  } else if (outstandingViewMode.value === 'mkt_delivery') {
-    list = list.filter((r) => parseOutstandingBalance(r) > 0 && isOutstandingProdFinished(r.production_status))
-  }
   for (const key of OUTSTANDING_TEXT_FILTER_KEYS) {
     const needle = outstandingTextFilters[key]
     if (!needle || !String(needle).trim()) continue
@@ -825,7 +913,7 @@ function proposeScheduleFromSelection() {
   }
   const poIds = [...new Set(sel.map((r) => r.po_id).filter(Boolean))]
   if (poIds.length === 1) {
-    router.push({ path: '/admin/po', query: { po_id: String(poIds[0]) } })
+    router.push({ path: '/admin/po', query: { po_id: String(poIds[0]), edit: '1' } })
     return
   }
   if (poIds.length > 1) {
@@ -851,35 +939,10 @@ async function saveMarketingRemark(row) {
 async function downloadOutstandingXlsx() {
   outstandingXlsxLoading.value = true
   try {
-    const od = outstandingDateRange.value
-    const outstandingDateParams =
-      Array.isArray(od) && od.length === 2 && od[0] && od[1] ? { order_date_from: od[0], order_date_to: od[1] } : {}
-    const suffix = marketingOutstandingXlsxPath({
-      balance_filter: balanceFilter.value,
-      computed_balance: true,
-      po_q: poSearch.value,
-      shipment_status: shipmentTab.value,
-      material_status: materialStatus.value || undefined,
-      factory_code: factoryCode.value || undefined,
-      po_category: outstandingPoCategory.value || undefined,
-      ...outstandingDateParams,
+    await fetchAuthenticatedDocument(marketingOutstandingXlsxPath(buildOutstandingQueryParams()), {
+      mode: 'download',
+      downloadFallbackName: 'marketing_outstanding.xlsx',
     })
-    const path = `/api/v1${suffix}`
-    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
-    const r = await fetch(path, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-    if (!r.ok) {
-      const text = await r.text()
-      throw new Error(text || r.statusText)
-    }
-    const blob = await r.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'marketing_outstanding.xlsx'
-    a.click()
-    URL.revokeObjectURL(url)
     ElMessage.success(t('pages.marketingFlow.outstandingXlsxOk'))
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
@@ -891,39 +954,30 @@ async function downloadOutstandingXlsx() {
 async function downloadReturnXlsx() {
   outstandingReturnXlsxLoading.value = true
   try {
-    const od = outstandingDateRange.value
-    const outstandingDateParams =
-      Array.isArray(od) && od.length === 2 && od[0] && od[1] ? { order_date_from: od[0], order_date_to: od[1] } : {}
-    const suffix = marketingOutstandingReturnXlsxPath({
-      balance_filter: balanceFilter.value,
-      computed_balance: true,
-      po_q: poSearch.value,
-      shipment_status: shipmentTab.value,
-      material_status: materialStatus.value || undefined,
-      factory_code: factoryCode.value || undefined,
-      ...outstandingDateParams,
+    await fetchAuthenticatedDocument(marketingOutstandingReturnXlsxPath(buildOutstandingQueryParams()), {
+      mode: 'download',
+      downloadFallbackName: 'marketing_outstanding_retur.xlsx',
     })
-    const path = `/api/v1${suffix}`
-    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
-    const r = await fetch(path, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-    if (!r.ok) {
-      const text = await r.text()
-      throw new Error(text || r.statusText)
-    }
-    const blob = await r.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'marketing_outstanding_retur.xlsx'
-    a.click()
-    URL.revokeObjectURL(url)
     ElMessage.success(t('pages.marketingFlow.outstandingReturXlsxOk'))
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     outstandingReturnXlsxLoading.value = false
+  }
+}
+
+async function downloadManualWorkbook() {
+  outstandingManualXlsxLoading.value = true
+  try {
+    await fetchAuthenticatedDocument(marketingOutstandingManualXlsxPath(buildOutstandingQueryParams()), {
+      mode: 'download',
+      downloadFallbackName: 'data_outstanding_order.xlsx',
+    })
+    ElMessage.success(t('pages.marketingFlow.outstandingManualXlsxOk'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    outstandingManualXlsxLoading.value = false
   }
 }
 
@@ -959,17 +1013,6 @@ const snapshotDetailVisible = ref(false)
 const snapshotDetailRows = ref([])
 const snapshotDetailTitle = ref('')
 
-const specItems = computed(() => [
-  { title: t('pages.marketingFlow.collapseSop'), body: 'pages.marketingFlow.specSop' },
-  { title: t('pages.marketingFlow.collapseInputPo'), body: 'pages.marketingFlow.specInputPo' },
-  { title: t('pages.marketingFlow.collapseDaily'), body: 'pages.marketingFlow.specDaily' },
-  { title: t('pages.marketingFlow.collapseOutstanding'), body: 'pages.marketingFlow.specOutstandingSheet' },
-  { title: t('pages.marketingFlow.collapseInvplSj'), body: 'pages.marketingFlow.specInvplSj' },
-  { title: t('pages.marketingFlow.collapseDelivery'), body: 'pages.marketingFlow.specDelivery' },
-  { title: t('pages.marketingFlow.collapseCustomer'), body: 'pages.marketingFlow.specCustomer' },
-  { title: t('pages.marketingFlow.collapseInvoice'), body: 'pages.marketingFlow.specInvoice' },
-])
-
 const labels = computed(() => ({
   input_system: t('mktStage.input_system'),
   rekap_printed: t('mktStage.rekap_printed'),
@@ -986,11 +1029,9 @@ function labelFor(stage) {
   return labels.value[stage] || stage || t('common.emptyValue')
 }
 
-const activeStep = computed(() => {
-  const s = rows.value[0]?.mkt_workflow_stage || 'input_system'
-  const i = stageList.value.indexOf(s)
-  return i >= 0 ? i : 0
-})
+function stageTagType(stage) {
+  return filterStage.value === stage ? 'primary' : 'info'
+}
 
 const stageCounts = computed(() => {
   const counts = {}
@@ -1011,6 +1052,11 @@ function isStageComplete(row) {
   if (!s) return false
   const idx = stageList.value.indexOf(s)
   return idx >= 0 && idx < stageList.value.length - 1 && !row.stuck_reason
+}
+
+function canRollbackRow(row) {
+  const s = row.mkt_workflow_stage || 'input_system'
+  return s !== 'input_system'
 }
 
 function toggleStageFilter(stage) {
@@ -1049,19 +1095,8 @@ async function load() {
 async function loadOutstanding() {
   outstandingLoading.value = true
   try {
-    const od = outstandingDateRange.value
-    const outstandingDateParams =
-      Array.isArray(od) && od.length === 2 && od[0] && od[1] ? { order_date_from: od[0], order_date_to: od[1] } : {}
-    outstandingRows.value = await listMarketingOutstandingLines({
-      balance_filter: balanceFilter.value,
-      computed_balance: true,
-      po_q: poSearch.value,
-      shipment_status: shipmentTab.value,
-      material_status: materialStatus.value || undefined,
-      factory_code: factoryCode.value || undefined,
-      po_category: outstandingPoCategory.value || undefined,
-      ...outstandingDateParams,
-    })
+    const resp = await listMarketingOutstandingLines(buildOutstandingQueryParams())
+    outstandingRows.value = unwrapOutstandingLines(resp)
     outstandingSelection.value = []
     outstandingTableRef.value?.clearSelection?.()
   } catch (e) {
@@ -1155,20 +1190,18 @@ async function loadSnapshotList() {
 async function saveOutstandingSnapshot() {
   snapshotSaving.value = true
   try {
-    const od = outstandingDateRange.value
-    const outstandingDateParams =
-      Array.isArray(od) && od.length === 2 && od[0] && od[1] ? { order_date_from: od[0], order_date_to: od[1] } : {}
+    const q = buildOutstandingQueryParams()
     await createMarketingOutstandingSnapshot({
       label: snapshotLabel.value?.trim() || null,
       filters: {
-        balance_filter: balanceFilter.value,
-        computed_balance: true,
+        balance_filter: q.balance_filter,
+        computed_balance: q.computed_balance,
         po_q: poSearch.value?.trim() || null,
-        shipment_status: shipmentTab.value,
+        shipment_status: q.shipment_status,
         material_status: materialStatus.value || null,
         factory_code: factoryCode.value?.trim() || null,
         po_category: outstandingPoCategory.value?.trim() || null,
-        ...outstandingDateParams,
+        ...buildOutstandingDateParams(),
       },
     })
     ElMessage.success(t('pages.marketingFlow.snapshotCreated'))
@@ -1243,12 +1276,13 @@ async function submitAssignment() {
   assigning.value = true
   try {
     await assignPoToPpic(selectedPoForAssignment.value.id, {
+      po_id: selectedPoForAssignment.value.id,
       ppic_user_id: assignForm.value.ppic_user_id,
       notes: assignForm.value.notes || null,
     })
     ElMessage.success(t('common.saveSuccess'))
     assignDialogVisible.value = false
-    await loadAssignments()
+    await Promise.all([load(), loadAssignments()])
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
@@ -1263,6 +1297,24 @@ function ppicStatusLabel(status) {
     completed: t('ppicWorkflow.completed'),
   }
   return labels[status] || status || '—'
+}
+
+const STUCK_REASON_I18N_KEYS = {
+  'Menunggu rekap PO diprint': 'pages.marketingFlow.stuckReasons.waitRekapPrint',
+  'PO belum di-confirm': 'pages.marketingFlow.stuckReasons.poNotConfirmed',
+  'Belum di-assign ke PPIC': 'pages.marketingFlow.stuckReasons.ppicNotAssigned',
+  'Menunggu PPIC menyelesaikan tugas': 'pages.marketingFlow.stuckReasons.ppicNotComplete',
+  'Material belum di-follow up': 'pages.marketingFlow.stuckReasons.materialNotFollowedUp',
+  'Material belum selesai di-follow up': 'pages.marketingFlow.stuckReasons.materialFollowUpIncomplete',
+  'Delivery belum dibuat': 'pages.marketingFlow.stuckReasons.deliveryNotCreated',
+  'SJ/INVPL belum dicetak': 'pages.marketingFlow.stuckReasons.sjInvplNotPrinted',
+  'Invoice belum dibuat': 'pages.marketingFlow.stuckReasons.invoiceNotCreated',
+}
+
+function stuckReasonLabel(reason) {
+  if (!reason) return ''
+  const key = STUCK_REASON_I18N_KEYS[reason]
+  return key ? t(key) : reason
 }
 
 function openMaterialFollowUpDialog(row) {
@@ -1280,6 +1332,7 @@ async function toggleMaterialFollowUp(row, done) {
     })
     row.material_followup_done = done
     ElMessage.success(t('common.saveSuccess'))
+    await load()
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   }
@@ -1296,6 +1349,7 @@ async function saveMaterialFollowUp() {
     selectedPoForMaterialFollowUp.value.material_followup_remark = materialFollowUpForm.remark.trim() || null
     ElMessage.success(t('common.saveSuccess'))
     materialFollowUpDialogVisible.value = false
+    await load()
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
@@ -1313,6 +1367,19 @@ async function advance(row) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     advancing.value = null
+  }
+}
+
+async function rollback(row) {
+  rollingBack.value = row.id
+  try {
+    await rollbackMktWorkflow(row.id)
+    ElMessage.success(t('pages.marketingFlow.rolledBack'))
+    await load()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    rollingBack.value = null
   }
 }
 
@@ -1342,6 +1409,8 @@ async function downloadRekap() {
   const path = reportPoDailyRecapUrl(day).replace(/^\/api\/v1/, '')
   try {
     await fetchAuthenticatedDocument(path, { mode: 'download', downloadFallbackName: `po-daily-recap-${day}.csv` })
+    await load()
+    ElMessage.success(t('pages.marketingFlow.rekapDownloadDone'))
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   }
@@ -1389,21 +1458,11 @@ async function downloadDailyPoReportXlsx() {
 }
 
 async function downloadOutstanding() {
-  const od = outstandingDateRange.value
-  const outstandingDateParams =
-    Array.isArray(od) && od.length === 2 && od[0] && od[1] ? { order_date_from: od[0], order_date_to: od[1] } : {}
-  const suffix = marketingOutstandingCsvUrl({
-    balance_filter: balanceFilter.value,
-    computed_balance: true,
-    po_q: poSearch.value,
-    shipment_status: shipmentTab.value,
-    material_status: materialStatus.value || undefined,
-    factory_code: factoryCode.value || undefined,
-    po_category: outstandingPoCategory.value || undefined,
-    ...outstandingDateParams,
-  })
   try {
-    await fetchAuthenticatedDocument(suffix, { mode: 'download', downloadFallbackName: 'marketing-outstanding.csv' })
+    await fetchAuthenticatedDocument(marketingOutstandingCsvUrl(buildOutstandingQueryParams()), {
+      mode: 'download',
+      downloadFallbackName: 'marketing-outstanding.csv',
+    })
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   }
@@ -1422,6 +1481,20 @@ async function downloadDelivery() {
     ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
+
+async function downloadDeliveryXlsx() {
+  const dr = deliveryDateRange.value
+  const drParams =
+    Array.isArray(dr) && dr.length === 2 && dr[0] && dr[1]
+      ? { delivery_date_from: dr[0], delivery_date_to: dr[1] }
+      : {}
+  const suffix = marketingDeliveryXlsxPath(drParams)
+  try {
+    await fetchAuthenticatedDocument(suffix, { mode: 'download', downloadFallbackName: 'delivery_list_sistem.xlsx' })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
 </script>
 
 <style scoped>
@@ -1433,5 +1506,48 @@ async function downloadDelivery() {
 }
 .marketing-tabs :deep(.el-tabs__content) {
   padding-top: 0.5rem;
+}
+.mkt-stuck-cell {
+  display: flex;
+  align-items: flex-start;
+  min-height: 28px;
+}
+.mkt-stuck-tag {
+  max-width: 100%;
+  height: auto;
+  white-space: normal;
+  border: none;
+}
+.mkt-stuck-tag :deep(.el-tag__content) {
+  white-space: normal;
+  line-height: 1.35;
+}
+.mkt-stuck-tag__inner {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 5px;
+  text-align: left;
+}
+.mkt-stuck-tag__inner .el-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  font-size: 14px;
+}
+.mkt-stuck-tag__text {
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.mkt-stuck-tag--blocked {
+  --el-tag-bg-color: var(--el-color-warning-light-9);
+  --el-tag-text-color: var(--el-color-warning-dark-2);
+}
+.mkt-stuck-tag--ready {
+  --el-tag-bg-color: var(--el-color-success-light-9);
+  --el-tag-text-color: var(--el-color-success-dark-2);
+}
+.mkt-stuck-empty {
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
 }
 </style>

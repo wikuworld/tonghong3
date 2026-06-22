@@ -18,6 +18,7 @@ from app.services.numbering import next_number
 from app.services.business_rules import validate_packing_links
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
+from app.services.mkt_workflow import sync_mkt_for_packing
 from app.services.notifications import create_notification_for_roles
 
 router = APIRouter(tags=["packing"])
@@ -80,6 +81,7 @@ def mark_invpl_printed(
         after={"invpl_printed_at": row.invpl_printed_at},
         actor=user.username,
     )
+    sync_mkt_for_packing(db, packing_id, actor=user.username)
     db.commit()
     db.refresh(row)
     return row

@@ -9,7 +9,7 @@
       <el-date-picker
         v-model="filterDateRange"
         type="daterange"
-        :range-separator="t('common.rangeSeparator')"
+        :range-separator="t('common.dashSeparator')"
         :start-placeholder="t('common.startDate')"
         :end-placeholder="t('common.endDate')"
         format="YYYY-MM-DD"
@@ -73,7 +73,7 @@
         <el-date-picker
           v-model="tbDateRange"
           type="daterange"
-          :range-separator="t('common.rangeSeparator')"
+          :range-separator="t('common.dashSeparator')"
           :start-placeholder="t('common.startDate')"
           :end-placeholder="t('common.endDate')"
           format="YYYY-MM-DD"
@@ -117,7 +117,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Plus, Search, Close, Refresh } from '@element-plus/icons-vue'
@@ -133,7 +133,7 @@ const filterType = ref('')
 
 const dateShortcuts = computed(() => [
   {
-    text: t('common.shortcutToday'),
+    text: t('pages.marketingFlow.shortcutToday'),
     value: () => {
       const end = new Date()
       const start = new Date()
@@ -141,7 +141,7 @@ const dateShortcuts = computed(() => [
     },
   },
   {
-    text: t('common.shortcutLast7Days'),
+    text: t('pages.marketingFlow.shortcutLast7Days'),
     value: () => {
       const end = new Date()
       const start = new Date()
@@ -150,7 +150,7 @@ const dateShortcuts = computed(() => [
     },
   },
   {
-    text: t('common.shortcutLast30Days'),
+    text: t('pages.marketingFlow.shortcutLast30Days'),
     value: () => {
       const end = new Date()
       const start = new Date()
@@ -159,27 +159,9 @@ const dateShortcuts = computed(() => [
     },
   },
   {
-    text: t('common.shortcutLast90Days'),
+    text: t('pages.marketingFlow.shortcutThisMonth'),
     value: () => {
       const end = new Date()
-      const start = new Date()
-      start.setTime(start.getTime() - 3600 * 1000 * 24 * 90)
-      return [start, end]
-    },
-  },
-  {
-    text: t('common.shortcutThisMonth'),
-    value: () => {
-      const end = new Date()
-      const start = new Date(end.getFullYear(), end.getMonth(), 1)
-      return [start, end]
-    },
-  },
-  {
-    text: t('common.shortcutLastMonth'),
-    value: () => {
-      const end = new Date()
-      end.setDate(0)
       const start = new Date(end.getFullYear(), end.getMonth(), 1)
       return [start, end]
     },

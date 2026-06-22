@@ -280,6 +280,13 @@ export function listPoPage(params = {}) {
   return apiFetch(`/po/page${suffix}`)
 }
 
+export function fetchPoMaterialHints(poIds = []) {
+  const ids = (poIds || []).filter((id) => id != null && id !== '')
+  if (!ids.length) return Promise.resolve({ items: [] })
+  const q = new URLSearchParams({ po_ids: ids.join(',') })
+  return apiFetch(`/po/material-hints?${q}`)
+}
+
 export function listPoForCopy(params = {}) {
   const q = new URLSearchParams()
   if (params.customer_id) q.set('customer_id', params.customer_id)
@@ -294,6 +301,15 @@ export function listPoMktStages() {
 
 export function fetchNextPoNumber() {
   return apiFetch('/po/next-number')
+}
+
+/** Cek duplikat No. PO customer untuk customer yang sama. */
+export function checkPoCustomerRef({ customer_id, po_customer_ref, exclude_po_id } = {}) {
+  const q = new URLSearchParams()
+  q.set('customer_id', String(customer_id))
+  q.set('po_customer_ref', String(po_customer_ref).trim())
+  if (exclude_po_id != null) q.set('exclude_po_id', String(exclude_po_id))
+  return apiFetch(`/po/check-customer-ref?${q.toString()}`)
 }
 
 export function generatePoDetailLot(detailId) {
@@ -318,6 +334,7 @@ export function listMarketingOutstandingLines(params = {}) {
     q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
   if (params.order_date_to && String(params.order_date_to).trim())
     q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
+  if (params.limit != null) q.set('limit', String(params.limit))
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/marketing/outstanding-lines${suffix}`)
 }
@@ -372,6 +389,27 @@ export function marketingOutstandingReturnXlsxPath(params = {}) {
     q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
   const suffix = q.toString() ? `?${q}` : ''
   return `/marketing/outstanding-return-lines.xlsx${suffix}`
+}
+
+function _marketingOutstandingExportQuery(params = {}) {
+  const q = new URLSearchParams()
+  if (params.balance_filter) q.set('balance_filter', params.balance_filter)
+  if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
+  if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
+  if (params.shipment_status) q.set('shipment_status', params.shipment_status)
+  if (params.material_status) q.set('material_status', params.material_status)
+  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
+  if (params.order_date_from && String(params.order_date_from).trim())
+    q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
+  if (params.order_date_to && String(params.order_date_to).trim())
+    q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
+  return q
+}
+
+/** Workbook multi-lembar PROD / CLAIM / SAMPLE / SUBCONT / RETUR (format manual marketing). */
+export function marketingOutstandingManualXlsxPath(params = {}) {
+  const suffix = _marketingOutstandingExportQuery(params).toString()
+  return `/marketing/outstanding-manual.xlsx${suffix ? `?${suffix}` : ''}`
 }
 
 /** Baris delivery list (join surat jalan + produksi + PO) — format lembar marketing. */
@@ -491,6 +529,10 @@ export function advanceMktWorkflow(poId) {
   return apiFetch(`/po/${poId}/mkt-workflow/advance`, { method: 'POST' })
 }
 
+export function rollbackMktWorkflow(poId) {
+  return apiFetch(`/po/${poId}/mkt-workflow/rollback`, { method: 'POST' })
+}
+
 export function getPo(id) {
   return apiFetch(`/po/${id}`)
 }
@@ -512,7 +554,7 @@ export function updatePo(id, body) {
   return apiFetch(`/po/${id}`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
-/** Revisi marketing: remark, ETD header, alamat kirim, follow-up material, baris (ETD/remark/jadwal) — tidak mengubah tanggal order / customer / harga. */
+/** Revisi marketing: ETD header, alamat kirim, follow-up material, baris (ETD/remark/jadwal) — tidak mengubah tanggal order / customer / harga. */
 export function marketingRevisePo(poId, body) {
   return apiFetch(`/po/${poId}/marketing-revise`, { method: 'PATCH', body: JSON.stringify(body) })
 }
@@ -655,6 +697,10 @@ export function listFluorescentColorsPage(params = {}) {
   return apiFetch(`/masters/fluorescent-colors/page${suffix}`)
 }
 
+export function listFluorescentFormOptions() {
+  return apiFetch('/masters/fluorescent-colors/form-options')
+}
+
 export function createFluorescentColor(body) {
   return apiFetch('/masters/fluorescent-colors', { method: 'POST', body: JSON.stringify(body) })
 }
@@ -697,6 +743,8 @@ export function lookupColorSwatchRecipes(params = {}) {
   q.set('buyer_code', String(params.buyer_code || '').trim())
   if (params.customer_id != null && params.customer_id !== '') q.set('customer_id', String(params.customer_id))
   if (params.material_name && String(params.material_name).trim()) q.set('material_name', String(params.material_name).trim())
+  if (params.color_name && String(params.color_name).trim()) q.set('color_name', String(params.color_name).trim())
+  if (params.emboss && String(params.emboss).trim()) q.set('emboss', String(params.emboss).trim())
   if (params.include_all_materials) q.set('include_all_materials', 'true')
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
   if (params.limit != null) q.set('limit', String(params.limit))
@@ -705,6 +753,10 @@ export function lookupColorSwatchRecipes(params = {}) {
 
 export function getColorSwatchPoFill(recipeId) {
   return apiFetch(`/masters/color-swatch-recipes/${recipeId}/po-fill`)
+}
+
+export function listColorSwatchFormOptions() {
+  return apiFetch('/masters/color-swatch-recipes/form-options')
 }
 
 export function createColorSwatchRecipe(body) {

@@ -27,6 +27,7 @@ const MENU_ROLES = {
   'menu.ppicDashboard': ['admin', 'ppic'],
   'menu.outstandingMaterials': ['admin', 'marketing', 'ppic'],
   'menu.accountingMappings': ['admin', 'finance'],
+  'menu.journalEntries': ['admin', 'finance'],
   'menu.inventory': ['admin', 'warehouse'],
 }
 
@@ -65,6 +66,7 @@ export const ROUTE_ROLES = {
   ppicDashboard: MENU_ROLES['menu.ppicDashboard'],
   outstandingMaterials: MENU_ROLES['menu.outstandingMaterials'],
   accountingMappings: MENU_ROLES['menu.accountingMappings'],
+  journalEntries: MENU_ROLES['menu.journalEntries'],
   inventory: MENU_ROLES['menu.inventory'],
 }
 

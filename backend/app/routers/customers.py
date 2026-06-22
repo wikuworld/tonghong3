@@ -313,7 +313,7 @@ def get_allowed_brands(
         if constraint and constraint.allowed_brand_ids:
             stmt = select(Brand).where(Brand.id.in_(constraint.allowed_brand_ids))
         else:
-            stmt = select(Brand)
+            return []
     return list(db.scalars(stmt).all())
 
 

@@ -33,10 +33,12 @@ export function usePoList({ t }) {
     })
   }
 
-  function enrichHeaders(items, customers) {
+  function enrichHeaders(items, customers, brands) {
     return enrichPoRows(items, {
       customers,
+      brands,
       emptyValue: t('common.emptyValue'),
+      noMaterialLabel: t('pages.po.noMaterialOnLines'),
     })
   }
 

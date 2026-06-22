@@ -39,6 +39,17 @@
             <el-badge v-if="getBadgeCount(item.path) > 0" :value="getBadgeCount(item.path)" :max="99" class="menu-badge" />
           </el-menu-item>
         </el-sub-menu>
+
+        <el-sub-menu v-if="filteredErpFinanceMenus.length" index="erp-finance">
+          <template #title>
+            <el-icon><Coin /></el-icon>
+            <span>{{ t('common.nav.finance') }}</span>
+          </template>
+          <el-menu-item v-for="item in filteredErpFinanceMenus" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ t(item.labelKey) }}</span>
+          </el-menu-item>
+        </el-sub-menu>
         
         <el-sub-menu v-if="filteredErpMasterMenus.length" index="erp-master">
           <template #title>
@@ -254,9 +265,17 @@ const erpFlowMenus = [
   { path: '/admin/quotations', labelKey: 'menu.quotations', icon: DocumentCopy },
   { path: '/admin/po', labelKey: 'menu.po', icon: ShoppingCart },
   { path: '/admin/marketing-flow', labelKey: 'menu.marketingFlow', icon: Guide },
+  { path: '/admin/ppic-dashboard', labelKey: 'menu.ppicDashboard', icon: Operation },
+  { path: '/admin/outstanding-materials', labelKey: 'menu.outstandingMaterials', icon: Document },
   { path: '/admin/delivery', labelKey: 'menu.delivery', icon: Van },
   { path: '/admin/invoice', labelKey: 'menu.invoice', icon: Tickets },
   { path: '/admin/reports', labelKey: 'menu.reports', icon: Document },
+]
+
+const erpFinanceMenus = [
+  { path: '/admin/subcon-invoices', labelKey: 'menu.subconInvoice', icon: Tickets },
+  { path: '/admin/accounting-mappings', labelKey: 'menu.accountingMappings', icon: Files },
+  { path: '/admin/journal-entries', labelKey: 'menu.journalEntries', icon: DocumentCopy },
 ]
 
 const erpMasterMenus = [
@@ -292,6 +311,9 @@ const menuBadges = ref({
 
 const filteredErpFlowMenus = computed(() =>
   erpFlowMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
+)
+const filteredErpFinanceMenus = computed(() =>
+  erpFinanceMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
 )
 const filteredErpMasterMenus = computed(() =>
   erpMasterMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),

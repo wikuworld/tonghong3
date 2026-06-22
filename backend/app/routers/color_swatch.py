@@ -13,15 +13,19 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ColorSwatchRecipe
+from app.models import ColorSwatchRecipe, Customer, MasterItem
 from app.routers.auth import get_current_user, require_roles
 from app.services.color_swatch import (
+    _VALID_BUYERS,
+    filter_swatch_recipes_by_dimensions,
     import_recipes,
     iter_csv_recipes,
     normalize_factory_key,
     recipe_to_po_fill,
     resolve_swatch_factory_keys,
 )
+from app.services.master_item_dimensions import distinct_material_names
+from app.services.swatch_factory_map import resolve_swatch_customer_id
 
 router = APIRouter(tags=["color-swatch"])
 
@@ -32,6 +36,7 @@ class ColorSwatchRecipeOut(BaseModel):
     id: int
     factory_key: str
     customer_id: Optional[int] = None
+    customer_code: Optional[str] = None
     buyer_code: str
     brand_id: Optional[int] = None
     color_code: str
@@ -78,16 +83,48 @@ class ImportResultOut(BaseModel):
     total: int
 
 
-def _apply_in(data: ColorSwatchRecipeIn) -> dict[str, Any]:
+class ColorSwatchCustomerOptionOut(BaseModel):
+    id: int
+    code: Optional[str] = None
+    name: Optional[str] = None
+
+
+class ColorSwatchFormOptionsOut(BaseModel):
+    customers: list[ColorSwatchCustomerOptionOut] = Field(default_factory=list)
+    factory_keys: list[str] = Field(default_factory=list)
+    factory_keys_by_customer: dict[int, list[str]] = Field(default_factory=dict)
+    buyer_codes: list[str] = Field(default_factory=list)
+    materials: list[str] = Field(default_factory=list)
+    colors_by_material: dict[str, list[str]] = Field(default_factory=dict)
+    embosses_by_material: dict[str, list[str]] = Field(default_factory=dict)
+    backings: list[str] = Field(default_factory=list)
+
+
+def _recipe_to_out(db: Session, recipe: ColorSwatchRecipe) -> ColorSwatchRecipeOut:
+    out = ColorSwatchRecipeOut.model_validate(recipe)
+    if recipe.customer_id:
+        cust = db.get(Customer, recipe.customer_id)
+        out.customer_code = cust.code if cust else None
+    return out
+
+
+def _apply_in(data: ColorSwatchRecipeIn, db: Session | None = None) -> dict[str, Any]:
+    color_standard = (data.color_standard or "").strip() or None
+    customer_id = data.customer_id
+    factory_key = normalize_factory_key(data.factory_key)
+    if customer_id is None and db is not None:
+        customer_id = resolve_swatch_customer_id(
+            db, factory_key, color_standard=color_standard
+        )
     return {
-        "factory_key": normalize_factory_key(data.factory_key),
-        "customer_id": data.customer_id,
+        "factory_key": factory_key,
+        "customer_id": customer_id,
         "buyer_code": data.buyer_code.strip().upper(),
         "brand_id": data.brand_id,
         "color_code": (data.color_code or "").strip(),
         "color_name": (data.color_name or "").strip(),
         "emboss": (data.emboss or "").strip(),
-        "color_standard": (data.color_standard or "").strip() or None,
+        "color_standard": color_standard,
         "backing": (data.backing or "").strip() or None,
         "material_name": (data.material_name or "").strip(),
         "legacy_urut": (data.legacy_urut or "").strip() or None,
@@ -95,6 +132,72 @@ def _apply_in(data: ColorSwatchRecipeIn) -> dict[str, Any]:
         "source_file": data.source_file,
         "is_active": data.is_active,
     }
+
+
+@router.get("/masters/color-swatch-recipes/form-options", response_model=ColorSwatchFormOptionsOut)
+def color_swatch_form_options(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> ColorSwatchFormOptionsOut:
+    """Opsi dropdown form tambah/edit — dari master customer, items, & swatch existing."""
+    customers = list(
+        db.scalars(
+            select(Customer)
+            .where(Customer.is_active.is_(True))
+            .order_by(Customer.code.asc())
+        ).all()
+    )
+    recipes = list(
+        db.scalars(select(ColorSwatchRecipe).where(ColorSwatchRecipe.is_active.is_(True))).all()
+    )
+    master_rows = list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all())
+
+    factory_keys = sorted({r.factory_key for r in recipes if r.factory_key})
+    factory_by_customer: dict[int, list[str]] = {}
+    buyer_codes: set[str] = set(_VALID_BUYERS)
+    materials: set[str] = set(distinct_material_names(master_rows))
+    colors_by_material: dict[str, set[str]] = {}
+    embosses_by_material: dict[str, set[str]] = {}
+    backings: set[str] = set()
+
+    for row in master_rows:
+        mat = (row.material_name or "").strip()
+        if mat:
+            materials.add(mat)
+        if mat and row.color:
+            colors_by_material.setdefault(mat, set()).add(str(row.color).strip())
+        if mat and row.emboss:
+            embosses_by_material.setdefault(mat, set()).add(str(row.emboss).strip())
+
+    for recipe in recipes:
+        if recipe.buyer_code:
+            buyer_codes.add(recipe.buyer_code.strip().upper())
+        mat = (recipe.material_name or "").strip()
+        if mat:
+            materials.add(mat)
+        if mat and recipe.color_name:
+            colors_by_material.setdefault(mat, set()).add(recipe.color_name.strip())
+        if mat and recipe.emboss:
+            embosses_by_material.setdefault(mat, set()).add(recipe.emboss.strip())
+        if recipe.backing:
+            backings.add(recipe.backing.strip())
+        if recipe.customer_id and recipe.factory_key:
+            factory_by_customer.setdefault(int(recipe.customer_id), set()).add(recipe.factory_key)
+
+    return ColorSwatchFormOptionsOut(
+        customers=[
+            ColorSwatchCustomerOptionOut(id=c.id, code=c.code, name=c.name) for c in customers
+        ],
+        factory_keys=factory_keys,
+        factory_keys_by_customer={
+            cid: sorted(keys) for cid, keys in sorted(factory_by_customer.items())
+        },
+        buyer_codes=sorted(buyer_codes),
+        materials=sorted(materials),
+        colors_by_material={k: sorted(v) for k, v in sorted(colors_by_material.items())},
+        embosses_by_material={k: sorted(v) for k, v in sorted(embosses_by_material.items())},
+        backings=sorted(backings),
+    )
 
 
 @router.get("/masters/color-swatch-recipes/page", response_model=ColorSwatchRecipePageOut)
@@ -150,7 +253,12 @@ def list_color_swatch_page(
             .offset(offset)
         ).all()
     )
-    return ColorSwatchRecipePageOut(items=items, total=total, limit=limit, offset=offset)
+    return ColorSwatchRecipePageOut(
+        items=[_recipe_to_out(db, row) for row in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/masters/color-swatch-recipes/lookup", response_model=list[ColorSwatchRecipeOut])
@@ -159,6 +267,8 @@ def lookup_color_swatch(
     factory_key: Optional[str] = Query(None, description="Kode/nama pabrik (KODE SYSTEM atau factory_key swatch)"),
     customer_id: Optional[int] = Query(None, description="Customer PO untuk map kode pabrik ke factory_key swatch"),
     material_name: Optional[str] = Query(None),
+    color_name: Optional[str] = Query(None, description="Filter warna (toleran suffix kode, mis. WOLF GREY (01V))"),
+    emboss: Optional[str] = Query(None, description="Filter emboss (toleran suffix deskripsi, mis. AR-167 (DEEP MATTE))"),
     include_all_materials: bool = Query(
         False, description="Abaikan filter material (tampilkan semua resep pabrik+buyer)"
     ),
@@ -194,10 +304,18 @@ def lookup_color_swatch(
                 ColorSwatchRecipe.color_code.ilike(like),
             )
         )
-    rows = db.scalars(
-        stmt.order_by(ColorSwatchRecipe.color_name.asc()).limit(limit)
-    ).all()
-    return list(rows)
+    fetch_limit = min(limit * 5, 200) if (color_name or emboss) else limit
+    rows = list(
+        db.scalars(stmt.order_by(ColorSwatchRecipe.color_name.asc()).limit(fetch_limit)).all()
+    )
+    if color_name or emboss:
+        rows = filter_swatch_recipes_by_dimensions(
+            rows,
+            material_name=material_name,
+            color_name=color_name,
+            emboss=emboss,
+        )
+    return rows[:limit]
 
 
 @router.get("/masters/color-swatch-recipes/factory-keys", response_model=list[str])
@@ -219,11 +337,11 @@ def get_color_swatch(
     recipe_id: int,
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
-) -> ColorSwatchRecipe:
+) -> ColorSwatchRecipeOut:
     row = db.get(ColorSwatchRecipe, recipe_id)
     if not row or not row.is_active:
         raise HTTPException(status_code=404, detail="Resep color swatch tidak ditemukan")
-    return row
+    return _recipe_to_out(db, row)
 
 
 @router.get("/masters/color-swatch-recipes/{recipe_id}/po-fill")
@@ -243,8 +361,8 @@ def create_color_swatch(
     body: ColorSwatchRecipeIn,
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin", "marketing")),
-) -> ColorSwatchRecipe:
-    data = _apply_in(body)
+) -> ColorSwatchRecipeOut:
+    data = _apply_in(body, db)
     row = ColorSwatchRecipe(**data)
     db.add(row)
     try:
@@ -253,7 +371,7 @@ def create_color_swatch(
         db.rollback()
         raise HTTPException(status_code=400, detail="Kombinasi resep sudah ada") from exc
     db.refresh(row)
-    return row
+    return _recipe_to_out(db, row)
 
 
 @router.put("/masters/color-swatch-recipes/{recipe_id}", response_model=ColorSwatchRecipeOut)
@@ -262,11 +380,11 @@ def update_color_swatch(
     body: ColorSwatchRecipeIn,
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin", "marketing")),
-) -> ColorSwatchRecipe:
+) -> ColorSwatchRecipeOut:
     row = db.get(ColorSwatchRecipe, recipe_id)
     if not row:
         raise HTTPException(status_code=404, detail="Resep color swatch tidak ditemukan")
-    for k, v in _apply_in(body).items():
+    for k, v in _apply_in(body, db).items():
         setattr(row, k, v)
     row.updated_at = datetime.utcnow()
     try:
@@ -275,7 +393,7 @@ def update_color_swatch(
         db.rollback()
         raise HTTPException(status_code=400, detail="Kombinasi resep bentrok dengan baris lain") from exc
     db.refresh(row)
-    return row
+    return _recipe_to_out(db, row)
 
 
 @router.delete("/masters/color-swatch-recipes/{recipe_id}")

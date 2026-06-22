@@ -10,7 +10,6 @@ export function usePoMarketingRevise({ t, editingPoId, formModel }) {
   const loading = ref(false)
   const saving = ref(false)
   const header = reactive({
-    remark: '',
     etd: '',
     delivery_address: '',
     material_followup_remark: '',
@@ -24,7 +23,6 @@ export function usePoMarketingRevise({ t, editingPoId, formModel }) {
     loading.value = true
     try {
       const [po, details] = await Promise.all([getPo(poId), listPoDetails(poId)])
-      header.remark = formModel.remark || ''
       header.etd = formModel.etd || ''
       header.delivery_address = formModel.delivery_address || ''
       header.material_followup_remark = po.material_followup_remark || ''
@@ -51,7 +49,6 @@ export function usePoMarketingRevise({ t, editingPoId, formModel }) {
     saving.value = true
     try {
       const payloadHeader = {
-        remark: header.remark?.trim() || null,
         etd: toIsoDate(header.etd) || null,
         delivery_address: header.delivery_address?.trim() || null,
         material_followup_remark: header.material_followup_remark?.trim() || null,
@@ -67,7 +64,6 @@ export function usePoMarketingRevise({ t, editingPoId, formModel }) {
         return o
       })
       await marketingRevisePo(poId, { header: payloadHeader, lines: payloadLines })
-      formModel.remark = header.remark || ''
       formModel.etd = header.etd || ''
       formModel.delivery_address = header.delivery_address || ''
       ElMessage.success(t('pages.po.marketingReviseSaved'))
