@@ -210,6 +210,17 @@ const messages = {
       journalEntries: 'Journal Entry',
       inventory: 'Inventory',
     },
+    permissions: {
+      actions: {
+        view: 'Lihat',
+        create: 'Buat',
+        update: 'Ubah',
+        delete: 'Hapus',
+        export: 'Ekspor',
+        print: 'Cetak',
+        advance: 'Lanjut tahap',
+      },
+    },
     mktStage: {
       input_system: 'PO & input sistem',
       rekap_printed: 'Print rekap PO',
@@ -1839,6 +1850,17 @@ const messages = {
       journalEntries: 'Journal Entries',
       inventory: 'Inventory',
     },
+    permissions: {
+      actions: {
+        view: 'View',
+        create: 'Create',
+        update: 'Update',
+        delete: 'Delete',
+        export: 'Export',
+        print: 'Print',
+        advance: 'Advance stage',
+      },
+    },
     mktStage: {
       input_system: 'PO & system entry',
       rekap_printed: 'Daily PO recap printed',
@@ -3423,6 +3445,17 @@ const messages = {
       accountingMappings: '会计映射',
       journalEntries: '日记账分录',
       inventory: '库存',
+    },
+    permissions: {
+      actions: {
+        view: '查看',
+        create: '创建',
+        update: '更新',
+        delete: '删除',
+        export: '导出',
+        print: '打印',
+        advance: '推进阶段',
+      },
     },
     mktStage: {
       input_system: 'PO 与系统录入',

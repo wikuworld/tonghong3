@@ -554,11 +554,12 @@ import {
   updatePoDetail,
 } from '../../api/client'
 import { can } from '../../security/permissions'
+import { useModulePermission } from '../../composables/useModulePermission'
 
 const OUTSTANDING_LINES_LIMIT = 1000
 
 const { t } = useI18n()
-const canAdvance = can('po', 'advance')
+const { canAdvance, canUpdate: canFlowUpdate } = useModulePermission('marketingFlow')
 const canEditPoDetail = can('po', 'update')
 const router = useRouter()
 const loading = ref(false)

@@ -222,8 +222,8 @@ import {
   me,
   unreadNotificationsCount,
 } from '../api/client'
+import { can, permissionMatrixVersion, setRuntimePermissionMatrix } from '../security/permissions'
 import { roleAllowsMenu } from '../security/rbac'
-import { setRuntimePermissionMatrix } from '../security/permissions'
 
 const route = useRoute()
 const router = useRouter()
@@ -309,21 +309,26 @@ const menuBadges = ref({
   outstanding: 0,
 })
 
-const filteredErpFlowMenus = computed(() =>
-  erpFlowMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
-)
-const filteredErpFinanceMenus = computed(() =>
-  erpFinanceMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
-)
-const filteredErpMasterMenus = computed(() =>
-  erpMasterMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
-)
-const filteredErpSystemMenus = computed(() =>
-  erpSystemMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
-)
-const filteredMrpMenus = computed(() =>
-  mrpMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey)),
-)
+const filteredErpFlowMenus = computed(() => {
+  permissionMatrixVersion.value
+  return erpFlowMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
+})
+const filteredErpFinanceMenus = computed(() => {
+  permissionMatrixVersion.value
+  return erpFinanceMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
+})
+const filteredErpMasterMenus = computed(() => {
+  permissionMatrixVersion.value
+  return erpMasterMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
+})
+const filteredErpSystemMenus = computed(() => {
+  permissionMatrixVersion.value
+  return erpSystemMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
+})
+const filteredMrpMenus = computed(() => {
+  permissionMatrixVersion.value
+  return mrpMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
+})
 
 const goTo = (path) => {
   router.push(path)
@@ -393,11 +398,8 @@ async function handleReadNotification(item) {
       item.route_query && typeof item.route_query === 'object' ? item.route_query : {}
     if (targetPath && targetPath.startsWith('/admin')) {
       const target = router.resolve({ path: targetPath, query: targetQuery })
-      const requiredRoles = target.meta?.roles
-      const isAllowed =
-        !Array.isArray(requiredRoles) ||
-        currentRole.value === 'admin' ||
-        requiredRoles.includes(currentRole.value)
+      const moduleKey = target.meta?.module
+      const isAllowed = !moduleKey || can(moduleKey, 'view', currentRole.value)
 
       if (target.matched.length === 0) {
         ElMessage.warning(t('common.notificationTargetMissing'))

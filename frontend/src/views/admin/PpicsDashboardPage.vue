@@ -32,7 +32,7 @@
         <template #default="{ row }">
           <div class="flex flex-wrap items-center justify-center gap-1">
             <el-button
-              v-if="row.status === 'pending'"
+              v-if="canUpdate && row.status === 'pending'"
               type="warning"
               size="small"
               @click="updateStatus(row, 'in_progress')"
@@ -40,7 +40,7 @@
               {{ t('ppicDashboard.markInProgress') }}
             </el-button>
             <el-button
-              v-if="row.status === 'in_progress'"
+              v-if="canUpdate && row.status === 'in_progress'"
               type="success"
               size="small"
               @click="updateStatus(row, 'completed')"
@@ -69,8 +69,10 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AdminSection from '../../components/AdminSection.vue'
 import { getPpicDashboard, updatePpicAssignmentStatus } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canUpdate } = useModulePermission('ppicDashboard')
 const router = useRouter()
 const loading = ref(false)
 const assignments = ref([])

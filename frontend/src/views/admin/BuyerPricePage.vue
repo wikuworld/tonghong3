@@ -9,7 +9,7 @@
           class="buyer-price-toolbar-search"
         />
         <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
-        <el-button type="primary" :icon="Plus" @click="openCreateDialog">
+        <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreateDialog">
           {{ t('common.create') }}
         </el-button>
       </template>
@@ -51,7 +51,7 @@
                   @click="openDetail(row.id)"
                 />
               </el-tooltip>
-              <el-tooltip :content="t('pages.buyerPrices.manageData')" placement="top">
+              <el-tooltip v-if="canUpdate" :content="t('pages.buyerPrices.manageData')" placement="top">
                 <el-button
                   :icon="EditPen"
                   link
@@ -60,7 +60,7 @@
                   @click="openMaster(row.id)"
                 />
               </el-tooltip>
-              <el-tooltip :content="t('common.delete')" placement="top">
+              <el-tooltip v-if="canDelete" :content="t('common.delete')" placement="top">
                 <el-button
                   :icon="Delete"
                   link
@@ -108,7 +108,7 @@
       </el-form>
       <template #footer>
         <el-button :icon="Close" @click="createVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :icon="Check" :loading="createSaving" @click="submitCreate">{{ t('common.save') }}</el-button>
+        <el-button v-if="canCreate" type="primary" :icon="Check" :loading="createSaving" @click="submitCreate">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -216,7 +216,7 @@
         </el-alert>
         <div class="flex flex-wrap items-center gap-2 pb-2">
           <el-button @click="addSheetRow">{{ t('pages.buyerPrices.addRow') }}</el-button>
-          <el-button type="primary" :loading="masterSaving" @click="saveMaster">{{ t('pages.buyerPrices.saveSheet') }}</el-button>
+          <el-button v-if="canUpdate" type="primary" :loading="masterSaving" @click="saveMaster">{{ t('pages.buyerPrices.saveSheet') }}</el-button>
         </div>
 
         <el-table :data="sheetRows" border stripe size="small" class="admin-table" max-height="52vh" table-layout="auto">
@@ -400,8 +400,10 @@ import {
   toIsoDate,
   updateBuyerPriceList,
 } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canCreate, canUpdate, canDelete } = useModulePermission('buyerPrices')
 
 const SHEET_COLUMNS = ['ITEM', 'THICKNESS', 'COLOR', 'COLOR WHITE', 'COLOR BLACK', 'FLOURASENT', 'METALIC', 'EMBOSS', 'SPESIAL EMBOSS']
 

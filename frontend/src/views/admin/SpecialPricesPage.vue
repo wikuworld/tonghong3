@@ -2,7 +2,7 @@
   <AdminSection :title="t('pages.specialPrices.title')" :subtitle="t('pages.specialPrices.subtitle')">
     <template #actions>
       <el-input v-model="keyword" :placeholder="t('pages.specialPrices.searchPlaceholder')" clearable class="w-64" />
-      <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
     <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.specialPrices.tableEmpty')">
@@ -24,8 +24,8 @@
       </el-table-column>
       <el-table-column :label="t('common.actions')" width="100" align="center">
         <template #default="{ row }">
-          <el-button :icon="EditPen" link type="primary" @click="openEdit(row)" />
-          <el-button :icon="Delete" link type="danger" @click="confirmDelete(row)" />
+          <el-button v-if="canUpdate" :icon="EditPen" link type="primary" @click="openEdit(row)" />
+          <el-button v-if="canDelete" :icon="Delete" link type="danger" @click="confirmDelete(row)" />
         </template>
       </el-table-column>
     </el-table>
@@ -70,7 +70,7 @@
       </el-form>
       <template #footer>
         <el-button :icon="Close" @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :icon="Check" @click="submitForm">{{ t('common.save') }}</el-button>
+        <el-button v-if="canCreate || canUpdate" type="primary" :icon="Check" @click="submitForm">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -83,8 +83,10 @@ import { Plus, EditPen, Delete, Close, Check } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminSection from '../../components/AdminSection.vue'
 import { listSpecialPrices, createSpecialPrice, updateSpecialPrice, deleteSpecialPrice } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canCreate, canUpdate, canDelete } = useModulePermission('specialPrices')
 
 const loading = ref(false)
 const rows = ref([])

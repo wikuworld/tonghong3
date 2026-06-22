@@ -2,9 +2,9 @@
   <AdminSection :title="t('pages.masterItems.title')" :subtitle="t('pages.masterItems.subtitle')">
     <template #actions>
       <el-input v-model="keyword" :placeholder="t('pages.masterItems.searchPlaceholder')" clearable class="master-items-toolbar-search" />
-      <el-button :icon="Download" @click="handleExport">{{ t('pages.masterItems.export') }}</el-button>
-      <el-button type="success" :icon="Upload" @click="openImportDialog">{{ t('pages.masterItems.import') }}</el-button>
-      <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
+      <el-button v-if="canView" :icon="Download" @click="handleExport">{{ t('pages.masterItems.export') }}</el-button>
+      <el-button v-if="canCreate" type="success" :icon="Upload" @click="openImportDialog">{{ t('pages.masterItems.import') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
     <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.masterItems.tableEmpty')">
@@ -22,10 +22,10 @@
               <el-button :icon="View" link type="info" :aria-label="t('common.detail')" @click="openDetail(row)" />
             </el-tooltip>
             <el-tooltip :content="t('common.edit')" placement="top">
-              <el-button :icon="EditPen" link type="primary" :aria-label="t('common.edit')" @click="openEdit(row)" />
+              <el-button v-if="canUpdate" :icon="EditPen" link type="primary" :aria-label="t('common.edit')" @click="openEdit(row)" />
             </el-tooltip>
             <el-tooltip :content="t('common.delete')" placement="top">
-              <el-button :icon="Delete" link type="danger" :aria-label="t('common.delete')" @click="removeRow(row)" />
+              <el-button v-if="canDelete" :icon="Delete" link type="danger" :aria-label="t('common.delete')" @click="removeRow(row)" />
             </el-tooltip>
           </div>
         </template>
@@ -86,7 +86,7 @@
       <template #footer>
         <div class="master-items-dialog-footer">
           <el-button :icon="Close" @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-          <el-button type="primary" :icon="Check" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
+          <el-button v-if="canCreate || canUpdate" type="primary" :icon="Check" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
         </div>
       </template>
     </el-dialog>
@@ -117,7 +117,7 @@
       </el-upload>
       <template #footer>
         <el-button :icon="Close" @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :icon="Check" :disabled="!importFile" @click="handleImport">
+        <el-button v-if="canCreate" type="primary" :icon="Check" :disabled="!importFile" @click="handleImport">
           {{ t('pages.masterItems.doImport') }}
         </el-button>
       </template>
@@ -132,8 +132,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, EditPen, Plus, Close, Check, Upload, Download, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { createMasterItem, deleteMasterItem, listMasterItems, updateMasterItem, exportMasterItems, importMasterItems } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canCreate, canUpdate, canDelete, canView } = useModulePermission('masterItems')
 const loading = ref(false)
 const saving = ref(false)
 const keyword = ref('')

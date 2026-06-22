@@ -1,7 +1,7 @@
 <template>
   <AdminSection :title="t('pages.inventory.materialTitle')" :subtitle="t('pages.inventory.materialSubtitle')">
     <template #actions>
-      <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
     <el-table :data="materials" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('common.tableEmpty')">
@@ -16,7 +16,7 @@
       </el-table-column>
       <el-table-column :label="t('common.actions')" width="100" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" :icon="EditPen" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
+          <el-button v-if="canUpdate" link type="primary" :icon="EditPen" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -48,7 +48,7 @@
       </el-form>
       <template #footer>
         <el-button :icon="Close" @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :icon="Check" @click="submit">{{ t('common.save') }}</el-button>
+        <el-button v-if="canCreate || canUpdate" type="primary" :icon="Check" @click="submit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -62,8 +62,10 @@ import { Plus, Close, Check, EditPen } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import { listMaterials, createMaterial, updateMaterial } from '../../../api/client'
 import { formatCurrency } from '../../../utils/format'
+import { useModulePermission } from '../../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canCreate, canUpdate } = useModulePermission('inventory')
 const loading = ref(false)
 const materials = ref([])
 const formVisible = ref(false)

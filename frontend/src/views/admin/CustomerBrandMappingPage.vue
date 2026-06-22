@@ -46,7 +46,7 @@
               :value="b.id"
             />
           </el-select>
-          <el-button type="primary" :icon="Check" class="mt-3 w-full" :loading="savingConstraint" @click="saveConstraint">
+          <el-button v-if="canUpdate" type="primary" :icon="Check" class="mt-3 w-full" :loading="savingConstraint" @click="saveConstraint">
             {{ t('pages.customerBrandMapping.saveConstraint') }}
           </el-button>
         </el-card>
@@ -57,7 +57,7 @@
           <template #header>
             <div class="flex items-center justify-between">
               <span class="font-semibold">{{ t('pages.customerBrandMapping.title') }}</span>
-              <el-button type="primary" :icon="Plus" size="small" @click="openAddMappingDialog">
+              <el-button v-if="canCreate" type="primary" :icon="Plus" size="small" @click="openAddMappingDialog">
                 {{ t('pages.customerBrandMapping.addMapping') }}
               </el-button>
             </div>
@@ -82,7 +82,7 @@
             <el-table-column :label="t('common.actions')" width="150" align="center">
               <template #default="{ row }">
                 <div class="flex items-center justify-center gap-1">
-                  <el-tooltip :content="t('pages.customerBrandMapping.setAsDefault')" placement="top">
+                  <el-tooltip v-if="canUpdate" :content="t('pages.customerBrandMapping.setAsDefault')" placement="top">
                     <el-button
                       link
                       type="primary"
@@ -91,7 +91,7 @@
                       @click="setAsDefault(row)"
                     />
                   </el-tooltip>
-                  <el-tooltip :content="t('pages.customerBrandMapping.removeMapping')" placement="top">
+                  <el-tooltip v-if="canDelete" :content="t('pages.customerBrandMapping.removeMapping')" placement="top">
                     <el-button
                       link
                       type="danger"
@@ -132,7 +132,7 @@
       <template #footer>
         <div class="flex justify-end gap-2">
           <el-button :icon="Close" @click="addMappingVisible = false">{{ t('common.cancel') }}</el-button>
-          <el-button type="primary" :icon="Check" :loading="savingMapping" @click="addMapping">
+          <el-button v-if="canCreate" type="primary" :icon="Check" :loading="savingMapping" @click="addMapping">
             {{ t('common.save') }}
           </el-button>
         </div>
@@ -158,8 +158,10 @@ import {
   updateCustomerBrandMapping,
   upsertBrandConstraint,
 } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canCreate, canUpdate, canDelete } = useModulePermission('customerBrandMapping')
 
 const loading = ref(false)
 const savingConstraint = ref(false)

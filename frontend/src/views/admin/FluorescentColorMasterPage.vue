@@ -169,7 +169,6 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
-import { can } from '../../security/permissions'
 import {
   createFluorescentColor,
   deleteFluorescentColor,
@@ -182,9 +181,9 @@ import {
 } from '../../api/client'
 
 const { t } = useI18n()
-const canCreate = can('masterImport', 'create') || can('po', 'create')
-const canUpdate = can('masterImport', 'create') || can('po', 'update')
-const canDelete = can('masterImport', 'create')
+import { useModulePermission } from '../../composables/useModulePermission'
+
+const { canCreate, canUpdate, canDelete } = useModulePermission('fluorescentColors')
 const isAdmin = ref(false)
 
 const loading = ref(false)

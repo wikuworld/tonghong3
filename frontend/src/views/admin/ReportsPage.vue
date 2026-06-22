@@ -7,12 +7,12 @@
         clearable
         class="reports-toolbar-search"
       />
-      <el-button :icon="Download" :loading="dailyCsvLoading" @click="exportDailyMarketingCsv">
+      <el-button v-if="canExport" :icon="Download" :loading="dailyCsvLoading" @click="exportDailyMarketingCsv">
         {{ t('pages.reports.exportDailyMarketing') }}
       </el-button>
-      <el-button :icon="Download" @click="exportSoCsv">{{ t('pages.reports.exportSo') }}</el-button>
-      <el-button :icon="Download" @click="exportLinesCsv">{{ t('pages.reports.exportLines') }}</el-button>
-      <el-button type="primary" :icon="Printer" @click="printReport">{{ t('common.print') }} {{ t('pages.reports.report') }}</el-button>
+      <el-button v-if="canExport" :icon="Download" @click="exportSoCsv">{{ t('pages.reports.exportSo') }}</el-button>
+      <el-button v-if="canExport" :icon="Download" @click="exportLinesCsv">{{ t('pages.reports.exportLines') }}</el-button>
+      <el-button v-if="canExport" type="primary" :icon="Printer" @click="printReport">{{ t('common.print') }} {{ t('pages.reports.report') }}</el-button>
     </template>
 
     <div class="border border-gray-200 rounded-lg bg-slate-50">
@@ -273,6 +273,9 @@ import {
   reportSalesOrderLinesExportUrl,
   reportSalesOrdersExportUrl,
 } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
+
+const { canExport } = useModulePermission('reports')
 
 const { t, te } = useI18n()
 

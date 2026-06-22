@@ -12,12 +12,20 @@ from app.routers.auth import get_current_user, require_roles
 
 router = APIRouter(tags=["permissions"])
 
+_ALL = ["marketing", "ppic", "production", "qc", "warehouse", "finance", "exim", "sales"]
+
 DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
+    "dashboard": {"view": ["admin", *_ALL]},
     "customers": {
         "view": ["marketing", "sales", "finance"],
         "create": ["marketing", "sales"],
         "update": ["marketing", "sales"],
         "delete": [],
+    },
+    "exchangeRates": {
+        "view": ["marketing", "exim", "finance"],
+        "create": ["marketing", "exim", "finance"],
+        "update": ["marketing", "exim", "finance"],
     },
     "po": {
         "view": ["marketing", "ppic", "sales", "production", "finance"],
@@ -31,6 +39,11 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "create": ["marketing", "sales"],
         "update": ["marketing", "sales"],
         "delete": ["marketing"],
+    },
+    "marketingFlow": {
+        "view": ["marketing", "ppic"],
+        "update": ["marketing", "ppic"],
+        "advance": ["marketing", "ppic"],
     },
     "production": {
         "view": ["production", "ppic", "qc"],
@@ -59,11 +72,98 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "create": ["finance"],
         "update": ["finance"],
     },
+    "subconInvoice": {
+        "view": ["finance"],
+        "create": ["finance"],
+        "update": ["finance"],
+        "delete": [],
+    },
     "reports": {
         "view": ["marketing", "ppic", "finance", "exim", "sales"],
         "export": ["marketing", "ppic", "finance", "exim", "sales"],
     },
+    "buyerPrices": {
+        "view": ["marketing"],
+        "create": ["marketing"],
+        "update": ["marketing"],
+        "delete": ["marketing"],
+    },
+    "brandMaster": {
+        "view": ["marketing", "sales"],
+        "create": ["marketing"],
+        "update": ["marketing"],
+        "delete": [],
+    },
+    "specialPrices": {
+        "view": ["marketing", "sales"],
+        "create": ["marketing"],
+        "update": ["marketing"],
+        "delete": [],
+    },
+    "customerPrices": {
+        "view": ["marketing", "sales"],
+        "create": ["marketing"],
+        "update": ["marketing"],
+        "delete": [],
+    },
+    "bulkPriceUpdate": {
+        "view": ["marketing"],
+        "update": ["marketing"],
+    },
+    "customs": {
+        "view": ["exim"],
+        "create": ["exim"],
+        "update": ["exim"],
+        "delete": [],
+    },
     "masterImport": {"view": [], "create": []},
+    "masterItems": {
+        "view": [],
+        "create": [],
+        "update": [],
+        "delete": [],
+    },
+    "fluorescentColors": {
+        "view": ["marketing", "sales"],
+        "create": ["marketing"],
+        "update": ["marketing"],
+        "delete": [],
+    },
+    "colorSwatch": {
+        "view": ["marketing", "sales"],
+        "create": ["marketing"],
+        "update": ["marketing"],
+        "delete": [],
+    },
+    "customerBrandMapping": {
+        "view": ["marketing", "sales"],
+        "create": ["marketing"],
+        "update": ["marketing", "sales"],
+        "delete": ["marketing"],
+    },
+    "ppicDashboard": {
+        "view": ["ppic"],
+        "update": ["ppic"],
+    },
+    "outstandingMaterials": {
+        "view": ["marketing", "ppic"],
+        "update": ["marketing", "ppic"],
+    },
+    "accountingMappings": {
+        "view": ["finance"],
+        "create": ["finance"],
+        "update": ["finance"],
+        "delete": ["finance"],
+    },
+    "journalEntries": {
+        "view": ["finance"],
+        "create": ["finance"],
+    },
+    "inventory": {
+        "view": ["warehouse"],
+        "create": ["warehouse"],
+        "update": ["warehouse"],
+    },
     "userAccess": {"view": [], "create": [], "update": []},
 }
 
@@ -133,4 +233,3 @@ def save_permission_matrix(
     matrix = (body or {}).get("matrix") or {}
     _write_matrix(db, _merge_with_defaults(matrix))
     return {"status": "ok"}
-

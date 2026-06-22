@@ -31,7 +31,7 @@ import AccountingMappingsPage from '../views/admin/AccountingMappingsPage.vue'
 import JournalEntriesPage from '../views/admin/JournalEntriesPage.vue'
 import InventoryPage from '../views/admin/InventoryPage.vue'
 import LoginPage from '../views/LoginPage.vue'
-import { ROUTE_ROLES } from '../security/rbac'
+import { can, currentRoleFromToken } from '../security/permissions'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -49,69 +49,57 @@ const router = createRouter({
       component: AdminLayout,
       children: [
         { path: '', redirect: '/admin/dashboard' },
-        { path: 'dashboard', component: DashboardPage, meta: { titleKey: 'menu.dashboard', roles: ROUTE_ROLES.dashboard } },
-        { path: 'customers', component: CustomersPage, meta: { titleKey: 'menu.customers', roles: ROUTE_ROLES.customers } },
+        { path: 'dashboard', component: DashboardPage, meta: { titleKey: 'menu.dashboard', module: 'dashboard' } },
+        { path: 'customers', component: CustomersPage, meta: { titleKey: 'menu.customers', module: 'customers' } },
         {
           path: 'quotations',
           component: QuotationPage,
-          meta: { titleKey: 'menu.quotations', roles: ROUTE_ROLES.quotations },
+          meta: { titleKey: 'menu.quotations', module: 'quotations' },
         },
         {
           path: 'exchange-rates',
           component: ExchangeRatePage,
-          meta: { titleKey: 'menu.exchangeRate', roles: ROUTE_ROLES.exchangeRates },
+          meta: { titleKey: 'menu.exchangeRate', module: 'exchangeRates' },
         },
-        { path: 'po', component: PurchaseOrderPage, meta: { titleKey: 'menu.po', roles: ROUTE_ROLES.po } },
+        { path: 'po', component: PurchaseOrderPage, meta: { titleKey: 'menu.po', module: 'po' } },
         {
           path: 'marketing-flow',
           component: MarketingFlowPage,
-          meta: { titleKey: 'menu.marketingFlow', roles: ROUTE_ROLES.marketingFlow },
+          meta: { titleKey: 'menu.marketingFlow', module: 'marketingFlow' },
         },
         { path: 'po-entry', redirect: '/admin/po' },
         { path: 'po-detail', redirect: '/admin/po' },
-        { path: 'production', component: ProductionPage, meta: { titleKey: 'menu.production', roles: ROUTE_ROLES.production } },
-        { path: 'qc', component: QualityControlPage, meta: { titleKey: 'menu.qc', roles: ROUTE_ROLES.qc } },
-        { path: 'packing', component: PackingPage, meta: { titleKey: 'menu.packing', roles: ROUTE_ROLES.packing } },
-        { path: 'delivery', component: DeliveryPage, meta: { titleKey: 'menu.delivery', roles: ROUTE_ROLES.delivery } },
+        { path: 'production', component: ProductionPage, meta: { titleKey: 'menu.production', module: 'production' } },
+        { path: 'qc', component: QualityControlPage, meta: { titleKey: 'menu.qc', module: 'qc' } },
+        { path: 'packing', component: PackingPage, meta: { titleKey: 'menu.packing', module: 'packing' } },
+        { path: 'delivery', component: DeliveryPage, meta: { titleKey: 'menu.delivery', module: 'delivery' } },
         { path: 'delivery-pull', redirect: '/admin/delivery' },
         { path: 'surat-jalan', redirect: '/admin/delivery' },
         { path: 'print-surat-jalan', redirect: '/admin/delivery' },
-        { path: 'invoice', component: InvoicePage, meta: { titleKey: 'menu.invoice', roles: ROUTE_ROLES.invoice } },
-        { path: 'reports', component: ReportsPage, meta: { titleKey: 'menu.reports', roles: ROUTE_ROLES.reports } },
-        { path: 'buyer-prices', component: BuyerPricePage, meta: { titleKey: 'menu.buyerPrices', roles: ROUTE_ROLES.buyerPrices } },
-        { path: 'brands', component: BrandMasterPage, meta: { titleKey: 'menu.brandMaster', roles: ROUTE_ROLES.brandMaster } },
-        { path: 'special-prices', component: SpecialPricesPage, meta: { titleKey: 'menu.specialPrices', roles: ROUTE_ROLES.specialPrices } },
-        { path: 'customer-prices', component: CustomerPricesPage, meta: { titleKey: 'menu.customerPrices', roles: ROUTE_ROLES.customerPrices } },
-        { path: 'bulk-price-update', component: BulkPriceUpdatePage, meta: { titleKey: 'menu.bulkPriceUpdate', roles: ROUTE_ROLES.bulkPriceUpdate } },
-        { path: 'customs', component: CustomsPage, meta: { titleKey: 'menu.customs', roles: ROUTE_ROLES.customs } },
-        { path: 'master-import', component: MasterImportPage, meta: { titleKey: 'menu.masterImport', roles: ROUTE_ROLES.masterImport } },
-        { path: 'master-items', component: MasterItemsPage, meta: { titleKey: 'menu.masterItems', roles: ROUTE_ROLES.masterItems } },
-        { path: 'fluorescent-colors', component: FluorescentColorMasterPage, meta: { titleKey: 'menu.fluorescentColors', roles: ROUTE_ROLES.fluorescentColors } },
-        { path: 'color-swatch', component: ColorSwatchMasterPage, meta: { titleKey: 'menu.colorSwatch', roles: ROUTE_ROLES.colorSwatch } },
-        { path: 'user-access', component: UserAccessPage, meta: { titleKey: 'menu.userAccess', roles: ROUTE_ROLES.userAccess } },
-        { path: 'customer-brand-mapping', component: CustomerBrandMappingPage, meta: { titleKey: 'menu.customerBrandMapping', roles: ROUTE_ROLES.customerBrandMapping } },
-        { path: 'subcon-invoices', component: SubconInvoicePage, meta: { titleKey: 'menu.subconInvoice', roles: ROUTE_ROLES.subconInvoice } },
-        { path: 'ppic-dashboard', component: PpicsDashboardPage, meta: { titleKey: 'menu.ppicDashboard', roles: ROUTE_ROLES.ppicDashboard } },
-        { path: 'outstanding-materials', component: OutstandingMaterialsPage, meta: { titleKey: 'menu.outstandingMaterials', roles: ROUTE_ROLES.outstandingMaterials } },
-        { path: 'accounting-mappings', component: AccountingMappingsPage, meta: { titleKey: 'menu.accountingMappings', roles: ROUTE_ROLES.accountingMappings } },
-        { path: 'journal-entries', component: JournalEntriesPage, meta: { titleKey: 'menu.journalEntries', roles: ROUTE_ROLES.accountingMappings } },
-        { path: 'inventory', component: InventoryPage, meta: { titleKey: 'menu.inventory', roles: ROUTE_ROLES.inventory } },
+        { path: 'invoice', component: InvoicePage, meta: { titleKey: 'menu.invoice', module: 'invoice' } },
+        { path: 'reports', component: ReportsPage, meta: { titleKey: 'menu.reports', module: 'reports' } },
+        { path: 'buyer-prices', component: BuyerPricePage, meta: { titleKey: 'menu.buyerPrices', module: 'buyerPrices' } },
+        { path: 'brands', component: BrandMasterPage, meta: { titleKey: 'menu.brandMaster', module: 'brandMaster' } },
+        { path: 'special-prices', component: SpecialPricesPage, meta: { titleKey: 'menu.specialPrices', module: 'specialPrices' } },
+        { path: 'customer-prices', component: CustomerPricesPage, meta: { titleKey: 'menu.customerPrices', module: 'customerPrices' } },
+        { path: 'bulk-price-update', component: BulkPriceUpdatePage, meta: { titleKey: 'menu.bulkPriceUpdate', module: 'bulkPriceUpdate' } },
+        { path: 'customs', component: CustomsPage, meta: { titleKey: 'menu.customs', module: 'customs' } },
+        { path: 'master-import', component: MasterImportPage, meta: { titleKey: 'menu.masterImport', module: 'masterImport' } },
+        { path: 'master-items', component: MasterItemsPage, meta: { titleKey: 'menu.masterItems', module: 'masterItems' } },
+        { path: 'fluorescent-colors', component: FluorescentColorMasterPage, meta: { titleKey: 'menu.fluorescentColors', module: 'fluorescentColors' } },
+        { path: 'color-swatch', component: ColorSwatchMasterPage, meta: { titleKey: 'menu.colorSwatch', module: 'colorSwatch' } },
+        { path: 'user-access', component: UserAccessPage, meta: { titleKey: 'menu.userAccess', module: 'userAccess' } },
+        { path: 'customer-brand-mapping', component: CustomerBrandMappingPage, meta: { titleKey: 'menu.customerBrandMapping', module: 'customerBrandMapping' } },
+        { path: 'subcon-invoices', component: SubconInvoicePage, meta: { titleKey: 'menu.subconInvoice', module: 'subconInvoice' } },
+        { path: 'ppic-dashboard', component: PpicsDashboardPage, meta: { titleKey: 'menu.ppicDashboard', module: 'ppicDashboard' } },
+        { path: 'outstanding-materials', component: OutstandingMaterialsPage, meta: { titleKey: 'menu.outstandingMaterials', module: 'outstandingMaterials' } },
+        { path: 'accounting-mappings', component: AccountingMappingsPage, meta: { titleKey: 'menu.accountingMappings', module: 'accountingMappings' } },
+        { path: 'journal-entries', component: JournalEntriesPage, meta: { titleKey: 'menu.journalEntries', module: 'journalEntries' } },
+        { path: 'inventory', component: InventoryPage, meta: { titleKey: 'menu.inventory', module: 'inventory' } },
       ],
     },
   ],
 })
-
-function readRoleFromToken(token) {
-  try {
-    const base64Url = token.split('.')[1] || ''
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
-    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
-    const payload = JSON.parse(atob(padded))
-    return payload?.role || 'guest'
-  } catch {
-    return null
-  }
-}
 
 router.beforeEach((to) => {
   if (to.path.startsWith('/admin')) {
@@ -119,13 +107,13 @@ router.beforeEach((to) => {
     if (!token) {
       return { path: '/login', query: { next: to.fullPath } }
     }
-    const role = readRoleFromToken(token)
-    if (!role) {
+    const role = currentRoleFromToken()
+    if (!role || role === 'guest') {
       localStorage.removeItem('auth_token')
       return { path: '/login', query: { next: to.fullPath } }
     }
-    const required = to.meta?.roles
-    if (Array.isArray(required) && !required.includes(role) && role !== 'admin') {
+    const moduleKey = to.meta?.module
+    if (moduleKey && !can(moduleKey, 'view', role)) {
       return { path: '/admin/dashboard' }
     }
   }

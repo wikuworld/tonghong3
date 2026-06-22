@@ -1,7 +1,7 @@
 <template>
   <AdminSection :title="t('pages.inventory.receiptTitle')" :subtitle="t('pages.inventory.receiptSubtitle')">
     <template #actions>
-      <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('pages.inventory.newReceipt') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('pages.inventory.newReceipt') }}</el-button>
     </template>
 
     <el-table :data="receipts" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('common.tableEmpty')">
@@ -70,7 +70,7 @@
       </el-form>
       <template #footer>
         <el-button :icon="Close" @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :icon="Check" @click="submit">{{ t('common.save') }}</el-button>
+        <el-button v-if="canCreate" type="primary" :icon="Check" @click="submit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -84,8 +84,10 @@ import { Plus, Close, Check, Delete } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import { listReceipts, createReceipt, listMaterials, listWarehouses } from '../../../api/client'
 import { formatCurrency } from '../../../utils/format'
+import { useModulePermission } from '../../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canCreate } = useModulePermission('inventory')
 const loading = ref(false)
 const receipts = ref([])
 const materials = ref([])

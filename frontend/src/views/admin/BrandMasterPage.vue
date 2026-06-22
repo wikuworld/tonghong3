@@ -15,7 +15,7 @@
         </el-select>
         <el-switch v-model="groupByCustomer" />
         <span class="text-sm text-slate-600">{{ t('pages.brandMaster.groupByCustomer') }}</span>
-        <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
+        <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
       </div>
     </template>
 
@@ -62,10 +62,10 @@
               <el-tooltip content="Detail" placement="top">
                 <el-button :icon="View" link type="info" aria-label="Detail" @click="openDetail(row)" />
               </el-tooltip>
-              <el-tooltip :content="t('common.edit')" placement="top">
+              <el-tooltip v-if="canUpdate" :content="t('common.edit')" placement="top">
                 <el-button :icon="EditPen" link type="warning" :aria-label="t('common.edit')" @click="openEdit(row)" />
               </el-tooltip>
-              <el-tooltip :content="t('common.delete')" placement="top">
+              <el-tooltip v-if="canDelete" :content="t('common.delete')" placement="top">
                 <el-button :icon="Delete" link type="danger" :aria-label="t('common.delete')" @click="removeRow(row)" />
               </el-tooltip>
             </div>
@@ -88,7 +88,7 @@
       <template #footer>
         <div class="brand-master-dialog-footer">
           <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-          <el-button type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
+          <el-button v-if="canCreate || canUpdate" type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
         </div>
       </template>
     </el-dialog>
@@ -133,8 +133,10 @@ import {
   listCustomers,
   updateBrand,
 } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canCreate, canUpdate, canDelete } = useModulePermission('brandMaster')
 const loading = ref(false)
 const saving = ref(false)
 const keyword = ref('')

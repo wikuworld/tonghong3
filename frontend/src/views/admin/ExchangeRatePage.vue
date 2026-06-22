@@ -2,7 +2,7 @@
   <div class="space-y-4">
     <AdminSection :title="t('pages.exchangeRate.title')" :subtitle="t('pages.exchangeRate.subtitle')">
       <template #actions>
-        <el-button type="primary" :icon="Plus" @click="openDialog">{{ t('pages.exchangeRate.create') }}</el-button>
+        <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openDialog">{{ t('pages.exchangeRate.create') }}</el-button>
       </template>
       <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.exchangeRate.tableEmpty')">
         <el-table-column prop="effective_date" :label="t('pages.exchangeRate.effectiveDate')" width="120" />
@@ -46,7 +46,7 @@
       <template #footer>
         <div class="exchange-rate-dialog-footer">
           <el-button :icon="Close" @click="dialog = false">{{ t('common.cancel') }}</el-button>
-          <el-button type="primary" :icon="Check" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
+          <el-button v-if="canCreate" type="primary" :icon="Check" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
         </div>
       </template>
     </el-dialog>
@@ -59,8 +59,10 @@ import { useI18n } from 'vue-i18n'
 import { Plus, Check, Close } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { createExchangeRate, listExchangeRates } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canCreate } = useModulePermission('exchangeRates')
 const rows = ref([])
 const loading = ref(false)
 const dialog = ref(false)

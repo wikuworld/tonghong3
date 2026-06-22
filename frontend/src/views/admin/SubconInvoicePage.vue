@@ -44,10 +44,10 @@
       <el-table-column :label="t('common.actions')" width="140" fixed="right" align="center">
         <template #default="{ row }">
           <el-tooltip :content="t('common.edit')" placement="top">
-            <el-button :icon="EditPen" link type="primary" size="small" :disabled="row.status === 'cancelled'" @click="openEdit(row)" />
+            <el-button v-if="canUpdate" :icon="EditPen" link type="primary" size="small" :disabled="row.status === 'cancelled'" @click="openEdit(row)" />
           </el-tooltip>
           <el-tooltip :content="t('common.delete')" placement="top">
-            <el-button :icon="Delete" link type="danger" size="small" :disabled="row.status === 'cancelled'" @click="confirmDelete(row)" />
+            <el-button v-if="canDelete" :icon="Delete" link type="danger" size="small" :disabled="row.status === 'cancelled'" @click="confirmDelete(row)" />
           </el-tooltip>
         </template>
       </el-table-column>
@@ -123,8 +123,9 @@ import {
 } from '../../api/client'
 
 const { t } = useI18n()
-const canCreate = can('subcon_invoices', 'create')
-const canUpdate = can('subcon_invoices', 'update')
+const canCreate = can('subconInvoice', 'create')
+const canUpdate = can('subconInvoice', 'update')
+const canDelete = can('subconInvoice', 'delete')
 const loading = ref(false)
 const saving = ref(false)
 const generating = ref(false)

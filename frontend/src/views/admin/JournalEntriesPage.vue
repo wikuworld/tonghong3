@@ -1,7 +1,7 @@
 <template>
   <AdminSection :title="t('pages.journalEntries.title')" :subtitle="t('pages.journalEntries.subtitle')">
     <template #actions>
-      <el-button type="primary" :icon="Plus" @click="openGenerate">{{ t('pages.journalEntries.generateFromTransaction') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openGenerate">{{ t('pages.journalEntries.generateFromTransaction') }}</el-button>
       <el-button :icon="Refresh" @click="showTrialBalance = true">{{ t('pages.journalEntries.showTrialBalance') }}</el-button>
     </template>
 
@@ -64,7 +64,7 @@
       </el-form>
       <template #footer>
         <el-button :icon="Close" @click="generateVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="generating" @click="submitGenerate">{{ t('pages.journalEntries.generate') }}</el-button>
+        <el-button v-if="canCreate" type="primary" :loading="generating" @click="submitGenerate">{{ t('pages.journalEntries.generate') }}</el-button>
       </template>
     </el-dialog>
 
@@ -123,8 +123,10 @@ import { ElMessage } from 'element-plus'
 import { Plus, Search, Close, Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { generateJournalFromTransaction, getTrialBalance, listJournalEntries } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canCreate } = useModulePermission('journalEntries')
 
 const loading = ref(false)
 const entries = ref([])

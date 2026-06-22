@@ -13,7 +13,7 @@
             <el-input-number v-model="singleForm.new_price" :min="0" :precision="4" class="w-full" />
           </el-form-item>
           <el-form-item>
-            <el-button type="primary" :loading="saving" @click="submitSingle">
+            <el-button v-if="canUpdate" type="primary" :loading="saving" @click="submitSingle">
               {{ t('pages.bulkPriceUpdate.update') }}
             </el-button>
           </el-form-item>
@@ -28,7 +28,7 @@
           accept=".csv"
           :on-change="handleFileChange"
         >
-          <el-button type="primary">{{ t('pages.bulkPriceUpdate.selectFile') }}</el-button>
+          <el-button v-if="canUpdate" type="primary">{{ t('pages.bulkPriceUpdate.selectFile') }}</el-button>
         </el-upload>
         <div class="mt-4">
           <el-button type="success" :disabled="!csvFile" :loading="uploading" @click="submitCsv">
@@ -50,8 +50,10 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import AdminSection from '../../components/AdminSection.vue'
 import { bulkUpdatePrices, bulkUpdatePricesCsv } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canUpdate } = useModulePermission('bulkPriceUpdate')
 
 const activeTab = ref('single')
 const saving = ref(false)

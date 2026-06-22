@@ -37,7 +37,7 @@
         <template #default="{ row }">
           <div class="flex flex-wrap items-center justify-center gap-1">
             <el-button
-              v-if="row.status !== 'fulfilled'"
+              v-if="canUpdate && row.status !== 'fulfilled'"
               type="success"
               size="small"
               @click="openDeliverDialog(row)"
@@ -74,7 +74,7 @@
       </el-form>
       <template #footer>
         <el-button @click="deliverDialogVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="submitDelivery">{{ t('common.save') }}</el-button>
+        <el-button v-if="canUpdate" type="primary" :loading="saving" @click="submitDelivery">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -87,6 +87,9 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AdminSection from '../../components/AdminSection.vue'
 import { listOutstandingMaterials, deliverOutstandingMaterial } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
+
+const { canUpdate } = useModulePermission('outstandingMaterials')
 
 const { t } = useI18n()
 const router = useRouter()

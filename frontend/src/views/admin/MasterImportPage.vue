@@ -9,7 +9,7 @@
       </p>
 
       <el-upload :show-file-list="false" :http-request="doUpload" accept=".zip">
-        <el-button type="primary" :loading="uploading">{{ t('pages.masterImport.uploadZip') }}</el-button>
+        <el-button v-if="canCreate" type="primary" :loading="uploading">{{ t('pages.masterImport.uploadZip') }}</el-button>
       </el-upload>
 
       <div v-if="result" class="mt-4 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
@@ -26,8 +26,10 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import AdminSection from '../../components/AdminSection.vue'
 import { importMasterZip } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canCreate } = useModulePermission('masterImport')
 const uploading = ref(false)
 const result = ref(null)
 

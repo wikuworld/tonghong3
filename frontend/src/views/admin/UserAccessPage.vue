@@ -67,8 +67,8 @@
             </thead>
             <tbody>
               <tr v-for="row in filteredMatrixRows" :key="`${row.module}-${row.action}`">
-                <td class="sticky-col">{{ row.module }}</td>
-                <td>{{ row.action }}</td>
+                <td class="sticky-col">{{ moduleLabel(row.module) }}</td>
+                <td>{{ actionLabel(row.action) }}</td>
                 <td v-for="r in roles" :key="`${row.module}-${row.action}-${r}`" class="text-center">
                   <el-checkbox
                     :model-value="roleChecked(row.module, row.action, r)"
@@ -139,6 +139,7 @@ import { CircleCheck, CircleClose, DocumentChecked, EditPen, Plus, RefreshLeft }
 import AdminSection from '../../components/AdminSection.vue'
 import { createUser, getPermissionMatrix, listUsers, savePermissionMatrix, updateUser } from '../../api/client'
 import { ACTION_MATRIX, can, setRuntimePermissionMatrix } from '../../security/permissions'
+import { ACTION_LABEL_KEYS, MODULE_LABEL_KEYS } from '../../security/rbac'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -185,6 +186,16 @@ const filteredUsers = computed(() =>
   }),
 )
 const hasMatrixChanges = computed(() => JSON.stringify(editableMatrix.value) !== matrixSavedSnapshot.value)
+
+function moduleLabel(moduleKey) {
+  const labelKey = MODULE_LABEL_KEYS[moduleKey]
+  return labelKey ? t(labelKey) : moduleKey
+}
+
+function actionLabel(action) {
+  const labelKey = ACTION_LABEL_KEYS[action]
+  return labelKey ? t(labelKey) : action
+}
 
 function roleChecked(moduleKey, action, role) {
   const m = editableMatrix.value[moduleKey] || {}

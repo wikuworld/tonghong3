@@ -8,7 +8,7 @@
           clearable
           class="customs-toolbar-search"
         />
-        <el-button type="primary" :icon="Plus" :loading="loading" @click="openCreateDialog">
+        <el-button v-if="canCreate" type="primary" :icon="Plus" :loading="loading" @click="openCreateDialog">
           {{ t('common.create') }}
         </el-button>
       </template>
@@ -93,7 +93,7 @@
         <el-table-column :label="t('common.actions')" width="100" align="center" fixed="right">
           <template #default="{ row }">
             <div class="flex flex-wrap items-center justify-center gap-0">
-              <el-tooltip :content="t('pages.customs.manageData')" placement="top">
+              <el-tooltip v-if="canUpdate" :content="t('pages.customs.manageData')" placement="top">
                 <el-button
                   :icon="EditPen"
                   link
@@ -102,7 +102,7 @@
                   @click="openMaster(row.id)"
                 />
               </el-tooltip>
-              <el-tooltip :content="t('common.delete')" placement="top">
+              <el-tooltip v-if="canDelete" :content="t('common.delete')" placement="top">
                 <el-button :icon="Delete" link type="danger" :aria-label="t('common.delete')" @click="confirmDelete(row)" />
               </el-tooltip>
             </div>
@@ -142,7 +142,7 @@
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="createSaving" @click="submitCreate">{{ t('common.save') }}</el-button>
+        <el-button v-if="canCreate" type="primary" :loading="createSaving" @click="submitCreate">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -175,8 +175,8 @@
 
         <el-divider content-position="left">{{ t('pages.customs.sectionSheets') }}</el-divider>
         <div class="flex flex-wrap items-center gap-2 pb-2">
-          <el-button type="primary" plain @click="promptAddSheet">{{ t('pages.customs.addSheet') }}</el-button>
-          <el-button type="primary" :loading="masterSaving" @click="saveMaster">{{ t('pages.customs.saveSheets') }}</el-button>
+          <el-button v-if="canUpdate" type="primary" plain @click="promptAddSheet">{{ t('pages.customs.addSheet') }}</el-button>
+          <el-button v-if="canUpdate" type="primary" :loading="masterSaving" @click="saveMaster">{{ t('pages.customs.saveSheets') }}</el-button>
         </div>
 
         <el-tabs v-if="tabCodes.length" v-model="activeSheetTab" type="border-card" class="customs-tabs">
@@ -252,8 +252,10 @@ import {
   saveCustomsSheetsData,
   updateCustomsDeclaration,
 } from '../../api/client'
+import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
+const { canCreate, canUpdate, canDelete } = useModulePermission('customs')
 
 const selectedDeliveryId = ref(null)
 const deliveryOptions = ref([])
