@@ -7,11 +7,12 @@ alwaysApply: false
 
 - **Frontend**: Vue 3 + Vite + Element Plus + Tailwind + vue-i18n (locale `id` default, fallback `en`, plus `zh`).
 - **Struktur**: workspace root `package.json` memanggil skrip di `frontend/`; halaman admin di `frontend/src/views/admin/`, layout `AdminLayout.vue`, router `/admin/*`.
-- **Docker**: `docker-compose.yml` — service **`web`** (build statis + Nginx, port **8080**), profile **`dev`**: **`frontend-dev`** (Vite **5173**), **`web-hmr`** (Nginx proxy ke Vite + API, default **8081**), **`backend-dev`**. Setelah ubah kode frontend untuk image production, perlu **`docker compose build`** / **`up --build`**.
-- **HMR lewat domain (HTTPS / Cloudflare)**:
-  - Env `frontend-dev`: **`HMR_PUBLIC_HOST`**, **`VITE_DEV_PUBLIC_ORIGIN`** (mis. `https://subdomain.domain`), **`HMR_PUBLIC_CLIENT_PORT`** (biasanya **443**), **`HMR_WSS_PROTOCOL`** (**wss**).
-  - **502 Bad Gateway dari Cloudflare** — penyebab umum: (1) **Port origin**: mode *Flexible* mem-proxy ke **HTTP port 80** di IP origin; kalau Docker hanya map **`8081:80`**, Cloudflare tidak otomatis pakai 8081. **Solusi**: set **`WEB_HMR_PORT=80`** (hati-hati bentrok), **atau** reverse proxy di host (`:80` → `127.0.0.1:8081`), **atau** **Cloudflare Tunnel** ke `http://127.0.0.1:8081`. (2) **Vite belum siap**: `web-hmr` sekarang menunggu **`frontend-dev` + `backend-dev` healthy** sebelum melayani. (3) **SSL Full (strict)** ke origin tanpa sertifikat valid di origin → ganti *Flexible* / *Full* atau pasang TLS di origin.
-  - Lokal tanpa domain: `.env` mis. `HMR_PUBLIC_HOST=localhost`, `VITE_HMR_PROTOCOL=ws`, `VITE_HMR_CLIENT_PORT=5173`, `VITE_DEV_PUBLIC_ORIGIN=` (kosong).
+- **Docker**: `docker-compose.yml` — service **`web`** (build statis + Nginx, port **8080**), profile **`dev`**: **`frontend-dev`** (Vite **5173** internal), **`web-hmr`** (Nginx proxy ke Vite + API, port **`WEB_HMR_PORT`**). Setelah ubah kode frontend untuk image production, perlu **`docker compose build`** / **`up --build`**.
+- **HMR lewat domain yang sama (HTTPS / Cloudflare)**:
+  - Set di `.env`: **`WEB_HMR_PORT=8080`** (sama dengan **`WEB_PORT`** origin Cloudflare), **`HMR_PUBLIC_HOST`**, **`VITE_DEV_PUBLIC_ORIGIN`**, **`HMR_PUBLIC_CLIENT_PORT=443`**, **`HMR_WSS_PROTOCOL=wss`**.
+  - Jalankan **`./tools/stack-hmr-domain.sh`** (atau `npm run stack:hmr`) — stop **`web`**, start **`web-hmr` + `frontend-dev`** di port 8080. API tetap lewat **`backend`** (bukan backend-dev).
+  - Kembali production statis: **`./tools/stack-prod-web.sh`** (`npm run stack:prod`) — opsional **`--build`** untuk rebuild image `web`.
+  - **502**: Vite belum healthy (tunggu `npm install`); atau port origin Cloudflare bukan 8080.
 - **Workflow Docker (dev vs production)**:
   - **Frontend HMR** lewat **`frontend-dev`** + proxy **`web-hmr`** (bukan service **`web`** statis).
   - Untuk perubahan kode backend harian (source di-mount volume), **cukup restart backend** (`docker compose restart backend`) tanpa rebuild image.
