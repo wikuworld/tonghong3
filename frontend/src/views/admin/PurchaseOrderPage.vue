@@ -9,7 +9,7 @@
       />
       <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Download" :loading="exportLoading" @click="exportPoList">{{ t('common.export') }}</el-button>
-      <el-button v-if="canManage" type="primary" :icon="Plus" @click="openCreateDialog">{{ t('common.create') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreateDialog">{{ t('common.create') }}</el-button>
     </template>
 
     <div class="filter-panel mb-4">
@@ -41,6 +41,19 @@
                 <el-option :label="t('status.draft')" value="draft" />
                 <el-option :label="t('status.confirmed')" value="confirmed" />
                 <el-option :label="t('status.production')" value="production" />
+                <el-option :label="t('status.completed')" value="completed" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="8" :lg="4">
+            <el-form-item :label="t('common.category')">
+              <el-select v-model="filterPoCategory" clearable class="w-full" :placeholder="t('common.category')">
+                <el-option :label="t('status.production')" value="production" />
+                <el-option :label="t('status.sample')" value="sample" />
+                <el-option :label="t('status.claim')" value="claim" />
+                <el-option :label="t('status.return')" value="return" />
+                <el-option :label="t('status.subcont')" value="subcont" />
+                <el-option :label="t('status.suede')" value="suede" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -76,6 +89,8 @@
         </el-row>
       </el-form>
     </div>
+
+    <p class="mb-2 text-xs text-slate-500">{{ t('pages.po.statusLegend') }}</p>
 
     <div class="mb-2 flex flex-wrap items-center gap-2">
       <el-switch v-model="poShowAllColumns" size="small" />
@@ -154,7 +169,7 @@
         show-overflow-tooltip
       >
         <template #default="{ row }">
-          <el-tag v-if="row.stuck_reason" type="warning" size="small" effect="plain">{{ row.stuck_reason }}</el-tag>
+            <el-tag v-if="row.stuck_reason" type="warning" size="small" effect="plain">{{ labelStuckReason(row.stuck_reason) }}</el-tag>
           <span v-else class="text-slate-400 text-xs">—</span>
         </template>
       </el-table-column>
@@ -168,9 +183,14 @@
         <template #default="{ row }">{{ labelMktStage(row.mkt_workflow_stage) }}</template>
       </el-table-column>
       <el-table-column prop="status" :label="t('common.status')" width="140" align="center">
+        <template #header>
+          <el-tooltip :content="t('pages.po.statusColumnHint')" placement="top">
+            <span>{{ t('common.status') }}</span>
+          </el-tooltip>
+        </template>
         <template #default="{ row }">
           <el-popconfirm
-            v-if="canManage"
+            v-if="canUpdate"
             :title="t('pages.po.confirmPo')"
             :confirm-button-text="t('common.yes')"
             :cancel-button-text="t('common.no')"
@@ -200,10 +220,10 @@
             <el-tooltip :content="t('common.detail')" placement="top">
               <el-button :icon="View" link type="primary" :aria-label="t('common.detail')" @click="openDetailDialog(row)" />
             </el-tooltip>
-            <el-tooltip v-if="canManage" :content="t('common.edit')" placement="top">
+            <el-tooltip v-if="canUpdate" :content="t('common.edit')" placement="top">
               <el-button :icon="EditPen" link type="warning" :aria-label="t('common.edit')" @click="openEditDialog(row)" />
             </el-tooltip>
-            <el-tooltip v-if="canManage" :content="t('common.delete')" placement="top">
+            <el-tooltip v-if="canDelete" :content="t('common.delete')" placement="top">
               <el-button :icon="Delete" link type="danger" :aria-label="t('common.delete')" @click="removeRow(row)" />
             </el-tooltip>
             <el-dropdown trigger="click" @command="(cmd) => handlePoMoreAction(row, cmd)">
@@ -212,10 +232,10 @@
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item v-if="canManage" command="duplicate" :icon="CopyDocument">
+                  <el-dropdown-item v-if="canCreate" command="duplicate" :icon="CopyDocument">
                     {{ t('pages.po.duplicatePo') }}
                   </el-dropdown-item>
-                  <el-dropdown-item :divided="canManage" command="salesContractPdf" :icon="Document">
+                  <el-dropdown-item :divided="canCreate" command="salesContractPdf" :icon="Document">
                     {{ t('pages.po.salesContractPdf') }}
                   </el-dropdown-item>
                   <el-dropdown-item command="salesContractDocx" :icon="FolderOpened">
@@ -314,9 +334,10 @@ import PoDetailDialog from '../../components/admin/PoDetailDialog.vue'
 import PoMarketingReviseDialog from '../../components/admin/PoMarketingReviseDialog.vue'
 import { usePoFormWizard } from '../../composables/usePoFormWizard.js'
 import { usePoList } from '../../composables/usePoList.js'
-import { canWrite } from '../../security/permissions'
+import { useModulePermission } from '../../composables/useModulePermission.js'
 import { statusType } from '../../utils/format'
 import { parseApiErrorMessage } from '../../utils/poApi.js'
+import { stuckReasonLabel } from '../../utils/mktStuckReason.js'
 import { createMktStageLabels, mktStageLabel } from '../../utils/mktStage.js'
 import {
   downloadPoListCsv,
@@ -351,7 +372,7 @@ import {
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const canManage = canWrite('po')
+const { canCreate, canUpdate, canDelete } = useModulePermission('po')
 const highlightPoId = ref(null)
 
 const {
@@ -360,6 +381,7 @@ const {
   filterStatus,
   filterBuyer,
   filterOrderDateRange,
+  filterPoCategory,
   rows,
   totalRows,
   page,
@@ -425,7 +447,7 @@ async function load() {
   }
 }
 
-wizard = usePoFormWizard({ t, canManage, customers, brands, masterItems, buyerCodes, load })
+wizard = usePoFormWizard({ t, canCreate, canUpdate, canDelete, customers, brands, masterItems, buyerCodes, load })
 
 const {
   openCreateDialog,
@@ -453,7 +475,15 @@ const {
   confirmAmbiguousMasterPick,
 } = wizard
 
+function labelStuckReason(reason) {
+  return stuckReasonLabel(reason, t, t('common.emptyValue'))
+}
+
 async function quickChangeStatus(row, newStatus) {
+  if (newStatus === 'confirmed' && !Number(row.detail_line_count)) {
+    ElMessage.warning(t('pages.po.confirmNeedsDetail'))
+    return
+  }
   try {
     await updatePo(row.id, { status: newStatus })
     row.status = newStatus

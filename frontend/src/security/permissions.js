@@ -19,8 +19,8 @@ export const ACTION_MATRIX = {
   },
   po: {
     view: ['admin', 'marketing', 'ppic', 'sales', 'production', 'finance'],
-    create: ['admin', 'marketing', 'ppic', 'sales'],
-    update: ['admin', 'marketing', 'ppic', 'finance'],
+    create: ['admin', 'marketing', 'sales'],
+    update: ['admin', 'marketing', 'sales', 'ppic', 'finance'],
     delete: ['admin'],
     advance: ['admin', 'marketing', 'ppic'],
   },

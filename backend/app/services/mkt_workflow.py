@@ -123,14 +123,16 @@ def po_ppic_is_complete(db: "Session", po_id: int) -> bool:
     return row is not None
 
 
-def get_stuck_reason(db: "Session", po_id: int) -> str | None:
-    """Return reason why PO is stuck, or None if ready to advance."""
-    from app.models import PoHeader
-
-    row = db.get(PoHeader, po_id)
-    if not row:
-        return None
-
+def _stuck_reason_for_header(
+  row,
+  *,
+  has_ppic: bool,
+  ppic_complete: bool,
+  has_delivery: bool,
+  has_sj_invpl: bool,
+  has_invoice: bool,
+) -> str | None:
+    """Hitung stuck reason dari header + flags yang sudah di-preload."""
     current_stage = (row.mkt_workflow_stage or "input_system").strip()
     nxt = next_mkt_stage(current_stage)
 
@@ -144,15 +146,15 @@ def get_stuck_reason(db: "Session", po_id: int) -> str | None:
             return "PO belum di-confirm"
 
     elif nxt == "with_ppic":
-        if not po_has_ppic_assignment(db, po_id):
+        if not has_ppic:
             return "Belum di-assign ke PPIC"
 
     elif nxt == "back_to_mkt":
-        if not po_ppic_is_complete(db, po_id):
+        if not ppic_complete:
             return "Menunggu PPIC menyelesaikan tugas"
 
     elif nxt == "in_outstanding":
-        if not po_ppic_is_complete(db, po_id):
+        if not ppic_complete:
             return "Menunggu PPIC menyelesaikan tugas"
 
     elif nxt == "material_followup":
@@ -162,18 +164,114 @@ def get_stuck_reason(db: "Session", po_id: int) -> str | None:
     elif nxt == "delivery_arranged":
         if not row.material_followup_done:
             return "Material belum selesai di-follow up"
-        if not po_has_delivery_for_po(db, po_id):
+        if not has_delivery:
             return "Delivery belum dibuat"
 
     elif nxt == "sj_invpl":
-        if not po_has_sj_invpl_prints(db, po_id):
+        if not has_sj_invpl:
             return "SJ/INVPL belum dicetak"
 
     elif nxt == "invoice_billing":
-        if not po_has_invoice_for_po(db, po_id):
+        if not has_invoice:
             return "Invoice belum dibuat"
 
     return None
+
+
+def _po_ids_with_delivery(db: "Session", po_ids: list[int]) -> set[int]:
+    from app.models import DeliveryDetail, DeliveryHeader, PoDetail, ProductionDetail
+
+    if not po_ids:
+        return set()
+    rows = db.scalars(
+        select(PoDetail.po_id)
+        .join(ProductionDetail, ProductionDetail.po_detail_id == PoDetail.id)
+        .join(DeliveryDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
+        .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
+        .where(PoDetail.po_id.in_(po_ids))
+        .distinct()
+    ).all()
+    return {int(x) for x in rows if x is not None}
+
+
+def _po_ids_with_invoice(db: "Session", po_ids: list[int]) -> set[int]:
+    from app.models import DeliveryDetail, DeliveryHeader, Invoice, PoDetail, ProductionDetail
+
+    if not po_ids:
+        return set()
+    rows = db.scalars(
+        select(PoDetail.po_id)
+        .join(ProductionDetail, ProductionDetail.po_detail_id == PoDetail.id)
+        .join(DeliveryDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
+        .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
+        .join(Invoice, Invoice.delivery_id == DeliveryHeader.id)
+        .where(PoDetail.po_id.in_(po_ids))
+        .distinct()
+    ).all()
+    return {int(x) for x in rows if x is not None}
+
+
+def _build_stuck_reason_context(db: "Session", po_ids: list[int]) -> dict[int, dict[str, bool]]:
+    if not po_ids:
+        return {}
+
+    has_ppic: set[int] = set()
+    ppic_complete: set[int] = set()
+    for po_id in po_ids:
+        if po_has_ppic_assignment(db, po_id):
+            has_ppic.add(po_id)
+        if po_ppic_is_complete(db, po_id):
+            ppic_complete.add(po_id)
+
+    has_delivery = _po_ids_with_delivery(db, po_ids)
+    has_invoice = _po_ids_with_invoice(db, po_ids)
+    has_sj_invpl: set[int] = set()
+    for po_id in po_ids:
+        if po_has_sj_invpl_prints(db, po_id):
+            has_sj_invpl.add(po_id)
+
+    return {
+        po_id: {
+            "has_ppic": po_id in has_ppic,
+            "ppic_complete": po_id in ppic_complete,
+            "has_delivery": po_id in has_delivery,
+            "has_sj_invpl": po_id in has_sj_invpl,
+            "has_invoice": po_id in has_invoice,
+        }
+        for po_id in po_ids
+    }
+
+
+def attach_stuck_reasons_batch(db: "Session", headers: list) -> None:
+    """Isi atribut stuck_reason pada instance PoHeader (in-place), batch-friendly."""
+    if not headers:
+        return
+    po_ids = [int(h.id) for h in headers if getattr(h, "id", None) is not None]
+    ctx = _build_stuck_reason_context(db, po_ids)
+    for row in headers:
+        if row.id is None:
+            row.stuck_reason = None
+            continue
+        flags = ctx.get(int(row.id), {})
+        row.stuck_reason = _stuck_reason_for_header(
+            row,
+            has_ppic=flags.get("has_ppic", False),
+            ppic_complete=flags.get("ppic_complete", False),
+            has_delivery=flags.get("has_delivery", False),
+            has_sj_invpl=flags.get("has_sj_invpl", False),
+            has_invoice=flags.get("has_invoice", False),
+        )
+
+
+def get_stuck_reason(db: "Session", po_id: int) -> str | None:
+    """Return reason why PO is stuck, or None if ready to advance."""
+    from app.models import PoHeader
+
+    row = db.get(PoHeader, po_id)
+    if not row:
+        return None
+    attach_stuck_reasons_batch(db, [row])
+    return row.stuck_reason
 
 
 def auto_advance_if_ready(db: "Session", po_id: int) -> str | None:

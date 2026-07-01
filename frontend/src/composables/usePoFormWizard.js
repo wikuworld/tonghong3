@@ -3,6 +3,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { providePoWizardContext } from './poFormWizardContext.js'
 import { usePoMarketingRevise } from './usePoMarketingRevise.js'
+import { usePoStepCustomer, brandAllowedForCustomer, brandCustomerIds } from './usePoStepCustomer.js'
+import { usePoStepLines } from './usePoStepLines.js'
+import { usePoStepReview } from './usePoStepReview.js'
 import {
   createEtdScheduleRow,
   emptyEtdScheduleRows,
@@ -86,7 +89,18 @@ function localTodayIsoDate() {
 }
 
 /** State & handler wizard PO (form dialog 3-step). */
-export function usePoFormWizard({ t, canManage, customers, brands, masterItems, buyerCodes, load }) {
+export function usePoFormWizard({
+  t,
+  canCreate,
+  canUpdate,
+  canDelete,
+  customers,
+  brands,
+  masterItems,
+  buyerCodes,
+  load,
+}) {
+  const canManage = computed(() => canCreate.value || canUpdate.value)
   function formatCustomerOption(c) {
     return customerOptionLabel(c, t)
   }
@@ -123,29 +137,11 @@ let lotAutoTimer = null
 let skipLotAutoUntil = 0
 let lotAutoSeq = 0
 
-function brandCustomerIds(brand) {
-  if (!brand) return []
-  if (Array.isArray(brand.customer_ids) && brand.customer_ids.length) {
-    return brand.customer_ids.map((id) => Number(id)).filter((id) => Number.isFinite(id))
-  }
-  if (brand.customer_id != null) return [Number(brand.customer_id)]
-  return []
-}
-
 function brandAllowedForCustomer(brand, customerId) {
   if (!customerId) return true
   const mapped = brandCustomerIds(brand)
   if (!mapped.length) return true
   return mapped.includes(Number(customerId))
-}
-
-function pickDefaultBrandId(brandIds, mappings) {
-  const allowed = new Set(brandIds.map((id) => Number(id)))
-  const defaultRow = (mappings || []).find(
-    (m) => m.is_default && allowed.has(Number(m.brand_id)),
-  )
-  if (defaultRow) return Number(defaultRow.brand_id)
-  return brandIds.length ? Number(brandIds[0]) : null
 }
 
 const brandsFiltered = computed(() => {
@@ -192,16 +188,6 @@ const nextPoNumberDisplay = computed(() => {
   if (isEditMode.value) return formModel.po_number || ''
   return nextPoNumberPreview.value || '…'
 })
-
-async function refreshNextPoNumberPreview() {
-  if (isEditMode.value) return
-  try {
-    const r = await fetchNextPoNumber()
-    nextPoNumberPreview.value = r?.po_number || ''
-  } catch {
-    nextPoNumberPreview.value = ''
-  }
-}
 
 const currentStep = ref(0)
 
@@ -341,68 +327,18 @@ const showColorStandardBackingFields = computed(
   () => !selectedSwatchId.value || swatchFieldsManualEdit.value,
 )
 
-const etdScheduleOpen = ref(['schedule'])
-const etdScheduleRows = ref(emptyEtdScheduleRows())
-
-function clearEtdScheduleRows() {
-  etdScheduleRows.value = emptyEtdScheduleRows()
-}
-
-const etdScheduleCanAdd = computed(
-  () => etdScheduleRows.value.length < ETD_SCHEDULE_SLOTS,
-)
-
-function addEtdScheduleRow() {
-  if (!etdScheduleCanAdd.value) {
-    ElMessage.warning(t('pages.po.scheduleMaxWaves', { max: ETD_SCHEDULE_SLOTS }))
-    return
-  }
-  etdScheduleRows.value = resequenceEtdScheduleRows([
-    ...etdScheduleRows.value,
-    createEtdScheduleRow(etdScheduleRows.value.length + 1),
-  ])
-}
-
-function removeEtdScheduleRow(index) {
-  if (etdScheduleRows.value.length <= 1) return
-  const next = [...etdScheduleRows.value]
-  next.splice(index, 1)
-  etdScheduleRows.value = resequenceEtdScheduleRows(next)
-}
-
-const etdScheduleTotal = computed(() =>
-  etdScheduleRows.value.reduce((sum, r) => sum + (Number(r.qty) || 0), 0),
-)
-
-const etdScheduleTotalDisplay = computed(() => {
-  const t = etdScheduleTotal.value
-  return t ? String(t) : '0'
-})
-
-const etdScheduleMismatch = computed(() => lineHasScheduleMismatch({
-  quantity_order: formModel.quantity_order,
-  delivery_schedules: etdScheduleRowsToPayload(etdScheduleRows.value),
-}, etdScheduleRows.value))
-
-function autoFillEtdScheduleWave1() {
-  const qty = Number(formModel.quantity_order)
-  if (!qty) {
-    ElMessage.warning(t('pages.po.scheduleNeedQty'))
-    return
-  }
-  clearEtdScheduleRows()
-  etdScheduleRows.value[0].qty = qty
-  etdScheduleRows.value[0].date = formModel.etd ? String(formModel.etd).slice(0, 10) : ''
-}
-
-function autoFillEtdScheduleEvenly() {
-  const qty = Number(formModel.quantity_order)
-  if (!qty) {
-    ElMessage.warning(t('pages.po.scheduleNeedQty'))
-    return
-  }
-  etdScheduleRows.value = buildEvenEtdScheduleRows(qty, formModel.etd)
-}
+const {
+  etdScheduleOpen,
+  etdScheduleRows,
+  clearEtdScheduleRows,
+  etdScheduleCanAdd,
+  addEtdScheduleRow,
+  removeEtdScheduleRow,
+  etdScheduleTotalDisplay,
+  etdScheduleMismatch,
+  autoFillEtdScheduleWave1,
+  autoFillEtdScheduleEvenly,
+} = usePoStepReview({ t, formModel })
 
 async function syncCurrentFormToDraftLine() {
   if (editingDraftLineIndex.value < 0) return
@@ -703,6 +639,35 @@ function applyAutoFactoryCode(customer, { force = false } = {}) {
     formModel.factory_code = code
     autoFieldMeta.factory_code = true
   }
+}
+
+const stepCustomer = usePoStepCustomer({
+  t,
+  formModel,
+  formErrors,
+  brands,
+  customers,
+  brandBuyerCodes,
+  customerBuyerCodes,
+  brandLockedCustomerId,
+  allowedBrandIds,
+  selectedCustomer,
+  autoFieldMeta,
+  isEditMode,
+  nextPoNumberPreview,
+  applyAutoFactoryCode,
+})
+const { refreshNextPoNumberPreview, onCustomerChange, onBrandChange } = stepCustomer
+
+const stepLines = usePoStepLines({
+  materialDimensionOptions,
+  thicknessDimensionOptions,
+  masterDimensionCategoryParam,
+})
+const { refreshMaterialDimensionOptions } = stepLines
+
+function upsertMasterItemInCache(row) {
+  stepLines.upsertMasterItemInCache(masterItems, row)
 }
 
 function poFactoryKeyForSwatch() {
@@ -1388,124 +1353,6 @@ function saveDraftAndClose() {
   savePoDraftToLocal()
   ElMessage.success('Draft PO disimpan. Kamu bisa lanjutkan nanti.')
   formDialogVisible.value = false
-}
-
-async function onCustomerChange() {
-  if (brandLockedCustomerId.value) {
-    formModel.customer_id = brandLockedCustomerId.value
-    return
-  }
-  brandLockedCustomerId.value = null
-  formModel.brand_id = null
-  brandBuyerCodes.value = []
-  customerBuyerCodes.value = []
-  formModel.buyer = ''
-  allowedBrandIds.value = []
-  const cid = formModel.customer_id
-  if (cid) {
-    try {
-      const [allowed, customer, mappings] = await Promise.all([
-        getAllowedBrands(cid),
-        getCustomer(cid),
-        listCustomerBrandMappings(cid).catch(() => []),
-      ])
-      allowedBrandIds.value = allowed.map((b) => b.id)
-      selectedCustomer.value = customer || null
-      if (allowedBrandIds.value.length > 0) {
-        const stillValid =
-          formModel.brand_id && allowedBrandIds.value.includes(formModel.brand_id)
-        formModel.brand_id = stillValid
-          ? formModel.brand_id
-          : pickDefaultBrandId(allowedBrandIds.value, mappings)
-        await onBrandChange(formModel.brand_id, { fromCustomerChange: true })
-      } else {
-        formModel.brand_id = null
-      }
-      if (customer) {
-        applyAutoFactoryCode(customer, { force: true })
-        formModel.billing_address = customer.address || ''
-        formModel.delivery_address = customer.address || ''
-      }
-    } catch {
-      allowedBrandIds.value = []
-      selectedCustomer.value = null
-    }
-  } else {
-    formModel.billing_address = ''
-    formModel.delivery_address = ''
-    formModel.factory_code = ''
-    autoFieldMeta.factory_code = false
-    customerBuyerCodes.value = []
-    selectedCustomer.value = null
-  }
-}
-
-async function onBrandChange(brandId, { fromCustomerChange = false } = {}) {
-  brandBuyerCodes.value = []
-  if (!fromCustomerChange) {
-    brandLockedCustomerId.value = null
-  }
-  if (!brandId) return
-  try {
-    if (!fromCustomerChange) {
-      const selectedBrand = brands.value.find((b) => b.id === brandId)
-      const currentCustomerId = formModel.customer_id
-      const mappedIds = brandCustomerIds(selectedBrand)
-      if (currentCustomerId && mappedIds.length) {
-        if (!mappedIds.includes(Number(currentCustomerId))) {
-          const fallbackId = mappedIds[0]
-          formModel.customer_id = fallbackId
-          selectedCustomer.value =
-            customers.value.find((x) => x.id === fallbackId) || selectedCustomer.value
-          if (selectedCustomer.value) {
-            applyAutoFactoryCode(selectedCustomer.value, { force: true })
-            formModel.billing_address = selectedCustomer.value.address || ''
-            formModel.delivery_address = selectedCustomer.value.address || ''
-          }
-        }
-      } else if (!currentCustomerId && mappedIds.length === 1) {
-        brandLockedCustomerId.value = mappedIds[0]
-        formModel.customer_id = mappedIds[0]
-        const cust = customers.value.find((x) => x.id === mappedIds[0])
-        if (cust) {
-          selectedCustomer.value = cust
-          applyAutoFactoryCode(cust, { force: true })
-          formModel.billing_address = cust.address || ''
-          formModel.delivery_address = cust.address || ''
-        }
-      }
-    }
-    const rows = await listBrandBuyers(brandId)
-    brandBuyerCodes.value = rows.map((x) => x.buyer_code).filter(Boolean)
-    if (brandBuyerCodes.value.length) {
-      if (!brandBuyerCodes.value.includes(formModel.buyer)) {
-        formModel.buyer = brandBuyerCodes.value[0]
-        autoFieldMeta.buyer = true
-      }
-    } else if (formModel.brand_id) {
-      formModel.buyer = ''
-      autoFieldMeta.buyer = false
-    }
-  } catch {
-    brandBuyerCodes.value = []
-  }
-}
-
-function upsertMasterItemInCache(row) {
-  if (!row?.id) return
-  const rows = masterItems.value
-  const idx = rows.findIndex((x) => x.id === row.id)
-  if (idx >= 0) rows[idx] = { ...rows[idx], ...row }
-  else rows.push(row)
-}
-
-async function refreshMaterialDimensionOptions() {
-  try {
-    const r = await listMasterItemDimensionValues('materials', { category: masterDimensionCategoryParam() })
-    materialDimensionOptions.value = r.values || []
-  } catch {
-    materialDimensionOptions.value = []
-  }
 }
 
 async function refreshThicknessOptionsFromApi() {

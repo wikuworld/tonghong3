@@ -12,6 +12,7 @@ export function usePoList({ t }) {
   const filterCustomerId = ref(null)
   const filterStatus = ref('')
   const filterBuyer = ref('')
+  const filterPoCategory = ref('')
   const filterOrderDateRange = ref(null)
   const rows = ref([])
   const totalRows = ref(0)
@@ -26,6 +27,7 @@ export function usePoList({ t }) {
       keyword: keyword.value,
       filterCustomerId: filterCustomerId.value,
       filterBuyer: filterBuyer.value,
+      filterPoCategory: filterPoCategory.value,
       filterStatus: filterStatus.value,
       filterOrderDateRange: filterOrderDateRange.value,
       page: page.value,
@@ -46,6 +48,7 @@ export function usePoList({ t }) {
     filterCustomerId.value = null
     filterStatus.value = ''
     filterBuyer.value = ''
+    filterPoCategory.value = ''
     keyword.value = ''
     filterOrderDateRange.value = null
     page.value = 1
@@ -54,7 +57,7 @@ export function usePoList({ t }) {
 
   function registerFilterWatch(loadFn) {
     let filterLoadTimer = null
-    watch([keyword, filterCustomerId, filterBuyer, filterStatus, filterOrderDateRange], () => {
+    watch([keyword, filterCustomerId, filterBuyer, filterPoCategory, filterStatus, filterOrderDateRange], () => {
       page.value = 1
       if (filterLoadTimer) clearTimeout(filterLoadTimer)
       filterLoadTimer = setTimeout(() => {
@@ -71,6 +74,7 @@ export function usePoList({ t }) {
     filterCustomerId,
     filterStatus,
     filterBuyer,
+    filterPoCategory,
     filterOrderDateRange,
     rows,
     totalRows,

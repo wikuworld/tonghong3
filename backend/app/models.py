@@ -468,6 +468,7 @@ class PoHeader(Base):
     brand_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("brands.id"))
     marketing_excel_date_serial: Mapped[Optional[int]] = mapped_column(Integer)
     po_customer_ref: Mapped[Optional[str]] = mapped_column(Text)
+    po_customer_ref_norm: Mapped[Optional[str]] = mapped_column(String(255))
     order_type_label: Mapped[Optional[str]] = mapped_column(String(50))
     brand_name_snapshot: Mapped[Optional[str]] = mapped_column(String(255))
     customer_name_snapshot: Mapped[Optional[str]] = mapped_column(String(255))

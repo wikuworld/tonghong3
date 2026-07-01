@@ -557,6 +557,7 @@ import {
 } from '../../api/client'
 import { can } from '../../security/permissions'
 import { useModulePermission } from '../../composables/useModulePermission'
+import { stuckReasonLabel as translateStuckReason } from '../../utils/mktStuckReason.js'
 
 const OUTSTANDING_LINES_LIMIT = 1000
 
@@ -1302,22 +1303,8 @@ function ppicStatusLabel(status) {
   return labels[status] || status || '—'
 }
 
-const STUCK_REASON_I18N_KEYS = {
-  'Menunggu rekap PO diprint': 'pages.marketingFlow.stuckReasons.waitRekapPrint',
-  'PO belum di-confirm': 'pages.marketingFlow.stuckReasons.poNotConfirmed',
-  'Belum di-assign ke PPIC': 'pages.marketingFlow.stuckReasons.ppicNotAssigned',
-  'Menunggu PPIC menyelesaikan tugas': 'pages.marketingFlow.stuckReasons.ppicNotComplete',
-  'Material belum di-follow up': 'pages.marketingFlow.stuckReasons.materialNotFollowedUp',
-  'Material belum selesai di-follow up': 'pages.marketingFlow.stuckReasons.materialFollowUpIncomplete',
-  'Delivery belum dibuat': 'pages.marketingFlow.stuckReasons.deliveryNotCreated',
-  'SJ/INVPL belum dicetak': 'pages.marketingFlow.stuckReasons.sjInvplNotPrinted',
-  'Invoice belum dibuat': 'pages.marketingFlow.stuckReasons.invoiceNotCreated',
-}
-
 function stuckReasonLabel(reason) {
-  if (!reason) return ''
-  const key = STUCK_REASON_I18N_KEYS[reason]
-  return key ? t(key) : reason
+  return translateStuckReason(reason, t)
 }
 
 function openMaterialFollowUpDialog(row) {

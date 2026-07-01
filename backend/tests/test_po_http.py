@@ -2,7 +2,7 @@
 
 from types import SimpleNamespace
 
-from app.models import PoDetail
+from app.models import PoDetail, PoHeader, ProductionOrder
 
 from tests.http_fixtures import (
     DummyDbSession,
@@ -14,6 +14,89 @@ from tests.http_fixtures import (
 )
 
 _PREFIX = "/api/v1"
+
+
+class _PoDeleteDb(DummyDbSession):
+  def __init__(self, *, po, production=None, block_reason=None):
+    super().__init__()
+    self.po = po
+    self.production = production
+    self.block_reason = block_reason
+    self.deleted = False
+
+  def get(self, model, obj_id):
+    if model is PoHeader and obj_id == getattr(self.po, "id", None):
+      return self.po
+    if model is ProductionOrder and self.production and obj_id == self.production.id:
+      return self.production
+    return None
+
+  def query(self, model):
+    class _Q:
+      def __init__(self, outer, model):
+        self.outer = outer
+        self.model = model
+
+      def filter(self, *args, **kwargs):
+        return self
+
+      def count(self):
+        if self.outer.block_reason == "subcon":
+          return 1
+        if self.outer.block_reason == "ppic":
+          return 1
+        return 0
+
+    return _Q(self, model)
+
+  def scalars(self, _stmt):
+    class _R:
+      def __init__(self, outer):
+        self.outer = outer
+
+      def first(self):
+        if self.outer.block_reason == "production":
+          return 99
+        if self.outer.block_reason == "invoice":
+          return 1
+        if self.outer.block_reason == "delivery":
+          return 1
+        return None
+
+      def all(self):
+        return []
+
+    return _R(self)
+
+  def delete(self, obj):
+    self.deleted = True
+
+  def add(self, _obj):
+    return None
+
+  def commit(self):
+    return None
+
+
+class _PoConfirmDb(DummyDbSession):
+  def __init__(self, *, po, detail_count=0):
+    super().__init__()
+    self.po = po
+    self.detail_count = detail_count
+
+  def get(self, model, obj_id):
+    if model is PoHeader:
+      return self.po
+    return None
+
+  def scalar(self, _stmt):
+    return self.detail_count
+
+  def commit(self):
+    return None
+
+  def refresh(self, _row):
+    return None
 
 
 def test_po_list_requires_auth():
@@ -54,6 +137,52 @@ def test_po_delete_non_admin_forbidden():
     set_auth_user("marketing")
     try:
         assert_status(client, "DELETE", f"{_PREFIX}/po/1", 403)
+    finally:
+        clear_api_overrides()
+
+
+def test_po_delete_blocked_when_production_exists():
+    po = SimpleNamespace(id=7, po_number="SO-TEST", status="draft")
+    client = make_api_client(_PoDeleteDb(po=po, block_reason="production"))
+    set_auth_user("admin")
+    try:
+        resp = client.delete(f"{_PREFIX}/po/7")
+        assert resp.status_code == 400
+        assert "production" in resp.json()["detail"].lower()
+    finally:
+        clear_api_overrides()
+
+
+def test_po_delete_allowed_for_clean_draft():
+    po = SimpleNamespace(id=8, po_number="SO-DRAFT", status="draft")
+    db = _PoDeleteDb(po=po)
+    client = make_api_client(db)
+    set_auth_user("admin")
+    try:
+        resp = client.delete(f"{_PREFIX}/po/8")
+        assert resp.status_code == 200
+        assert db.deleted is True
+    finally:
+        clear_api_overrides()
+
+
+def test_po_confirm_without_details_rejected():
+    po = SimpleNamespace(
+        id=9,
+        po_number="SO-EMPTY",
+        status="draft",
+        customer_id=None,
+        brand_id=None,
+        buyer="NB",
+        po_customer_ref="REF-9",
+        mkt_workflow_stage="input_system",
+    )
+    client = make_api_client(_PoConfirmDb(po=po, detail_count=0))
+    set_auth_user("marketing")
+    try:
+        resp = client.put(f"{_PREFIX}/po/9", json={"status": "confirmed"})
+        assert resp.status_code == 400
+        assert "baris detail" in resp.json()["detail"].lower()
     finally:
         clear_api_overrides()
 

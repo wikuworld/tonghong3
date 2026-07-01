@@ -1,16 +1,15 @@
 import logging
 import re
-from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
-from app.models import Brand, CustomerBrandMapping, FluorescentColorMaster, PoDetail, PoDetailDelivery, PoHeader, SubconInvoice, PpicsAssignment
+from app.models import Brand, CustomerBrandMapping, FluorescentColorMaster, PoDetail, PoDetailDelivery, PoHeader
 from app.services.audit import log_change
 from app.services.numbering import next_number, peek_number
 from app.schemas import (
@@ -36,14 +35,15 @@ from app.services.business_rules import validate_po_status_transition
 from app.services.mkt_workflow import (
     MKT_STAGES_ORDER,
     apply_mkt_stage,
-    get_stuck_reason,
     next_mkt_stage,
     prev_mkt_stage,
     sync_mkt_workflow_auto_advance,
     validate_mkt_advance,
 )
-from app.services.po_header_snapshots import apply_header_snapshots, resolve_header_snapshots_for_list
-from app.services.po_list_summary import attach_po_list_summaries, compute_po_list_summaries, serialize_po_headers_for_list
+from app.services.po_delete_guards import validate_po_deletable
+from app.services.po_query import po_list_count, po_list_select
+from app.services.po_header_snapshots import apply_header_snapshots
+from app.services.po_list_summary import compute_po_list_summaries, serialize_po_headers_for_list
 from app.services.lot_numbers import (
     _material_group_from_inputs,
     generate_lot_number,
@@ -59,13 +59,43 @@ PO_MAX_DELIVERY_SCHEDULES = 21
 log = logging.getLogger(__name__)
 
 
-def _parse_query_date(s: Optional[str]) -> Optional[date]:
-    if not s or not str(s).strip():
-        return None
-    try:
-        return date.fromisoformat(str(s).strip()[:10])
-    except ValueError:
-        return None
+def _po_list_filter_kwargs(
+    *,
+    mkt_workflow_stage: Optional[str] = None,
+    q: Optional[str] = None,
+    customer_id: Optional[int] = None,
+    buyer: Optional[str] = None,
+    status: Optional[str] = None,
+    po_category: Optional[str] = None,
+    order_date: Optional[str] = None,
+    order_date_from: Optional[str] = None,
+    order_date_to: Optional[str] = None,
+) -> dict:
+    return {
+        "mkt_workflow_stage": mkt_workflow_stage,
+        "q": q,
+        "customer_id": customer_id,
+        "buyer": buyer,
+        "status": status,
+        "po_category": po_category,
+        "order_date": order_date,
+        "order_date_from": order_date_from,
+        "order_date_to": order_date_to,
+    }
+
+
+def _validate_po_has_details_for_confirm(db: Session, po_id: int, new_status: str) -> None:
+    if new_status != "confirmed":
+        return
+    cnt = int(
+        db.scalar(select(func.count(PoDetail.id)).where(PoDetail.po_id == po_id)) or 0
+    )
+    if cnt < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="PO tidak dapat dikonfirmasi tanpa minimal satu baris detail.",
+        )
+
 
 _ALLOWED_PO_CATEGORY_DUP = frozenset(
     {"production", "sample", "claim", "return", "subcont", "suede"},
@@ -116,6 +146,16 @@ def _detail_loaded(db: Session, detail_id: int) -> Optional[PoDetail]:
 
 def _normalize_po_customer_ref(raw: Optional[str]) -> str:
     return (raw or "").strip()
+
+
+def _po_customer_ref_norm(raw: Optional[str]) -> Optional[str]:
+    ref = _normalize_po_customer_ref(raw)
+    return ref.lower() if ref else None
+
+
+def _apply_po_customer_ref_fields(data: dict) -> None:
+    if "po_customer_ref" in data:
+        data["po_customer_ref_norm"] = _po_customer_ref_norm(data.get("po_customer_ref"))
 
 
 def _find_po_customer_ref_conflict(
@@ -315,40 +355,18 @@ def list_po(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> list[PoHeader]:
-    stmt = select(PoHeader).order_by(PoHeader.id.desc()).limit(limit).offset(offset)
-    if mkt_workflow_stage:
-        stmt = stmt.where(PoHeader.mkt_workflow_stage == mkt_workflow_stage)
-    if customer_id is not None:
-        stmt = stmt.where(PoHeader.customer_id == customer_id)
-    if buyer:
-        stmt = stmt.where(PoHeader.buyer == buyer)
-    if status:
-        stmt = stmt.where(PoHeader.status == status)
-    if po_category:
-        stmt = stmt.where(PoHeader.po_category == po_category)
-    d_from = _parse_query_date(order_date_from)
-    d_to = _parse_query_date(order_date_to)
-    d_one = _parse_query_date(order_date)
-    if d_from is not None or d_to is not None:
-        if d_from is not None:
-            stmt = stmt.where(PoHeader.order_date.is_not(None), PoHeader.order_date >= d_from)
-        if d_to is not None:
-            stmt = stmt.where(PoHeader.order_date.is_not(None), PoHeader.order_date <= d_to)
-    elif d_one is not None:
-        stmt = stmt.where(PoHeader.order_date == d_one)
-    if q:
-        like = f"%{q}%"
-        po_ids_by_detail_material = select(PoDetail.po_id).where(PoDetail.material_name.ilike(like))
-        stmt = stmt.where(
-            or_(
-                PoHeader.po_number.ilike(like),
-                PoHeader.buyer.ilike(like),
-                PoHeader.po_customer_ref.ilike(like),
-                PoHeader.customer_name_snapshot.ilike(like),
-                PoHeader.customer_code.ilike(like),
-                PoHeader.id.in_(po_ids_by_detail_material),
-            )
-        )
+    filters = _po_list_filter_kwargs(
+        mkt_workflow_stage=mkt_workflow_stage,
+        q=q,
+        customer_id=customer_id,
+        buyer=buyer,
+        status=status,
+        po_category=po_category,
+        order_date=order_date,
+        order_date_from=order_date_from,
+        order_date_to=order_date_to,
+    )
+    stmt = po_list_select(**filters).order_by(PoHeader.id.desc()).limit(limit).offset(offset)
     results = list(db.scalars(stmt).all())
     return serialize_po_headers_for_list(db, results)
 
@@ -369,55 +387,21 @@ def list_po_page(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> PoHeaderPageOut:
-    stmt = select(PoHeader)
-    count_stmt = select(func.count(PoHeader.id))
-    if mkt_workflow_stage:
-        stmt = stmt.where(PoHeader.mkt_workflow_stage == mkt_workflow_stage)
-        count_stmt = count_stmt.where(PoHeader.mkt_workflow_stage == mkt_workflow_stage)
-    if customer_id is not None:
-        stmt = stmt.where(PoHeader.customer_id == customer_id)
-        count_stmt = count_stmt.where(PoHeader.customer_id == customer_id)
-    if buyer:
-        stmt = stmt.where(PoHeader.buyer == buyer)
-        count_stmt = count_stmt.where(PoHeader.buyer == buyer)
-    if status:
-        stmt = stmt.where(PoHeader.status == status)
-        count_stmt = count_stmt.where(PoHeader.status == status)
-    if po_category:
-        stmt = stmt.where(PoHeader.po_category == po_category)
-        count_stmt = count_stmt.where(PoHeader.po_category == po_category)
-    d_from = _parse_query_date(order_date_from)
-    d_to = _parse_query_date(order_date_to)
-    d_one = _parse_query_date(order_date)
-    if d_from is not None or d_to is not None:
-        if d_from is not None:
-            w = (PoHeader.order_date.is_not(None), PoHeader.order_date >= d_from)
-            stmt = stmt.where(*w)
-            count_stmt = count_stmt.where(*w)
-        if d_to is not None:
-            w = (PoHeader.order_date.is_not(None), PoHeader.order_date <= d_to)
-            stmt = stmt.where(*w)
-            count_stmt = count_stmt.where(*w)
-    elif d_one is not None:
-        stmt = stmt.where(PoHeader.order_date == d_one)
-        count_stmt = count_stmt.where(PoHeader.order_date == d_one)
-    if q:
-        like = f"%{q}%"
-        po_ids_by_detail_material = select(PoDetail.po_id).where(PoDetail.material_name.ilike(like))
-        where_clause = or_(
-            PoHeader.po_number.ilike(like),
-            PoHeader.buyer.ilike(like),
-            PoHeader.po_customer_ref.ilike(like),
-            PoHeader.customer_name_snapshot.ilike(like),
-            PoHeader.customer_code.ilike(like),
-            PoHeader.id.in_(po_ids_by_detail_material),
-        )
-        stmt = stmt.where(where_clause)
-        count_stmt = count_stmt.where(where_clause)
-    total = int(db.scalar(count_stmt) or 0)
+    filters = _po_list_filter_kwargs(
+        mkt_workflow_stage=mkt_workflow_stage,
+        q=q,
+        customer_id=customer_id,
+        buyer=buyer,
+        status=status,
+        po_category=po_category,
+        order_date=order_date,
+        order_date_from=order_date_from,
+        order_date_to=order_date_to,
+    )
+    total = po_list_count(db, **filters)
     items = list(
         db.scalars(
-            stmt.order_by(PoHeader.id.desc()).limit(limit).offset(offset)
+            po_list_select(**filters).order_by(PoHeader.id.desc()).limit(limit).offset(offset)
         ).all()
     )
     items_out = serialize_po_headers_for_list(db, items)
@@ -554,6 +538,7 @@ def create_po(
         # Auto-generate po_customer_ref if empty
         if not data.get("po_customer_ref"):
             data["po_customer_ref"] = f"PO-{data['po_number']}"
+        _apply_po_customer_ref_fields(data)
         row = PoHeader(**data)
         db.add(row)
         db.flush()
@@ -772,7 +757,7 @@ def update_po(
     po_id: int,
     body: PoHeaderUpdate,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin", "marketing", "ppic")),
+    user=Depends(require_roles("admin", "marketing", "sales", "ppic")),
 ) -> PoHeader:
     row = db.get(PoHeader, po_id)
     if not row:
@@ -807,6 +792,8 @@ def update_po(
             data[snap_key] = merged[snap_key]
     if "status" in data:
         validate_po_status_transition(row.status, data["status"])
+        _validate_po_has_details_for_confirm(db, po_id, data["status"])
+    _apply_po_customer_ref_fields(data)
     for k, v in data.items():
         setattr(row, k, v)
     if "status" in data and data["status"] != before["status"]:
@@ -956,27 +943,9 @@ def delete_po(
     row = db.get(PoHeader, po_id)
     if not row:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
-    
-    active_invoices = db.query(SubconInvoice).filter(
-        SubconInvoice.po_id == po_id,
-        SubconInvoice.status.notin_(["cancelled", "paid"])
-    ).count()
-    if active_invoices > 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Tidak dapat menghapus PO dengan subcon invoice yang aktif"
-        )
-    
-    active_assignments = db.query(PpicsAssignment).filter(
-        PpicsAssignment.po_id == po_id,
-        PpicsAssignment.status.notin_(["completed", "cancelled"])
-    ).count()
-    if active_assignments > 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Tidak dapat menghapus PO dengan PPIC assignment yang aktif"
-        )
-    
+
+    validate_po_deletable(db, po_id)
+
     log_change(
         db,
         entity_type="sales_order",

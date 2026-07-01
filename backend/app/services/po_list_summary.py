@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.models import PoDetail, PoHeader
-from app.services.mkt_workflow import get_stuck_reason
+from app.services.mkt_workflow import attach_stuck_reasons_batch
 from app.services.po_header_snapshots import resolve_header_snapshots_for_list
 
 if TYPE_CHECKING:
@@ -130,8 +130,7 @@ def serialize_po_headers_for_list(db: Session, items: list[PoHeader]) -> list:
     """Enrich header PO untuk response API (snapshot, material, ETD, stuck reason)."""
     from app.schemas import PoHeaderOut
 
-    for po in items:
-        po.stuck_reason = get_stuck_reason(db, po.id)
+    attach_stuck_reasons_batch(db, items)
     resolve_header_snapshots_for_list(db, items)
     attach_po_list_summaries(db, items)
     return [PoHeaderOut.model_validate(po) for po in items]
