@@ -14,6 +14,30 @@ def _norm_text(value: str | None) -> str:
     return " ".join(str(value or "").strip().lower().split())
 
 
+_CATEGORY_ALIASES = {
+    "pu": "pu",
+    "suide": "suide",
+    "suede": "suide",
+    "subkon": "subkon",
+    "subcont": "subkon",
+    "subcontract": "subkon",
+}
+
+
+def filter_by_category(rows: list[MasterItem], category: str | None) -> list[MasterItem]:
+    raw = (category or "").strip().lower()
+    if not raw:
+        return rows
+    target = _CATEGORY_ALIASES.get(raw, raw)
+    out: list[MasterItem] = []
+    for row in rows:
+        cat = (row.category or "").strip().lower()
+        norm = _CATEGORY_ALIASES.get(cat, cat)
+        if norm == target:
+            out.append(row)
+    return out
+
+
 def master_item_thickness_display(row: MasterItem) -> str:
     if row.thickness_range and str(row.thickness_range).strip():
         return canonical_thickness_range(str(row.thickness_range).strip())

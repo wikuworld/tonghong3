@@ -865,7 +865,7 @@ class LotSequence(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    # Contoh: MYC, SYC, BYC, QYC, PUM, PUS, PUC, PUR
+    # Contoh: MYC, SYC, BYC, QYC, KYC, PUM, PUS, PUC, PUR, PUK
     prefix: Mapped[str] = mapped_column(String(8))
     # Kode pabrik, mis. LR028 / SL043
     factory_code: Mapped[str] = mapped_column(String(32))

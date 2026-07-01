@@ -50,6 +50,7 @@ from app.services.master_item_dimensions import (
     distinct_colors,
     distinct_material_names,
     distinct_thicknesses,
+    filter_by_category,
     resolve_by_dimensions,
 )
 
@@ -623,15 +624,26 @@ def list_master_items(
     return list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all())
 
 
+def _filter_master_items_by_category(
+    rows: list[MasterItem],
+    category: Optional[str],
+) -> list[MasterItem]:
+    return filter_by_category(rows, category)
+
+
 @router.get("/masters/items/dimension-values", response_model=MasterItemDimensionValuesOut)
 def list_master_item_dimension_values(
     kind: Literal["materials", "thicknesses", "colors"] = Query(..., description="materials | thicknesses | colors"),
     material_name: Optional[str] = Query(None, description="Wajib untuk thicknesses & colors"),
     thickness_text: Optional[str] = Query(None, description="Wajib untuk colors"),
+    category: Optional[str] = Query(None, description="Filter kategori master: PU | Suide | SubKon"),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> MasterItemDimensionValuesOut:
-    rows = list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all())
+    rows = _filter_master_items_by_category(
+        list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all()),
+        category,
+    )
     if kind == "materials":
         return MasterItemDimensionValuesOut(values=distinct_material_names(rows))
     if kind == "thicknesses":
@@ -653,10 +665,14 @@ def resolve_master_item_by_dimensions(
     material_name: str = Query(..., min_length=1),
     thickness_text: str = Query(..., min_length=1),
     color: str = Query(..., min_length=1),
+    category: Optional[str] = Query(None, description="Filter kategori master: PU | Suide | SubKon"),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> MasterItemResolveByDimensionsOut:
-    rows = list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all())
+    rows = _filter_master_items_by_category(
+        list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all()),
+        category,
+    )
     hits = resolve_by_dimensions(
         rows,
         material_name=material_name,

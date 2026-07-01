@@ -7,6 +7,7 @@ from app.services.master_item_dimensions import (
     distinct_colors,
     distinct_material_names,
     distinct_thicknesses,
+    filter_by_category,
     resolve_by_dimensions,
 )
 
@@ -65,3 +66,16 @@ def test_thickness_mm_fallback() -> None:
     assert distinct_thicknesses(rows, "M") == ["1.4 - 1.6"]
     hits = resolve_by_dimensions(rows, material_name="M", thickness_text="1.4 - 1.6", color="Red")
     assert len(hits) == 1
+
+
+def test_filter_by_category_subkon() -> None:
+    rows = [
+        _mi(id=1, item_code="SUB0001", category="SubKon", material_name="SPLIT SUEDE", color="Black"),
+        _mi(id=2, item_code="FG0001", category="PU", material_name="VIRGIN PU", color="Black"),
+        _mi(id=3, item_code="FG0002", category="Suide", material_name="HI SUEDE", color="Red"),
+    ]
+    subkon = filter_by_category(rows, "SubKon")
+    assert len(subkon) == 1
+    assert subkon[0].item_code == "SUB0001"
+    assert distinct_material_names(subkon) == ["SPLIT SUEDE"]
+    assert distinct_material_names(filter_by_category(rows, None)) == ["HI SUEDE", "SPLIT SUEDE", "VIRGIN PU"]

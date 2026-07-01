@@ -18,10 +18,18 @@ _RANGE_RE = re.compile(
 )
 
 
+def _normalize_decimal_token(raw: str) -> str:
+    """Terima pemisah desimal koma (1,5) selain titik."""
+    s = str(raw).strip()
+    if re.fullmatch(r"\d,\d+", s):
+        return s.replace(",", ".", 1)
+    return s
+
+
 def _to_decimal(raw: str | None) -> Decimal | None:
     if raw is None:
         return None
-    s = str(raw).strip()
+    s = _normalize_decimal_token(str(raw).strip())
     if not s:
         return None
     try:
@@ -40,6 +48,10 @@ def single_value_to_bucket(value: Decimal) -> str:
 def canonical_thickness_range(text: str | None) -> str:
     """Normalisasi ke label kanonik tanpa spasi: 1.2-1.4."""
     raw = str(text or "").strip()
+    if raw in {"-", "—", "–"}:
+        return ""
+    if re.fullmatch(r"\d,\d+", raw):
+        raw = raw.replace(",", ".", 1)
     if not raw:
         return ""
 

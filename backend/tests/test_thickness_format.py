@@ -24,6 +24,9 @@ def test_single_mm_maps_to_standard_bucket() -> None:
 
 def test_canonical_and_display() -> None:
     assert canonical_thickness_range("1.24") == "1.2-1.4"
+    assert canonical_thickness_range("1,5") == "1.4-1.6"
+    assert canonical_thickness_range("1,3") == "1.2-1.4"
+    assert canonical_thickness_range("-") == ""
     assert display_thickness_range("1.24") == "1.2 - 1.4"
     assert display_thickness_range("1.2-1.4") == "1.2 - 1.4"
     assert display_thickness_range("1.2 - 1.4") == "1.2 - 1.4"

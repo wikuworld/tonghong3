@@ -11,26 +11,43 @@ from sqlalchemy.orm import Session
 from app.models import LotSequence, MasterItem, PoDetail, PoHeader
 
 
-def _material_group_from_detail(db: Session, detail: PoDetail) -> str:
+def infer_material_group(
+    *,
+    master_item: MasterItem | None = None,
+    material_name: str | None = None,
+    vir_softness_type: str | None = None,
+) -> str:
     """Return 'suede' or 'pu'. Raise 400 bila tidak bisa ditentukan."""
-    if detail.master_item_id:
-        mi = db.get(MasterItem, detail.master_item_id)
-        cat = (mi.category or "").strip().lower() if mi else ""
-        # di validator MasterItem: PU, Suide, SubKon
-        if cat in {"suide", "suede"}:
-            return "suede"
-        if cat in {"pu"}:
+    cat = (master_item.category or "").strip().lower() if master_item else ""
+    if cat in {"suide", "suede"}:
+        return "suede"
+    if cat == "pu":
+        return "pu"
+    if cat in {"subkon", "subcont", "subcontract"}:
+        mn = (material_name or (master_item.material_name if master_item else "") or "").strip().lower()
+        if "action leather" in mn or ("pu" in mn and "suede" not in mn and "suide" not in mn):
             return "pu"
-    # fallback heuristik
-    vt = (detail.vir_softness_type or "").strip().lower()
+        if "suede" in mn or "suide" in mn or "leather" in mn:
+            return "suede"
+    vt = (vir_softness_type or "").strip().lower()
     if "pu" in vt:
         return "pu"
-    mn = (detail.material_name or "").strip().lower()
+    mn = (material_name or (master_item.material_name if master_item else "") or "").strip().lower()
     if "suede" in mn or "suide" in mn:
         return "suede"
     if "pu" in mn:
         return "pu"
-    raise HTTPException(status_code=400, detail="Material group tidak bisa ditentukan (butuh master item PU/Suide).")
+    raise HTTPException(status_code=400, detail="Material group tidak bisa ditentukan (butuh master item PU/Suide/SubKon).")
+
+
+def _material_group_from_detail(db: Session, detail: PoDetail) -> str:
+    """Return 'suede' or 'pu'. Raise 400 bila tidak bisa ditentukan."""
+    master_item = db.get(MasterItem, detail.master_item_id) if detail.master_item_id else None
+    return infer_material_group(
+        master_item=master_item,
+        material_name=detail.material_name,
+        vir_softness_type=detail.vir_softness_type,
+    )
 
 
 def _prefix_for(group: str, po_category: str) -> str:
@@ -41,7 +58,7 @@ def _prefix_for(group: str, po_category: str) -> str:
             "sample": "SYC",
             "claim": "BYC",
             "return": "QYC",
-            "subcont": "QYC",
+            "subcont": "KYC",
             "suede": "MYC",
         }.get(c, "MYC")
     if group == "pu":
@@ -50,7 +67,7 @@ def _prefix_for(group: str, po_category: str) -> str:
             "sample": "PUS",
             "claim": "PUC",
             "return": "PUR",
-            "subcont": "PUR",
+            "subcont": "PUK",
             "suede": "PUM",
         }.get(c, "PUM")
     raise HTTPException(status_code=400, detail="Material group tidak valid.")
@@ -63,22 +80,12 @@ def _material_group_from_inputs(
     material_name: str | None,
     vir_softness_type: str | None,
 ) -> str:
-    if master_item_id:
-        mi = db.get(MasterItem, master_item_id)
-        cat = (mi.category or "").strip().lower() if mi else ""
-        if cat in {"suide", "suede"}:
-            return "suede"
-        if cat in {"pu"}:
-            return "pu"
-    vt = (vir_softness_type or "").strip().lower()
-    if "pu" in vt:
-        return "pu"
-    mn = (material_name or "").strip().lower()
-    if "suede" in mn or "suide" in mn:
-        return "suede"
-    if "pu" in mn:
-        return "pu"
-    raise HTTPException(status_code=400, detail="Material group tidak bisa ditentukan (butuh master item PU/Suide).")
+    master_item = db.get(MasterItem, master_item_id) if master_item_id else None
+    return infer_material_group(
+        master_item=master_item,
+        material_name=material_name,
+        vir_softness_type=vir_softness_type,
+    )
 
 
 def _lot_number_format(

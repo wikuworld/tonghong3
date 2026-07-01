@@ -193,6 +193,28 @@
 
         <div v-show="w.currentStep === 1" class="step-content">
           <h3 class="text-lg font-semibold mb-4">{{ t('pages.po.step2Title') }}</h3>
+          <el-row v-if="w.isSubkonPo" :gutter="16" class="mb-2">
+            <el-col :span="24">
+              <el-form-item :label="t('pages.po.subkonItemCode')">
+                <el-select
+                  v-model="w.subkonItemCodePicker"
+                  filterable
+                  clearable
+                  class="w-full"
+                  :placeholder="t('pages.po.subkonItemCodePlaceholder')"
+                  @change="w.onPickedSubkonItemCode"
+                >
+                  <el-option
+                    v-for="item in w.subkonMasterItems"
+                    :key="item.id"
+                    :label="`${item.item_code} — ${item.material_name || ''}${item.color ? ` · ${item.color}` : ''}`"
+                    :value="item.item_code"
+                  />
+                </el-select>
+                <p class="mt-1 text-xs text-slate-500">{{ t('pages.po.subkonMasterHint') }}</p>
+              </el-form-item>
+            </el-col>
+          </el-row>
           <el-row :gutter="16" class="material-step-grid">
             <el-col :xs="24" :md="8">
               <el-form-item :label="t('common.material')" :error="w.formErrors.material_name">
@@ -200,11 +222,11 @@
                   <el-select
                     v-model="w.formModel.material_name"
                     filterable
-                    allow-create
+                    :allow-create="!w.isSubkonPo"
                     default-first-option
                     clearable
                     class="w-full"
-                    :placeholder="t('pages.po.materialCascadePlaceholder')"
+                    :placeholder="w.isSubkonPo ? t('pages.po.subkonMaterialPlaceholder') : t('pages.po.materialCascadePlaceholder')"
                     :disabled="w.isMaterialFieldLocked('material_name')"
                     @change="w.onPickedMaterialDimension"
                   >
@@ -243,7 +265,7 @@
                     allow-create
                     default-first-option
                     class="w-full"
-                    :placeholder="t('pages.po.thicknessCascadePlaceholder')"
+                    :placeholder="w.isSubkonPo ? t('pages.po.subkonThicknessPlaceholder') : t('pages.po.thicknessCascadePlaceholder')"
                     :disabled="w.isMaterialFieldLocked('thickness_text') || !String(w.formModel.material_name || '').trim()"
                     @change="w.onPickedThicknessDimension"
                   >
@@ -301,12 +323,12 @@
                     v-else
                     v-model="w.formModel.color"
                     filterable
-                    allow-create
+                    :allow-create="!w.isSubkonPo"
                     default-first-option
                     clearable
                     class="w-full"
                     :placeholder="t('common.placeholder.color')"
-                    :disabled="w.isMaterialFieldLocked('color') || !String(w.formModel.material_name || '').trim() || !String(w.formModel.thickness_text || '').trim()"
+                    :disabled="w.isMaterialFieldLocked('color') || !String(w.formModel.material_name || '').trim() || (!w.isSubkonPo && !String(w.formModel.thickness_text || '').trim())"
                   >
                     <el-option v-for="c in w.colorDimensionOptions" :key="c" :label="c" :value="c" />
                   </el-select>
@@ -414,12 +436,12 @@
             <el-col :span="24">
               <div v-if="w.formModel.master_item_id" class="flex flex-wrap items-center gap-2 mb-2">
                 <el-tag type="success" closable @close="w.clearLinkedMasterItem">
-                  {{ t('pages.po.masterLinkedTag') }}: {{ w.resolvedMasterItemLabel }}
+                  {{ w.isSubkonPo ? t('pages.po.subkonMasterLinkedTag') : t('pages.po.masterLinkedTag') }}: {{ w.resolvedMasterItemLabel }}
                 </el-tag>
                 <span v-if="w.masterResolveLoading" class="text-xs text-slate-500">{{ t('pages.po.resolvingMaster') }}</span>
               </div>
               <el-alert
-                v-else-if="w.lastResolveHadNoMaster && w.materialThicknessColorComplete"
+                v-else-if="!w.isSubkonPo && w.lastResolveHadNoMaster && w.materialThicknessColorComplete"
                 type="warning"
                 :closable="false"
                 show-icon
@@ -428,7 +450,7 @@
               />
             </el-col>
             <el-col :span="24">
-              <div class="mb-2">
+              <div v-if="!w.isSubkonPo" class="mb-2">
                 <div
                   v-if="w.selectedSwatchRecipe && !w.swatchPickerOpen"
                   class="flex flex-wrap items-center gap-2 rounded border border-emerald-200 bg-emerald-50/80 px-3 py-2"

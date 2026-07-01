@@ -168,6 +168,15 @@ const buyerCodesFiltered = computed(() => {
 const isBrandDisabled = computed(() => Boolean(formModel.customer_id))
 const isBuyerDisabled = computed(() => Boolean(formModel.customer_id) || !formModel.brand_id || buyerCodesFiltered.value.length === 0)
 const isPoCategoryDisabled = computed(() => !formModel.customer_id || !formModel.brand_id || !formModel.buyer)
+const isSubkonPo = computed(() => formModel.po_category === 'subcont')
+const subkonMasterItems = computed(() =>
+  (masterItems.value || []).filter((x) => String(x.category || '').trim().toLowerCase() === 'subkon'),
+)
+const subkonItemCodePicker = ref('')
+
+function masterDimensionCategoryParam() {
+  return isSubkonPo.value ? 'SubKon' : undefined
+}
 
 const customerPicDisplay = computed(() => {
   if (!selectedCustomer.value) return t('common.emptyValue')
@@ -531,6 +540,7 @@ const resolvedMasterItemLabel = computed(() => {
 })
 const activeSeasonLabel = computed(() => deriveSeasonLabel(formModel.order_date))
 const pricingKeyIncomplete = computed(() => {
+  if (formModel.po_category === 'subcont' || formModel.po_category === 'return') return false
   if (!(formModel.buyer || '').trim()) return false
   return !String(formModel.material_name || '').trim() || !String(formModel.thickness_text || '').trim() || !String(formModel.color_family || '').trim()
 })
@@ -704,6 +714,10 @@ function poFactoryKeyForSwatch() {
 
 /** Langkah isian material berikutnya (1–5); 0 = siap swatch/qty. */
 const materialStepFillStep = computed(() => {
+  if (isSubkonPo.value) {
+    if (!String(formModel.material_name || '').trim()) return 1
+    return 0
+  }
   if (!String(formModel.material_name || '').trim()) return 1
   if (!String(formModel.thickness_text || '').trim()) return 2
   if (!String(formModel.color || '').trim()) return 3
@@ -973,6 +987,7 @@ async function generateLotNumber(forceDetailId = null) {
 }
 
 function applyReferenceDefaults(forceFields = []) {
+  if (formModel.po_category === 'subcont') return
   applyReferenceDefaultsFromMaster(formModel, masterItems.value, autoFieldMeta, forceFields)
 }
 
@@ -986,6 +1001,20 @@ function resetMaterialFieldOverride() {
 }
 
 function isMaterialFieldLocked(field) {
+  if (formModel.po_category === 'subcont') {
+    if (!formModel.master_item_id) return false
+    if (!['material_name', 'thickness_text', 'color'].includes(field)) return false
+    const item = masterItems.value.find((x) => x.id === formModel.master_item_id)
+    if (!item) return false
+    const masterVal =
+      field === 'material_name'
+        ? item.material_name
+        : field === 'thickness_text'
+          ? item.thickness_range || (item.thickness_mm != null ? String(item.thickness_mm) : '')
+          : item.color
+    if (!String(masterVal || '').trim()) return false
+    return !materialFieldOverride[field]
+  }
   if (!formModel.master_item_id) return false
   return !materialFieldOverride[field]
 }
@@ -1089,6 +1118,7 @@ watch(
 watch(
   () => formModel.color,
   (newColor) => {
+    if (formModel.po_category === 'subcont') return
     if (!colorFamilyAutoMode.value) return
     const inferred = inferColorFamilyFromColor(newColor)
     if (inferred) formModel.color_family = inferred
@@ -1133,6 +1163,17 @@ watch(
     formModel.autoPricingEnabled = !isSubkonOrRetur
     if (isSubkonOrRetur) {
       formModel.unit_price_input = null
+    }
+    if (newCategory === 'subcont') {
+      void refreshMaterialDimensionOptions()
+      const linked = masterItems.value.find((x) => x.id === formModel.master_item_id)
+      if (linked && String(linked.category || '').trim().toLowerCase() !== 'subkon') {
+        clearLinkedMasterItem()
+        subkonItemCodePicker.value = ''
+      }
+    } else {
+      subkonItemCodePicker.value = ''
+      void refreshMaterialDimensionOptions()
     }
   },
 )
@@ -1242,6 +1283,7 @@ function resetForm() {
   lastResolveHadNoMaster.value = false
   skipMasterResolve.value = false
   loadedDetailMasterSnapshot.value = null
+  subkonItemCodePicker.value = ''
   thicknessDimensionOptions.value = []
   colorDimensionOptions.value = []
   colorFamilyAutoMode.value = true
@@ -1459,7 +1501,7 @@ function upsertMasterItemInCache(row) {
 
 async function refreshMaterialDimensionOptions() {
   try {
-    const r = await listMasterItemDimensionValues('materials')
+    const r = await listMasterItemDimensionValues('materials', { category: masterDimensionCategoryParam() })
     materialDimensionOptions.value = r.values || []
   } catch {
     materialDimensionOptions.value = []
@@ -1473,7 +1515,10 @@ async function refreshThicknessOptionsFromApi() {
     return
   }
   try {
-    const r = await listMasterItemDimensionValues('thicknesses', { material_name: m })
+    const r = await listMasterItemDimensionValues('thicknesses', {
+      material_name: m,
+      category: masterDimensionCategoryParam(),
+    })
     thicknessDimensionOptions.value = r.values || []
   } catch {
     thicknessDimensionOptions.value = []
@@ -1483,22 +1528,68 @@ async function refreshThicknessOptionsFromApi() {
 async function refreshColorOptionsFromApi() {
   const m = String(formModel.material_name || '').trim()
   const tt = String(formModel.thickness_text || '').trim()
-  if (!m || !tt) {
+  if (!m) {
+    colorDimensionOptions.value = []
+    return
+  }
+  if (isSubkonPo.value && !tt) {
+    const norm = m.trim().toLowerCase()
+    const colors = [
+      ...new Set(
+        subkonMasterItems.value
+          .filter((x) => String(x.material_name || '').trim().toLowerCase() === norm)
+          .map((x) => String(x.color || '').trim())
+          .filter(Boolean),
+      ),
+    ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    colorDimensionOptions.value = colors
+    return
+  }
+  if (!tt) {
     colorDimensionOptions.value = []
     return
   }
   try {
-    const r = await listMasterItemDimensionValues('colors', { material_name: m, thickness_text: tt })
+    const r = await listMasterItemDimensionValues('colors', {
+      material_name: m,
+      thickness_text: tt,
+      category: masterDimensionCategoryParam(),
+    })
     colorDimensionOptions.value = r.values || []
   } catch {
     colorDimensionOptions.value = []
   }
 }
 
+function onPickedSubkonItemCode(code) {
+  const picked = String(code || '').trim()
+  if (!picked) {
+    subkonItemCodePicker.value = ''
+    clearLinkedMasterItem()
+    return
+  }
+  const item = subkonMasterItems.value.find((x) => x.item_code === picked)
+  if (!item) return
+  subkonItemCodePicker.value = picked
+  skipMasterResolve.value = true
+  resetMaterialFieldOverride()
+  formModel.master_item_id = item.id
+  formModel.material_name = item.material_name || ''
+  formModel.thickness_text =
+    item.thickness_range || (item.thickness_mm != null ? String(item.thickness_mm) : '')
+  formModel.color = item.color || ''
+  formModel.thi_line_ref = ''
+  lotAutoFromMaterial.value = false
+  void refreshThicknessOptionsFromApi()
+  void refreshColorOptionsFromApi()
+  scheduleAutoLotGenerate()
+}
+
 async function onPickedMaterialDimension() {
   formModel.thickness_text = ''
   formModel.color = ''
   formModel.master_item_id = null
+  subkonItemCodePicker.value = ''
   formModel.thi_line_ref = ''
   lotAutoFromMaterial.value = false
   skipMasterResolve.value = false
@@ -1508,6 +1599,7 @@ async function onPickedMaterialDimension() {
   const m = String(formModel.material_name || '').trim()
   if (m) {
     await refreshThicknessOptionsFromApi()
+    if (isSubkonPo.value) await refreshColorOptionsFromApi()
     scheduleAutoLotGenerate()
   }
 }
@@ -1515,6 +1607,7 @@ async function onPickedMaterialDimension() {
 async function onPickedThicknessDimension() {
   formModel.color = ''
   formModel.master_item_id = null
+  subkonItemCodePicker.value = ''
   skipMasterResolve.value = false
   lastResolveHadNoMaster.value = false
   colorDimensionOptions.value = []
@@ -1531,11 +1624,13 @@ function hydrateFormFromMasterItemRow(item, { syncDimensions = true } = {}) {
     previewResolvedUnitPrice: previewResolvedUnitPrice.value,
     colorFamilyAutoMode,
     syncDimensions,
+    subkonMode: formModel.po_category === 'subcont',
   })
 }
 
 function clearLinkedMasterItem() {
   formModel.master_item_id = null
+  subkonItemCodePicker.value = ''
   resetMaterialFieldOverride()
   skipMasterResolve.value = false
   lastResolveHadNoMaster.value = false
@@ -1566,7 +1661,12 @@ async function resolveMasterFromDimensionsTriple() {
   }
   masterResolveLoading.value = true
   try {
-    const res = await resolveMasterItemByDimensions({ material_name: mn, thickness_text: tt, color: co })
+    const res = await resolveMasterItemByDimensions({
+      material_name: mn,
+      thickness_text: tt,
+      color: co,
+      category: masterDimensionCategoryParam(),
+    })
     if (seq !== masterResolveSeq) return
     lastResolveHadNoMaster.value = res.status === 'none'
     if (res.status === 'single' && res.item) {
@@ -1622,11 +1722,23 @@ watch(
 watch(
   () => [formModel.material_name, formModel.thickness_text, formModel.color],
   () => {
+    if (isSubkonPo.value && subkonItemCodePicker.value) return
     skipMasterResolve.value = false
     clearTimeout(masterResolveTimer)
     masterResolveTimer = setTimeout(() => {
       void resolveMasterFromDimensionsTriple()
     }, 420)
+  },
+)
+
+watch(
+  () => formModel.master_item_id,
+  (id) => {
+    if (!isSubkonPo.value || !id) return
+    const item = masterItems.value.find((x) => x.id === id)
+    if (item?.item_code && String(item.category || '').trim().toLowerCase() === 'subkon') {
+      subkonItemCodePicker.value = item.item_code
+    }
   },
 )
 
@@ -2025,6 +2137,10 @@ function addCopiedItems() {
     autoFieldMeta,
     resetToAuto,
     isPoCategoryDisabled,
+    isSubkonPo,
+    subkonItemCodePicker,
+    subkonMasterItems,
+    onPickedSubkonItemCode,
     orderDateLocked,
     brands,
     materialDimensionOptions,

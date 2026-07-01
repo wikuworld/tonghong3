@@ -187,7 +187,14 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="t('common.actions')" width="268" align="center" fixed="right">
+      <el-table-column
+        :label="t('common.actions')"
+        width="136"
+        align="center"
+        fixed="right"
+        class-name="po-actions-col"
+        :show-overflow-tooltip="false"
+      >
         <template #default="{ row }">
           <div class="po-row-actions">
             <el-tooltip :content="t('common.detail')" placement="top">
@@ -196,33 +203,33 @@
             <el-tooltip v-if="canManage" :content="t('common.edit')" placement="top">
               <el-button :icon="EditPen" link type="warning" :aria-label="t('common.edit')" @click="openEditDialog(row)" />
             </el-tooltip>
-            <el-tooltip v-if="canManage" :content="t('pages.po.duplicatePo')" placement="top">
-              <el-button
-                :icon="CopyDocument"
-                link
-                type="primary"
-                :aria-label="t('pages.po.duplicatePo')"
-                @click="onDuplicatePo(row)"
-              />
-            </el-tooltip>
-            <el-tooltip :content="t('pages.po.salesContractPdf')" placement="top">
-              <el-button :icon="Document" link type="primary" :aria-label="t('pages.po.salesContractPdf')" @click="downloadSalesContractPdf(row)" />
-            </el-tooltip>
-            <el-tooltip :content="t('pages.po.salesContractDocx')" placement="top">
-              <el-button :icon="FolderOpened" link type="primary" :aria-label="t('pages.po.salesContractDocx')" @click="downloadSalesContractDocx(row)" />
-            </el-tooltip>
-            <el-tooltip :content="t('pages.po.proformaInvoicePdf')" placement="top">
-              <el-button :icon="Tickets" link type="primary" :aria-label="t('pages.po.proformaInvoicePdf')" @click="downloadProformaInvoicePdf(row)" />
-            </el-tooltip>
-            <el-tooltip :content="t('pages.po.proformaInvoiceDocx')" placement="top">
-              <el-button :icon="Memo" link type="primary" :aria-label="t('pages.po.proformaInvoiceDocx')" @click="downloadProformaInvoiceDocx(row)" />
-            </el-tooltip>
-            <el-tooltip :content="t('common.print')" placement="top">
-              <el-button :icon="Printer" link :aria-label="t('common.print')" @click="openPrintDialog(row)" />
-            </el-tooltip>
             <el-tooltip v-if="canManage" :content="t('common.delete')" placement="top">
               <el-button :icon="Delete" link type="danger" :aria-label="t('common.delete')" @click="removeRow(row)" />
             </el-tooltip>
+            <el-dropdown trigger="click" @command="(cmd) => handlePoMoreAction(row, cmd)">
+              <el-button link type="primary" class="po-more-trigger" :aria-label="t('pages.po.moreActions')">
+                <span class="po-more-kebab" aria-hidden="true"><i /><i /><i /></span>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-if="canManage" command="duplicate" :icon="CopyDocument">
+                    {{ t('pages.po.duplicatePo') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item :divided="canManage" command="salesContractPdf" :icon="Document">
+                    {{ t('pages.po.salesContractPdf') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="salesContractDocx" :icon="FolderOpened">
+                    {{ t('pages.po.salesContractDocx') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="proformaInvoicePdf" :icon="Tickets">
+                    {{ t('pages.po.proformaInvoicePdf') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="proformaInvoiceDocx" :icon="Memo">
+                    {{ t('pages.po.proformaInvoiceDocx') }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </template>
       </el-table-column>
@@ -256,12 +263,6 @@
       :detail-lines="detailLines"
       :detail-audit="detailAudit"
       :color-family-label="colorFamilyLabel"
-    />
-
-    <PoPrintPreviewDialog
-      v-model="printDialogVisible"
-      :row="selectedRow"
-      @print="printPage"
     />
 
     <PoCopyItemDialog
@@ -299,8 +300,6 @@ import {
   View,
   EditPen,
   Delete,
-  Printer,
-  RefreshLeft,
   Document,
   FolderOpened,
   CopyDocument,
@@ -313,7 +312,6 @@ import PoAmbiguousMasterDialog from '../../components/admin/PoAmbiguousMasterDia
 import PoCopyItemDialog from '../../components/admin/PoCopyItemDialog.vue'
 import PoDetailDialog from '../../components/admin/PoDetailDialog.vue'
 import PoMarketingReviseDialog from '../../components/admin/PoMarketingReviseDialog.vue'
-import PoPrintPreviewDialog from '../../components/admin/PoPrintPreviewDialog.vue'
 import { usePoFormWizard } from '../../composables/usePoFormWizard.js'
 import { usePoList } from '../../composables/usePoList.js'
 import { canWrite } from '../../security/permissions'
@@ -527,16 +525,6 @@ const openDetailDialog = async (row) => {
   detailDialogVisible.value = true
 }
 
-const printDialogVisible = ref(false)
-const selectedRow = reactive({})
-
-const openPrintDialog = (row) => {
-  Object.assign(selectedRow, row)
-  printDialogVisible.value = true
-}
-
-const printPage = () => window.print()
-
 const removeRow = async (row) => {
   try {
     await ElMessageBox.confirm(t('pages.po.deleteConfirm'), t('common.delete'), { type: 'warning' })
@@ -581,6 +569,28 @@ async function downloadProformaInvoiceDocx(row) {
     await fetchAuthenticatedDocument(path, `proforma-invoice-${row.po_number || row.id}.docx`)
   } catch (e) {
     ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
+  }
+}
+
+function handlePoMoreAction(row, command) {
+  switch (command) {
+    case 'duplicate':
+      onDuplicatePo(row)
+      break
+    case 'salesContractPdf':
+      downloadSalesContractPdf(row)
+      break
+    case 'salesContractDocx':
+      downloadSalesContractDocx(row)
+      break
+    case 'proformaInvoicePdf':
+      downloadProformaInvoicePdf(row)
+      break
+    case 'proformaInvoiceDocx':
+      downloadProformaInvoiceDocx(row)
+      break
+    default:
+      break
   }
 }
 
@@ -653,10 +663,38 @@ async function onDuplicatePo(row) {
 
 .po-row-actions {
   display: inline-flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
-  gap: 2px 4px;
+  gap: 2px;
+}
+
+.po-more-trigger {
+  padding: 4px 6px;
+  height: auto;
+}
+
+.po-more-kebab {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 14px;
+  height: 14px;
+}
+
+.po-more-kebab i {
+  display: block;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+:deep(.po-actions-col .cell) {
+  overflow: visible;
+  text-overflow: clip;
 }
 
 :deep(.po-row-highlight > td) {

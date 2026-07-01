@@ -633,20 +633,22 @@ export function listMasterItems() {
 }
 
 /** Cascade PO: nilai unik material → ketebalan → warna dari master_items. */
-export function listMasterItemDimensionValues(kind, { material_name, thickness_text } = {}) {
+export function listMasterItemDimensionValues(kind, { material_name, thickness_text, category } = {}) {
   const p = new URLSearchParams({ kind })
   if (material_name != null && String(material_name).trim()) p.append('material_name', String(material_name).trim())
   if (thickness_text != null && String(thickness_text).trim()) p.append('thickness_text', String(thickness_text).trim())
+  if (category != null && String(category).trim()) p.append('category', String(category).trim())
   return apiFetch(`/masters/items/dimension-values?${p}`)
 }
 
 /** Resolve tepat satu master item dari material + ketebalan + warna (status single|ambiguous|none). */
-export function resolveMasterItemByDimensions({ material_name, thickness_text, color }) {
+export function resolveMasterItemByDimensions({ material_name, thickness_text, color, category }) {
   const p = new URLSearchParams({
     material_name: String(material_name || '').trim(),
     thickness_text: String(thickness_text || '').trim(),
     color: String(color || '').trim(),
   })
+  if (category != null && String(category).trim()) p.append('category', String(category).trim())
   return apiFetch(`/masters/items/resolve-by-dimensions?${p}`)
 }
 

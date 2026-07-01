@@ -46,7 +46,7 @@ def test_manual_workbook_has_category_sheets():
         _sample_row("production", "PS26030501", "MYCLR028260305001", "IBO123"),
         _sample_row("claim", "PSC26030501", "BYCMP033260305001", "CLAIM-001"),
         _sample_row("sample", "S26030501", "SYCPW010260305001", "DEV-001"),
-        _sample_row("subcont", "SC26030501", "QYCMP033260305001", "SUB-001"),
+        _sample_row("subcont", "SC26030501", "KYCMP033260305001", "SUB-001"),
         _sample_row("return", "PSR26030501", "QYCPA010260305001", "RET-PO"),
     ]
     data = _outstanding_manual_workbook_bytes(rows)

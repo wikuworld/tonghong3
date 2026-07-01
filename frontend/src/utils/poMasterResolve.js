@@ -12,6 +12,7 @@ export function resolveMaterialGroupLabel(row, masterItems = []) {
     const cat = normalizedText(mi?.category)
     if (cat === 'suide' || cat === 'suede') return 'Suede'
     if (cat === 'pu') return 'PU'
+    if (cat === 'subkon' || cat === 'subcont' || cat === 'subcontract') return 'SubKon'
   }
   if (normalizedText(row?.vir_softness_type).includes('pu')) return 'PU'
   const mn = normalizedText(row?.material_name)
@@ -104,16 +105,18 @@ export function hydrateFormFromMasterItemRow(
     previewResolvedUnitPrice = null,
     colorFamilyAutoMode,
     syncDimensions = true,
+    subkonMode = false,
   },
 ) {
   if (!item) return
-  if (colorFamilyAutoMode) colorFamilyAutoMode.value = true
   if (syncDimensions) {
     formModel.material_name = item.material_name || ''
     formModel.thickness_text =
       item.thickness_range || (item.thickness_mm != null ? String(item.thickness_mm) : '')
     formModel.color = item.color || ''
   }
+  if (subkonMode) return
+  if (colorFamilyAutoMode) colorFamilyAutoMode.value = true
   formModel.emboss = item.emboss || ''
   formModel.softness = item.softness || ''
   autoFieldMeta.softness = Boolean(item.softness)
