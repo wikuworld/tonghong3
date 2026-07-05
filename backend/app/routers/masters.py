@@ -18,7 +18,9 @@ from app.schemas import (
     MasterItemCreate,
     MasterItemDimensionValuesOut,
     MasterItemOut,
+    MasterItemPageOut,
     MasterItemResolveByDimensionsOut,
+    MasterItemStatsOut,
     MasterPriceOut,
 )
 from sqlalchemy import func, or_, select
@@ -616,12 +618,81 @@ def delete_pic(
 
 
 # --- Master Item (FG / sheet Master Item) ---
+def _master_item_stats(db: Session) -> MasterItemStatsOut:
+    rows = db.execute(
+        select(MasterItem.category, func.count()).group_by(MasterItem.category)
+    ).all()
+    counts = {str(cat or ""): int(n) for cat, n in rows}
+    pu = counts.get("PU", 0)
+    suide = counts.get("Suide", 0)
+    subkon = counts.get("SubKon", 0)
+    return MasterItemStatsOut(
+        total=pu + suide + subkon + sum(
+            v for k, v in counts.items() if k not in ("PU", "Suide", "SubKon")
+        ),
+        pu=pu,
+        suide=suide,
+        subkon=subkon,
+    )
+
+
+def _apply_master_item_list_filters(
+    stmt,
+    *,
+    keyword: Optional[str],
+    category: Optional[str],
+):
+    if category and str(category).strip():
+        stmt = stmt.where(MasterItem.category == str(category).strip())
+    if keyword and str(keyword).strip():
+        like = f"%{str(keyword).strip()}%"
+        stmt = stmt.where(
+            or_(
+                MasterItem.item_code.ilike(like),
+                MasterItem.category.ilike(like),
+                MasterItem.material_name.ilike(like),
+                MasterItem.thickness_range.ilike(like),
+                MasterItem.color.ilike(like),
+                MasterItem.emboss.ilike(like),
+            )
+        )
+    return stmt
+
+
 @router.get("/masters/items", response_model=list[MasterItemOut])
 def list_master_items(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> list[MasterItem]:
     return list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all())
+
+
+@router.get("/masters/items/page", response_model=MasterItemPageOut)
+def list_master_items_page(
+    keyword: Optional[str] = Query(None, description="Cari kode, material, warna, emboss"),
+    category: Optional[str] = Query(None, description="Filter kategori: PU | Suide | SubKon"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> MasterItemPageOut:
+    base = select(MasterItem)
+    count_stmt = select(func.count(MasterItem.id))
+    base = _apply_master_item_list_filters(base, keyword=keyword, category=category)
+    count_stmt = _apply_master_item_list_filters(count_stmt, keyword=keyword, category=category)
+    total = int(db.scalar(count_stmt) or 0)
+    items = list(
+        db.scalars(
+            base.order_by(MasterItem.item_code.asc()).limit(limit).offset(offset)
+        ).all()
+    )
+    return MasterItemPageOut(
+        items=[MasterItemOut.model_validate(i) for i in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+        stats=_master_item_stats(db),
+    )
 
 
 def _filter_master_items_by_category(

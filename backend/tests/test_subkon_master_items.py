@@ -10,11 +10,8 @@ from app.services.subkon_master_items import (
 
 BACKEND = Path(__file__).resolve().parents[1]
 ROOT = BACKEND.parent
-SUBKON_CSV = (
-    BACKEND / "dokumentasi" / "Master_Data_extracted" / "01_Master_Item_SubKon.csv"
-    if (BACKEND / "dokumentasi" / "Master_Data_extracted" / "01_Master_Item_SubKon.csv").exists()
-    else ROOT / "dokumentasi" / "Master_Data_extracted" / "01_Master_Item_SubKon.csv"
-)
+FIXTURE_CSV = Path(__file__).resolve().parent / "fixtures" / "01_Master_Item_SubKon.csv"
+SUBKON_CSV = FIXTURE_CSV
 
 
 def test_normalize_subkon_row_maps_empty_markers():
