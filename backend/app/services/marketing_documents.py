@@ -967,3 +967,65 @@ def render_sj_pdf(ctx: dict[str, Any]) -> bytes:
     c.save()
     buf.seek(0)
     return buf.getvalue()
+
+
+def render_sj_dotmatrix_html(ctx: dict[str, Any]) -> str:
+    """Cetak fisik dot matrix — layout ringkas (5.5in × 8.5in)."""
+    rows_html = ""
+    for ln in ctx["lines"]:
+        rows_html += (
+            f"<tr>"
+            f"<td>{ln['no']}</td>"
+            f"<td>{escape(ln['po_no'])}</td>"
+            f"<td>{escape(str(ln['material'] or '')[:28])}</td>"
+            f"<td class='r'>{ln['qty']:.2f}</td>"
+            f"<td class='r'>{ln['rolls'] or ''}</td>"
+            f"<td class='r'>{ln['pcs'] or ''}</td>"
+            f"</tr>"
+        )
+    t = ctx["totals"]
+    rows_html += (
+        f"<tr class='total'><td colspan='3'><b>TOTAL</b></td>"
+        f"<td class='r'><b>{t['qty']:.2f}</b></td>"
+        f"<td class='r'><b>{t['rolls']}</b></td>"
+        f"<td class='r'><b>{t['pcs']}</b></td></tr>"
+    )
+    company = " | ".join(COMPANY_BLOCK)
+    body = f"""
+<div class="doc">
+  <div class="company"><b>{escape(company)}</b></div>
+  <h2 class="title">SURAT JALAN (DELIVERY SHEET)</h2>
+  <div class="meta">
+    <div><b>TO:</b> {escape(str(ctx['customer_name'] or '')[:40])}</div>
+    <div><b>SJ NO:</b> {escape(ctx['delivery_number'])} &nbsp; <b>DATE:</b> {escape(ctx['delivery_date_fmt'])}</div>
+    <div><b>CAR:</b> {escape(ctx['vehicle_number'])} &nbsp; <b>DRIVER:</b> {escape(ctx['driver_name'])}</div>
+  </div>
+  <table class="grid">
+    <thead><tr><th>NO</th><th>PO NO</th><th>MATERIAL</th><th>QTY SF</th><th>ROLL</th><th>PCS</th></tr></thead>
+    <tbody>{rows_html}</tbody>
+  </table>
+  <div class="sign4">
+    <div>RECEIVED BY</div><div>APPROVED BY</div><div>SECURITY</div><div>DELIVERED BY</div>
+  </div>
+  <p class="foot-note"><b>NOTE:</b> WHITE(1) ACC, RED(2) CUSTOMER, YELLOW(3) EXIM, GREEN(4) WAREHOUSE, BLUE(5) SECURITY.</p>
+</div>
+"""
+    style = """
+    @page { size: 5.5in 8.5in; margin: 0.25in; }
+    body { font-family: 'Courier New', Courier, monospace; margin: 0; font-size: 9px; color: #000; }
+    .doc { width: 5in; margin: 0 auto; }
+    .company { text-align: center; font-size: 8px; line-height: 1.2; margin-bottom: 4px; }
+    .title { text-align: center; font-size: 11px; margin: 4px 0 8px; }
+    .meta { margin-bottom: 6px; line-height: 1.35; }
+    table.grid { width: 100%; border-collapse: collapse; font-size: 8px; }
+    table.grid th, table.grid td { border: 1px solid #000; padding: 2px 3px; }
+    td.r { text-align: right; }
+    tr.total td { font-weight: bold; }
+    .sign4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; margin-top: 12px; text-align: center; font-size: 7px; }
+    .foot-note { margin-top: 8px; font-size: 7px; }
+    @media print { body { margin: 0; } }
+    """
+    return f"""<!DOCTYPE html>
+<html lang="id"><head><meta charset="utf-8"/><title>Surat Jalan Dot Matrix</title>
+<style>{style}</style></head><body>{body}
+<script>window.onload=function(){{window.print();}}</script></body></html>"""

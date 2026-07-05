@@ -1065,6 +1065,86 @@ class PackingDetailOut(ORMBase):
     packing_id: Optional[int] = None
     production_detail_id: Optional[int] = None
     qty_packed: Optional[float] = None
+    qty_roll: Optional[int] = None
+    qty_pcs: Optional[int] = None
+    weight_net: Optional[float] = None
+
+
+class PackingDetailEnrichedOut(PackingDetailOut):
+    lot_no: str = ""
+    so_number: str = ""
+    material_name: str = ""
+    qty_actual: Optional[float] = None
+
+
+class PackingDetailUpdate(BaseModel):
+    qty_packed: Optional[Decimal] = None
+    qty_roll: Optional[int] = None
+    qty_pcs: Optional[int] = None
+    weight_net: Optional[Decimal] = None
+
+
+class PackingDetailBatchItem(BaseModel):
+    production_detail_id: int
+    qty_packed: Optional[Decimal] = None
+    qty_roll: Optional[int] = None
+    qty_pcs: Optional[int] = None
+    weight_net: Optional[Decimal] = None
+
+
+class PackingDetailBatchIn(BaseModel):
+    lines: list[PackingDetailBatchItem] = Field(default_factory=list)
+
+
+class ReadyToShipLineOut(BaseModel):
+    packing_id: int
+    packing_number: str = ""
+    packing_detail_id: Optional[int] = None
+    production_detail_id: int
+    lot_no: str = ""
+    so_number: str = ""
+    po_customer_ref: str = ""
+    customer_id: Optional[int] = None
+    customer_name: str = ""
+    brand: str = ""
+    material_name: str = ""
+    qty_packed: float = 0
+    qty_shipped: float = 0
+    qty_available: float = 0
+    qty_roll: Optional[int] = None
+    qty_pcs: Optional[int] = None
+    weight_net: Optional[float] = None
+
+
+class DeliveryFromPackingLineIn(BaseModel):
+    production_detail_id: int
+    packing_detail_id: Optional[int] = None
+    qty: Optional[Decimal] = None
+    qty_roll: Optional[int] = None
+    qty_pcs: Optional[int] = None
+    weight: Optional[Decimal] = None
+
+
+class DeliveryFromPackingLinesIn(BaseModel):
+    packing_id: int
+    customer_id: Optional[int] = None
+    delivery_date: Optional[date] = None
+    delivery_type: Optional[str] = "production"
+    delivery_zone: Optional[str] = "outtown"
+    vehicle_number: Optional[str] = None
+    driver_name: Optional[str] = None
+    destination: Optional[str] = None
+    lines: list[DeliveryFromPackingLineIn] = Field(default_factory=list)
+
+
+class DeliveryOverallOut(BaseModel):
+    line_count: int = 0
+    total_sf: float = 0
+    total_roll: int = 0
+    total_pcs: int = 0
+    total_weight: float = 0
+    brand: str = ""
+    customer_name: str = ""
 
 
 class InvoiceOut(ORMBase):

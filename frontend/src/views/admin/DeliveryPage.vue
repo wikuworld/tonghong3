@@ -1,86 +1,175 @@
 <template>
   <AdminSection :title="t('pages.delivery.title')" :subtitle="t('pages.delivery.subtitle')">
     <template #actions>
-      <el-date-picker
-        v-model="shipDateRange"
-        type="daterange"
-        value-format="YYYY-MM-DD"
-        unlink-panels
-        clearable
-        class="w-[260px]"
-        :start-placeholder="t('pages.delivery.filterShipDateFrom')"
-        :end-placeholder="t('pages.delivery.filterShipDateTo')"
-      />
       <el-input
-        v-model="factoryCodeFilter"
+        v-model="keyword"
+        :placeholder="t('pages.delivery.listSearchPlaceholder')"
         clearable
-        class="w-28"
-        :placeholder="t('pages.delivery.filterFactoryCode')"
+        class="delivery-toolbar-search"
       />
-      <el-select v-model="poCategoryFilter" clearable class="w-32" :placeholder="t('pages.delivery.filterPoCategory')">
-        <el-option :label="t('status.production')" value="production" />
-        <el-option :label="t('status.sample')" value="sample" />
-        <el-option :label="t('status.return')" value="return" />
-        <el-option :label="t('status.subcont')" value="subcont" />
-        <el-option :label="t('status.claim')" value="claim" />
-        <el-option label="Suede" value="suede" />
-      </el-select>
-      <el-input v-model="customerFilter" clearable class="w-32" :placeholder="t('pages.delivery.filterCustomer')" />
-      <el-input v-model="keyword" :placeholder="t('pages.delivery.listSearchPlaceholder')" clearable class="delivery-toolbar-search" />
-      <el-switch v-model="showFullCols" :active-text="t('pages.delivery.showAllColumns')" class="ml-1" />
-      <el-select v-model="statusFilter" clearable :placeholder="t('common.status')" class="w-32">
-        <el-option label="Draft" value="draft" />
-        <el-option label="Sent" value="sent" />
-      </el-select>
-      <el-select
-        v-model="packingStatusFilter"
-        clearable
-        :placeholder="t('pages.delivery.filterPackingStatus')"
-        class="w-36"
-      >
-        <el-option :label="t('status.draft')" value="draft" />
-        <el-option :label="t('status.done')" value="done" />
-      </el-select>
-      <el-select
-        v-model="invplFilter"
-        clearable
-        :placeholder="t('pages.delivery.filterInvplPrinted')"
-        class="w-36"
-      >
-        <el-option :label="t('pages.delivery.filterInvplYes')" value="yes" />
-        <el-option :label="t('pages.delivery.filterInvplNo')" value="no" />
-      </el-select>
-      <el-button :icon="Download" :loading="exporting" @click="downloadDeliveryExcel">{{ t('pages.delivery.downloadExcel') }}</el-button>
-      <el-button v-if="canCreate" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
+      <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
-    <el-card shadow="never" class="mb-4">
-      <div class="flex items-center justify-between">
+    <div class="admin-inner-card">
+      <div class="admin-inner-card__head">
         <div>
-          <h3 class="text-lg font-semibold text-slate-800">{{ t('pages.delivery.listSheetTitle') }}</h3>
-          <p class="text-sm text-slate-500 mt-1">
-            {{ t('pages.delivery.flowInfo') }}
-          </p>
-        </div>
-        <div class="flex items-center gap-4">
-          <div class="text-right">
-            <p class="text-2xl font-bold text-slate-700">{{ totalLines }}</p>
-            <p class="text-xs text-slate-500">{{ t('common.total') }}</p>
-          </div>
+          <h3 class="admin-inner-card__title">{{ t('pages.delivery.listTitle') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.delivery.listSubtitle') }}</p>
         </div>
       </div>
-    </el-card>
 
-    <el-table
-      :data="lineRows"
-      v-loading="loading"
-      border
-      stripe
-      size="small"
-      class="admin-table"
-      table-layout="fixed"
-      :empty-text="t('pages.delivery.tableEmpty')"
-    >
+      <div class="admin-action-bar">
+        <p class="admin-action-bar__hint">{{ t('pages.delivery.exportListHint') }}</p>
+        <div class="admin-action-bar__buttons">
+          <el-button :icon="Download" :loading="exporting" @click="downloadDeliveryExcel">
+            {{ t('pages.delivery.downloadExcel') }}
+          </el-button>
+          <el-button v-if="canCreate" type="primary" plain :icon="Van" @click="openArrange">
+            {{ t('pages.delivery.arrangeShipment') }}
+          </el-button>
+        </div>
+      </div>
+
+      <div class="mkt-section-body">
+        <div class="filter-panel mb-4">
+          <p class="filter-panel__title">{{ t('common.filter') }}</p>
+          <el-form class="filter-form" label-position="top">
+            <el-row :gutter="12">
+              <el-col :xs="24" :sm="12" :md="8" :lg="5">
+                <el-form-item :label="t('pages.delivery.filterCustomer')">
+                  <el-select
+                    v-model="filterCustomerId"
+                    clearable
+                    filterable
+                    class="w-full"
+                    :placeholder="t('common.placeholder.customer')"
+                  >
+                    <el-option
+                      v-for="c in customers"
+                      :key="c.id"
+                      :label="customerOptionLabel(c)"
+                      :value="c.id"
+                    />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :xs="12" :sm="8" :md="6" :lg="3">
+                <el-form-item :label="t('common.status')">
+                  <el-select v-model="statusFilter" clearable class="w-full" :placeholder="t('common.status')">
+                    <el-option :label="t('status.draft')" value="draft" />
+                    <el-option :label="t('status.sent')" value="sent" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :xs="12" :sm="8" :md="6" :lg="3">
+                <el-form-item :label="t('pages.delivery.filterPoCategory')">
+                  <el-select v-model="poCategoryFilter" clearable class="w-full" :placeholder="t('common.category')">
+                    <el-option :label="t('status.production')" value="production" />
+                    <el-option :label="t('status.sample')" value="sample" />
+                    <el-option :label="t('status.return')" value="return" />
+                    <el-option :label="t('status.subcont')" value="subcont" />
+                    <el-option :label="t('status.claim')" value="claim" />
+                    <el-option :label="t('status.suede')" value="suede" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :xs="12" :sm="8" :md="6" :lg="3">
+                <el-form-item :label="t('pages.delivery.filterFactoryCode')">
+                  <el-input
+                    v-model="factoryCodeFilter"
+                    clearable
+                    class="w-full"
+                    :placeholder="t('pages.delivery.filterFactoryCode')"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :xs="12" :sm="8" :md="6" :lg="3">
+                <el-form-item :label="t('pages.delivery.filterPackingStatus')">
+                  <el-select
+                    v-model="packingStatusFilter"
+                    clearable
+                    class="w-full"
+                    :placeholder="t('pages.delivery.filterPackingStatus')"
+                  >
+                    <el-option :label="t('status.draft')" value="draft" />
+                    <el-option :label="t('status.done')" value="done" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :xs="12" :sm="8" :md="6" :lg="3">
+                <el-form-item :label="t('pages.delivery.filterInvplPrinted')">
+                  <el-select v-model="invplFilter" clearable class="w-full" :placeholder="t('pages.delivery.filterInvplPrinted')">
+                    <el-option :label="t('pages.delivery.filterInvplYes')" value="yes" />
+                    <el-option :label="t('pages.delivery.filterInvplNo')" value="no" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="18" :md="12" :lg="8">
+                <el-form-item :label="t('pages.delivery.filterShipDateRange')">
+                  <el-date-picker
+                    v-model="shipDateRange"
+                    type="daterange"
+                    value-format="YYYY-MM-DD"
+                    unlink-panels
+                    range-separator="—"
+                    size="small"
+                    class="w-full min-w-[200px] max-w-full"
+                    :shortcuts="deliveryDateShortcuts"
+                    clearable
+                    :start-placeholder="t('common.placeholder.fromDate')"
+                    :end-placeholder="t('common.placeholder.toDate')"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="8" :md="6" :lg="4" class="delivery-filter-action-col">
+                <el-form-item label="&nbsp;">
+                  <el-button class="w-full" :icon="RefreshLeft" @click="resetDeliveryFilters">{{ t('common.reset') }}</el-button>
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </el-form>
+        </div>
+
+        <div class="admin-stats-grid admin-stats-grid--4 mb-4">
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__value">{{ deliveryListStats.total }}</span>
+            <span class="admin-stat-card__label">{{ t('common.total') }}</span>
+          </div>
+          <div class="admin-stat-card admin-stat-card--info">
+            <span class="admin-stat-card__value">{{ deliveryListStats.shown }}</span>
+            <span class="admin-stat-card__label">{{ t('pages.delivery.shownOnPage') }}</span>
+          </div>
+          <div class="admin-stat-card admin-stat-card--warn">
+            <span class="admin-stat-card__value">{{ deliveryListStats.draft }}</span>
+            <span class="admin-stat-card__label">{{ t('pages.delivery.draftOnPage') }}</span>
+          </div>
+          <div class="admin-stat-card admin-stat-card--success">
+            <span class="admin-stat-card__value">{{ deliveryListStats.sent }}</span>
+            <span class="admin-stat-card__label">{{ t('pages.delivery.sentOnPage') }}</span>
+          </div>
+        </div>
+
+        <div class="delivery-table-toolbar mb-3">
+          <div class="delivery-column-toggle">
+            <el-switch v-model="showFullCols" size="small" />
+            <span class="text-sm text-slate-600">{{ t('pages.delivery.showAllColumns') }}</span>
+          </div>
+          <p class="delivery-scroll-hint">{{ t('pages.delivery.scrollHint') }}</p>
+        </div>
+
+        <div class="admin-table-scroll">
+          <el-table
+            :data="lineRows"
+            v-loading="loading"
+            border
+            stripe
+            size="small"
+            class="admin-table delivery-list-table"
+            table-layout="fixed"
+            :empty-text="t('pages.delivery.tableEmpty')"
+          >
       <el-table-column type="index" :label="t('common.noLabel')" width="50" align="center" fixed="left" />
       <el-table-column prop="surat_jalan_no" :label="t('pages.delivery.columns.noSj')" min-width="130" show-overflow-tooltip />
       <el-table-column :label="t('pages.delivery.columns.shipDate')" width="100">
@@ -91,7 +180,7 @@
       <el-table-column
         v-if="showFullCols"
         prop="system_no"
-        :label="t('pages.delivery.columns.systemNo')"
+        :label="t('pages.delivery.columns.soNumber')"
         min-width="110"
         show-overflow-tooltip
       />
@@ -163,7 +252,7 @@
       <el-table-column :label="t('pages.delivery.columns.status')" width="90" fixed="right">
         <template #default="{ row }">
           <el-tag :type="statusType(row.delivery_status)" size="small">
-            {{ statusLabel(row.delivery_status) }}
+            {{ deliveryStatusLabel(row.delivery_status) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -172,111 +261,187 @@
           <el-button :icon="View" link type="primary" @click="openDetailFromLine(row)" />
         </template>
       </el-table-column>
-    </el-table>
+          </el-table>
+        </div>
 
-    <div class="mt-4 flex justify-end">
-      <el-pagination
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :total="totalLines"
-        :page-sizes="[25, 50, 100, 200]"
-        layout="total, sizes, prev, pager, next"
-        background
-        @current-change="load"
-        @size-change="onPageSizeChange"
-      />
+        <div class="delivery-pagination">
+          <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            :total="totalLines"
+            :page-sizes="[25, 50, 100, 200]"
+            layout="total, sizes, prev, pager, next"
+            background
+          />
+        </div>
+      </div>
     </div>
 
-    <el-dialog v-model="formVisible" :title="`${t('common.create')} ${t('menu.delivery')}`" width="560px" destroy-on-close align-center>
-      <el-form label-position="top">
-        <el-form-item :label="t('common.customer')" required>
-          <el-select v-model="form.customer_id" filterable class="w-full">
-            <el-option
-              v-for="c in customers"
-              :key="c.id"
-              :label="customerOptionLabel(c)"
-              :value="c.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('pages.delivery.packingRequiredLabel')" required>
-          <el-select v-model="form.packing_id" filterable class="w-full" :placeholder="t('pages.delivery.pickDonePacking')" @change="onCreatePackingChange">
-            <el-option
-              v-for="p in packingsDone"
-              :key="p.id"
-              :label="`${p.packing_number || p.id} (${p.status})`"
-              :value="p.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('pages.delivery.deliveryType')" required>
-          <el-radio-group v-model="form.delivery_type" class="w-full">
-            <el-radio value="production">{{ t('status.production') }}</el-radio>
-            <el-radio value="sample">{{ t('status.sample') }}</el-radio>
-            <el-radio value="return">{{ t('status.return') }}</el-radio>
-            <el-radio value="subcont">{{ t('status.subcont') }}</el-radio>
-            <el-radio value="claim">{{ t('status.claim') }}</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item :label="t('common.date')">
-          <el-date-picker v-model="form.delivery_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
-        </el-form-item>
-        <el-form-item :label="t('pages.delivery.deliveryZone')">
-          <el-select v-model="form.delivery_zone" class="w-full">
-            <el-option :label="t('pages.delivery.deliveryZoneOuttown')" value="outtown" />
-            <el-option :label="t('pages.delivery.deliveryZoneLocal')" value="local" />
-          </el-select>
-          <span class="mt-1 block text-xs text-slate-500">{{ t('pages.delivery.deliveryZoneHint') }}</span>
-        </el-form-item>
-        <el-form-item :label="t('common.vehicle')">
-          <el-input v-model="form.vehicle_number" />
-        </el-form-item>
-        <el-form-item :label="t('common.driver')">
-          <el-input v-model="form.driver_name" />
-        </el-form-item>
-        <el-form-item :label="t('pages.delivery.manualDeliveryRemark')">
-          <el-input v-model="form.destination" type="textarea" :rows="2" :placeholder="t('pages.delivery.manualDeliveryRemarkHint')" />
-        </el-form-item>
-        <el-form-item :label="t('common.status')">
-          <el-select v-model="form.status" class="w-full" disabled>
-            <el-option :label="t('status.draft')" value="draft" />
-          </el-select>
-          <span class="mt-1 block text-xs text-slate-500">{{ t('pages.delivery.markSentHint') }}</span>
-        </el-form-item>
-        <el-form-item :label="t('pages.delivery.pickQtyToShip')" required>
-          <div v-if="createProdDetailsLoading" class="py-2 text-sm text-slate-500">
-            <el-icon class="is-loading"><Loading /></el-icon> {{ t('common.loading') }}
-          </div>
-          <el-table
-            v-else
-            :data="createCandidateProdDetails"
-            border
-            size="small"
-            max-height="220"
-            @selection-change="onCreateLineSelectionChange"
-          >
-            <el-table-column type="selection" width="48" />
-            <el-table-column prop="id" :label="t('pages.delivery.productionDetailId')" width="110">
-              <template #default="{ row }">#{{ row.id }}</template>
-            </el-table-column>
-            <el-table-column prop="qty_actual" :label="t('common.actual')" width="90" align="right">
-              <template #default="{ row }">{{ formatNumber(row.qty_actual, 2) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.delivery.qtyToShip')" min-width="140">
-              <template #default="{ row }">
+    <el-dialog
+      v-model="formVisible"
+      :title="t('pages.delivery.createDialogTitle')"
+      width="960px"
+      destroy-on-close
+      align-center
+      class="delivery-form-dialog"
+      @closed="resetCreateForm"
+    >
+      <p class="delivery-dialog-sub">{{ t('pages.delivery.createDialogSub') }}</p>
+
+      <el-form label-position="top" class="delivery-form">
+        <section class="delivery-form-section">
+          <header class="delivery-form-section__head">
+            <h4 class="delivery-form-section__title">{{ t('pages.delivery.createGroupSource') }}</h4>
+          </header>
+          <el-row :gutter="16">
+            <el-col :xs="24" :sm="12">
+              <el-form-item :label="t('pages.delivery.packingRequiredLabel')" required>
+                <el-select
+                  v-model="form.packing_id"
+                  filterable
+                  clearable
+                  class="w-full"
+                  :placeholder="t('pages.delivery.pickDonePacking')"
+                  @change="onCreatePackingChange"
+                >
+                  <el-option
+                    v-for="p in packingsDone"
+                    :key="p.id"
+                    :label="`${p.packing_number || p.id} (${packingStatusLabel(p.status)})`"
+                    :value="p.id"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item :label="t('common.customer')" required>
+                <el-select
+                  v-model="form.customer_id"
+                  filterable
+                  class="w-full"
+                  :placeholder="t('common.placeholder.customer')"
+                  :disabled="createCustomerFromPacking"
+                >
+                  <el-option
+                    v-for="c in customers"
+                    :key="c.id"
+                    :label="customerOptionLabel(c)"
+                    :value="c.id"
+                  />
+                </el-select>
+                <p v-if="createCustomerFromPacking" class="delivery-field-hint">{{ t('pages.delivery.createCustomerAutoHint') }}</p>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item :label="t('pages.delivery.deliveryType')" required>
+                <el-select v-model="form.delivery_type" class="w-full">
+                  <el-option :label="t('status.production')" value="production" />
+                  <el-option :label="t('status.sample')" value="sample" />
+                  <el-option :label="t('status.return')" value="return" />
+                  <el-option :label="t('status.subcont')" value="subcont" />
+                  <el-option :label="t('status.claim')" value="claim" />
+                  <el-option :label="t('status.suede')" value="suede" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </section>
+
+        <section class="delivery-form-section">
+          <header class="delivery-form-section__head">
+            <h4 class="delivery-form-section__title">{{ t('pages.delivery.createGroupShipment') }}</h4>
+          </header>
+          <el-row :gutter="16">
+            <el-col :xs="24" :sm="12">
+              <el-form-item :label="t('common.date')">
+                <el-date-picker v-model="form.delivery_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item :label="t('pages.delivery.deliveryZone')">
+                <el-select v-model="form.delivery_zone" class="w-full">
+                  <el-option :label="t('pages.delivery.deliveryZoneOuttown')" value="outtown" />
+                  <el-option :label="t('pages.delivery.deliveryZoneLocal')" value="local" />
+                </el-select>
+                <p class="delivery-field-hint">{{ t('pages.delivery.deliveryZoneHint') }}</p>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item :label="t('common.vehicle')">
+                <el-input v-model="form.vehicle_number" clearable />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item :label="t('common.driver')">
+                <el-input v-model="form.driver_name" clearable />
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item :label="t('pages.delivery.manualDeliveryRemark')">
                 <el-input
-                  v-model="createLineQty[row.id]"
-                  type="number"
-                  step="0.01"
-                  :placeholder="t('common.quantity')"
-                  @input="onCreateLineQtyInput(row)"
+                  v-model="form.destination"
+                  type="textarea"
+                  :rows="2"
+                  :placeholder="t('pages.delivery.manualDeliveryRemarkHint')"
                 />
-              </template>
-            </el-table-column>
-          </el-table>
-          <span class="mt-1 block text-xs text-slate-500">{{ t('pages.delivery.pickQtyToShipHint') }}</span>
-        </el-form-item>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </section>
+
+        <section class="delivery-form-section delivery-form-section--last">
+          <header class="delivery-form-section__head delivery-form-section__head--row">
+            <div>
+              <h4 class="delivery-form-section__title">{{ t('pages.delivery.createGroupLines') }}</h4>
+              <p class="delivery-form-section__sub">{{ t('pages.delivery.pickQtyToShipHint') }}</p>
+            </div>
+            <el-tag size="small" type="info" effect="plain">{{ t('status.draft') }}</el-tag>
+          </header>
+          <p class="delivery-field-hint mb-3">{{ t('pages.delivery.createDraftNote') }}</p>
+
+          <div v-if="!form.packing_id" class="delivery-form-empty">
+            {{ t('pages.delivery.createPickPackingFirst') }}
+          </div>
+          <div v-else-if="createProdDetailsLoading" class="delivery-form-loading">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            <span>{{ t('common.loadingData') }}</span>
+          </div>
+          <div v-else-if="!createCandidateProdDetails.length" class="delivery-form-empty">
+            {{ t('pages.delivery.noProductionLines') }}
+          </div>
+          <div v-else class="admin-table-scroll delivery-form-table-wrap">
+            <el-table
+              :data="createCandidateProdDetails"
+              border
+              size="small"
+              class="admin-table delivery-form-table"
+              max-height="240"
+              @selection-change="onCreateLineSelectionChange"
+            >
+              <el-table-column type="selection" width="48" fixed="left" />
+              <el-table-column prop="id" :label="t('pages.delivery.productionDetailId')" width="100" fixed="left">
+                <template #default="{ row }">#{{ row.id }}</template>
+              </el-table-column>
+              <el-table-column prop="qty_actual" :label="t('common.actual')" width="96" align="right">
+                <template #default="{ row }">{{ formatNumber(row.qty_actual, 2) }}</template>
+              </el-table-column>
+              <el-table-column :label="t('pages.delivery.qtyToShip')" min-width="120">
+                <template #default="{ row }">
+                  <el-input
+                    v-model="createLineQty[row.id]"
+                    type="number"
+                    step="0.01"
+                    size="small"
+                    :placeholder="t('common.quantity')"
+                    @input="onCreateLineQtyInput(row)"
+                  />
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </section>
       </el-form>
+
       <template #footer>
         <div class="delivery-dialog-footer">
           <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
@@ -288,21 +453,21 @@
     <el-dialog
       v-model="detailVisible"
       :title="t('pages.delivery.dialogDetail')"
-      width="720px"
+      width="960px"
       destroy-on-close
       align-center
       @closed="resetDetail"
     >
       <div v-if="detailLoading" class="py-12 text-center">
         <el-icon class="is-loading text-2xl text-blue-500"><Loading /></el-icon>
-        <p class="mt-2 text-sm text-slate-500">{{ t('common.loading') }}...</p>
+        <p class="mt-2 text-sm text-slate-500">{{ t('common.loadingData') }}...</p>
       </div>
       <template v-else-if="detailRow">
         <el-card class="mb-4" shadow="never">
           <template #header>
             <div class="flex items-center justify-between">
               <span class="font-semibold">{{ t('pages.delivery.basicInfo') }}</span>
-              <el-tag :type="statusType(detailRow.status)" size="small">{{ statusLabel(detailRow.status) }}</el-tag>
+              <el-tag :type="statusType(detailRow.status)" size="small">{{ deliveryStatusLabel(detailRow.status) }}</el-tag>
             </div>
           </template>
           <el-descriptions :column="2" border size="small">
@@ -313,7 +478,7 @@
             <el-descriptions-item :label="t('common.driver')">{{ detailRow.driver_name || '—' }}</el-descriptions-item>
             <el-descriptions-item :label="t('common.destination')">{{ detailRow.destination || '—' }}</el-descriptions-item>
             <el-descriptions-item v-if="detailRow.delivery_type" :label="t('pages.delivery.deliveryType')">
-              {{ detailRow.delivery_type }}
+              {{ categoryLabel(detailRow.delivery_type) }}
             </el-descriptions-item>
             <el-descriptions-item :label="t('pages.delivery.deliveryZone')">
               {{ deliveryZoneLabel(detailRow.delivery_zone) }}
@@ -380,8 +545,8 @@
                 </el-button>
               </template>
             </el-table-column>
-            <el-table-column prop="system_no" :label="t('pages.delivery.columns.systemNo')" width="110" show-overflow-tooltip />
-            <el-table-column prop="lot_number" :label="t('pages.delivery.columns.lotNo')" width="100" show-overflow-tooltip />
+            <el-table-column prop="system_no" :label="t('pages.delivery.columns.soNumber')" width="110" show-overflow-tooltip />
+            <el-table-column prop="lot_number" :label="t('pages.delivery.columns.lotNo')" width="130" show-overflow-tooltip />
             <el-table-column prop="material_name_line" :label="t('pages.delivery.columns.materialName')" min-width="120" show-overflow-tooltip />
             <el-table-column prop="thickness_display" :label="t('pages.delivery.columns.thickness')" width="90" show-overflow-tooltip />
             <el-table-column prop="color_line" :label="t('pages.delivery.columns.color')" width="80" show-overflow-tooltip />
@@ -400,6 +565,7 @@
 
         <div class="flex flex-wrap gap-3">
           <el-button v-if="canPrint" type="default" @click="openSjPrint">{{ t('pages.delivery.printSj') }}</el-button>
+          <el-button v-if="canPrint" type="default" @click="openSjDotmatrix">{{ t('pages.delivery.printSjDotmatrix') }}</el-button>
           <el-button v-if="canPrint" type="default" @click="downloadSjPdf">{{ t('pages.delivery.downloadPdf') }}</el-button>
           <el-button v-if="canPrint" type="primary" plain @click="openCommercialInvoice">{{ t('pages.delivery.openCommercialInvoice') }}</el-button>
           <el-button v-if="canPrint" type="primary" plain @click="downloadCommercialInvoicePdf">{{ t('pages.delivery.commercialInvoicePdf') }}</el-button>
@@ -411,7 +577,7 @@
             <span class="font-semibold">{{ t('pages.delivery.addLineLabel') }}</span>
           </template>
           <div v-if="prodDetailsLoading" class="py-4 text-center">
-            <el-icon class="is-loading"><Loading /></el-icon> {{ t('common.loading') }}
+            <el-icon class="is-loading"><Loading /></el-icon> {{ t('common.loadingData') }}
           </div>
           <template v-else-if="candidateProdDetails.length">
             <div class="grid grid-cols-2 gap-4">
@@ -443,6 +609,137 @@
         <el-button type="primary" @click="detailVisible = false">{{ t('pages.delivery.closeDetail') }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="arrangeVisible"
+      :title="t('pages.delivery.arrangeDialogTitle')"
+      width="1120px"
+      destroy-on-close
+      align-center
+      class="delivery-arrange-dialog"
+      @open="loadReadyToShip"
+      @closed="resetArrange"
+    >
+      <p class="delivery-dialog-sub">{{ t('pages.delivery.arrangeDialogSub') }}</p>
+
+      <section class="delivery-form-section">
+        <header class="delivery-form-section__head delivery-form-section__head--row">
+          <div>
+            <h4 class="delivery-form-section__title">{{ t('pages.delivery.arrangeGroupLots') }}</h4>
+            <p v-if="arrangeSelected.length" class="delivery-form-section__sub">
+              {{ t('pages.delivery.arrangeSelectedCount', { n: arrangeSelected.length }) }}
+            </p>
+          </div>
+          <div class="delivery-arrange-toolbar">
+            <el-input
+              v-model="arrangeKeyword"
+              clearable
+              class="delivery-arrange-search"
+              :placeholder="t('pages.delivery.arrangeSearchPlaceholder')"
+              @keyup.enter="loadReadyToShip"
+            />
+            <el-button :icon="RefreshLeft" :loading="arrangeLoading" @click="loadReadyToShip">
+              {{ t('common.refresh') }}
+            </el-button>
+          </div>
+        </header>
+
+        <div class="admin-table-scroll delivery-arrange-table-wrap">
+          <el-table
+            ref="arrangeTableRef"
+            :data="readyRows"
+            v-loading="arrangeLoading"
+            border
+            size="small"
+            class="admin-table delivery-arrange-table"
+            max-height="42vh"
+            row-key="production_detail_id"
+            :empty-text="t('pages.delivery.arrangeEmpty')"
+            @selection-change="onArrangeSelectionChange"
+          >
+            <el-table-column type="selection" width="48" fixed="left" :selectable="arrangeRowSelectable" />
+            <el-table-column prop="lot_no" :label="t('pages.delivery.columns.lotNo')" min-width="150" show-overflow-tooltip fixed="left" />
+            <el-table-column prop="so_number" :label="t('pages.delivery.columns.soNumber')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="customer_name" :label="t('pages.delivery.columns.factory')" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="brand" :label="t('pages.delivery.columns.buyer')" width="100" show-overflow-tooltip />
+            <el-table-column prop="material_name" :label="t('pages.delivery.columns.materialName')" min-width="120" show-overflow-tooltip />
+            <el-table-column :label="t('pages.delivery.arrangeQtyAvailable')" width="100" align="right">
+              <template #default="{ row }">{{ formatNumber(row.qty_available, 2) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.delivery.qtyToShip')" width="120" fixed="right">
+              <template #default="{ row }">
+                <el-input v-model="arrangeQty[row.production_detail_id]" type="number" step="0.01" size="small" />
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </section>
+
+      <div v-if="arrangeSelected.length" class="delivery-arrange-summary">
+        <p class="delivery-arrange-summary__title">{{ t('pages.delivery.overallTitle') }}</p>
+        <div class="delivery-arrange-summary__grid">
+          <div class="delivery-arrange-summary__item">
+            <span class="delivery-arrange-summary__label">{{ t('pages.delivery.overallLines') }}</span>
+            <span class="delivery-arrange-summary__value">{{ arrangeOverall.line_count }}</span>
+          </div>
+          <div class="delivery-arrange-summary__item">
+            <span class="delivery-arrange-summary__label">{{ t('pages.delivery.columns.factory') }}</span>
+            <span class="delivery-arrange-summary__value">{{ arrangeOverall.customer_name || '—' }}</span>
+          </div>
+          <div class="delivery-arrange-summary__item">
+            <span class="delivery-arrange-summary__label">{{ t('pages.delivery.columns.buyer') }}</span>
+            <span class="delivery-arrange-summary__value">{{ arrangeOverall.brand || '—' }}</span>
+          </div>
+          <div class="delivery-arrange-summary__item">
+            <span class="delivery-arrange-summary__label">{{ t('pages.delivery.overallSf') }}</span>
+            <span class="delivery-arrange-summary__value">{{ formatNumber(arrangeOverall.total_sf, 2) }}</span>
+          </div>
+          <div class="delivery-arrange-summary__item">
+            <span class="delivery-arrange-summary__label">{{ t('pages.delivery.overallRoll') }}</span>
+            <span class="delivery-arrange-summary__value">{{ arrangeOverall.total_roll }}</span>
+          </div>
+        </div>
+      </div>
+
+      <section class="delivery-form-section delivery-form-section--last">
+        <header class="delivery-form-section__head">
+          <h4 class="delivery-form-section__title">{{ t('pages.delivery.arrangeGroupShipment') }}</h4>
+        </header>
+        <el-form label-position="top" class="delivery-form">
+          <el-row :gutter="16">
+            <el-col :xs="24" :sm="8">
+              <el-form-item :label="t('common.date')" required>
+                <el-date-picker v-model="arrangeForm.delivery_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="8">
+              <el-form-item :label="t('common.vehicle')">
+                <el-input v-model="arrangeForm.vehicle_number" clearable />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="8">
+              <el-form-item :label="t('common.driver')">
+                <el-input v-model="arrangeForm.driver_name" clearable />
+              </el-form-item>
+            </el-col>
+            <el-col :span="24">
+              <el-form-item :label="t('pages.delivery.manualDeliveryRemark')">
+                <el-input v-model="arrangeForm.destination" type="textarea" :rows="2" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+      </section>
+
+      <template #footer>
+        <div class="delivery-dialog-footer">
+          <el-button @click="arrangeVisible = false">{{ t('common.cancel') }}</el-button>
+          <el-button v-if="canCreate" type="primary" :loading="arrangeSaving" @click="submitArrange">
+            {{ t('pages.delivery.arrangeSubmit') }}
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -451,21 +748,26 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, View, Van, Document, Download, Loading } from '@element-plus/icons-vue'
+import { Plus, View, Van, Download, Loading, RefreshLeft, Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { can } from '../../security/permissions'
-import { formatDate, formatNumber, statusType, statusLabel } from '../../utils/format'
+import { formatDate, formatNumber, statusType } from '../../utils/format'
+import { createPoOrderDateShortcuts } from '../../utils/poList.js'
 import {
   addDeliveryDetail,
   createDelivery,
+  createDeliveryFromPackingLines,
   fetchAuthenticatedDocument,
   getDelivery,
   getPacking,
+  getPo,
+  getProduction,
   listCustomers,
   listDeliveryDetails,
   listMarketingDeliveryLines,
   listPacking,
   listProductionDetails,
+  listReadyToShip,
   markSuratJalanPrinted,
   marketingDeliveryXlsxPath,
   me,
@@ -473,7 +775,7 @@ import {
   updateDelivery,
 } from '../../api/client'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const canCreate = can('delivery', 'create')
 const canUpdate = can('delivery', 'update')
 const canPrint = can('delivery', 'print')
@@ -489,16 +791,34 @@ const invplFilter = ref('')
 const shipDateRange = ref(null)
 const factoryCodeFilter = ref('')
 const poCategoryFilter = ref('')
-const customerFilter = ref('')
+const filterCustomerId = ref(null)
 const showFullCols = ref(false)
+const deliveryDateShortcuts = computed(() => createPoOrderDateShortcuts(t))
 const currentPage = ref(1)
 const pageSize = ref(50)
 const totalLines = ref(0)
 const isAdminRole = ref(false)
-const keywordWatchActive = ref(false)
+const filtersReady = ref(false)
 const lineRows = ref([])
 const customers = ref([])
 const packings = ref([])
+
+const deliveryListStats = computed(() => {
+  const rows = lineRows.value || []
+  let draft = 0
+  let sent = 0
+  for (const r of rows) {
+    const st = (r.delivery_status || '').toLowerCase()
+    if (st === 'sent') sent += 1
+    else if (st === 'draft') draft += 1
+  }
+  return {
+    total: totalLines.value,
+    shown: rows.length,
+    draft,
+    sent,
+  }
+})
 
 const packingsDone = computed(() =>
   (packings.value || []).filter((p) => (p.status || '').toLowerCase() === 'done'),
@@ -515,6 +835,29 @@ function customerOptionLabel(c) {
   return c.city ? `${base} ${t('common.dotSeparator')} ${c.city}` : base
 }
 
+function customerFilterQuery() {
+  if (!filterCustomerId.value) return ''
+  const c = customers.value.find((x) => x.id === filterCustomerId.value)
+  if (!c) return ''
+  return [c.code, c.name].filter(Boolean).join(' ').trim()
+}
+
+function deliveryStatusLabel(st) {
+  if (st && te(`status.${st}`)) return t(`status.${st}`)
+  return st || t('common.emptyValue')
+}
+
+function categoryLabel(cat) {
+  if (cat && te(`status.${cat}`)) return t(`status.${cat}`)
+  return cat || '—'
+}
+
+function packingStatusLabel(st) {
+  const key = (st || '').toLowerCase()
+  if (key && te(`status.${key}`)) return t(`status.${key}`)
+  return st || t('common.emptyValue')
+}
+
 function deliveryLinesQueryParams() {
   const p = {}
   if (statusFilter.value) p.delivery_status = statusFilter.value
@@ -528,33 +871,45 @@ function deliveryLinesQueryParams() {
   const fc = factoryCodeFilter.value.trim()
   if (fc) p.factory_code = fc
   if (poCategoryFilter.value) p.po_category = poCategoryFilter.value
-  const cu = customerFilter.value.trim()
+  const cu = customerFilterQuery()
   if (cu) p.customer = cu
   const qkw = keyword.value.trim()
   if (qkw) p.q = qkw
   return p
 }
 
-function onPageSizeChange() {
+function resetDeliveryFilters() {
+  statusFilter.value = ''
+  packingStatusFilter.value = ''
+  invplFilter.value = ''
+  shipDateRange.value = null
+  factoryCodeFilter.value = ''
+  poCategoryFilter.value = ''
+  filterCustomerId.value = null
+  keyword.value = ''
   currentPage.value = 1
   load()
+}
+
+async function loadMasterData() {
+  try {
+    const [cust, pack] = await Promise.all([listCustomers(), listPacking()])
+    customers.value = cust
+    packings.value = pack
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 
 async function load() {
   loading.value = true
   try {
     const skip = (currentPage.value - 1) * pageSize.value
-    const [linesResp, cust, pack] = await Promise.all([
-      listMarketingDeliveryLines({
-        ...deliveryLinesQueryParams(),
-        skip,
-        limit: pageSize.value,
-      }),
-      listCustomers(),
-      listPacking(),
-    ])
-    customers.value = cust
-    packings.value = pack
+    const linesResp = await listMarketingDeliveryLines({
+      ...deliveryLinesQueryParams(),
+      skip,
+      limit: pageSize.value,
+    })
     const lines = Array.isArray(linesResp) ? linesResp : (linesResp?.data || [])
     totalLines.value = typeof linesResp?.total === 'number' ? linesResp.total : lines.length
     lineRows.value = lines.map((r) => ({
@@ -569,25 +924,29 @@ async function load() {
   }
 }
 
+let filterLoadTimer = null
+function scheduleLoad() {
+  if (!filtersReady.value) return
+  if (filterLoadTimer) clearTimeout(filterLoadTimer)
+  filterLoadTimer = setTimeout(() => {
+    load()
+  }, 300)
+}
+
 watch(
-  [statusFilter, packingStatusFilter, invplFilter, shipDateRange, factoryCodeFilter, poCategoryFilter, customerFilter],
+  [keyword, statusFilter, packingStatusFilter, invplFilter, shipDateRange, factoryCodeFilter, poCategoryFilter, filterCustomerId],
   () => {
     currentPage.value = 1
-    load()
+    scheduleLoad()
   },
 )
 
-let keywordDebounce = null
-watch(keyword, () => {
-  if (!keywordWatchActive.value) return
-  if (keywordDebounce) clearTimeout(keywordDebounce)
-  keywordDebounce = setTimeout(() => {
-    currentPage.value = 1
-    load()
-  }, 400)
+watch([currentPage, pageSize], () => {
+  if (!filtersReady.value) return
+  load()
 })
 
-onMounted(() => {
+onMounted(async () => {
   try {
     me().then((u) => {
       isAdminRole.value = (u?.role || '') === 'admin'
@@ -606,20 +965,28 @@ onMounted(() => {
   if (q.factory_code != null && String(q.factory_code).trim()) factoryCodeFilter.value = String(q.factory_code).trim()
   if (q.po_category != null && String(q.po_category).trim()) poCategoryFilter.value = String(q.po_category).trim()
   if (q.po_number != null && String(q.po_number).trim()) keyword.value = String(q.po_number).trim()
-  if (q.customer != null && String(q.customer).trim()) customerFilter.value = String(q.customer).trim()
-  load()
-    .then(() => {
-      const deliveryIdRaw = route.query.delivery_id
-      const deliveryId = Number(deliveryIdRaw)
-      if (!Number.isNaN(deliveryId) && deliveryId > 0) {
-        const target = lineRows.value.find((r) => Number(r.delivery_id) === deliveryId)
-        if (target) openDetailFromLine(target)
-        else openDetailById(deliveryId)
-      }
+  await loadMasterData()
+  if (q.customer != null && String(q.customer).trim()) {
+    const needle = String(q.customer).trim().toLowerCase()
+    const matched = customers.value.find((c) => {
+      const hay = [c.code, c.name].filter(Boolean).join(' ').toLowerCase()
+      return hay.includes(needle)
     })
-    .finally(() => {
-      keywordWatchActive.value = true
-    })
+    if (matched) filterCustomerId.value = matched.id
+    else keyword.value = needle
+  }
+  try {
+    await load()
+    const deliveryIdRaw = route.query.delivery_id
+    const deliveryId = Number(deliveryIdRaw)
+    if (!Number.isNaN(deliveryId) && deliveryId > 0) {
+      const target = lineRows.value.find((r) => Number(r.delivery_id) === deliveryId)
+      if (target) openDetailFromLine(target)
+      else openDetailById(deliveryId)
+    }
+  } finally {
+    filtersReady.value = true
+  }
 })
 
 function goPoFromLine(row) {
@@ -662,6 +1029,15 @@ const createProdDetailsLoading = ref(false)
 const createCandidateProdDetails = ref([])
 const createSelectedLines = ref([])
 const createLineQty = reactive({})
+const createCustomerFromPacking = ref(false)
+const arrangeTableRef = ref(null)
+
+function resetCreateForm() {
+  createCandidateProdDetails.value = []
+  createSelectedLines.value = []
+  createCustomerFromPacking.value = false
+  Object.keys(createLineQty).forEach((k) => delete createLineQty[k])
+}
 
 function openCreate() {
   form.customer_id = null
@@ -673,21 +1049,32 @@ function openCreate() {
   form.driver_name = ''
   form.destination = ''
   form.status = 'draft'
-  createCandidateProdDetails.value = []
-  createSelectedLines.value = []
-  Object.keys(createLineQty).forEach((k) => delete createLineQty[k])
+  resetCreateForm()
   formVisible.value = true
 }
 
 async function onCreatePackingChange(packingId) {
-  createCandidateProdDetails.value = []
-  createSelectedLines.value = []
-  Object.keys(createLineQty).forEach((k) => delete createLineQty[k])
-  if (!packingId) return
+  resetCreateForm()
+  createCustomerFromPacking.value = false
+  if (!packingId) {
+    form.customer_id = null
+    return
+  }
   createProdDetailsLoading.value = true
   try {
     const pk = await getPacking(packingId)
-    if (!pk?.production_id) return
+    if (!pk?.production_id) {
+      ElMessage.warning(t('pages.delivery.noProductionLines'))
+      return
+    }
+    const prod = await getProduction(pk.production_id)
+    if (prod?.po_id) {
+      const po = await getPo(prod.po_id)
+      if (po?.customer_id) {
+        form.customer_id = po.customer_id
+        createCustomerFromPacking.value = true
+      }
+    }
     const pds = await listProductionDetails(pk.production_id)
     createCandidateProdDetails.value = pds || []
     for (const pd of createCandidateProdDetails.value) {
@@ -850,10 +1237,22 @@ async function openSjPrint() {
   }
 }
 
+async function openSjDotmatrix() {
+  if (!detailRow.value?.id) return
+  try {
+    await fetchAuthenticatedDocument(`/documents/surat-jalan/${detailRow.value.id}/dotmatrix`, { mode: 'open' })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
 async function downloadSjPdf() {
   if (!detailRow.value?.id) return
   try {
-    await fetchAuthenticatedDocument(`/documents/surat-jalan/${detailRow.value.id}/pdf`, { mode: 'open' })
+    await fetchAuthenticatedDocument(`/documents/surat-jalan/${detailRow.value.id}/pdf`, {
+      mode: 'download',
+      downloadFallbackName: `surat-jalan-${detailRow.value.delivery_number || detailRow.value.id}.pdf`,
+    })
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   }
@@ -971,10 +1370,332 @@ async function addLine() {
     addingLine.value = false
   }
 }
+
+const arrangeVisible = ref(false)
+const arrangeLoading = ref(false)
+const arrangeSaving = ref(false)
+const arrangeKeyword = ref('')
+const readyRows = ref([])
+const arrangeSelected = ref([])
+const arrangeQty = reactive({})
+const arrangeForm = reactive({
+  delivery_date: '',
+  vehicle_number: '',
+  driver_name: '',
+  destination: '',
+})
+
+const arrangeOverall = computed(() => {
+  let totalSf = 0
+  let totalRoll = 0
+  const brands = new Set()
+  const customers = new Set()
+  for (const row of arrangeSelected.value) {
+    const raw = arrangeQty[row.production_detail_id]
+    const q = raw != null && String(raw).trim() !== '' ? Number(raw) : row.qty_available
+    if (Number.isFinite(q)) totalSf += q
+    if (row.qty_roll != null) totalRoll += Number(row.qty_roll) || 0
+    if (row.brand) brands.add(row.brand)
+    if (row.customer_name) customers.add(row.customer_name)
+  }
+  return {
+    line_count: arrangeSelected.value.length,
+    total_sf: totalSf,
+    total_roll: totalRoll,
+    brand: brands.size === 1 ? [...brands][0] : '',
+    customer_name: customers.size === 1 ? [...customers][0] : '',
+  }
+})
+
+function openArrange() {
+  arrangeForm.delivery_date = new Date().toISOString().slice(0, 10)
+  arrangeForm.vehicle_number = ''
+  arrangeForm.driver_name = ''
+  arrangeForm.destination = ''
+  arrangeKeyword.value = ''
+  arrangeVisible.value = true
+}
+
+function resetArrange() {
+  readyRows.value = []
+  arrangeSelected.value = []
+  Object.keys(arrangeQty).forEach((k) => delete arrangeQty[k])
+}
+
+async function loadReadyToShip() {
+  arrangeLoading.value = true
+  try {
+    const kw = arrangeKeyword.value.trim()
+    readyRows.value = await listReadyToShip({ lot_keyword: kw || undefined, limit: 500 })
+    for (const row of readyRows.value) {
+      if (arrangeQty[row.production_detail_id] == null) {
+        arrangeQty[row.production_detail_id] = String(row.qty_available ?? '')
+      }
+    }
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+    readyRows.value = []
+  } finally {
+    arrangeLoading.value = false
+  }
+}
+
+function onArrangeSelectionChange(selection) {
+  arrangeSelected.value = selection || []
+}
+
+function arrangeRowSelectable(row) {
+  if (!arrangeSelected.value.length) return true
+  const first = arrangeSelected.value[0]
+  return row.customer_id === first.customer_id && row.brand === first.brand
+}
+
+async function submitArrange() {
+  if (!arrangeSelected.value.length) {
+    ElMessage.warning(t('pages.delivery.arrangePickWarning'))
+    return
+  }
+  if (!arrangeForm.delivery_date) {
+    ElMessage.warning(t('pages.delivery.arrangeDateWarning'))
+    return
+  }
+  const packingId = arrangeSelected.value[0].packing_id
+  const lines = arrangeSelected.value.map((row) => {
+    const raw = arrangeQty[row.production_detail_id]
+    const qty = raw != null && String(raw).trim() !== '' ? Number(raw) : row.qty_available
+    return {
+      production_detail_id: row.production_detail_id,
+      packing_detail_id: row.packing_detail_id || undefined,
+      qty: Number.isFinite(qty) ? qty : undefined,
+      qty_roll: row.qty_roll != null ? row.qty_roll : undefined,
+      qty_pcs: row.qty_pcs != null ? row.qty_pcs : undefined,
+      weight: row.weight_net != null ? row.weight_net : undefined,
+    }
+  })
+  arrangeSaving.value = true
+  try {
+    const created = await createDeliveryFromPackingLines({
+      packing_id: packingId,
+      customer_id: arrangeSelected.value[0].customer_id,
+      delivery_date: toIsoDate(arrangeForm.delivery_date) || undefined,
+      delivery_type: 'production',
+      delivery_zone: 'outtown',
+      vehicle_number: arrangeForm.vehicle_number || undefined,
+      driver_name: arrangeForm.driver_name || undefined,
+      destination: arrangeForm.destination || undefined,
+      lines,
+    })
+    ElMessage.success(t('pages.delivery.saved'))
+    arrangeVisible.value = false
+    await load()
+    if (created?.id) openDetailById(created.id)
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    arrangeSaving.value = false
+  }
+}
 </script>
 
 <style scoped>
-.delivery-toolbar-search {
-  width: 240px;
+.delivery-filter-action-col {
+  display: flex;
+  align-items: flex-end;
+}
+
+.delivery-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.delivery-column-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.delivery-scroll-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.delivery-list-table {
+  width: 100%;
+  min-width: 1180px;
+}
+
+.delivery-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.delivery-dialog-sub {
+  margin: 0 0 16px;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.delivery-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.delivery-form-section {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.delivery-form-section--last {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.delivery-form-section__head {
+  margin-bottom: 12px;
+}
+
+.delivery-form-section__head--row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.delivery-form-section__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.delivery-form-section__sub {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.delivery-field-hint {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #64748b;
+}
+
+.delivery-form-empty,
+.delivery-form-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 120px;
+  padding: 16px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  font-size: 0.8125rem;
+  color: #64748b;
+  text-align: center;
+}
+
+.delivery-form-table-wrap {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.delivery-form-table {
+  min-width: 560px;
+}
+
+.delivery-arrange-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 16rem;
+  max-width: 100%;
+  justify-content: flex-end;
+}
+
+.delivery-arrange-search {
+  min-width: 0;
+  flex: 1 1 12rem;
+  max-width: 280px;
+}
+
+.delivery-arrange-table-wrap {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.delivery-arrange-table {
+  min-width: 1040px;
+}
+
+.delivery-arrange-summary {
+  margin: 16px 0 20px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+}
+
+.delivery-arrange-summary__title {
+  margin: 0 0 12px;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.delivery-arrange-summary__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+@media (min-width: 640px) {
+  .delivery-arrange-summary__grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.delivery-arrange-summary__item {
+  min-width: 0;
+}
+
+.delivery-arrange-summary__label {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.delivery-arrange-summary__value {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:deep(.delivery-form-dialog .el-dialog__body),
+:deep(.delivery-arrange-dialog .el-dialog__body) {
+  padding-top: 12px;
 }
 </style>
