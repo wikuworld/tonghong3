@@ -15,9 +15,11 @@ from app.schemas import (
     DeliveryDetailEnrichedOut,
     DeliveryDetailOut,
     DeliveryDetailUpdate,
+    DeliveryFromPackingLinesIn,
     DeliveryHeaderCreate,
     DeliveryHeaderOut,
     DeliveryHeaderUpdate,
+    ReadyToShipLineOut,
 )
 from app.services.business_rules import require_packing_ready
 from app.routers.auth import get_current_user, require_roles
@@ -25,6 +27,13 @@ from app.services.audit import log_change
 from app.services.notifications import create_notification_for_roles
 from app.services.mkt_workflow import sync_mkt_for_delivery, sync_mkt_workflow_auto_advance
 from app.services.business_rules import po_numbers_from_delivery
+from app.services.delivery_shipment import (
+    list_ready_to_ship,
+    lot_number_for_line,
+    so_number_for_line,
+    validate_delivery_detail_fits_header,
+    validate_same_customer_and_brand,
+)
 from app.routers.reports import _order_type_label, _thickness_display
 
 router = APIRouter(tags=["delivery"])
@@ -36,9 +45,6 @@ def _delivery_detail_enriched(
     pod: PoDetail | None,
     ph: PoHeader | None,
 ) -> DeliveryDetailEnrichedOut:
-    lot_number = ((pd.lot_number or "").strip()) if pd else ""
-    if not lot_number and pod:
-        lot_number = (pod.thi_line_ref or "").strip()
     return DeliveryDetailEnrichedOut(
         id=dd.id,
         delivery_id=dd.delivery_id,
@@ -50,8 +56,8 @@ def _delivery_detail_enriched(
         po_id=int(ph.id) if ph else None,
         po_number=(ph.po_number or "").strip() if ph else "",
         po_detail_id=int(pod.id) if pod else None,
-        system_no=((pod.system_reference or pod.thi_line_ref or "").strip()) if pod else "",
-        lot_number=lot_number,
+        system_no=so_number_for_line(ph, pod),
+        lot_number=lot_number_for_line(pod, pd),
         material_name_line=((pod.material_name or "").strip()) if pod else "",
         thickness_display=_thickness_display(pod) if pod else "",
         color_line=((pod.color or "").strip()) if pod else "",
@@ -122,6 +128,90 @@ def mark_surat_jalan_printed(
     db.commit()
     db.refresh(row)
     return row
+
+
+@router.get("/delivery-shipments/ready", response_model=list[ReadyToShipLineOut])
+def delivery_ready_to_ship(
+    db: Session = Depends(get_db),
+    packing_id: Optional[int] = Query(None),
+    lot_keyword: Optional[str] = Query(None, description="Cari nomor lot / SO / material"),
+    customer_id: Optional[int] = Query(None),
+    limit: int = Query(500, ge=1, le=2000),
+    _user=Depends(get_current_user),
+) -> list[ReadyToShipLineOut]:
+    rows = list_ready_to_ship(
+        db,
+        packing_id=packing_id,
+        lot_keyword=lot_keyword,
+        customer_id=customer_id,
+        limit=limit,
+    )
+    return [ReadyToShipLineOut.model_validate(r) for r in rows]
+
+
+@router.post("/delivery-shipments/from-packing-lines", response_model=DeliveryHeaderOut)
+def create_delivery_from_packing_lines(
+    body: DeliveryFromPackingLinesIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "warehouse")),
+) -> DeliveryHeader:
+    require_packing_ready(db, body.packing_id)
+    if not body.lines:
+        raise HTTPException(status_code=400, detail="Pilih minimal satu baris lot")
+    pd_ids = [int(ln.production_detail_id) for ln in body.lines]
+    customer_id, _brand = validate_same_customer_and_brand(
+        db, pd_ids, expected_customer_id=body.customer_id
+    )
+    hdr = DeliveryHeader(
+        customer_id=customer_id or body.customer_id,
+        packing_id=body.packing_id,
+        delivery_date=body.delivery_date,
+        delivery_type=body.delivery_type,
+        delivery_zone=body.delivery_zone,
+        vehicle_number=body.vehicle_number,
+        driver_name=body.driver_name,
+        destination=body.destination,
+        status="draft",
+    )
+    db.add(hdr)
+    db.flush()
+    for ln in body.lines:
+        if not _has_qc_ok(db, ln.production_detail_id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Production detail #{ln.production_detail_id} belum QC OK",
+            )
+        validate_delivery_qty_against_po_balance(
+            db,
+            production_detail_id=int(ln.production_detail_id),
+            qty=ln.qty,
+        )
+        db.add(
+            DeliveryDetail(
+                delivery_id=hdr.id,
+                production_detail_id=ln.production_detail_id,
+                qty=ln.qty,
+                qty_roll=ln.qty_roll,
+                qty_pcs=ln.qty_pcs,
+                weight=ln.weight,
+            )
+        )
+    log_change(
+        db,
+        entity_type="delivery",
+        entity_id=hdr.id,
+        action="create_from_packing_lines",
+        after={"packing_id": body.packing_id, "line_count": len(body.lines)},
+        actor=user.username,
+    )
+    po_numbers = po_numbers_from_delivery(db, hdr.id)
+    for pn in po_numbers:
+        ph = db.scalars(select(PoHeader).where(PoHeader.po_number == pn).limit(1)).first()
+        if ph:
+            sync_mkt_workflow_auto_advance(db, ph.id, actor=user.username)
+    db.commit()
+    db.refresh(hdr)
+    return hdr
 
 
 @router.post("/delivery", response_model=DeliveryHeaderOut)
@@ -280,6 +370,7 @@ def add_delivery_detail(
         production_detail_id=body.production_detail_id,
         qty=body.qty,
     )
+    validate_delivery_detail_fits_header(db, delivery_id, int(body.production_detail_id))
     row = DeliveryDetail(
         delivery_id=delivery_id, **body.model_dump(exclude_unset=True)
     )

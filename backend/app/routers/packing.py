@@ -12,8 +12,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import PackingDetail, PackingHeader
-from app.schemas import PackingDetailOut, PackingHeaderOut
+from app.models import PackingDetail, PackingHeader, PoDetail, PoHeader, ProductionDetail
+from app.schemas import (
+    PackingDetailBatchIn,
+    PackingDetailEnrichedOut,
+    PackingDetailOut,
+    PackingDetailUpdate,
+    PackingHeaderOut,
+)
+from app.services.delivery_shipment import lot_number_for_line, so_number_for_line, _has_qc_ok
 from app.services.numbering import next_number
 from app.services.business_rules import validate_packing_links
 from app.routers.auth import get_current_user, require_roles
@@ -43,6 +50,28 @@ class PackingHeaderUpdate(BaseModel):
 class PackingDetailCreate(BaseModel):
     production_detail_id: Optional[int] = None
     qty_packed: Optional[Decimal] = None
+    qty_roll: Optional[int] = None
+    qty_pcs: Optional[int] = None
+    weight_net: Optional[Decimal] = None
+
+
+def _enrich_packing_detail(db: Session, d: PackingDetail) -> PackingDetailEnrichedOut:
+    pd = db.get(ProductionDetail, d.production_detail_id) if d.production_detail_id else None
+    pod = db.get(PoDetail, pd.po_detail_id) if pd and pd.po_detail_id else None
+    ph = db.get(PoHeader, pod.po_id) if pod and pod.po_id else None
+    return PackingDetailEnrichedOut(
+        id=d.id,
+        packing_id=d.packing_id,
+        production_detail_id=d.production_detail_id,
+        qty_packed=float(d.qty_packed) if d.qty_packed is not None else None,
+        qty_roll=d.qty_roll,
+        qty_pcs=d.qty_pcs,
+        weight_net=float(d.weight_net) if d.weight_net is not None else None,
+        lot_no=lot_number_for_line(pod, pd),
+        so_number=so_number_for_line(ph, pod),
+        material_name=(pod.material_name or "").strip() if pod else "",
+        qty_actual=float(pd.qty_actual) if pd and pd.qty_actual is not None else None,
+    )
 
 
 @router.get("/packing", response_model=list[PackingHeaderOut])
@@ -173,6 +202,124 @@ def get_packing(
     return row
 
 
+@router.get("/packing/{packing_id}/details", response_model=list[PackingDetailEnrichedOut])
+def list_packing_details(
+    packing_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> list[PackingDetailEnrichedOut]:
+    hdr = db.get(PackingHeader, packing_id)
+    if not hdr:
+        raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
+    rows = db.scalars(
+        select(PackingDetail).where(PackingDetail.packing_id == packing_id).order_by(PackingDetail.id.asc())
+    ).all()
+    return [_enrich_packing_detail(db, d) for d in rows]
+
+
+@router.get("/packing/{packing_id}/candidate-lines", response_model=list[PackingDetailEnrichedOut])
+def list_packing_candidate_lines(
+    packing_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> list[PackingDetailEnrichedOut]:
+    """Baris produksi QC OK untuk diinput packing list (belum/sudah ada di packing_details)."""
+    hdr = db.get(PackingHeader, packing_id)
+    if not hdr or not hdr.production_id:
+        raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
+    existing = {
+        int(d.production_detail_id): d
+        for d in db.scalars(select(PackingDetail).where(PackingDetail.packing_id == packing_id)).all()
+        if d.production_detail_id
+    }
+    pds = db.scalars(
+        select(ProductionDetail)
+        .where(ProductionDetail.production_id == hdr.production_id)
+        .order_by(ProductionDetail.id.asc())
+    ).all()
+    out: list[PackingDetailEnrichedOut] = []
+    for pd in pds:
+        if not _has_qc_ok(db, int(pd.id)):
+            continue
+        pkd = existing.get(int(pd.id))
+        if pkd:
+            out.append(_enrich_packing_detail(db, pkd))
+        else:
+            pod = db.get(PoDetail, pd.po_detail_id) if pd.po_detail_id else None
+            ph = db.get(PoHeader, pod.po_id) if pod and pod.po_id else None
+            out.append(
+                PackingDetailEnrichedOut(
+                    id=0,
+                    packing_id=packing_id,
+                    production_detail_id=int(pd.id),
+                    qty_packed=float(pd.qty_actual) if pd.qty_actual is not None else float(pd.qty_planned or 0),
+                    qty_roll=None,
+                    qty_pcs=None,
+                    weight_net=None,
+                    lot_no=lot_number_for_line(pod, pd),
+                    so_number=so_number_for_line(ph, pod),
+                    material_name=(pod.material_name or "").strip() if pod else "",
+                    qty_actual=float(pd.qty_actual) if pd.qty_actual is not None else None,
+                )
+            )
+    return out
+
+
+@router.post("/packing/{packing_id}/details/batch", response_model=list[PackingDetailOut])
+def save_packing_details_batch(
+    packing_id: int,
+    body: PackingDetailBatchIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "warehouse")),
+) -> list[PackingDetail]:
+    hdr = db.get(PackingHeader, packing_id)
+    if not hdr:
+        raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
+    if not body.lines:
+        raise HTTPException(status_code=400, detail="Minimal satu baris packing list")
+    existing = {
+        int(d.production_detail_id): d
+        for d in db.scalars(select(PackingDetail).where(PackingDetail.packing_id == packing_id)).all()
+        if d.production_detail_id
+    }
+    saved: list[PackingDetail] = []
+    for ln in body.lines:
+        pd_id = int(ln.production_detail_id)
+        if not _has_qc_ok(db, pd_id):
+            raise HTTPException(status_code=400, detail=f"Production detail #{pd_id} belum QC OK")
+        row = existing.get(pd_id)
+        if row:
+            if ln.qty_packed is not None:
+                row.qty_packed = ln.qty_packed
+            if ln.qty_roll is not None:
+                row.qty_roll = ln.qty_roll
+            if ln.qty_pcs is not None:
+                row.qty_pcs = ln.qty_pcs
+            if ln.weight_net is not None:
+                row.weight_net = ln.weight_net
+        else:
+            row = PackingDetail(
+                packing_id=packing_id,
+                production_detail_id=pd_id,
+                qty_packed=ln.qty_packed,
+                qty_roll=ln.qty_roll,
+                qty_pcs=ln.qty_pcs,
+                weight_net=ln.weight_net,
+            )
+            db.add(row)
+            existing[pd_id] = row
+        saved.append(row)
+    db.flush()
+    log_change(
+        db,
+        entity_type="packing",
+        entity_id=packing_id,
+        action="batch_details",
+        after={"line_count": len(body.lines)},
+        actor=user.username,
+    )
+    db.commit()
+    for row in saved:
+        db.refresh(row)
+    return saved
+
+
 @router.post("/packing/{packing_id}/details", response_model=PackingDetailOut)
 def add_packing_detail(
     packing_id: int,
@@ -183,10 +330,15 @@ def add_packing_detail(
     hdr = db.get(PackingHeader, packing_id)
     if not hdr:
         raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
+    if body.production_detail_id and not _has_qc_ok(db, int(body.production_detail_id)):
+        raise HTTPException(status_code=400, detail="Hanya baris QC OK yang boleh dipacking")
     d = PackingDetail(
         packing_id=packing_id,
         production_detail_id=body.production_detail_id,
         qty_packed=body.qty_packed,
+        qty_roll=body.qty_roll,
+        qty_pcs=body.qty_pcs,
+        weight_net=body.weight_net,
     )
     db.add(d)
     db.flush()
@@ -201,3 +353,34 @@ def add_packing_detail(
     db.commit()
     db.refresh(d)
     return d
+
+
+@router.put("/packing-detail/{detail_id}", response_model=PackingDetailOut)
+def update_packing_detail(
+    detail_id: int,
+    body: PackingDetailUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "warehouse")),
+) -> PackingDetail:
+    row = db.get(PackingDetail, detail_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Baris packing tidak ditemukan")
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(row, k, v)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/packing-detail/{detail_id}")
+def delete_packing_detail(
+    detail_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "warehouse")),
+) -> dict:
+    row = db.get(PackingDetail, detail_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Baris packing tidak ditemukan")
+    db.delete(row)
+    db.commit()
+    return {"status": "ok"}

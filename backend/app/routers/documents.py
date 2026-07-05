@@ -171,6 +171,14 @@ def document_surat_jalan(
     return HTMLResponse(md.render_sj_html(ctx))
 
 
+@router.get("/documents/surat-jalan/{delivery_id}/dotmatrix")
+def document_surat_jalan_dotmatrix(
+    delivery_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+) -> HTMLResponse:
+    ctx = _sj_ctx(db, delivery_id)
+    return HTMLResponse(md.render_sj_dotmatrix_html(ctx))
+
+
 @router.get("/documents/invpl/{packing_id}/xlsx")
 def document_invpl_xlsx(
     packing_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)

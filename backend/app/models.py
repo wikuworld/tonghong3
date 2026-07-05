@@ -689,6 +689,9 @@ class PackingDetail(Base):
         BigInteger, ForeignKey("production_details.id")
     )
     qty_packed: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+    qty_roll: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    qty_pcs: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    weight_net: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 3), nullable=True)
 
 
 class DeliveryHeader(Base):

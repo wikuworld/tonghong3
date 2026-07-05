@@ -864,6 +864,20 @@ export function createDelivery(body) {
   return apiFetch('/delivery', { method: 'POST', body: JSON.stringify(body) })
 }
 
+export function listReadyToShip(params = {}) {
+  const q = new URLSearchParams()
+  if (params.packing_id != null) q.set('packing_id', String(params.packing_id))
+  if (params.lot_keyword) q.set('lot_keyword', String(params.lot_keyword).trim())
+  if (params.customer_id != null) q.set('customer_id', String(params.customer_id))
+  if (params.limit != null) q.set('limit', String(params.limit))
+  const suffix = q.toString() ? `?${q.toString()}` : ''
+  return apiFetch(`/delivery-shipments/ready${suffix}`)
+}
+
+export function createDeliveryFromPackingLines(body) {
+  return apiFetch('/delivery-shipments/from-packing-lines', { method: 'POST', body: JSON.stringify(body) })
+}
+
 export function updateDelivery(id, body) {
   return apiFetch(`/delivery/${id}`, { method: 'PUT', body: JSON.stringify(body) })
 }
@@ -905,6 +919,29 @@ export function markInvplPrinted(packingId) {
 
 export function addPackingDetail(packingId, body) {
   return apiFetch(`/packing/${packingId}/details`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function listPackingDetails(packingId) {
+  return apiFetch(`/packing/${packingId}/details`)
+}
+
+export function listPackingCandidateLines(packingId) {
+  return apiFetch(`/packing/${packingId}/candidate-lines`)
+}
+
+export function savePackingDetailsBatch(packingId, lines) {
+  return apiFetch(`/packing/${packingId}/details/batch`, {
+    method: 'POST',
+    body: JSON.stringify({ lines }),
+  })
+}
+
+export function updatePackingDetail(detailId, body) {
+  return apiFetch(`/packing-detail/${detailId}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deletePackingDetail(detailId) {
+  return apiFetch(`/packing-detail/${detailId}`, { method: 'DELETE' })
 }
 
 // --- Invoice ---
