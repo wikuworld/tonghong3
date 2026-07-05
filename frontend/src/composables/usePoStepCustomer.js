@@ -33,6 +33,15 @@ export function pickDefaultBrandId(brandIds, mappings) {
   return brandIds.length ? Number(brandIds[0]) : null
 }
 
+/** Untuk preview/nomor SO: production + PU coated → prefix THIPM. */
+export function inferSoMaterialGroup(formModel, draftLines = []) {
+  const vir = String(formModel?.vir_softness_type || draftLines[0]?.vir_softness_type || '').toLowerCase()
+  const material = String(formModel?.material_name || draftLines[0]?.material_name || '').toLowerCase()
+  const text = `${vir} ${material}`
+  if (text.includes('pu') && !text.includes('suede') && !text.includes('suide')) return 'pu'
+  return undefined
+}
+
 /** Step 0: customer, brand, buyer, preview nomor SO. */
 export function usePoStepCustomer({
   t,
@@ -48,12 +57,20 @@ export function usePoStepCustomer({
   autoFieldMeta,
   isEditMode,
   nextPoNumberPreview,
+  draftLines,
   applyAutoFactoryCode,
 }) {
   async function refreshNextPoNumberPreview() {
     if (isEditMode.value) return
     try {
-      const r = await fetchNextPoNumber()
+      const lines = draftLines?.value || []
+      const params = {
+        po_category: formModel.po_category,
+        order_date: formModel.order_date || undefined,
+      }
+      const materialGroup = inferSoMaterialGroup(formModel, lines)
+      if (materialGroup) params.material_group = materialGroup
+      const r = await fetchNextPoNumber(params)
       nextPoNumberPreview.value = r?.po_number || ''
     } catch {
       nextPoNumberPreview.value = ''

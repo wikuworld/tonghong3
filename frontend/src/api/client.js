@@ -299,8 +299,22 @@ export function listPoMktStages() {
   return apiFetch('/po/mkt-workflow-stages')
 }
 
-export function fetchNextPoNumber() {
-  return apiFetch('/po/next-number')
+export function fetchNextPoNumber(params = {}) {
+  const q = new URLSearchParams()
+  if (params.po_category && String(params.po_category).trim()) {
+    q.set('po_category', String(params.po_category).trim())
+  }
+  if (params.order_date && String(params.order_date).trim()) {
+    q.set('order_date', String(params.order_date).trim())
+  }
+  if (params.material_group && String(params.material_group).trim()) {
+    q.set('material_group', String(params.material_group).trim())
+  }
+  if (params.order_type_label && String(params.order_type_label).trim()) {
+    q.set('order_type_label', String(params.order_type_label).trim())
+  }
+  const qs = q.toString()
+  return apiFetch(`/po/next-number${qs ? `?${qs}` : ''}`)
 }
 
 /** Cek duplikat No. PO customer untuk customer yang sama. */

@@ -12,10 +12,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "po_headers",
-        sa.Column("po_customer_ref_norm", sa.String(length=255), nullable=True),
-    )
+    bind = op.get_bind()
+    insp = sa.inspect(bind)
+    if not any(c["name"] == "po_customer_ref_norm" for c in insp.get_columns("po_headers")):
+        op.add_column(
+            "po_headers",
+            sa.Column("po_customer_ref_norm", sa.String(length=255), nullable=True),
+        )
     conn = op.get_bind()
     conn.execute(
         sa.text(

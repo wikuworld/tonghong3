@@ -2,51 +2,72 @@
   <el-dialog
     v-model="w.formDialogVisible"
     :fullscreen="false"
-    width="90%"
-    top="3vh"
+    width="94%"
+    style="max-width: 1040px"
+    top="4vh"
     destroy-on-close
-    class="po-fullscreen-dialog"
+    align-center
+    class="po-wizard-dialog"
     :before-close="w.handlePoDialogBeforeClose"
+    :show-close="true"
   >
     <template #header>
-      <div class="po-dialog-header">
-        <el-icon class="po-dialog-close" @click="w.requestCloseFormDialog"><Close /></el-icon>
-        <div class="po-dialog-title-area">
-          <el-icon class="po-dialog-icon"><DocumentAdd /></el-icon>
-          <span class="po-dialog-title">
-            {{ w.isEditMode ? t('pages.poEntry.title') + ' ' + t('pages.po.editSuffix') : t('pages.poEntry.title') }}
-          </span>
-          <el-tag v-if="!w.isEditMode" type="info" effect="plain" size="small">
-            {{ w.nextPoNumberDisplay }}
-          </el-tag>
-          <el-tag v-else type="primary" effect="plain" size="small">
-            {{ w.formModel.po_number }}
-          </el-tag>
-          <el-button
-            v-if="w.isEditMode && w.canManage"
-            type="warning"
-            size="small"
-            class="ml-2 shrink-0"
-            @click="w.openMarketingReviseDialog"
-          >
-            {{ t('pages.po.marketingReviseOpen') }}
-          </el-button>
+      <div class="po-wizard-header">
+        <div class="po-wizard-header__main">
+          <div class="po-wizard-header__title-row">
+            <el-icon class="po-wizard-header__icon"><DocumentAdd /></el-icon>
+            <div class="po-wizard-header__titles">
+              <h2 class="po-wizard-header__title">
+                {{ w.isEditMode ? t('pages.poEntry.title') + ' ' + t('pages.po.editSuffix') : t('pages.poEntry.title') }}
+              </h2>
+              <p class="po-wizard-header__sub">{{ t('pages.poEntry.subtitle') }}</p>
+            </div>
+            <el-tag v-if="!w.isEditMode" type="info" effect="plain" size="small">
+              {{ w.nextPoNumberDisplay }}
+            </el-tag>
+            <el-tag v-else type="primary" effect="plain" size="small">
+              {{ w.formModel.po_number }}
+            </el-tag>
+            <el-button
+              v-if="w.isEditMode && w.canManage"
+              type="warning"
+              size="small"
+              class="shrink-0"
+              @click="w.openMarketingReviseDialog"
+            >
+              {{ t('pages.po.marketingReviseOpen') }}
+            </el-button>
+          </div>
         </div>
-        <div class="po-dialog-steps-wrapper">
-          <el-steps class="mb-4 po-dialog-steps w-full" :space="100" :active="w.currentStep" simple>
-            <el-step :title="t('pages.po.step1Title')" :icon="Edit" />
-            <el-step :title="t('pages.po.step2Title')" :icon="UploadFilled" />
-            <el-step :title="t('pages.po.step3Title')" :icon="Picture" />
-          </el-steps>
-        </div>
+        <el-steps class="po-wizard-steps" :active="w.currentStep" align-center finish-status="success" simple>
+          <el-step :title="t('pages.po.step1Title')" :icon="Edit" />
+          <el-step :title="t('pages.po.step2Title')" :icon="UploadFilled" />
+          <el-step :title="t('pages.po.step3Title')" :icon="Picture" />
+        </el-steps>
+        <p class="po-wizard-step-hint">
+          {{ t('pages.po.wizardStepHint', {
+            current: w.currentStep + 1,
+            total: 3,
+            label: w.currentStep === 0 ? t('pages.po.step1Title') : w.currentStep === 1 ? t('pages.po.step2Title') : t('pages.po.step3Title'),
+          }) }}
+        </p>
       </div>
     </template>
 
-    <div class="po-dialog-content">
+    <div class="po-wizard-body">
       <el-form label-position="top" class="po-dialog-form" @keydown.enter.prevent="w.handleEnterKey">
-        <div v-show="w.currentStep === 0" class="step-content">
-          <h3 class="text-lg font-semibold mb-4">{{ t('pages.po.customerSoSection') }}</h3>
-          <el-row :gutter="16" class="material-step-grid">
+        <div v-show="w.currentStep === 0" class="po-wizard-step">
+          <div class="po-wizard-panel">
+            <div class="po-wizard-panel__head">
+              <h3 class="po-wizard-panel__title">{{ t('pages.po.customerSoSection') }}</h3>
+              <p class="po-wizard-panel__sub">{{ t('pages.po.wizardStep1Hint') }}</p>
+            </div>
+            <div class="po-wizard-panel__body po-wizard-panel__body--stack">
+              <section class="po-wizard-group">
+                <header class="po-wizard-group__head">
+                  <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupCustomerIdentity') }}</h4>
+                </header>
+                <el-row :gutter="16" class="material-step-grid">
             <el-col :xs="24" :md="8">
               <el-form-item :label="t('common.customer')" required>
                 <el-select
@@ -93,49 +114,39 @@
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :md="8">
-              <el-form-item :label="t('common.buyer')">
-                <el-select
-                  v-model="w.formModel.buyer"
-                  filterable
-                  class="w-full"
-                  :placeholder="t('common.placeholder.buyer')"
-                  :disabled="w.isBuyerDisabled"
-                  @change="w.autoFieldMeta.buyer = false"
-                >
-                  <el-option v-for="b in w.buyerCodesFiltered" :key="b" :label="b" :value="b" />
-                </el-select>
-                <div class="mt-2 flex items-center gap-2">
-                  <el-tag v-if="w.autoFieldMeta.buyer && w.formModel.buyer" size="small" type="success">
-                    {{ t('pages.po.autoFilled') }}
-                  </el-tag>
-                  <el-button v-if="w.formModel.buyer" link type="primary" size="small" @click="w.resetToAuto('buyer')">
-                    {{ t('pages.po.resetToAuto') }}
-                  </el-button>
-                </div>
-              </el-form-item>
-            </el-col>
-            <el-col :xs="24" :md="8">
+                </el-row>
+              </section>
+
+              <section class="po-wizard-group">
+                <header class="po-wizard-group__head">
+                  <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupPoClassification') }}</h4>
+                </header>
+                <el-row :gutter="16" class="material-step-grid">
+            <el-col :xs="24" :md="12">
               <el-form-item :label="t('common.poCategory')">
-                <el-select v-model="w.formModel.po_category" class="w-full" :placeholder="t('common.category')" :disabled="w.isPoCategoryDisabled">
-                  <el-option :label="t('status.production')" value="production" />
-                  <el-option :label="t('status.subkon')" value="subcont" />
-                  <el-option :label="t('status.retur')" value="return" />
-                  <el-option :label="t('status.sample')" value="sample" />
-                  <el-option :label="t('status.claim')" value="claim" />
-                  <el-option :label="t('status.suede')" value="suede" />
-                </el-select>
-                <el-radio-group v-model="w.formModel.po_category" size="small" class="mt-2" :disabled="w.isPoCategoryDisabled">
+                <el-radio-group v-model="w.formModel.po_category" size="small" class="po-category-radio" :disabled="w.isPoCategoryDisabled">
                   <el-radio-button value="production">{{ t('status.production') }}</el-radio-button>
                   <el-radio-button value="sample">{{ t('status.sample') }}</el-radio-button>
                   <el-radio-button value="subcont">{{ t('status.subcont') }}</el-radio-button>
                   <el-radio-button value="return">{{ t('status.return') }}</el-radio-button>
                   <el-radio-button value="claim">{{ t('status.claim') }}</el-radio-button>
+                  <el-radio-button value="suede">{{ t('status.suede') }}</el-radio-button>
                 </el-radio-group>
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :md="8">
-              <el-form-item :label="t('common.factoryCode')">
+            <el-col :xs="24" :md="12">
+              <el-form-item>
+                <template #label>
+                  <span class="form-label-with-hint">
+                    {{ t('common.factoryCode') }}
+                    <el-tooltip placement="top" :show-after="200">
+                      <template #content>{{ t('pages.po.factoryCodeHint') }}</template>
+                      <el-icon class="form-label-hint" :size="14" tabindex="0" :aria-label="t('pages.po.factoryCodeHint')">
+                        <InfoFilled />
+                      </el-icon>
+                    </el-tooltip>
+                  </span>
+                </template>
                 <el-input
                   v-model="w.formModel.factory_code"
                   readonly
@@ -148,22 +159,48 @@
                     {{ t('pages.po.autoFilled') }}
                   </el-tag>
                 </div>
-                <span class="text-xs text-slate-500">{{ t('pages.po.factoryCodeHint') }}</span>
               </el-form-item>
             </el-col>
+                </el-row>
+              </section>
+
+              <section class="po-wizard-group">
+                <header class="po-wizard-group__head">
+                  <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupOrderReference') }}</h4>
+                </header>
+                <el-row :gutter="16" class="material-step-grid">
             <el-col :xs="24" :md="8">
-              <el-form-item :label="t('common.poNo')">
+              <el-form-item>
+                <template #label>
+                  <span class="form-label-with-hint">
+                    {{ t('common.poNo') }}
+                    <el-tooltip placement="top" :show-after="200">
+                      <template #content>{{ t('pages.po.autoGenerateHint') }}</template>
+                      <el-icon class="form-label-hint" :size="14" tabindex="0" :aria-label="t('pages.po.autoGenerateHint')">
+                        <InfoFilled />
+                      </el-icon>
+                    </el-tooltip>
+                  </span>
+                </template>
                 <el-input :model-value="w.isEditMode ? w.formModel.po_number : w.nextPoNumberDisplay" disabled />
-                <span class="text-xs text-slate-500">{{ t('pages.po.autoGenerateHint') }}</span>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :md="8">
               <el-form-item
-                :label="t('pages.po.poCustomerRef')"
                 :error="w.formErrors.po_customer_ref || undefined"
               >
+                <template #label>
+                  <span class="form-label-with-hint">
+                    {{ t('pages.po.poCustomerRef') }}
+                    <el-tooltip placement="top" :show-after="200">
+                      <template #content>{{ t('pages.po.poCustomerRefHint') }}</template>
+                      <el-icon class="form-label-hint" :size="14" tabindex="0" :aria-label="t('pages.po.poCustomerRefHint')">
+                        <InfoFilled />
+                      </el-icon>
+                    </el-tooltip>
+                  </span>
+                </template>
                 <el-input v-model="w.formModel.po_customer_ref" clearable maxlength="255" />
-                <span v-if="!w.formErrors.po_customer_ref" class="text-xs text-slate-500">{{ t('pages.po.poCustomerRefHint') }}</span>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :md="8">
@@ -178,22 +215,42 @@
                 <div v-if="w.orderDateLocked" class="text-xs text-slate-500 mt-1">{{ t('pages.po.orderDateLockedHint') }}</div>
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :md="8">
+                </el-row>
+              </section>
+
+              <section class="po-wizard-group">
+                <header class="po-wizard-group__head">
+                  <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupAddresses') }}</h4>
+                </header>
+                <el-row :gutter="16" class="material-step-grid">
+            <el-col :xs="24" :md="12">
               <el-form-item :label="t('pages.po.billingAddress')">
                 <el-input v-model="w.formModel.billing_address" type="textarea" :rows="2" />
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :md="8">
+            <el-col :xs="24" :md="12">
               <el-form-item :label="t('pages.po.deliveryAddress')">
                 <el-input v-model="w.formModel.delivery_address" type="textarea" :rows="2" />
               </el-form-item>
             </el-col>
-          </el-row>
+                </el-row>
+              </section>
+            </div>
+          </div>
         </div>
 
-        <div v-show="w.currentStep === 1" class="step-content">
-          <h3 class="text-lg font-semibold mb-4">{{ t('pages.po.step2Title') }}</h3>
-          <el-row v-if="w.isSubkonPo" :gutter="16" class="mb-2">
+        <div v-show="w.currentStep === 1" class="po-wizard-step">
+          <div class="po-wizard-panel mb-4">
+            <div class="po-wizard-panel__head">
+              <h3 class="po-wizard-panel__title">{{ t('pages.po.step2Title') }}</h3>
+              <p class="po-wizard-panel__sub">{{ t('pages.po.wizardStep2Hint') }}</p>
+            </div>
+            <div class="po-wizard-panel__body po-wizard-panel__body--stack">
+          <section v-if="w.isSubkonPo" class="po-wizard-group">
+            <header class="po-wizard-group__head">
+              <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupSubkon') }}</h4>
+            </header>
+          <el-row :gutter="16" class="mb-2">
             <el-col :span="24">
               <el-form-item :label="t('pages.po.subkonItemCode')">
                 <el-select
@@ -215,6 +272,46 @@
               </el-form-item>
             </el-col>
           </el-row>
+          </section>
+
+          <section class="po-wizard-group">
+            <header class="po-wizard-group__head po-wizard-group__head--row">
+              <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupMaterialSpec') }}</h4>
+              <el-tooltip placement="top-start" :show-after="200">
+                <template #content>
+                  <div class="material-fill-order-tip">
+                    <p class="material-fill-order-tip__title">
+                      {{
+                        w.materialStepFillStep > 0
+                          ? t('pages.po.materialStepFillOrderTitle', { step: w.materialStepFillStep })
+                          : t('pages.po.materialStepFillOrderDone')
+                      }}
+                    </p>
+                    <p class="material-fill-order-tip__body">{{ t('pages.po.materialStepFillOrder1') }}</p>
+                    <p v-if="w.materialStepFillStep === 2" class="material-fill-order-tip__next">
+                      {{ t('pages.po.materialStepFillOrder2') }}
+                    </p>
+                    <p v-else-if="w.materialStepFillStep === 3" class="material-fill-order-tip__next">
+                      {{ t('pages.po.materialStepFillOrder3') }}
+                    </p>
+                    <p v-else-if="w.materialStepFillStep === 4" class="material-fill-order-tip__next">
+                      {{ t('pages.po.materialStepFillOrder4') }}
+                    </p>
+                    <p v-else-if="w.materialStepFillStep === 5" class="material-fill-order-tip__next">
+                      {{ t('pages.po.materialStepFillOrder5') }}
+                    </p>
+                  </div>
+                </template>
+                <el-icon
+                  class="po-wizard-group__info"
+                  :size="16"
+                  tabindex="0"
+                  :aria-label="t('pages.po.materialStepFillOrderAria')"
+                >
+                  <InfoFilled />
+                </el-icon>
+              </el-tooltip>
+            </header>
           <el-row :gutter="16" class="material-step-grid">
             <el-col :xs="24" :md="8">
               <el-form-item :label="t('common.material')" :error="w.formErrors.material_name">
@@ -240,7 +337,7 @@
                       size="small"
                       @click="w.enableMaterialOverride('material_name')"
                     >
-                      Override
+                      {{ t('pages.po.fieldOverride') }}
                     </el-button>
                     <el-button
                       v-else-if="w.formModel.master_item_id && w.materialFieldOverride.material_name"
@@ -249,7 +346,7 @@
                       size="small"
                       @click="w.resetMaterialFieldToMaster('material_name')"
                     >
-                      Reset
+                      {{ t('pages.po.fieldReset') }}
                     </el-button>
                   </div>
                 </div>
@@ -284,7 +381,7 @@
                       size="small"
                       @click="w.enableMaterialOverride('thickness_text')"
                     >
-                      Override
+                      {{ t('pages.po.fieldOverride') }}
                     </el-button>
                     <el-button
                       v-else-if="w.formModel.master_item_id && w.materialFieldOverride.thickness_text"
@@ -293,11 +390,10 @@
                       size="small"
                       @click="w.resetMaterialFieldToMaster('thickness_text')"
                     >
-                      Reset
+                      {{ t('pages.po.fieldReset') }}
                     </el-button>
                   </div>
                 </div>
-                <span class="text-xs text-slate-500">{{ t('pages.po.thicknessRangeFormatHint') }}</span>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :md="8">
@@ -340,7 +436,7 @@
                       size="small"
                       @click="w.enableMaterialOverride('color')"
                     >
-                      Override warna
+                      {{ t('pages.po.colorFieldOverride') }}
                     </el-button>
                     <el-button
                       v-else-if="w.formModel.master_item_id && w.materialFieldOverride.color"
@@ -349,7 +445,7 @@
                       size="small"
                       @click="w.resetMaterialFieldToMaster('color')"
                     >
-                      Reset warna
+                      {{ t('pages.po.colorFieldReset') }}
                     </el-button>
                   </div>
                 </div>
@@ -369,7 +465,7 @@
                     size="small"
                     @click="w.enableMaterialOverride('emboss')"
                   >
-                    Override
+                    {{ t('pages.po.fieldOverride') }}
                   </el-button>
                   <el-button
                     v-else-if="w.formModel.master_item_id && w.materialFieldOverride.emboss"
@@ -378,7 +474,7 @@
                     size="small"
                     @click="w.resetMaterialFieldToMaster('emboss')"
                   >
-                    Reset
+                    {{ t('pages.po.fieldReset') }}
                   </el-button>
                 </div>
               </el-form-item>
@@ -404,7 +500,7 @@
                     size="small"
                     @click="w.enableMaterialOverride('color_family')"
                   >
-                    Override
+                    {{ t('pages.po.fieldOverride') }}
                   </el-button>
                   <el-button
                     v-else-if="w.formModel.master_item_id && w.materialFieldOverride.color_family"
@@ -413,25 +509,10 @@
                     size="small"
                     @click="w.resetMaterialFieldToMaster('color_family')"
                   >
-                    Reset
+                    {{ t('pages.po.fieldReset') }}
                   </el-button>
                 </div>
               </el-form-item>
-            </el-col>
-            <el-col v-if="w.materialStepFillStep > 0" :span="24">
-              <el-alert
-                type="info"
-                :closable="false"
-                show-icon
-                class="mb-2"
-                :title="t('pages.po.materialStepFillOrderTitle', { step: w.materialStepFillStep })"
-              >
-                <p class="text-sm mb-1">{{ t('pages.po.materialStepFillOrder1') }}</p>
-                <p v-if="w.materialStepFillStep === 2" class="text-sm">{{ t('pages.po.materialStepFillOrder2') }}</p>
-                <p v-else-if="w.materialStepFillStep === 3" class="text-sm">{{ t('pages.po.materialStepFillOrder3') }}</p>
-                <p v-else-if="w.materialStepFillStep === 4" class="text-sm">{{ t('pages.po.materialStepFillOrder4') }}</p>
-                <p v-else-if="w.materialStepFillStep === 5" class="text-sm">{{ t('pages.po.materialStepFillOrder5') }}</p>
-              </el-alert>
             </el-col>
             <el-col :span="24">
               <div v-if="w.formModel.master_item_id" class="flex flex-wrap items-center gap-2 mb-2">
@@ -449,8 +530,15 @@
                 :title="t('pages.po.masterNotMatchedHint')"
               />
             </el-col>
-            <el-col :span="24">
-              <div v-if="!w.isSubkonPo" class="mb-2">
+          </el-row>
+          </section>
+
+          <section v-if="!w.isSubkonPo" class="po-wizard-group">
+            <header class="po-wizard-group__head">
+              <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupColorSwatch') }}</h4>
+              <p class="po-wizard-group__sub">{{ t('pages.po.swatchPickerLabel') }}</p>
+            </header>
+            <div class="mb-2">
                 <div
                   v-if="w.selectedSwatchRecipe && !w.swatchPickerOpen"
                   class="flex flex-wrap items-center gap-2 rounded border border-emerald-200 bg-emerald-50/80 px-3 py-2"
@@ -505,47 +593,47 @@
                 >
                   {{ t('pages.po.swatchFieldsLockedHint') }}
                 </p>
-              </div>
-            </el-col>
-            <el-col :xs="24">
-              <el-alert
-                v-if="w.pricingKeyIncomplete"
-                title="Pricing key belum lengkap: buyer + material + ketebalan + kategori warna wajib terisi."
-                type="warning"
-                :closable="false"
-                show-icon
-                class="mb-2"
-              />
-              <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <span class="font-medium text-slate-700">
-                  {{
-                    w.showColorStandardBackingFields
-                      ? t('pages.po.materialExtraGroupTitle')
-                      : t('pages.po.materialModelArticleTitle')
-                  }}
-                </span>
-                <div class="flex flex-wrap items-center gap-2">
-                  <el-button
-                    v-if="w.swatchFieldsLocked"
-                    link
-                    type="primary"
-                    size="small"
-                    @click="w.enableSwatchManualEdit"
-                  >
-                    {{ t('pages.po.swatchEditFieldsManual') }}
-                  </el-button>
-                  <el-button
-                    v-else-if="w.selectedSwatchRecipe && w.swatchFieldsManualEdit"
-                    link
-                    type="primary"
-                    size="small"
-                    @click="w.reapplySelectedSwatchRecipe()"
-                  >
-                    {{ t('pages.po.swatchResyncFromRecipe') }}
-                  </el-button>
-                </div>
-              </div>
-              <el-row :gutter="16">
+            </div>
+          </section>
+
+          <section class="po-wizard-group">
+            <header class="po-wizard-group__head po-wizard-group__head--row">
+              <h4 class="po-wizard-group__title">
+                {{ w.showColorStandardBackingFields ? t('pages.po.materialExtraGroupTitle') : t('pages.po.materialModelArticleTitle') }}
+              </h4>
+              <el-tooltip v-if="w.pricingKeyIncomplete" placement="top-start" :show-after="200">
+                <template #content>{{ t('pages.po.pricingKeyIncomplete') }}</template>
+                <el-icon
+                  class="po-wizard-group__info po-wizard-group__info--warn"
+                  :size="16"
+                  tabindex="0"
+                  :aria-label="t('pages.po.pricingKeyIncomplete')"
+                >
+                  <WarningFilled />
+                </el-icon>
+              </el-tooltip>
+            </header>
+            <div class="mb-3 flex flex-wrap items-center justify-end gap-2">
+              <el-button
+                v-if="w.swatchFieldsLocked"
+                link
+                type="primary"
+                size="small"
+                @click="w.enableSwatchManualEdit"
+              >
+                {{ t('pages.po.swatchEditFieldsManual') }}
+              </el-button>
+              <el-button
+                v-else-if="w.selectedSwatchRecipe && w.swatchFieldsManualEdit"
+                link
+                type="primary"
+                size="small"
+                @click="w.reapplySelectedSwatchRecipe()"
+              >
+                {{ t('pages.po.swatchResyncFromRecipe') }}
+              </el-button>
+            </div>
+            <el-row :gutter="16">
                 <el-col v-if="w.showColorStandardBackingFields" :xs="24" :md="6">
                   <el-form-item :label="t('pages.po.colorStandart')">
                     <el-input
@@ -607,7 +695,7 @@
                           size="small"
                           @click="w.enableMaterialOverride('style_article')"
                         >
-                          Override
+                          {{ t('pages.po.fieldOverride') }}
                         </el-button>
                         <el-button
                           v-else-if="w.formModel.master_item_id && w.materialFieldOverride.style_article"
@@ -616,15 +704,19 @@
                           size="small"
                           @click="w.resetMaterialFieldToMaster('style_article')"
                         >
-                          Reset
+                          {{ t('pages.po.fieldReset') }}
                         </el-button>
                       </div>
                     </div>
                   </el-form-item>
                 </el-col>
-              </el-row>
-            </el-col>
-          </el-row>
+            </el-row>
+          </section>
+
+          <section class="po-wizard-group">
+            <header class="po-wizard-group__head">
+              <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupQtyPrice') }}</h4>
+            </header>
           <el-row :gutter="16" class="material-step-grid">
             <el-col :xs="24" :md="6">
               <el-form-item :label="t('common.quantityOrder')" :error="w.formErrors.quantity_order">
@@ -632,13 +724,34 @@
               </el-form-item>
             </el-col>
             <el-col :xs="24" :md="6">
-              <el-form-item :label="t('pages.po.thiOrder')">
+              <el-form-item>
+                <template #label>
+                  <span class="form-label-with-hint">
+                    {{ t('pages.po.thiOrder') }}
+                    <el-tooltip placement="top" :show-after="200">
+                      <template #content>{{ t('pages.po.thiOrderSoHint') }}</template>
+                      <el-icon class="form-label-hint" :size="14" tabindex="0" :aria-label="t('pages.po.thiOrderSoHint')">
+                        <InfoFilled />
+                      </el-icon>
+                    </el-tooltip>
+                  </span>
+                </template>
                 <el-input :model-value="w.nextPoNumberDisplay" disabled />
-                <p class="mt-1 text-xs text-slate-500">{{ t('pages.po.thiOrderSoHint') }}</p>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :md="6">
-              <el-form-item :label="t('common.lotNo')">
+              <el-form-item>
+                <template #label>
+                  <span class="form-label-with-hint">
+                    {{ t('common.lotNo') }}
+                    <el-tooltip placement="top" :show-after="200">
+                      <template #content>{{ t('pages.po.lotPreviewHint') }}</template>
+                      <el-icon class="form-label-hint" :size="14" tabindex="0" :aria-label="t('pages.po.lotPreviewHint')">
+                        <InfoFilled />
+                      </el-icon>
+                    </el-tooltip>
+                  </span>
+                </template>
                 <div class="field-stack-row">
                   <el-input
                     v-model="w.formModel.thi_line_ref"
@@ -653,13 +766,12 @@
                     :loading="w.lotGenerateLoading"
                     @click="w.generateLotNumber"
                   >
-                    Generate
+                    {{ t('pages.po.generateLotShort') }}
                   </el-button>
                 </div>
                 <div v-if="w.lotAutoFromMaterial && w.formModel.thi_line_ref" class="mt-1">
                   <el-tag size="small" type="success">{{ t('pages.po.autoFilled') }}</el-tag>
                 </div>
-                <p class="mt-1 text-xs text-slate-500">{{ t('pages.po.lotPreviewHint') }}</p>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :md="6">
@@ -696,6 +808,12 @@
               </el-form-item>
             </el-col>
           </el-row>
+          </section>
+
+          <section class="po-wizard-group">
+            <header class="po-wizard-group__head">
+              <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupLineRemark') }}</h4>
+            </header>
           <el-row :gutter="16" class="material-step-grid">
             <el-col :span="24">
               <el-form-item :label="t('pages.po.detailRemark')">
@@ -708,65 +826,42 @@
               </el-form-item>
             </el-col>
           </el-row>
-          <div class="mt-4">
-            <div class="text-sm font-semibold text-slate-700">{{ t('pages.po.etdSchedule') }}</div>
-            <p class="mb-2 mt-1 text-xs text-slate-500">{{ t('pages.po.etdScheduleHint') }}</p>
-            <el-table :data="w.etdScheduleRows" border size="small" class="etd-schedule-table">
-                <el-table-column :label="t('common.noLabel')" width="56" align="center">
-                  <template #default="{ $index }">{{ $index + 1 }}</template>
-                </el-table-column>
-                <el-table-column :label="t('pages.po.etdQty')" width="130">
-                  <template #default="{ $index }">
-                    <el-input-number
-                      v-model="w.etdScheduleRows[$index].qty"
-                      :min="0"
-                      :controls="false"
-                      size="small"
-                      class="w-full"
-                    />
-                  </template>
-                </el-table-column>
-                <el-table-column :label="t('pages.po.etdDate')">
-                  <template #default="{ $index }">
+          </section>
+
+          <div class="po-wizard-panel po-wizard-panel--sub mt-2">
+            <div class="po-wizard-panel__head">
+              <h4 class="po-wizard-panel__title">{{ t('pages.po.etdSchedule') }}</h4>
+              <p class="po-wizard-panel__sub">{{ t('pages.po.etdScheduleHint') }}</p>
+            </div>
+            <div class="po-wizard-panel__body">
+              <el-row :gutter="16" class="material-step-grid">
+                <el-col :xs="24" :md="10">
+                  <el-form-item :label="t('pages.po.etdDate')">
                     <el-date-picker
-                      v-model="w.etdScheduleRows[$index].date"
+                      v-model="w.etdScheduleRows[0].date"
                       type="date"
-                      size="small"
                       class="w-full"
                       value-format="YYYY-MM-DD"
+                      :placeholder="t('common.placeholder.etd')"
+                      @change="w.syncEtdQtyFromOrder"
                     />
-                  </template>
-                </el-table-column>
-                <el-table-column :label="t('common.actions')" width="72" align="center">
-                  <template #default="{ $index }">
-                    <el-button
-                      v-if="w.etdScheduleRows.length > 1"
-                      link
-                      type="danger"
-                      :icon="Delete"
-                      @click="w.removeEtdScheduleRow($index)"
-                    />
-                  </template>
-                </el-table-column>
-              </el-table>
-              <div class="mt-2 flex flex-wrap items-center gap-2">
-                <el-button size="small" :icon="Plus" :disabled="!w.etdScheduleCanAdd" @click="w.addEtdScheduleRow">
-                  {{ t('pages.po.addScheduleWave') }}
-                </el-button>
-                <el-button size="small" @click="w.clearEtdScheduleRows">{{ t('common.clear') }}</el-button>
-                <el-button size="small" type="primary" plain @click="w.autoFillEtdScheduleWave1">
-                  {{ t('pages.po.autoFillScheduleWave1') }}
-                </el-button>
-                <el-button size="small" type="primary" plain @click="w.autoFillEtdScheduleEvenly">
-                  {{ t('pages.po.autoFillScheduleEvenly') }}
-                </el-button>
-                <span class="text-xs text-slate-600">
-                  {{ t('pages.po.scheduleTotal') }}: {{ w.etdScheduleTotalDisplay }}
-                  <template v-if="w.formModel.quantity_order">
-                    / {{ w.formModel.quantity_order }} SF
-                  </template>
-                </span>
-              </div>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="14" class="flex flex-wrap items-end gap-2">
+                  <el-button
+                    size="small"
+                    type="primary"
+                    plain
+                    :disabled="!w.formModel.etd"
+                    @click="w.copyEtdDateFromHeader"
+                  >
+                    {{ t('pages.po.etdCopyFromHeader') }}
+                  </el-button>
+                  <el-button size="small" @click="w.clearEtdScheduleRows">
+                    {{ t('common.clear') }}
+                  </el-button>
+                </el-col>
+              </el-row>
               <el-alert
                 v-if="w.etdScheduleMismatch"
                 type="warning"
@@ -775,23 +870,34 @@
                 class="mt-2"
                 :title="t('pages.po.scheduleMismatch')"
               />
+            </div>
           </div>
-          <div class="mt-1 text-sm font-semibold text-slate-700">Daftar Material</div>
-          <div class="mt-1 flex gap-2 flex-wrap">
-            <el-button :icon="Plus" @click="w.pushCurrentLine(false)">{{ t('common.add') }}</el-button>
-            <el-button :icon="TopRight" @click="w.pushCurrentLine(true)">{{ t('pages.po.addAndContinue') }}</el-button>
-            <el-button :icon="DocumentCopy" @click="w.openCopyItemDialog">{{ t('pages.po.copyItemFromOtherPo') }}</el-button>
-            <el-switch
-              v-model="w.draftRiskOnly"
-              inline-prompt
-              active-text="Override saja"
-              inactive-text="Semua line"
-            />
-            <el-tag size="small" type="info" effect="plain">
-              Ditampilkan: {{ w.draftLinesDisplay.length }} / {{ w.draftLines.length }}
-            </el-tag>
-          </div>
-          <el-table v-if="w.draftLinesDisplay.length" :data="w.draftLinesDisplay" border stripe size="small" class="mt-4" table-layout="auto" :row-class-name="w.draftRowClassName">
+
+          <div class="po-wizard-panel po-wizard-panel--sub mt-4">
+            <div class="po-wizard-panel__head">
+              <h4 class="po-wizard-panel__title">{{ t('pages.po.materialListTitle') }}</h4>
+            </div>
+            <div class="admin-action-bar">
+              <p class="admin-action-bar__hint">
+                {{ t('pages.po.draftLinesShown', { shown: w.draftLinesDisplay.length, total: w.draftLines.length }) }}
+              </p>
+              <div class="admin-action-bar__buttons">
+                <el-button size="small" :icon="DocumentCopy" @click="w.openCopyItemDialog">{{ t('pages.po.copyItemFromOtherPo') }}</el-button>
+                <el-switch
+                  v-model="w.draftRiskOnly"
+                  inline-prompt
+                  :active-text="t('pages.po.draftRiskOnlyActive')"
+                  :inactive-text="t('pages.po.draftRiskAllLines')"
+                />
+                <el-button type="primary" :icon="Plus" class="po-wizard-add-line-btn" @click="w.pushCurrentLine(false)">
+                  {{ t('common.add') }}
+                </el-button>
+              </div>
+            </div>
+            <div class="po-wizard-panel__body">
+            <p class="admin-scroll-hint mb-3">{{ t('pages.po.scrollHint') }}</p>
+            <div class="admin-table-scroll">
+          <el-table v-if="w.draftLinesDisplay.length" :data="w.draftLinesDisplay" border stripe size="small" class="po-draft-table mt-2" table-layout="auto" :row-class-name="w.draftRowClassName">
             <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
             <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
             <el-table-column prop="thickness_text" :label="t('common.thickness')" width="90" />
@@ -799,7 +905,7 @@
             <el-table-column prop="color_family" :label="t('pages.po.colorFamily')" width="100">
               <template #default="{ row }">{{ w.colorFamilyLabel(row.color_family) }}</template>
             </el-table-column>
-            <el-table-column label="Kualitas Data" width="190" align="center">
+            <el-table-column :label="t('pages.po.dataQuality')" width="190" align="center">
               <template #default="{ row }">
                 <div class="flex flex-col items-center gap-1">
                   <el-tooltip :content="w.materialQualityTooltip(row)" placement="top">
@@ -811,9 +917,9 @@
                       {{ w.materialQualityLabel(row) }}
                     </el-tag>
                   </el-tooltip>
-                  <el-tooltip v-if="row.manual_override" content="Harga line ini diubah manual dari harga auto-resolve buyer." placement="top">
+                  <el-tooltip v-if="row.manual_override" :content="t('pages.po.linePriceOverrideHint')" placement="top">
                     <el-tag size="small" type="danger" effect="plain">
-                      Harga override
+                      {{ t('pages.po.linePriceOverride') }}
                     </el-tag>
                   </el-tooltip>
                 </div>
@@ -838,7 +944,7 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column v-if="w.hasSpecialPriceInLines" label="Adj" width="80" align="center">
+            <el-table-column v-if="w.hasSpecialPriceInLines" :label="t('pages.po.priceAdjustShort')" width="80" align="center">
               <template #default="{ row }">
                 <el-tag v-if="row.is_special_price" size="small" type="warning">
                   {{ row.discount_value >= 0 ? '+' : '' }}{{ row.discount_value }}{{ row.discount_type === 'percent' ? '%' : '$' }}
@@ -859,7 +965,7 @@
                     plain
                     @click="w.generateLotNumber(row.id)"
                   >
-                    Gen
+                    {{ t('pages.po.generateLotShort') }}
                   </el-button>
                 </div>
               </template>
@@ -873,42 +979,71 @@
                   size="small"
                   @click="w.editDraftLine(row)"
                 >
-                  {{ t('pages.po.w.editDraftLine') }}
+                  {{ t('pages.po.editDraftLine') }}
                 </el-button>
                 <el-button link type="danger" :icon="Delete" @click="w.removeDraftLine(w.draftLines.indexOf(row))" />
               </template>
             </el-table-column>
           </el-table>
+          </div>
           <el-empty v-if="!w.draftLinesDisplay.length" :description="t('pages.po.noItemsYet')" class="mt-2" />
+            </div>
+          </div>
+            </div>
+          </div>
         </div>
 
-        <div v-show="w.currentStep === 2" class="step-content">
-          <h3 class="text-lg font-semibold mb-4">{{ t('pages.po.reviewTitle') }}</h3>
-          <el-descriptions :column="2" border class="mb-6">
-            <el-descriptions-item :label="t('common.customer')">
-              {{ w.customers.find(c => c.id === w.formModel.customer_id)?.name || '-' }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('pages.po.brand')">
-              {{ w.brands.find(b => b.id === w.formModel.brand_id)?.name || '-' }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('common.buyer')">{{ w.formModel.buyer || '-' }}</el-descriptions-item>
-            <el-descriptions-item :label="t('common.poCategory')">{{ w.formModel.po_category }}</el-descriptions-item>
-            <el-descriptions-item :label="t('common.poNo')">{{ w.formModel.po_number || w.nextPoNumberDisplay }}</el-descriptions-item>
-            <el-descriptions-item label="NO PO CUSTOMER">{{ w.formModel.po_customer_ref || '-' }}</el-descriptions-item>
-            <el-descriptions-item :label="t('common.orderDate')">{{ w.formModel.order_date || '-' }}</el-descriptions-item>
-            <el-descriptions-item :label="t('pages.po.headerEtd')">{{ w.formModel.etd || '-' }}</el-descriptions-item>
-            <el-descriptions-item :label="t('common.status')">
-              <el-tag size="small">{{ w.formModel.status }}</el-tag>
-            </el-descriptions-item>
-          </el-descriptions>
+        <div v-show="w.currentStep === 2" class="po-wizard-step">
+          <div class="po-wizard-panel">
+            <div class="po-wizard-panel__head">
+              <h3 class="po-wizard-panel__title">{{ t('pages.po.reviewTitle') }}</h3>
+              <p class="po-wizard-panel__sub">{{ t('pages.po.wizardStep3Hint') }}</p>
+            </div>
+            <div class="po-wizard-panel__body po-wizard-panel__body--stack">
+              <section class="po-wizard-group">
+                <header class="po-wizard-group__head">
+                  <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupReviewCommercial') }}</h4>
+                </header>
+                <el-descriptions :column="2" border size="small">
+                  <el-descriptions-item :label="t('common.customer')">
+                    {{ w.customers.find(c => c.id === w.formModel.customer_id)?.name || '-' }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('pages.po.brand')">
+                    {{ w.brands.find(b => b.id === w.formModel.brand_id)?.name || '-' }}
+                  </el-descriptions-item>
+                  <el-descriptions-item :label="t('common.buyer')">{{ w.formModel.buyer || '-' }}</el-descriptions-item>
+                  <el-descriptions-item :label="t('common.poCategory')">{{ w.formModel.po_category }}</el-descriptions-item>
+                  <el-descriptions-item :label="t('common.status')">
+                    <el-tag size="small">{{ w.formModel.status }}</el-tag>
+                  </el-descriptions-item>
+                </el-descriptions>
+              </section>
 
-          <h4 class="text-md font-semibold mb-2">{{ t('pages.po.itemsSummary', { count: w.draftLinesDisplay.length }) }}</h4>
-          <el-table v-if="w.draftLinesDisplay.length" :data="w.draftLinesDisplay" border stripe size="small" table-layout="auto">
+              <section class="po-wizard-group">
+                <header class="po-wizard-group__head">
+                  <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupOrderReference') }}</h4>
+                </header>
+                <el-descriptions :column="2" border size="small">
+                  <el-descriptions-item :label="t('common.poNo')">{{ w.formModel.po_number || w.nextPoNumberDisplay }}</el-descriptions-item>
+                  <el-descriptions-item :label="t('pages.po.poCustomerRef')">{{ w.formModel.po_customer_ref || '-' }}</el-descriptions-item>
+                  <el-descriptions-item :label="t('common.orderDate')">{{ w.formModel.order_date || '-' }}</el-descriptions-item>
+                  <el-descriptions-item :label="t('pages.po.headerEtd')">{{ w.formModel.etd || '-' }}</el-descriptions-item>
+                </el-descriptions>
+              </section>
+
+              <section class="po-wizard-group">
+                <header class="po-wizard-group__head">
+                  <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupReviewLines') }}</h4>
+                  <p class="po-wizard-group__sub">{{ t('pages.po.itemsSummary', { count: w.draftLinesDisplay.length }) }}</p>
+                </header>
+                <p class="admin-scroll-hint mb-3">{{ t('pages.po.scrollHint') }}</p>
+                <div class="admin-table-scroll">
+          <el-table v-if="w.draftLinesDisplay.length" :data="w.draftLinesDisplay" border stripe size="small" class="po-draft-table" table-layout="auto">
             <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
             <el-table-column prop="material_name" :label="t('common.material')" min-width="140" />
             <el-table-column prop="thickness_text" :label="t('common.thickness')" width="90" />
             <el-table-column prop="color" :label="t('common.color')" width="80" />
-            <el-table-column :label="'Kualitas'" width="150" align="center">
+            <el-table-column :label="t('pages.po.qualityShort')" width="150" align="center">
               <template #default="{ row }">
                 <el-tooltip :content="w.materialQualityTooltip(row)" placement="top">
                   <el-tag :type="w.materialQualityType(row)" size="small" effect="plain">
@@ -927,7 +1062,7 @@
             <el-table-column prop="unit_price" :label="t('pages.po.unitPriceUsd')" width="100" align="right">
               <template #default="{ row }">{{ row.unit_price != null ? `$${row.unit_price}` : '—' }}</template>
             </el-table-column>
-            <el-table-column :label="'Total'" width="120" align="right">
+            <el-table-column :label="t('pages.po.lineTotal')" width="120" align="right">
               <template #default="{ row }">
                 {{ row.unit_price != null && row.quantity_order ? `$${(row.unit_price * row.quantity_order).toFixed(2)}` : '—' }}
               </template>
@@ -940,32 +1075,42 @@
             <el-table-column prop="thi_line_ref" :label="t('common.lotNo')" min-width="130" show-overflow-tooltip />
           </el-table>
           <el-empty v-else :description="t('pages.po.noItemsYet')" />
+                </div>
+              </section>
+            </div>
+          </div>
         </div>
       </el-form>
     </div>
 
     <template #footer>
-      <div class="po-dialog-footer">
-        <el-button type="danger" @click="w.requestCloseFormDialog">
-          <el-icon><Close /></el-icon>
+      <div class="po-wizard-footer">
+        <div class="po-wizard-footer__left">
+        <el-button @click="w.requestCloseFormDialog">
           {{ t('common.cancel') }}
         </el-button>
-        <el-button v-if="!w.isEditMode" type="warning" @click="w.saveDraftAndClose">
-          Simpan Draft
+        <el-button v-if="!w.isEditMode" type="warning" plain @click="w.saveDraftAndClose">
+          {{ t('pages.po.saveDraft') }}
         </el-button>
-
-        <div class="footer-nav">
-          <el-button :disabled="w.currentStep === 0" @click="w.prevStep">&lt;</el-button>
-          <span class="step-label">
-            {{ w.currentStep === 0 ? t('pages.po.step1Title') : w.currentStep === 1 ? t('pages.po.step2Title') : t('pages.po.step3Title') }}
-          </span>
-          <el-button :disabled="w.currentStep === 2" type="primary" @click="w.nextStep">&gt;</el-button>
         </div>
 
-        <el-button :disabled="w.currentStep !== 2 || !w.canManage" type="success" :loading="w.saving" @click="w.submitForm">
-          <el-icon><Check /></el-icon>
+        <div class="po-wizard-footer__nav">
+          <el-button :disabled="w.currentStep === 0" :icon="ArrowLeft" @click="w.prevStep">
+            {{ t('pages.po.wizardPrev') }}
+          </el-button>
+          <span class="po-wizard-footer__step">
+            {{ w.currentStep + 1 }} / 3 — {{ w.currentStep === 0 ? t('pages.po.step1Title') : w.currentStep === 1 ? t('pages.po.step2Title') : t('pages.po.step3Title') }}
+          </span>
+          <el-button :disabled="w.currentStep === 2" type="primary" :icon="ArrowRight" @click="w.nextStep">
+            {{ t('pages.po.wizardNext') }}
+          </el-button>
+        </div>
+
+        <div class="po-wizard-footer__right">
+        <el-button :disabled="w.currentStep !== 2 || !w.canManage" type="success" :loading="w.saving" :icon="Check" @click="w.submitForm">
           {{ t('common.savePo') }}
         </el-button>
+        </div>
       </div>
     </template>
   </el-dialog>
@@ -973,16 +1118,18 @@
 
 <script setup>
 import {
+  ArrowLeft,
+  ArrowRight,
   Check,
-  Close,
   Delete,
   DocumentAdd,
   DocumentCopy,
   Edit,
+  InfoFilled,
   Picture,
   Plus,
-  TopRight,
   UploadFilled,
+  WarningFilled,
 } from '@element-plus/icons-vue'
 import { useI18n } from 'vue-i18n'
 
@@ -997,110 +1144,252 @@ const { t } = useI18n()
   background-color: rgb(239 246 255) !important;
 }
 
-:deep(.po-fullscreen-dialog.el-dialog) {
+:deep(.po-wizard-dialog.el-dialog) {
   border-radius: 14px;
-  overflow: hidden !important;
+  overflow: hidden;
   box-shadow: 0 16px 44px rgba(15, 23, 42, 0.18);
   max-height: 92vh;
-  display: flex !important;
-  flex-direction: column !important;
+  display: flex;
+  flex-direction: column;
 }
 
-:deep(.po-fullscreen-dialog .el-dialog__header) {
+:deep(.po-wizard-dialog .el-dialog__header) {
   padding: 0;
   margin: 0;
-  background: transparent;
-  border-bottom: 1px solid var(--el-border-color-light);
+  border-bottom: 1px solid #e2e8f0;
   flex-shrink: 0;
 }
 
-:deep(.po-fullscreen-dialog .el-dialog__headerbtn) {
-  display: none !important;
-}
-
-:deep(.po-fullscreen-dialog .el-dialog__body) {
-  flex: 1 !important;
-  padding: 0 !important;
-  background: var(--el-bg-color-page);
-  overflow: hidden !important;
-  display: flex !important;
-  flex-direction: column !important;
-  min-height: 0 !important;
-}
-
-.po-dialog-header {
-  padding: 16px 20px 12px;
-  color: var(--el-text-color-primary);
-  position: relative;
-}
-
-.po-dialog-close {
-  position: absolute;
-  top: 12px;
-  right: 14px;
-  font-size: 18px;
-  color: var(--el-text-color-primary);
-  cursor: pointer;
-  opacity: 0.9;
-  border-radius: 999px;
-  padding: 4px;
-  background: var(--el-fill-color-light);
-}
-
-.po-dialog-close:hover {
-  opacity: 1;
-  background: var(--el-fill-color);
-}
-
-.po-dialog-title-area {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.po-dialog-icon {
-  font-size: 20px;
-  color: var(--el-color-primary);
-}
-
-.po-dialog-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-
-.po-dialog-steps-wrapper {
-  width: 100%;
-  margin: 8px 0 4px;
-  padding: 0 4px;
-  display: flex;
-  justify-content: center;
-}
-
-:deep(.po-dialog-steps .el-step.is-simple .el-step__title) {
-  font-size: 13px;
-}
-
-.po-dialog-content {
-  width: 100%;
-  background: var(--el-bg-color);
-  padding: 20px 22px;
+:deep(.po-wizard-dialog .el-dialog__body) {
   flex: 1;
-  overflow-y: auto;
+  padding: 0;
+  background: #f8fafc;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
 }
 
-.step-content {
-  min-height: 320px;
+:deep(.po-wizard-dialog .el-dialog__footer) {
+  padding: 0;
+  flex-shrink: 0;
 }
 
-.step-content :deep(h3) {
-  margin-bottom: 14px;
+.po-wizard-header {
+  padding: 16px 20px 12px;
+  background: #fff;
 }
 
-.step-content :deep(.el-form-item) {
-  margin-bottom: 10px;
+.po-wizard-header__title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.po-wizard-header__icon {
+  font-size: 22px;
+  color: var(--el-color-primary);
+  margin-top: 2px;
+}
+
+.po-wizard-header__titles {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.po-wizard-header__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.po-wizard-header__sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.po-wizard-steps {
+  margin-top: 12px;
+}
+
+.po-wizard-step-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  text-align: center;
+}
+
+.po-wizard-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 16px;
+}
+
+.po-wizard-step {
+  min-height: 280px;
+}
+
+.po-wizard-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.po-wizard-panel--sub {
+  background: #f8fafc;
+}
+
+.po-wizard-panel__head {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.po-wizard-panel__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.po-wizard-panel__title--sm {
+  font-size: 0.9rem;
+}
+
+.po-wizard-panel__sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.po-wizard-panel__body {
+  padding: 16px;
+}
+
+.po-wizard-panel__body--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.po-wizard-group {
+  padding: 16px 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+.po-wizard-group:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.po-wizard-group__head {
+  margin-bottom: 12px;
+}
+
+.po-wizard-group__head--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.po-wizard-group__info {
+  color: #64748b;
+  cursor: help;
+  flex-shrink: 0;
+  outline: none;
+}
+
+.po-wizard-group__info:hover,
+.po-wizard-group__info:focus-visible {
+  color: var(--el-color-primary);
+}
+
+.po-wizard-group__info--warn {
+  color: var(--el-color-warning);
+}
+
+.po-wizard-group__info--warn:hover,
+.po-wizard-group__info--warn:focus-visible {
+  color: #d97706;
+}
+
+.form-label-with-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.form-label-hint {
+  color: #94a3b8;
+  cursor: help;
+  outline: none;
+}
+
+.form-label-hint:hover,
+.form-label-hint:focus-visible {
+  color: var(--el-color-primary);
+}
+
+.po-wizard-add-line-btn {
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+}
+
+.material-fill-order-tip {
+  max-width: 22rem;
+  line-height: 1.45;
+}
+
+.material-fill-order-tip__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.material-fill-order-tip__body,
+.material-fill-order-tip__next {
+  margin: 6px 0 0;
+}
+
+.material-fill-order-tip__next {
+  color: #e2e8f0;
+}
+
+.po-wizard-group__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.po-wizard-group__sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.po-wizard-panel .admin-action-bar {
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 0;
+}
+
+.po-category-radio {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.po-category-radio :deep(.el-radio-button__inner) {
+  padding: 6px 10px;
 }
 
 .material-step-grid :deep(.el-form-item__label) {
@@ -1119,25 +1408,7 @@ const { t } = useI18n()
   width: 100%;
 }
 
-.field-lock-row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  width: 100%;
-}
-
-.field-lock-row :deep(.el-input),
-.field-lock-row :deep(.el-select) {
-  width: 100%;
-  min-width: 0;
-}
-
-.field-lock-row :deep(.el-button) {
-  align-self: flex-start;
-  margin-top: 0;
-}
-
+.field-lock-row,
 .field-stack-row {
   display: flex;
   flex-direction: column;
@@ -1146,69 +1417,77 @@ const { t } = useI18n()
   width: 100%;
 }
 
+.field-lock-row :deep(.el-input),
+.field-lock-row :deep(.el-select),
 .field-stack-row :deep(.el-input),
 .field-stack-row :deep(.el-select),
 .field-stack-row :deep(.el-date-editor),
 .field-stack-row :deep(.el-input-number) {
   width: 100%;
+  min-width: 0;
 }
 
-.po-dialog-footer {
+.po-draft-table {
+  width: 100%;
+  min-width: 1100px;
+}
+
+.po-wizard-footer {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
-  padding: 12px 18px;
-  background: var(--el-bg-color);
-  border-top: 1px solid var(--el-border-color-light);
-  flex-shrink: 0;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+}
+
+.po-wizard-footer__left,
+.po-wizard-footer__right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.po-wizard-footer__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
   gap: 10px;
 }
 
-.footer-nav {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-}
-
-.step-label {
-  font-size: 13px;
+.po-wizard-footer__step {
+  font-size: 12px;
   font-weight: 600;
-  color: var(--el-color-primary);
-  min-width: 120px;
+  color: #0369a1;
+  min-width: 10rem;
   text-align: center;
 }
 
-:deep(.footer-nav .el-button) {
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border-radius: 50%;
-  font-size: 14px;
-  font-weight: bold;
-}
+@media (max-width: 767px) {
+  .po-wizard-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
 
-:deep(.po-dialog-footer .el-button) {
-  padding: 8px 14px;
-}
+  .po-wizard-footer__nav {
+    order: -1;
+  }
 
-:deep(.po-dialog-footer .el-button .el-icon) {
-  margin-right: 4px;
-}
-
-.po-price-readonly :deep(.el-input__wrapper) {
-  background-color: var(--el-fill-color-light);
-}
-
-:deep(.po-fullscreen-dialog .el-divider__text) {
-  font-weight: 600;
-}
-
-.etd-schedule-table {
-  width: 100%;
+  .po-wizard-footer__left,
+  .po-wizard-footer__right {
+    justify-content: center;
+  }
 }
 
 .etd-schedule-table :deep(.el-table__header-wrapper) {
   display: none;
+}
+
+:deep(.po-row-highlight > td) {
+  background-color: rgb(255 251 235) !important;
 }
 </style>
