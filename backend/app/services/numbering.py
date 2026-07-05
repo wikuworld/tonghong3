@@ -1,4 +1,8 @@
-"""Nomor dokumen berjalan (SO / produksi / packing)."""
+"""Nomor dokumen berjalan (produksi / packing / quotation).
+
+Catatan: nomor Sales Order (PO) memakai ``app.services.so_numbering`` (format marketing).
+Modul ini tetap dipakai untuk PRD/PACK/QUO berbasis periode ``PREFIX-YYYYMM-NNNNN``.
+"""
 
 from __future__ import annotations
 

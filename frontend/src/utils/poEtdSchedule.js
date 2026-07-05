@@ -1,6 +1,7 @@
-/** Jadwal kirim (ETD) per baris PO — maks. 21 gelombang (PROD outstanding manual); UI mulai dari 1 baris. */
+/** Jadwal kirim (ETD) per baris PO — UI wizard: 1 jadwal per baris; backend/outstanding tetap mendukung hingga 21 slot. */
 
 export const ETD_SCHEDULE_SLOTS = 21
+export const ETD_SCHEDULE_UI_ROWS = 1
 
 export function createEtdScheduleRow(sequenceNo = 1) {
   return {
@@ -29,27 +30,51 @@ export function normalizeSchedulesFromApi(rows) {
   }))
 }
 
-export function etdScheduleRowsToPayload(rows) {
-  return (rows || [])
-    .filter((r) => (r.qty != null && r.qty !== '') || r.date)
-    .map((r, i) => ({
-      sequence_no: r.sequence_no ?? i + 1,
-      qty: r.qty != null && r.qty !== '' ? Number(r.qty) : null,
-      delivery_date: r.date || null,
-    }))
+export function syncSingleEtdScheduleQty(rows, orderQtyRaw) {
+  const row = (rows || [])[0]
+  if (!row) return
+  const orderQty = Number(orderQtyRaw)
+  row.qty = orderQty > 0 ? orderQty : null
+}
+
+export function etdScheduleRowsToPayload(rows, orderQtyRaw = null) {
+  const row = (rows || [])[0]
+  if (!row) return []
+  const hasDate = Boolean(row.date)
+  const hasQty = row.qty != null && row.qty !== ''
+  const orderQty = Number(orderQtyRaw)
+  if (!hasDate && !hasQty) return []
+
+  let qty = hasQty ? Number(row.qty) : null
+  if ((qty == null || Number.isNaN(qty)) && orderQty > 0) {
+    qty = orderQty
+  }
+
+  return [
+    {
+      sequence_no: 1,
+      qty: qty != null && !Number.isNaN(qty) ? qty : null,
+      delivery_date: row.date || null,
+    },
+  ]
 }
 
 export function loadEtdScheduleRowsFromApi(schedules) {
   const filled = (schedules || [])
     .filter((s) => (s.qty != null && s.qty !== '') || s.delivery_date)
     .sort((a, b) => Number(a.sequence_no) - Number(b.sequence_no))
-    .map((s) => ({
-      sequence_no: Number(s.sequence_no),
-      qty: s.qty != null ? Number(s.qty) : null,
-      date: s.delivery_date ? String(s.delivery_date).slice(0, 10) : '',
-    }))
   if (!filled.length) return emptyEtdScheduleRows()
-  return resequenceEtdScheduleRows(filled)
+
+  const totalQty = filled.reduce((sum, s) => sum + (Number(s.qty) || 0), 0)
+  const firstDate = filled.find((s) => s.delivery_date)?.delivery_date
+
+  return [
+    {
+      sequence_no: 1,
+      qty: totalQty > 0 ? totalQty : null,
+      date: firstDate ? String(firstDate).slice(0, 10) : '',
+    },
+  ]
 }
 
 export function schedulePayloadTotal(schedules) {
@@ -83,15 +108,11 @@ export function formatLineEtdScheduleDisplay(schedules, empty = '—') {
     .filter(Boolean)
     .sort()
 
-  if (!dates.length) {
-    return rows.length > 1 ? `${rows.length} gelombang` : empty
-  }
+  if (!dates.length) return empty
 
   const first = dates[0]
   const uniqueDates = [...new Set(dates)]
-  if (uniqueDates.length === 1) {
-    return rows.length > 1 ? `${first} (${rows.length}×)` : first
-  }
+  if (uniqueDates.length === 1) return first
   return `${first} +${uniqueDates.length - 1}`
 }
 

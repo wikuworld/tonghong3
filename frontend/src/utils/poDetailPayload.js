@@ -20,7 +20,7 @@ export function buildDetailBodyCore(formModel, etdScheduleRows, selectedSwatchId
     model: formModel.model || undefined,
     detail_remark: formModel.detail_remark || undefined,
     thi_line_ref: formModel.thi_line_ref || undefined,
-    delivery_schedules: etdScheduleRowsToPayload(etdScheduleRows),
+    delivery_schedules: etdScheduleRowsToPayload(etdScheduleRows, formModel.quantity_order),
     color_swatch_recipe_id: selectedSwatchId || undefined,
   }
 }

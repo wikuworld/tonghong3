@@ -307,6 +307,8 @@ class PoHeaderCreate(BaseModel):
     brand_name_snapshot: Optional[str] = None
     customer_name_snapshot: Optional[str] = None
     customs_declaration_id: Optional[int] = None
+    # Hanya untuk penomoran SO otomatis (tidak disimpan ke DB).
+    material_group: Optional[str] = None
 
     @field_validator("po_category")
     @classmethod
@@ -326,6 +328,16 @@ class PoHeaderCreate(BaseModel):
         if out not in {"production", "sample", "claim", "return", "subcont", "suede"}:
             raise ValueError("po_category tidak valid")
         return out
+
+    @field_validator("material_group")
+    @classmethod
+    def validate_material_group(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        mg = (v or "").strip().lower()
+        if mg not in {"pu", "suede"}:
+            raise ValueError("material_group tidak valid")
+        return mg
 
 
 class PoHeaderUpdate(BaseModel):

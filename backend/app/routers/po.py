@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,7 +12,8 @@ from sqlalchemy.orm import Session, selectinload
 from app.db import get_db
 from app.models import Brand, CustomerBrandMapping, FluorescentColorMaster, PoDetail, PoDetailDelivery, PoHeader
 from app.services.audit import log_change
-from app.services.numbering import next_number, peek_number
+from app.services.lot_numbers import infer_material_group
+from app.services.so_numbering import next_so_number, peek_so_number
 from app.schemas import (
     DeliveryScheduleItem,
     DeliverySchedulesPayload,
@@ -308,11 +310,27 @@ class PoCustomerRefCheckOut(BaseModel):
 
 @router.get("/po/next-number", response_model=NextPoNumberOut)
 def preview_next_po_number(
+    po_category: str = Query("production"),
+    order_date: Optional[date] = Query(None),
+    material_group: Optional[str] = Query(None),
+    order_type_label: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> NextPoNumberOut:
     """Preview nomor SO berikutnya tanpa increment sequence."""
-    return NextPoNumberOut(po_number=peek_number(db, "SO", "SO"))
+    cat = _normalize_po_category_duplicate(po_category)
+    mg = (material_group or "").strip().lower() or None
+    if mg not in {None, "pu", "suede"}:
+        mg = None
+    return NextPoNumberOut(
+        po_number=peek_so_number(
+            db,
+            po_category=cat,
+            order_type_label=order_type_label,
+            material_group=mg,
+            order_date=order_date,
+        )
+    )
 
 
 @router.get("/po/check-customer-ref", response_model=PoCustomerRefCheckOut)
@@ -526,15 +544,22 @@ def create_po(
             po_customer_ref=data.get("po_customer_ref"),
         )
         apply_header_snapshots(db, data, force=True)
+        material_group = data.pop("material_group", None)
+        so_number_kwargs = {
+            "po_category": data.get("po_category", "production"),
+            "order_type_label": data.get("order_type_label"),
+            "material_group": material_group,
+            "order_date": data.get("order_date"),
+        }
         if not data.get("po_number"):
-            data["po_number"] = next_number(db, "SO", "SO")
+            data["po_number"] = next_so_number(db, **so_number_kwargs)
         else:
             # Check if po_number already exists, auto-generate if duplicate
             existing = db.scalars(
                 select(PoHeader).where(PoHeader.po_number == data["po_number"])
             ).first()
             if existing:
-                data["po_number"] = next_number(db, "SO", "SO")
+                data["po_number"] = next_so_number(db, **so_number_kwargs)
         # Auto-generate po_customer_ref if empty
         if not data.get("po_customer_ref"):
             data["po_customer_ref"] = f"PO-{data['po_number']}"
@@ -626,9 +651,26 @@ def duplicate_po(
     }
     apply_header_snapshots(db, snapshot_data, force=True)
 
+    material_group = None
+    if details_src:
+        first = details_src[0]
+        try:
+            material_group = infer_material_group(
+                material_name=first.material_name,
+                vir_softness_type=first.vir_softness_type,
+            )
+        except HTTPException:
+            material_group = None
+
     try:
         new_po = PoHeader(
-            po_number=next_number(db, "SO", "SO"),
+            po_number=next_so_number(
+                db,
+                po_category=po_category,
+                order_type_label=src.order_type_label,
+                material_group=material_group,
+                order_date=src.order_date,
+            ),
             customer_id=src.customer_id,
             customer_code=snapshot_data.get("customer_code") or src.customer_code,
             po_category=po_category,

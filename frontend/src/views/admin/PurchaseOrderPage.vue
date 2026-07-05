@@ -8,11 +8,27 @@
         class="po-toolbar-search"
       />
       <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
-      <el-button :icon="Download" :loading="exportLoading" @click="exportPoList">{{ t('common.export') }}</el-button>
+      <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreateDialog">{{ t('common.create') }}</el-button>
     </template>
 
-    <div class="filter-panel mb-4">
+    <div class="admin-inner-card">
+      <div class="admin-inner-card__head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.po.listTitle') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.po.listSubtitle') }}</p>
+        </div>
+      </div>
+
+      <div class="admin-action-bar">
+        <p class="admin-action-bar__hint">{{ t('pages.po.exportListHint') }}</p>
+        <div class="admin-action-bar__buttons">
+          <el-button :icon="Download" :loading="exportLoading" @click="exportPoList">{{ t('common.export') }} CSV</el-button>
+        </div>
+      </div>
+
+      <div class="mkt-section-body">
+      <div class="filter-panel mb-4">
       <p class="filter-panel__title">{{ t('common.filter') }}</p>
       <el-form class="filter-form" label-position="top">
         <el-row :gutter="12">
@@ -36,7 +52,18 @@
           </el-col>
 
           <el-col :xs="24" :sm="12" :md="8" :lg="4">
-            <el-form-item :label="t('common.status')">
+            <el-form-item>
+              <template #label>
+                <span class="form-label-with-hint">
+                  {{ t('common.status') }}
+                  <el-tooltip placement="top" :show-after="200">
+                    <template #content>{{ t('pages.po.statusLegend') }}</template>
+                    <el-icon class="form-label-hint" :size="14" tabindex="0" :aria-label="t('pages.po.statusLegend')">
+                      <InfoFilled />
+                    </el-icon>
+                  </el-tooltip>
+                </span>
+              </template>
               <el-select v-model="filterStatus" clearable class="w-full" :placeholder="t('common.status')">
                 <el-option :label="t('status.draft')" value="draft" />
                 <el-option :label="t('status.confirmed')" value="confirmed" />
@@ -76,34 +103,54 @@
                 class="w-full min-w-[200px] max-w-full"
                 :shortcuts="poOrderDateShortcuts"
                 clearable
-                :start-placeholder="t('common.fromDate')"
-                :end-placeholder="t('common.toDate')"
+                :start-placeholder="t('common.placeholder.fromDate')"
+                :end-placeholder="t('common.placeholder.toDate')"
               />
             </el-form-item>
           </el-col>
-          <el-col :xs="24" :sm="6" :md="8" :lg="3" class="po-filter-action-col">
+          <el-col :xs="24" :sm="8" :md="6" :lg="4" class="po-filter-action-col">
             <el-form-item label="&nbsp;">
               <el-button class="w-full" :icon="RefreshLeft" @click="resetFilter">{{ t('common.reset') }}</el-button>
             </el-form-item>
           </el-col>
         </el-row>
       </el-form>
-    </div>
+      </div>
 
-    <p class="mb-2 text-xs text-slate-500">{{ t('pages.po.statusLegend') }}</p>
+      <div class="admin-stats-grid admin-stats-grid--4 mb-4">
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__value">{{ poListStats.total }}</span>
+          <span class="admin-stat-card__label">{{ t('common.total') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--info">
+          <span class="admin-stat-card__value">{{ poListStats.shown }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.po.shownOnPage') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--warn">
+          <span class="admin-stat-card__value">{{ poListStats.noDetail }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.po.withoutDetailOnPage') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--warn">
+          <span class="admin-stat-card__value">{{ poListStats.stuck }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.po.stuckOnPage') }}</span>
+        </div>
+      </div>
 
-    <div class="mb-2 flex flex-wrap items-center gap-2">
-      <el-switch v-model="poShowAllColumns" size="small" />
-      <span class="text-sm text-slate-600">{{ t('pages.po.showAllColumns') }}</span>
-    </div>
+      <div class="po-column-toggle mb-3">
+        <el-switch v-model="poShowAllColumns" size="small" />
+        <span class="text-sm text-slate-600">{{ t('pages.po.showAllColumns') }}</span>
+      </div>
 
+      <p class="admin-scroll-hint mb-3">{{ t('pages.po.scrollHint') }}</p>
+
+      <div class="admin-table-scroll">
     <el-table
       :data="filteredRows"
       v-loading="loading"
       border
       stripe
       size="small"
-      class="admin-table"
+      class="admin-table po-list-table"
       table-layout="fixed"
       :row-class-name="poRowClassName"
       :empty-text="t('pages.po.tableEmpty')"
@@ -137,7 +184,7 @@
       </el-table-column>
       <el-table-column prop="po_category" :label="t('common.category')" min-width="110" align="center">
         <template #default="{ row }">
-          <el-tag size="small" type="info" effect="plain">{{ t(`status.${row.po_category}`) }}</el-tag>
+          <el-tag size="small" type="info" effect="plain">{{ categoryLabel(row.po_category) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column
@@ -190,7 +237,7 @@
         </template>
         <template #default="{ row }">
           <el-popconfirm
-            v-if="canUpdate"
+            v-if="canUpdate && row.status === 'draft'"
             :title="t('pages.po.confirmPo')"
             :confirm-button-text="t('common.yes')"
             :cancel-button-text="t('common.no')"
@@ -198,12 +245,21 @@
           >
             <template #reference>
               <el-tag :type="statusType(row.status)" size="small" class="cursor-pointer hover:opacity-70">
-                {{ t(`status.${row.status}`) }}
+                {{ poStatusLabel(row.status) }}
               </el-tag>
             </template>
           </el-popconfirm>
+          <el-tooltip
+            v-else-if="canUpdate"
+            :content="t('pages.po.statusEditViaForm')"
+            placement="top"
+          >
+            <el-tag :type="statusType(row.status)" size="small">
+              {{ poStatusLabel(row.status) }}
+            </el-tag>
+          </el-tooltip>
           <el-tag v-else :type="statusType(row.status)" size="small">
-            {{ t(`status.${row.status}`) }}
+            {{ poStatusLabel(row.status) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -254,6 +310,8 @@
         </template>
       </el-table-column>
     </el-table>
+    </div>
+
     <div class="mt-3 flex justify-end">
       <el-pagination
         v-model:current-page="page"
@@ -263,6 +321,8 @@
         :total="totalRows"
         :page-sizes="[20, 50, 100, 200]"
       />
+    </div>
+      </div>
     </div>
 
     <PoFormWizardDialog />
@@ -317,12 +377,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus,
   Download,
+  Refresh,
+  RefreshLeft,
   View,
   EditPen,
   Delete,
   Document,
   FolderOpened,
   CopyDocument,
+  InfoFilled,
   Tickets,
   Memo,
 } from '@element-plus/icons-vue'
@@ -369,7 +432,7 @@ import {
   updatePo,
 } from '../../api/client'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const { canCreate, canUpdate, canDelete } = useModulePermission('po')
@@ -424,20 +487,7 @@ async function load() {
     wizard.materialDimensionOptions.value = dimMat.values || []
     buyerCodes.value = mergeExtraBuyerCodes(buyerCodes.value, bpl)
     let items = poPage.items || []
-    const needsListSummaries = items.some((h) => {
-      if (h.id == null) return false
-      const missingMaterial = !(String(h.material_hint || '').trim())
-      const missingEtd = !(String(h.etd_display || '').trim()) && !h.etd
-      return missingMaterial || missingEtd
-    })
-    if (needsListSummaries) {
-      try {
-        const hintResp = await fetchPoMaterialHints(items.map((h) => h.id))
-        items = mergePoMaterialHints(items, hintResp.items || [])
-      } catch {
-        /* list tetap tampil tanpa material hint */
-      }
-    }
+    items = await enrichPoRowsWithHints(items)
     rows.value = enrichHeaders(items, cust, br)
     totalRows.value = Number(poPage.total || 0)
   } catch (e) {
@@ -447,7 +497,7 @@ async function load() {
   }
 }
 
-wizard = usePoFormWizard({ t, canCreate, canUpdate, canDelete, customers, brands, masterItems, buyerCodes, load })
+wizard = usePoFormWizard({ t, canCreate, canUpdate, customers, brands, masterItems, buyerCodes, load })
 
 const {
   openCreateDialog,
@@ -479,7 +529,25 @@ function labelStuckReason(reason) {
   return stuckReasonLabel(reason, t, t('common.emptyValue'))
 }
 
+async function enrichPoRowsWithHints(items) {
+  if (!items?.length) return items
+  const needsHints = items.some((h) => {
+    if (h.id == null) return false
+    const missingMaterial = !(String(h.material_hint || '').trim())
+    const missingEtd = !(String(h.etd_display || '').trim()) && !h.etd
+    return missingMaterial || missingEtd
+  })
+  if (!needsHints) return items
+  try {
+    const hintResp = await fetchPoMaterialHints(items.map((h) => h.id))
+    return mergePoMaterialHints(items, hintResp.items || [])
+  } catch {
+    return items
+  }
+}
+
 async function quickChangeStatus(row, newStatus) {
+  if (newStatus === 'confirmed' && row.status !== 'draft') return
   if (newStatus === 'confirmed' && !Number(row.detail_line_count)) {
     ElMessage.warning(t('pages.po.confirmNeedsDetail'))
     return
@@ -523,6 +591,15 @@ function poRowClassName({ row }) {
 }
 
 const filteredRows = computed(() => rows.value)
+const poListStats = computed(() => {
+  const list = rows.value || []
+  return {
+    total: totalRows.value,
+    shown: list.length,
+    noDetail: list.filter((r) => !Number(r.detail_line_count)).length,
+    stuck: list.filter((r) => String(r.stuck_reason || '').trim()).length,
+  }
+})
 const resetFilter = () => resetFilters(load)
 
 const detailDialogVisible = ref(false)
@@ -566,10 +643,23 @@ const removeRow = async (row) => {
   }
 }
 
+function poStatusLabel(st) {
+  if (st && te(`status.${st}`)) return t(`status.${st}`)
+  return st || t('common.emptyValue')
+}
+
+function categoryLabel(cat) {
+  if (cat && te(`status.${cat}`)) return t(`status.${cat}`)
+  return cat || '—'
+}
+
 async function downloadSalesContractPdf(row) {
   try {
     const path = salesContractPdfPath(row.id)
-    await fetchAuthenticatedDocument(path, `sales-contract-${row.po_number || row.id}.pdf`)
+    await fetchAuthenticatedDocument(path, {
+      mode: 'download',
+      downloadFallbackName: `sales-contract-${row.po_number || row.id}.pdf`,
+    })
   } catch (e) {
     ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
   }
@@ -578,7 +668,10 @@ async function downloadSalesContractPdf(row) {
 async function downloadSalesContractDocx(row) {
   try {
     const path = salesContractDocxPath(row.id)
-    await fetchAuthenticatedDocument(path, `sales-contract-${row.po_number || row.id}.docx`)
+    await fetchAuthenticatedDocument(path, {
+      mode: 'download',
+      downloadFallbackName: `sales-contract-${row.po_number || row.id}.docx`,
+    })
   } catch (e) {
     ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
   }
@@ -587,7 +680,10 @@ async function downloadSalesContractDocx(row) {
 async function downloadProformaInvoicePdf(row) {
   try {
     const path = proformaInvoicePdfPath(row.id)
-    await fetchAuthenticatedDocument(path, `proforma-invoice-${row.po_number || row.id}.pdf`)
+    await fetchAuthenticatedDocument(path, {
+      mode: 'download',
+      downloadFallbackName: `proforma-invoice-${row.po_number || row.id}.pdf`,
+    })
   } catch (e) {
     ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
   }
@@ -596,7 +692,10 @@ async function downloadProformaInvoicePdf(row) {
 async function downloadProformaInvoiceDocx(row) {
   try {
     const path = proformaInvoiceDocxPath(row.id)
-    await fetchAuthenticatedDocument(path, `proforma-invoice-${row.po_number || row.id}.docx`)
+    await fetchAuthenticatedDocument(path, {
+      mode: 'download',
+      downloadFallbackName: `proforma-invoice-${row.po_number || row.id}.docx`,
+    })
   } catch (e) {
     ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
   }
@@ -636,7 +735,8 @@ async function exportPoList() {
       total = Number(poPage.total || 0)
       const batch = poPage.items || []
       if (!batch.length) break
-      allRows.push(...enrichHeaders(batch, customers.value, brands.value))
+      const enrichedBatch = await enrichPoRowsWithHints(batch)
+      allRows.push(...enrichHeaders(enrichedBatch, customers.value, brands.value))
       if (batch.length < limit) break
       offset += limit
     }
@@ -687,8 +787,21 @@ async function onDuplicatePo(row) {
 }
 </script>
 <style scoped>
-.admin-table {
+.po-filter-action-col {
+  display: flex;
+  align-items: flex-end;
+}
+
+.po-column-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.po-list-table {
   width: 100%;
+  min-width: 1280px;
 }
 
 .po-row-actions {
@@ -729,6 +842,23 @@ async function onDuplicatePo(row) {
 
 :deep(.po-row-highlight > td) {
   background-color: rgb(255 251 235) !important;
+}
+
+.form-label-with-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.form-label-hint {
+  color: #94a3b8;
+  cursor: help;
+  outline: none;
+}
+
+.form-label-hint:hover,
+.form-label-hint:focus-visible {
+  color: var(--el-color-primary);
 }
 
 </style>

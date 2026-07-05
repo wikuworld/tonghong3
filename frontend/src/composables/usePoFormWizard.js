@@ -3,20 +3,15 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 
 import { providePoWizardContext } from './poFormWizardContext.js'
 import { usePoMarketingRevise } from './usePoMarketingRevise.js'
-import { usePoStepCustomer, brandAllowedForCustomer, brandCustomerIds } from './usePoStepCustomer.js'
+import { usePoStepCustomer, brandCustomerIds, inferSoMaterialGroup } from './usePoStepCustomer.js'
 import { usePoStepLines } from './usePoStepLines.js'
 import { usePoStepReview } from './usePoStepReview.js'
 import {
-  createEtdScheduleRow,
-  emptyEtdScheduleRows,
-  ETD_SCHEDULE_SLOTS,
   normalizeSchedulesFromApi,
   etdScheduleRowsToPayload,
   formatLineEtdScheduleDisplay,
   loadEtdScheduleRowsFromApi,
   lineHasScheduleMismatch,
-  buildEvenEtdScheduleRows,
-  resequenceEtdScheduleRows,
 } from '../utils/poEtdSchedule.js'
 import {
   buildPoDraftPayload,
@@ -32,7 +27,6 @@ import {
   fetchColorSwatchOptionList,
   applyColorSwatchFill,
   applySwatchRecipeOption,
-  pickMatchingSwatchRecipes,
   pickBestSwatchRecipe,
 } from '../utils/poColorSwatch.js'
 import { parseApiErrorMessage } from '../utils/poApi.js'
@@ -59,12 +53,8 @@ import {
   deletePoDetail,
   generatePoDetailLot,
   generateLotPreview,
-  fetchNextPoNumber,
   checkPoCustomerRef,
-  getAllowedBrands,
   getCustomer,
-  listCustomerBrandMappings,
-  listBrandBuyers,
   listMasterItemDimensionValues,
   resolveMasterItemByDimensions,
   listFluorescentColors,
@@ -93,7 +83,6 @@ export function usePoFormWizard({
   t,
   canCreate,
   canUpdate,
-  canDelete,
   customers,
   brands,
   masterItems,
@@ -106,6 +95,14 @@ export function usePoFormWizard({
   }
 
   const saving = ref(false)
+
+const formErrors = reactive({
+  customer_id: '',
+  brand_id: '',
+  material_name: '',
+  quantity_order: '',
+  po_customer_ref: '',
+})
 
 const brandBuyerCodes = ref([])
 const customerBuyerCodes = ref([])
@@ -199,11 +196,11 @@ function nextStep() {
       return
     }
     if (!formModel.brand_id) {
-      ElMessage.warning('Brand wajib dipilih setelah customer.')
+      ElMessage.warning(t('pages.po.brandRequiredAfterCustomer'))
       return
     }
     if (!formModel.buyer) {
-      ElMessage.warning('Buyer wajib dipilih setelah brand.')
+      ElMessage.warning(t('pages.po.buyerRequiredAfterBrand'))
       return
     }
     formErrors.customer_id = ''
@@ -331,14 +328,10 @@ const {
   etdScheduleOpen,
   etdScheduleRows,
   clearEtdScheduleRows,
-  etdScheduleCanAdd,
-  addEtdScheduleRow,
-  removeEtdScheduleRow,
-  etdScheduleTotalDisplay,
+  copyEtdDateFromHeader,
+  syncEtdQtyFromOrder,
   etdScheduleMismatch,
-  autoFillEtdScheduleWave1,
-  autoFillEtdScheduleEvenly,
-} = usePoStepReview({ t, formModel })
+} = usePoStepReview({ formModel })
 
 async function syncCurrentFormToDraftLine() {
   if (editingDraftLineIndex.value < 0) return
@@ -394,13 +387,11 @@ async function editDraftLine(row) {
 }
 
 async function saveDetailSchedules(detailId, schedules) {
-  await setPoDetailDeliverySchedules(detailId, etdScheduleRowsToPayload(
-    (schedules || []).map((s) => ({
-      sequence_no: s.sequence_no,
-      qty: s.qty,
-      date: s.delivery_date || s.date || '',
-    })),
-  ))
+  const rows = loadEtdScheduleRowsFromApi(schedules || [])
+  await setPoDetailDeliverySchedules(
+    detailId,
+    etdScheduleRowsToPayload(rows, formModel.quantity_order),
+  )
 }
 
 const materialDimensionOptions = ref([])
@@ -655,9 +646,18 @@ const stepCustomer = usePoStepCustomer({
   autoFieldMeta,
   isEditMode,
   nextPoNumberPreview,
+  draftLines,
   applyAutoFactoryCode,
 })
 const { refreshNextPoNumberPreview, onCustomerChange, onBrandChange } = stepCustomer
+
+watch(
+  () => [formModel.po_category, formModel.order_date, formModel.vir_softness_type, formModel.material_name, draftLines.value.length],
+  () => {
+    if (!formDialogVisible.value || isEditMode.value) return
+    void refreshNextPoNumberPreview()
+  },
+)
 
 const stepLines = usePoStepLines({
   materialDimensionOptions,
@@ -885,13 +885,13 @@ function scheduleAutoLotGenerate() {
 
 async function autoGenerateLotFromMaterial({ showSuccess = false, showError = false } = {}) {
   if (!String(formModel.factory_code || '').trim()) {
-    if (showError) ElMessage.warning('Factory code wajib diisi sebelum generate lot.')
+    if (showError) ElMessage.warning(t('pages.po.factoryRequiredForLot'))
     return false
   }
   if (!String(formModel.material_name || '').trim()) return false
   if (!canInferMaterialGroupForLot()) {
     if (showError) {
-      ElMessage.warning('Material harus mengandung PU/Suede atau terhubung master item agar lot bisa dibentuk.')
+      ElMessage.warning(t('pages.po.materialRequiredForLot'))
     }
     return false
   }
@@ -923,7 +923,7 @@ async function generateLotNumber(forceDetailId = null) {
   const poId = editingPoId.value
   const isPersist = Boolean(poId && forceDetailId)
   if (!String(formModel.factory_code || '').trim()) {
-    ElMessage.warning('Factory code wajib diisi sebelum generate lot.')
+    ElMessage.warning(t('pages.po.factoryRequiredForLot'))
     return
   }
   const loadingFlag = isPersist ? saving : lotGenerateLoading
@@ -1142,14 +1142,6 @@ watch(
     }
   },
 )
-
-const formErrors = reactive({
-  customer_id: '',
-  brand_id: '',
-  material_name: '',
-  quantity_order: '',
-  po_customer_ref: '',
-})
 
 let poCustomerRefCheckTimer = null
 
@@ -1637,15 +1629,15 @@ async function pushCurrentLine(copyCurrent = false) {
       return
     }
     if (pricingKeyIncomplete.value) {
-      ElMessage.warning('Untuk buyer pricing, material, ketebalan, dan kategori warna wajib terisi.')
+      ElMessage.warning(t('pages.po.pricingKeyRequiredWarn'))
       return
     }
     if (!isThicknessPricingFormatValid(formModel.thickness_text)) {
-      ElMessage.warning('Format ketebalan harus angka tunggal (contoh: 1.4) atau rentang (contoh: 1.2 - 1.4).')
+      ElMessage.warning(t('pages.po.thicknessFormatWarn'))
       return
     }
     if (!isSelectedFluorescentColorValid()) {
-      ElMessage.warning('Warna fluorescent wajib dipilih dari master fluorescent sesuai buyer/season.')
+      ElMessage.warning(t('pages.po.fluorescentColorRequired'))
       return
     }
   }
@@ -1669,7 +1661,7 @@ async function pushCurrentLine(copyCurrent = false) {
     Number(line.unit_price) !== Number(previewResolvedUnitPrice.value) &&
     !String(formModel.detail_remark || '').trim()
   ) {
-    ElMessage.warning('Jika harga diubah manual, mohon isi Detail Remark sebagai alasan override harga.')
+    ElMessage.warning(t('pages.po.manualPriceRemarkRequired'))
     return
   }
   draftLines.value.push({ ...line })
@@ -1822,11 +1814,21 @@ const submitForm = async () => {
     return
   }
   if (!isSelectedFluorescentColorValid()) {
-    ElMessage.warning('Warna fluorescent wajib dipilih dari master fluorescent sesuai buyer/season.')
+    ElMessage.warning(t('pages.po.fluorescentColorRequired'))
     return
   }
   saving.value = true
   try {
+    if (editingDraftLineIndex.value >= 0) {
+      await syncCurrentFormToDraftLine()
+    }
+    const bodiesFinal = draftLines.value.length ? draftLines.value : [await buildCurrentDetailBody()]
+    await validateFluorescentLinesOrThrow(bodiesFinal)
+    const mismatchLines = bodiesFinal.filter((b) => lineHasScheduleMismatch(b))
+    if (mismatchLines.length) {
+      ElMessage.warning(t('pages.po.scheduleMismatchWarn'))
+    }
+
     const header = {
       po_number: isEditMode.value ? formModel.po_number?.trim() || undefined : undefined,
       customer_id: formModel.customer_id,
@@ -1840,17 +1842,10 @@ const submitForm = async () => {
       delivery_address: formModel.delivery_address?.trim() || undefined,
       status: formModel.status,
     }
+    const soMaterialGroup = inferSoMaterialGroup(formModel, bodiesFinal)
+    if (soMaterialGroup) header.material_group = soMaterialGroup
     if (!orderDateLocked.value) {
       header.order_date = toIsoDate(formModel.order_date) || undefined
-    }
-    if (editingDraftLineIndex.value >= 0) {
-      await syncCurrentFormToDraftLine()
-    }
-    const bodiesFinal = draftLines.value.length ? draftLines.value : [await buildCurrentDetailBody()]
-    await validateFluorescentLinesOrThrow(bodiesFinal)
-    const mismatchLines = bodiesFinal.filter((b) => lineHasScheduleMismatch(b))
-    if (mismatchLines.length) {
-      ElMessage.warning(t('pages.po.scheduleMismatchWarn'))
     }
 
     if (isEditMode.value && editingPoId.value) {
@@ -2034,12 +2029,8 @@ function addCopiedItems() {
     etdScheduleOpen,
     etdScheduleRows,
     clearEtdScheduleRows,
-    addEtdScheduleRow,
-    removeEtdScheduleRow,
-    etdScheduleCanAdd,
-    autoFillEtdScheduleWave1,
-    autoFillEtdScheduleEvenly,
-    etdScheduleTotalDisplay,
+    copyEtdDateFromHeader,
+    syncEtdQtyFromOrder,
     etdScheduleMismatch,
     formatLineEtdScheduleDisplay,
     draftLinesDisplay,
