@@ -18,6 +18,7 @@
       <el-menu
         :default-active="route.path"
         :collapse="isSidebarCollapsed"
+        :collapse-transition="false"
         class="admin-sidebar-menu"
         background-color="#0f172a"
         text-color="#cbd5e1"
@@ -149,6 +150,9 @@
                   <span class="text-gray-400">{{ t('common.profileStatus') }}:</span>
                   {{ currentUser?.is_active ? t('status.active') : t('status.inactive') }}
                 </el-dropdown-item>
+                <el-dropdown-item divided @click="handleLogout">
+                  {{ t('common.logout') }}
+                </el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -173,7 +177,9 @@
       </el-header>
 
       <el-main class="admin-main" :style="{ marginLeft: isSidebarCollapsed ? '64px' : '240px' }">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <component v-if="Component" :is="Component" :key="route.fullPath" />
+        </router-view>
       </el-main>
 
       <el-footer class="admin-footer" :style="{ left: isSidebarCollapsed ? '64px' : '240px' }">
@@ -281,6 +287,10 @@ const erpFinanceMenus = [
 const erpMasterMenus = [
   { path: '/admin/customers', labelKey: 'menu.customers', icon: User },
   { path: '/admin/buyer-prices', labelKey: 'menu.buyerPrices', icon: Sell },
+  { path: '/admin/special-prices', labelKey: 'menu.specialPrices', icon: Sell },
+  { path: '/admin/customer-prices', labelKey: 'menu.customerPrices', icon: Sell },
+  { path: '/admin/bulk-price-update', labelKey: 'menu.bulkPriceUpdate', icon: Coin },
+  { path: '/admin/customer-brand-mapping', labelKey: 'menu.customerBrandMapping', icon: CollectionTag },
   { path: '/admin/brands', labelKey: 'menu.brandMaster', icon: CollectionTag },
   { path: '/admin/customs', labelKey: 'menu.customs', icon: FolderOpened },
   { path: '/admin/master-items', labelKey: 'menu.masterItems', icon: Box },
@@ -331,11 +341,19 @@ const filteredMrpMenus = computed(() => {
 })
 
 const goTo = (path) => {
-  router.push(path)
+  if (path !== route.path) router.push(path)
 }
 
 const onChangeLocale = (value) => {
   locale.value = value
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('tonghong_locale', value)
+  }
+}
+
+function handleLogout() {
+  localStorage.removeItem('auth_token')
+  router.replace({ path: '/login' })
 }
 
 function updateDocumentTitle() {

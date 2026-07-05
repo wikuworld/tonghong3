@@ -1,136 +1,169 @@
 <template>
   <AdminSection :title="t('pages.customers.title')" :subtitle="t('pages.customers.subtitle')">
-    <p class="mb-3 text-sm text-slate-600">{{ t('pages.customers.legacyLayoutHint') }}</p>
+    <template #actions>
+      <el-input
+        v-model="keyword"
+        :placeholder="t('pages.customers.searchPlaceholder')"
+        clearable
+        class="customer-toolbar-search"
+      />
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
+      <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
+    </template>
 
-    <el-row :gutter="16" class="customer-master-layout mb-4">
-      <el-col :xs="24" :md="7" :lg="6">
-        <el-card shadow="never" class="customer-aside-card">
-          <template #header>
-            <div class="flex items-center justify-between gap-2">
-              <span class="text-sm font-semibold">{{ t('pages.customers.asideTitle') }}</span>
-              <el-button v-if="canCreate" type="primary" size="small" :icon="Plus" @click="openCreate">
-                {{ t('common.create') }}
-              </el-button>
+    <div class="admin-inner-card">
+      <div class="admin-inner-card__head customer-inner-head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.customers.listTitle') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.customers.listSubtitle') }}</p>
+        </div>
+        <el-tooltip placement="top-start" :show-after="200">
+          <template #content>{{ t('pages.customers.legacyLayoutHint') }}</template>
+          <el-icon class="customer-layout-hint" :size="16" tabindex="0" :aria-label="t('pages.customers.legacyLayoutHint')">
+            <InfoFilled />
+          </el-icon>
+        </el-tooltip>
+      </div>
+
+      <div class="admin-stats-grid customer-stats-grid">
+        <div class="admin-stat-card admin-stat-card--warn">
+          <span class="admin-stat-card__value">{{ exportCount }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.customers.statExport') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--success">
+          <span class="admin-stat-card__value">{{ localCount }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.customers.statLocal') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--info">
+          <span class="admin-stat-card__value">{{ totalRows }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.customers.statFilteredTotal') }}</span>
+        </div>
+      </div>
+
+      <div class="filter-panel customer-filter-panel">
+        <p class="filter-panel__title">{{ t('common.filter') }}</p>
+        <div class="customer-filter-row">
+          <span class="customer-filter-label">{{ t('pages.customers.filterMode') }}</span>
+          <el-switch
+            v-model="showExportCustomers"
+            inline-prompt
+            :active-text="t('pages.customers.filterExport')"
+            :inactive-text="t('pages.customers.filterLocal')"
+          />
+        </div>
+      </div>
+
+      <el-row :gutter="16" class="customer-master-layout" v-loading="loading">
+        <el-col :xs="24" :md="7" :lg="6">
+          <div class="customer-aside-panel">
+            <div class="customer-aside-panel__head">
+              <span class="customer-aside-panel__title">{{ t('pages.customers.asideTitle') }}</span>
+              <span class="customer-aside-panel__count">
+                {{ t('pages.customers.shownOnPage', { count: filteredRows.length }) }}
+              </span>
             </div>
-          </template>
-          <div class="mb-2 flex items-center justify-between gap-2">
-            <span class="text-xs text-slate-500">{{ t('pages.customers.filterMode') }}</span>
-            <el-switch
-              v-model="showExportCustomers"
-              inline-prompt
-              :active-text="t('pages.customers.filterExport')"
-              :inactive-text="t('pages.customers.filterLocal')"
-            />
-          </div>
-          <div class="customer-count-summary">
-            <el-tag size="small" type="warning" effect="plain">Export customer: {{ exportCount }}</el-tag>
-            <el-tag size="small" type="success" effect="plain">Lokal customer: {{ localCount }}</el-tag>
-          </div>
-          <div class="customer-list-filter">
-            <el-autocomplete
-              v-model="keyword"
-              :fetch-suggestions="querySearch"
-              :placeholder="t('pages.customers.searchPlaceholder')"
-              clearable
-              class="w-full"
-            />
-          </div>
-          <el-scrollbar max-height="420">
-            <div
-              v-for="row in filteredRows"
-              :key="row.id"
-              class="customer-aside-item"
-              :class="{ 'customer-aside-item--active': panelRow?.id === row.id }"
-              role="button"
-              tabindex="0"
-              @click="selectCustomer(row.id)"
-              @keydown.enter.prevent="selectCustomer(row.id)"
-              @dblclick="openEdit(row)"
-            >
-              <div class="customer-aside-item__head">
-                <div class="text-xs font-mono text-slate-500">{{ row.code || '—' }}</div>
-                <el-tag size="small" :type="row.is_active ? 'success' : 'info'" effect="light">
-                  {{ row.is_active ? t('status.active') : t('status.inactive') }}
-                </el-tag>
+            <el-scrollbar max-height="460">
+              <div
+                v-for="row in filteredRows"
+                :key="row.id"
+                class="customer-aside-item"
+                :class="{ 'customer-aside-item--active': panelRow?.id === row.id }"
+                role="button"
+                tabindex="0"
+                @click="selectCustomer(row.id)"
+                @keydown.enter.prevent="selectCustomer(row.id)"
+                @dblclick="openEdit(row)"
+              >
+                <div class="customer-aside-item__head">
+                  <div class="text-xs font-mono text-slate-500">{{ row.code || '—' }}</div>
+                  <el-tag size="small" :type="row.is_active ? 'success' : 'info'" effect="light">
+                    {{ row.is_active ? t('status.active') : t('status.inactive') }}
+                  </el-tag>
+                </div>
+                <div class="text-sm font-medium text-slate-800 line-clamp-2">{{ row.name || t('common.emptyValue') }}</div>
+                <div class="customer-aside-item__meta">
+                  <span>{{ row.country || t('common.emptyValue') }}</span>
+                  <span>{{ contactSummary(row) }}</span>
+                </div>
+                <div class="customer-aside-item__actions">
+                  <el-switch
+                    :model-value="Boolean(row.is_active)"
+                    size="small"
+                    @click.stop
+                    @change="toggleCustomerActive(row, $event)"
+                  />
+                  <el-button
+                    v-if="canDelete"
+                    :icon="Delete"
+                    link
+                    type="danger"
+                    @click.stop="confirmDelete(row)"
+                  />
+                </div>
               </div>
-              <div class="text-sm font-medium text-slate-800 line-clamp-2">{{ row.name || t('common.emptyValue') }}</div>
-              <div class="customer-aside-item__meta">
-                <span>{{ row.country || t('common.emptyValue') }}</span>
-                <span>{{ contactSummary(row) }}</span>
-              </div>
-              <div class="customer-aside-item__actions">
-                <el-switch
-                  :model-value="Boolean(row.is_active)"
-                  size="small"
-                  @click.stop
-                  @change="toggleCustomerActive(row, $event)"
-                />
-                <el-button
-                  v-if="canDelete"
-                  :icon="Delete"
-                  link
-                  type="danger"
-                  @click.stop="confirmDelete(row)"
-                />
-              </div>
+              <el-empty v-if="!filteredRows.length" :description="t('pages.customers.tableEmpty')" />
+            </el-scrollbar>
+            <div class="customer-list-pagination">
+              <el-pagination
+                size="small"
+                background
+                layout="prev, pager, next"
+                :total="totalRows"
+                :current-page="page"
+                :page-size="pageSize"
+                @current-change="onPageChange"
+              />
             </div>
-            <el-empty v-if="!filteredRows.length" :description="t('pages.customers.tableEmpty')" />
-          </el-scrollbar>
-          <div class="customer-list-pagination">
-            <el-pagination
-              size="small"
-              background
-              layout="prev, pager, next"
-              :total="totalRows"
-              :current-page="page"
-              :page-size="pageSize"
-              @current-change="onPageChange"
-            />
           </div>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :md="17" :lg="18">
-        <el-card v-if="panelRow" shadow="never" v-loading="panelLoading">
-          <template #header>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <span class="font-semibold">{{ panelRow.name || panelRow.code }}</span>
-              <div class="flex flex-wrap gap-2">
+        </el-col>
+
+        <el-col :xs="24" :md="17" :lg="18">
+          <div v-if="panelRow" class="customer-detail-panel" v-loading="panelLoading">
+            <div class="customer-detail-panel__head">
+              <div class="customer-detail-panel__title-wrap">
+                <span class="customer-detail-panel__code">{{ panelRow.code || '—' }}</span>
+                <h4 class="customer-detail-panel__title">{{ panelRow.name || panelRow.code }}</h4>
+              </div>
+              <div class="customer-detail-panel__actions">
                 <el-button v-if="canUpdate" type="primary" size="small" :icon="EditPen" @click="openEdit(panelRow)">
                   {{ t('common.edit') }}
                 </el-button>
                 <el-button size="small" :icon="View" @click="openDetail(panelRow)">{{ t('common.detail') }}</el-button>
               </div>
             </div>
-          </template>
-          <el-descriptions :column="2" border size="small">
-            <el-descriptions-item :label="t('common.code')">{{ panelRow.code || '—' }}</el-descriptions-item>
-            <el-descriptions-item :label="t('pages.customers.fieldReferenceQuotation')">
-              {{ panelRow.reference_quotation || '—' }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('pages.customers.fieldPaymentTerms')">
-              {{ panelRow.payment_terms || '—' }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('pages.customers.fieldDefaultCurrency')">
-              {{ panelRow.default_currency || '—' }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('pages.customers.fieldTaxMode')">
-              {{ taxModeLabel(panelRow.tax_mode) }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('pages.customers.fieldContactSummary')">
-              {{ contactSummary(panelRow) }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('common.address')" :span="2">{{ panelRow.address || '—' }}</el-descriptions-item>
-            <el-descriptions-item :label="t('pages.customers.fieldBillingAddress')" :span="2">
-              {{ panelRow.billing_address || '—' }}
-            </el-descriptions-item>
-            <el-descriptions-item :label="t('pages.customers.fieldRemark')" :span="2">{{ panelRow.remark || '—' }}</el-descriptions-item>
-          </el-descriptions>
-        </el-card>
-        <el-card v-else shadow="never" class="min-h-[200px] flex items-center justify-center">
-          <el-empty :description="t('pages.customers.panelEmpty')" />
-        </el-card>
-      </el-col>
-    </el-row>
+            <div class="customer-detail-panel__body">
+              <el-descriptions :column="2" border size="small">
+                <el-descriptions-item :label="t('common.code')">{{ panelRow.code || '—' }}</el-descriptions-item>
+                <el-descriptions-item :label="t('pages.customers.fieldReferenceQuotation')">
+                  {{ panelRow.reference_quotation || '—' }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('pages.customers.fieldPaymentTerms')">
+                  {{ panelRow.payment_terms || '—' }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('pages.customers.fieldDefaultCurrency')">
+                  {{ panelRow.default_currency || '—' }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('pages.customers.fieldTaxMode')">
+                  {{ taxModeLabel(panelRow.tax_mode) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('pages.customers.fieldContactSummary')">
+                  {{ contactSummary(panelRow) }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('common.address')" :span="2">{{ panelRow.address || '—' }}</el-descriptions-item>
+                <el-descriptions-item :label="t('pages.customers.fieldBillingAddress')" :span="2">
+                  {{ panelRow.billing_address || '—' }}
+                </el-descriptions-item>
+                <el-descriptions-item :label="t('pages.customers.fieldRemark')" :span="2">{{ panelRow.remark || '—' }}</el-descriptions-item>
+              </el-descriptions>
+            </div>
+          </div>
+          <div v-else class="customer-detail-panel customer-detail-panel--empty">
+            <el-empty :description="t('pages.customers.panelEmpty')" />
+          </div>
+        </el-col>
+      </el-row>
+    </div>
 
     <el-dialog
       v-model="detailVisible"
@@ -207,8 +240,13 @@
       align-center
       @closed="resetFormModel"
     >
-      <p class="customer-form-hint">{{ t('pages.customers.formHint') }}</p>
-      <div class="customer-form-toolbar">
+      <div class="customer-dialog-head">
+        <el-tooltip placement="top-start" :show-after="200">
+          <template #content>{{ t('pages.customers.formHint') }}</template>
+          <el-icon class="customer-layout-hint" :size="16" tabindex="0" :aria-label="t('pages.customers.formHint')">
+            <InfoFilled />
+          </el-icon>
+        </el-tooltip>
         <el-button size="small" type="primary" plain @click="applyQuotationDefaults">{{ t('pages.customers.applyDefaultLocal') }}</el-button>
       </div>
       <el-form
@@ -347,8 +385,15 @@
             </el-form-item>
           </el-col>
           <el-col :span="24">
-            <el-divider content-position="left">{{ t('pages.customers.wilayahSection') }}</el-divider>
-            <p class="mb-3 text-xs text-slate-500">{{ t('pages.customers.wilayahHint') }}</p>
+            <div class="customer-section-head">
+              <el-divider content-position="left">{{ t('pages.customers.wilayahSection') }}</el-divider>
+              <el-tooltip placement="top" :show-after="200">
+                <template #content>{{ t('pages.customers.wilayahHint') }}</template>
+                <el-icon class="customer-layout-hint" :size="14" tabindex="0" :aria-label="t('pages.customers.wilayahHint')">
+                  <InfoFilled />
+                </el-icon>
+              </el-tooltip>
+            </div>
           </el-col>
           <el-col :xs="24" :sm="12">
             <el-form-item :label="t('pages.customers.wilayahProvince')">
@@ -479,10 +524,9 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, View, EditPen, Delete } from '@element-plus/icons-vue'
+import { Plus, View, EditPen, Delete, Refresh, InfoFilled } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { can } from '../../security/permissions'
-import { formatDate } from '../../utils/format'
 import {
   createCustomer,
   deleteCustomer,
@@ -586,17 +630,6 @@ function searchableText(row) {
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
-}
-
-function querySearch(queryString, cb) {
-  const q = (queryString || '').trim().toLowerCase()
-  const candidates = rows.value
-    .filter((row) => !q || searchableText(row).includes(q))
-    .slice(0, 10)
-    .map((row) => ({
-      value: [row.code, row.name, row.country].filter(Boolean).join(' - ') || String(row.id),
-    }))
-  cb(candidates)
 }
 
 async function selectCustomer(id) {
@@ -1047,6 +1080,150 @@ function confirmDelete(row) {
 </script>
 
 <style scoped>
+.customer-inner-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.customer-layout-hint {
+  color: #94a3b8;
+  cursor: help;
+  flex-shrink: 0;
+  outline: none;
+}
+
+.customer-layout-hint:hover,
+.customer-layout-hint:focus-visible {
+  color: var(--el-color-primary);
+}
+
+.customer-stats-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.customer-filter-panel {
+  margin: 0;
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 0;
+}
+
+.customer-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.customer-filter-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+}
+
+.customer-master-layout {
+  padding: 16px;
+}
+
+.customer-aside-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 12px;
+  min-height: 320px;
+}
+
+.customer-aside-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.customer-aside-panel__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.customer-aside-panel__count {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.customer-detail-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  min-height: 320px;
+  overflow: hidden;
+}
+
+.customer-detail-panel--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+}
+
+.customer-detail-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+}
+
+.customer-detail-panel__code {
+  display: block;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  color: #64748b;
+}
+
+.customer-detail-panel__title {
+  margin: 2px 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.customer-detail-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.customer-detail-panel__body {
+  padding: 16px;
+}
+
+.customer-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.customer-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.customer-section-head :deep(.el-divider) {
+  flex: 1;
+  margin: 16px 0;
+}
+
 .customer-row-actions {
   display: inline-flex;
   flex-wrap: wrap;
@@ -1057,13 +1234,6 @@ function confirmDelete(row) {
 
 .customer-list-filter {
   margin-bottom: 10px;
-}
-
-.customer-count-summary {
-  margin-bottom: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 
 .customer-list-pagination {
@@ -1086,19 +1256,6 @@ function confirmDelete(row) {
   gap: 8px;
 }
 
-.customer-form-hint {
-  margin: 0 0 10px;
-  font-size: 13px;
-  color: var(--el-text-color-secondary);
-}
-
-.customer-form-toolbar {
-  margin: 0 0 12px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
 .customer-dialog :deep(.el-dialog) {
   max-height: 90vh;
   margin: 0;
@@ -1118,10 +1275,6 @@ function confirmDelete(row) {
 
 .customer-form-grid {
   row-gap: 4px;
-}
-
-.customer-aside-card :deep(.el-card__body) {
-  padding-top: 8px;
 }
 
 .customer-aside-item {
@@ -1176,6 +1329,12 @@ function confirmDelete(row) {
   align-items: flex-end;
   justify-content: flex-end;
   padding-bottom: 16px;
+}
+
+@media (max-width: 639px) {
+  .customer-stats-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 767px) {

@@ -11,7 +11,7 @@
       <el-table-column :label="t('common.status')" width="100">
         <template #default="{ row }">
           <el-tag :type="row.is_active ? 'success' : 'info'" size="small">
-            {{ row.is_active ? t('common.active') : t('common.inactive') }}
+            {{ row.is_active ? t('status.active') : t('status.inactive') }}
           </el-tag>
         </template>
       </el-table-column>
@@ -61,8 +61,13 @@ const form = reactive({ code: '', name: '', location: '' })
 
 async function load() {
   loading.value = true
-  warehouses.value = await listWarehouses()
-  loading.value = false
+  try {
+    warehouses.value = await listWarehouses()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    loading.value = false
+  }
 }
 
 function openCreate() {

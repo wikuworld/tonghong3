@@ -7,41 +7,61 @@
         clearable
         class="reports-toolbar-search"
       />
-      <el-button v-if="canExport" :icon="Download" :loading="dailyCsvLoading" @click="exportDailyMarketingCsv">
-        {{ t('pages.reports.exportDailyMarketing') }}
-      </el-button>
-      <el-button v-if="canExport" :icon="Download" @click="exportSoCsv">{{ t('pages.reports.exportSo') }}</el-button>
-      <el-button v-if="canExport" :icon="Download" @click="exportLinesCsv">{{ t('pages.reports.exportLines') }}</el-button>
-      <el-button v-if="canExport" type="primary" :icon="Printer" @click="printReport">{{ t('common.print') }} {{ t('pages.reports.report') }}</el-button>
+      <span v-if="reportLoading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
+      <el-button :icon="Refresh" :loading="reportLoading" @click="runGenerateReport">{{ t('common.refresh') }}</el-button>
     </template>
 
-    <div class="border border-gray-200 rounded-lg bg-slate-50">
-      <div class="bg-slate-900 text-white p-3.5">
-        <div class="report-card__header-title">{{ t('pages.reports.poOrderDescription') }}</div>
-        <div class="report-card__header-sub">PT. Tong Hong Tannery Indonesia</div>
-        <div class="report-card__header-daily">{{ t('pages.reports.dailyMarketingSheet') }}</div>
+    <div class="reports-action-bar">
+      <p class="reports-action-bar__hint">{{ t('pages.reports.dailyMarketingSheet') }}</p>
+      <div class="reports-action-bar__buttons">
+        <el-dropdown v-if="canExport" trigger="click" @command="handleExportCommand">
+          <el-button :icon="Download" :loading="dailyCsvLoading">
+            {{ t('pages.reports.exportMenu') }}
+            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="daily">{{ t('pages.reports.exportDailyMarketing') }}</el-dropdown-item>
+              <el-dropdown-item command="so">{{ t('pages.reports.exportSo') }}</el-dropdown-item>
+              <el-dropdown-item command="lines">{{ t('pages.reports.exportLines') }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button v-if="canExport" type="primary" :icon="Printer" @click="printReport">
+          {{ t('common.print') }} {{ t('pages.reports.report') }}
+        </el-button>
+      </div>
+    </div>
+
+    <div class="admin-inner-card">
+      <div class="admin-inner-card__head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.reports.poOrderDescription') }}</h3>
+          <p class="admin-inner-card__sub">PT. Tong Hong Tannery Indonesia</p>
+        </div>
       </div>
 
       <div class="filter-panel report-card__filter">
         <p class="filter-panel__title">{{ t('common.filter') }}</p>
         <el-form class="filter-form" label-position="top">
-          <el-row :gutter="12">
-            <el-col :xs="24" :sm="24" :md="12">
+          <el-row :gutter="12" align="bottom">
+            <el-col :xs="24" :lg="9">
               <el-form-item :label="t('pages.reports.dateRange')">
                 <el-date-picker
                   v-model="dateRange"
                   type="daterange"
-                  :range-separator="t('common.rangeSeparator')"
+                  range-separator="—"
                   :start-placeholder="t('common.startDate')"
                   :end-placeholder="t('common.endDate')"
                   value-format="YYYY-MM-DD"
                   class="w-full"
                   :shortcuts="dateShortcuts"
                   unlink-panels
+                  clearable
                 />
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :sm="12" :md="5">
+            <el-col :xs="12" :lg="5">
               <el-form-item :label="t('common.customer')">
                 <el-select v-model="customer" clearable filterable class="w-full" :placeholder="t('common.allCustomer')">
                   <el-option :label="t('common.allCustomer')" value="" />
@@ -49,7 +69,7 @@
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :sm="12" :md="5">
+            <el-col :xs="12" :lg="5">
               <el-form-item :label="t('common.poCategory')">
                 <el-select v-model="category" clearable class="w-full" :placeholder="t('pages.reports.allStatus')">
                   <el-option :label="t('pages.reports.allStatus')" value="" />
@@ -62,16 +82,19 @@
                 </el-select>
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :md="2" class="reports-filter-action">
+            <el-col :xs="24" :lg="5" class="reports-filter-actions">
               <el-form-item label="&nbsp;">
-                <el-button type="primary" :icon="DataAnalysis" class="w-full" :loading="reportLoading" @click="runGenerateReport">
-                  {{ t('pages.reports.generateReport') }}
-                </el-button>
+                <div class="reports-filter-actions__row">
+                  <el-button type="primary" :icon="DataAnalysis" :loading="reportLoading" @click="runGenerateReport">
+                    {{ t('pages.reports.generateReport') }}
+                  </el-button>
+                  <el-button :icon="RefreshLeft" @click="resetFilters">{{ t('common.reset') }}</el-button>
+                </div>
               </el-form-item>
             </el-col>
           </el-row>
-          <el-row :gutter="12" class="report-filter-row-2">
-            <el-col :xs="24" :sm="12" :md="8">
+          <el-row :gutter="12">
+            <el-col :xs="24" :sm="12" :md="8" :lg="6">
               <el-form-item :label="t('pages.reports.dateFieldLabel')">
                 <el-select v-model="dateField" class="w-full">
                   <el-option :label="t('pages.reports.dateFieldOrder')" value="order" />
@@ -84,8 +107,32 @@
         </el-form>
       </div>
 
+      <div class="admin-stats-grid admin-stats-grid--4">
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__value">{{ reportStats.revise }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.reports.reviseThickness') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--info">
+          <span class="admin-stat-card__value">{{ reportStats.production }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.reports.productionOrder') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--warn">
+          <span class="admin-stat-card__value">{{ reportStats.sample }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.reports.sample') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--success">
+          <span class="admin-stat-card__value">{{ reportStats.shown }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.reports.shownRows') }}</span>
+        </div>
+      </div>
+
+      <p class="admin-scroll-hint">{{ t('pages.reports.scrollHint') }}</p>
+
       <div v-loading="reportLoading" class="report-card__body">
-        <h3 class="report-section-title">{{ t('pages.reports.reviseThickness') }}</h3>
+        <div class="report-section-head">
+          <h3 class="report-section-title">{{ t('pages.reports.reviseThickness') }}</h3>
+          <el-tag size="small" type="info" effect="plain">{{ reportStats.revise }}</el-tag>
+        </div>
         <div class="report-table-scroll">
           <el-table
             :data="filteredReviseRows"
@@ -138,7 +185,10 @@
           </el-table>
         </div>
 
-        <h3 class="report-section-title">{{ t('pages.reports.productionOrder') }}</h3>
+        <div class="report-section-head">
+          <h3 class="report-section-title">{{ t('pages.reports.productionOrder') }}</h3>
+          <el-tag size="small" type="primary" effect="plain">{{ reportStats.production }}</el-tag>
+        </div>
         <div class="report-table-scroll">
           <el-table
             :data="filteredProductionRows"
@@ -195,7 +245,10 @@
           {{ t('pages.reports.totalProductionOrder') }}: <b>{{ formatQty(productionQtySum) }}</b>
         </div>
 
-        <h3 class="report-section-title">{{ t('pages.reports.sample') }}</h3>
+        <div class="report-section-head">
+          <h3 class="report-section-title">{{ t('pages.reports.sample') }}</h3>
+          <el-tag size="small" type="warning" effect="plain">{{ reportStats.sample }}</el-tag>
+        </div>
         <div class="report-table-scroll">
           <el-table
             :data="filteredSampleRows"
@@ -246,15 +299,6 @@
           {{ t('pages.reports.totalSample') }}: <b>{{ formatQty(sampleQtySum) }}</b>
         </div>
       </div>
-
-      <div class="report-card__footer">
-        <el-button :icon="Download" :loading="dailyCsvLoading" @click="exportDailyMarketingCsv">
-          {{ t('pages.reports.exportDailyMarketing') }}
-        </el-button>
-        <el-button :icon="Download" @click="exportSoCsv">{{ t('pages.reports.exportSo') }}</el-button>
-        <el-button :icon="Download" @click="exportLinesCsv">{{ t('pages.reports.exportLines') }}</el-button>
-        <el-button type="primary" :icon="Printer" @click="printReport">{{ t('common.print') }} {{ t('pages.reports.report') }}</el-button>
-      </div>
     </div>
   </AdminSection>
 </template>
@@ -263,7 +307,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { Download, Printer, DataAnalysis } from '@element-plus/icons-vue'
+import { Download, Printer, DataAnalysis, Refresh, RefreshLeft, ArrowDown } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import {
   fetchReportPoOrderDescription,
@@ -288,7 +332,7 @@ const customers = ref([])
 
 const dateShortcuts = computed(() => [
   {
-    text: t('common.shortcutToday'),
+    text: t('pages.reports.shortcutToday'),
     value: () => {
       const end = new Date()
       const start = new Date()
@@ -296,7 +340,7 @@ const dateShortcuts = computed(() => [
     },
   },
   {
-    text: t('common.shortcutLast7Days'),
+    text: t('pages.reports.shortcutLast7Days'),
     value: () => {
       const end = new Date()
       const start = new Date()
@@ -305,7 +349,7 @@ const dateShortcuts = computed(() => [
     },
   },
   {
-    text: t('common.shortcutLast30Days'),
+    text: t('pages.reports.shortcutLast30Days'),
     value: () => {
       const end = new Date()
       const start = new Date()
@@ -314,7 +358,7 @@ const dateShortcuts = computed(() => [
     },
   },
   {
-    text: t('common.shortcutLast90Days'),
+    text: t('pages.reports.shortcutLast90Days'),
     value: () => {
       const end = new Date()
       const start = new Date()
@@ -323,7 +367,7 @@ const dateShortcuts = computed(() => [
     },
   },
   {
-    text: t('common.shortcutThisMonth'),
+    text: t('pages.reports.shortcutThisMonth'),
     value: () => {
       const end = new Date()
       const start = new Date(end.getFullYear(), end.getMonth(), 1)
@@ -331,7 +375,7 @@ const dateShortcuts = computed(() => [
     },
   },
   {
-    text: t('common.shortcutLastMonth'),
+    text: t('pages.reports.shortcutLastMonth'),
     value: () => {
       const end = new Date()
       end.setDate(0)
@@ -498,6 +542,13 @@ const productionQtySum = computed(() =>
 
 const sampleQtySum = computed(() => filteredSampleRows.value.reduce((s, r) => s + (Number(r.qty) || 0), 0))
 
+const reportStats = computed(() => ({
+  revise: filteredReviseRows.value.length,
+  production: filteredProductionRows.value.length,
+  sample: filteredSampleRows.value.length,
+  shown: filteredReviseRows.value.length + filteredProductionRows.value.length + filteredSampleRows.value.length,
+}))
+
 function formatQty(n) {
   if (n === null || n === undefined) return '0'
   return Number(n).toLocaleString()
@@ -508,31 +559,142 @@ async function runGenerateReport() {
   ElMessage.success(t('pages.reports.generated'))
 }
 
+function resetFilters() {
+  dateRange.value = []
+  customer.value = ''
+  category.value = ''
+  dateField.value = 'order'
+  keyword.value = ''
+  fetchReport()
+}
+
 function printReport() {
   window.print()
+}
+
+function handleExportCommand(command) {
+  if (command === 'daily') exportDailyMarketingCsv()
+  else if (command === 'so') exportSoCsv()
+  else if (command === 'lines') exportLinesCsv()
 }
 </script>
 
 <style scoped>
-.report-card__header-title { font-size: 1.125rem; font-weight: 700; letter-spacing: 0.02em; }
-.report-card__header-sub { margin-top: 4px; font-size: 0.8125rem; color: #cbd5e1; }
-.report-card__header-daily { margin-top: 6px; font-size: 0.75rem; color: #94a3b8; font-style: italic; }
-.report-card__filter { margin: 0; border-radius: 0; border-left: none; border-right: none; border-top: none; }
-.report-filter-row-2 { margin-top: 4px; }
-.reports-filter-action { display: flex; align-items: flex-end; }
-.report-card__body { padding: 16px 16px 8px; background: #fff; }
-.report-section-title { margin: 20px 0 10px; font-size: 1rem; font-weight: 700; color: #0f172a; }
-.report-section-title:first-child { margin-top: 0; }
-.report-table-scroll { width: 100%; overflow-x: auto; margin-bottom: 4px; }
-.report-table { margin-bottom: 12px; }
-.report-table--wide { min-width: 2100px; }
-.report-table :deep(.el-table__header-wrapper th.el-table__cell) { background: #f8fafc; color: #475569; font-weight: 600; }
-.report-total-line { margin: 0 0 20px; text-align: right; font-size: 0.9375rem; font-weight: 600; color: #0f172a; }
-.report-card__footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid #e2e8f0; background: #f1f5f9; }
-.w-full { width: 100%; }
-.reports-toolbar-search { width: 220px; max-width: 100%; margin-right: 8px; vertical-align: middle; }
-@media (max-width: 767px) {
-  .report-card__footer { flex-direction: column; }
-  .report-card__footer .el-button { width: 100%; margin: 0; }
+.reports-action-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+@media (min-width: 768px) {
+  .reports-action-bar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+}
+
+.reports-action-bar__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.reports-action-bar__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.report-card__filter {
+  margin: 0;
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.reports-filter-actions__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.reports-filter-actions__row .el-button {
+  flex: 1 1 auto;
+  min-width: 7rem;
+}
+
+.report-card__body {
+  padding: 16px;
+  background: #fff;
+}
+
+.report-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 20px 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.report-section-head:first-child {
+  margin-top: 0;
+}
+
+.report-section-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.report-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  margin-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.report-table {
+  margin-bottom: 12px;
+}
+
+.report-table--wide {
+  min-width: 2100px;
+}
+
+.report-total-line {
+  margin: 0 0 20px;
+  text-align: right;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.w-full {
+  width: 100%;
+}
+
+@media print {
+  .reports-action-bar,
+  .filter-panel,
+  .admin-stats-grid,
+  .admin-scroll-hint {
+    display: none !important;
+  }
 }
 </style>

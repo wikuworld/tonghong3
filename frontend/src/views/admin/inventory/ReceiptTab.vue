@@ -102,10 +102,25 @@ const form = reactive({
 
 async function load() {
   loading.value = true
-  receipts.value = await listReceipts()
-  materials.value = await listMaterials()
-  warehouses.value = await listWarehouses()
-  loading.value = false
+  try {
+    receipts.value = await listReceipts()
+    materials.value = await listMaterials()
+    warehouses.value = await listWarehouses()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    loading.value = false
+  }
+}
+
+function openCreate() {
+  Object.assign(form, {
+    supplier_name: '',
+    receipt_date: new Date().toISOString().split('T')[0],
+    warehouse_id: null,
+    details: [{ material_id: null, quantity: 1, unit_cost: 0 }],
+  })
+  formVisible.value = true
 }
 
 function addDetail() {

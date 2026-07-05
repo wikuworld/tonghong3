@@ -76,8 +76,13 @@ const form = reactive({
 
 async function load() {
   loading.value = true
-  materials.value = await listMaterials()
-  loading.value = false
+  try {
+    materials.value = await listMaterials()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    loading.value = false
+  }
 }
 
 function openCreate() {

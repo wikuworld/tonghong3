@@ -1,176 +1,381 @@
 <template>
   <AdminSection :title="t('pages.colorSwatch.title')" :subtitle="t('pages.colorSwatch.subtitle')">
     <template #actions>
-      <el-input v-model="filterFactory" clearable :placeholder="t('pages.colorSwatch.filterFactory')" class="w-36" />
-      <el-select v-model="filterBuyer" clearable filterable :placeholder="t('common.buyer')" class="w-32">
-        <el-option v-for="b in formOptions.buyer_codes" :key="b" :label="b" :value="b" />
-      </el-select>
-      <el-input v-model="keyword" clearable :placeholder="t('pages.colorSwatch.searchPlaceholder')" class="w-52" />
-      <el-button :icon="Refresh" @click="reload">{{ t('common.refresh') }}</el-button>
-      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
-      <el-upload v-if="canCreate" :auto-upload="false" :show-file-list="false" accept=".csv" @change="onUploadCsv">
-        <el-button type="success" :loading="importing">{{ t('pages.colorSwatch.importCsv') }}</el-button>
-      </el-upload>
-      <el-button v-if="isAdmin" type="warning" plain :loading="importingBundled" @click="importBundled">
+      <el-input
+        v-model="keyword"
+        clearable
+        :placeholder="t('pages.colorSwatch.searchPlaceholder')"
+        class="color-swatch-toolbar-search"
+      />
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
+      <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
+      <el-button v-if="canCreate" :icon="Upload" @click="openImportDialog">{{ t('pages.colorSwatch.importCsv') }}</el-button>
+      <el-button
+        v-if="isAdmin"
+        plain
+        :loading="importingBundled"
+        @click="importBundled"
+      >
         {{ t('pages.colorSwatch.importBundled') }}
       </el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
-    <el-tag type="info" class="mb-3">{{ t('common.total') }}: {{ total }}</el-tag>
+    <div class="admin-inner-card">
+      <div class="admin-inner-card__head color-swatch-inner-head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.colorSwatch.listSectionTitle') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.colorSwatch.listSubtitle') }}</p>
+        </div>
+        <el-tooltip placement="top-start" :show-after="200">
+          <template #content>{{ t('pages.colorSwatch.pageHint') }}</template>
+          <el-icon class="color-swatch-page-hint" :size="16" tabindex="0" :aria-label="t('pages.colorSwatch.pageHint')">
+            <InfoFilled />
+          </el-icon>
+        </el-tooltip>
+      </div>
 
-    <el-table :data="rows" v-loading="loading" border stripe size="small" table-layout="fixed">
-      <el-table-column type="index" :label="t('common.noLabel')" width="50" align="center" />
-      <el-table-column prop="factory_key" :label="t('pages.colorSwatch.colFactory')" width="120" show-overflow-tooltip />
-      <el-table-column prop="customer_code" :label="t('pages.colorSwatch.colCustomerCode')" width="100" show-overflow-tooltip />
-      <el-table-column prop="buyer_code" :label="t('common.buyer')" width="90" />
-      <el-table-column prop="color_code" :label="t('pages.colorSwatch.colCode')" width="100" show-overflow-tooltip />
-      <el-table-column prop="color_name" :label="t('common.color')" min-width="140" show-overflow-tooltip />
-      <el-table-column prop="material_name" :label="t('common.material')" min-width="160" show-overflow-tooltip />
-      <el-table-column prop="emboss" :label="t('pages.po.emboss')" width="100" show-overflow-tooltip />
-      <el-table-column prop="color_standard" :label="t('pages.po.colorStandart')" width="120" show-overflow-tooltip />
-      <el-table-column prop="backing" :label="t('common.backing')" width="80" show-overflow-tooltip />
-      <el-table-column prop="legacy_urut" :label="t('pages.colorSwatch.colUrut')" width="80" />
-      <el-table-column :label="t('common.actions')" width="100" fixed="right" align="center">
-        <template #default="{ row }">
-          <el-button v-if="canUpdate" link type="primary" size="small" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
-          <el-button v-if="canDelete" link type="danger" size="small" @click="remove(row)">{{ t('common.delete') }}</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+      <div class="admin-stats-grid admin-stats-grid--4 color-swatch-stats">
+        <div class="admin-stat-card admin-stat-card--info">
+          <span class="admin-stat-card__value">{{ total }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.colorSwatch.statShown') }}</span>
+        </div>
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__value">{{ listStats.factories }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.colorSwatch.statFactories') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--success">
+          <span class="admin-stat-card__value">{{ listStats.buyers }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.colorSwatch.statBuyers') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--warn">
+          <span class="admin-stat-card__value">{{ listStats.materials }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.colorSwatch.statMaterials') }}</span>
+        </div>
+      </div>
 
-    <div class="mt-3 flex justify-end">
-      <el-pagination
-        v-model:current-page="page"
-        v-model:page-size="pageSize"
-        size="small"
-        layout="total, sizes, prev, pager, next"
-        :total="total"
-        :page-sizes="[25, 50, 100, 200]"
-      />
+      <div class="filter-panel color-swatch-filter-panel">
+        <p class="filter-panel__title">{{ t('common.filter') }}</p>
+        <div class="color-swatch-filter-row">
+          <el-input
+            v-model="filterFactory"
+            clearable
+            :placeholder="t('pages.colorSwatch.filterFactory')"
+            class="color-swatch-filter-factory"
+          />
+          <el-select
+            v-model="filterBuyer"
+            clearable
+            filterable
+            class="color-swatch-filter-buyer"
+            :placeholder="t('common.buyer')"
+          >
+            <el-option v-for="b in formOptions.buyer_codes" :key="b" :label="b" :value="b" />
+          </el-select>
+        </div>
+      </div>
+
+      <p class="admin-scroll-hint">{{ t('pages.colorSwatch.scrollHint') }}</p>
+
+      <div class="admin-table-scroll color-swatch-table-wrap">
+        <el-table
+          :data="rows"
+          v-loading="loading"
+          border
+          stripe
+          size="small"
+          class="admin-table color-swatch-table"
+          table-layout="fixed"
+          max-height="52vh"
+          :empty-text="t('pages.colorSwatch.tableEmpty')"
+        >
+          <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
+          <el-table-column prop="factory_key" :label="t('pages.colorSwatch.colFactory')" width="120" show-overflow-tooltip />
+          <el-table-column prop="customer_code" :label="t('pages.colorSwatch.colCustomerCode')" width="100" show-overflow-tooltip />
+          <el-table-column prop="buyer_code" :label="t('common.buyer')" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.buyer_code" size="small" effect="plain" type="info">{{ row.buyer_code }}</el-tag>
+              <span v-else class="color-swatch-cell-empty">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="color_code" :label="t('pages.colorSwatch.colCode')" width="100" show-overflow-tooltip />
+          <el-table-column prop="color_name" :label="t('common.color')" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="material_name" :label="t('common.material')" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="emboss" :label="t('pages.po.emboss')" width="100" show-overflow-tooltip />
+          <el-table-column prop="color_standard" :label="t('pages.po.colorStandart')" width="120" show-overflow-tooltip />
+          <el-table-column prop="backing" :label="t('common.backing')" width="90" show-overflow-tooltip />
+          <el-table-column prop="legacy_urut" :label="t('pages.colorSwatch.colUrut')" width="80" align="center" />
+          <el-table-column :label="t('common.actions')" width="100" fixed="right" align="center">
+            <template #default="{ row }">
+              <div class="color-swatch-row-actions">
+                <el-tooltip v-if="canUpdate" :content="t('common.edit')" placement="top">
+                  <el-button
+                    :icon="EditPen"
+                    link
+                    type="primary"
+                    :aria-label="t('common.edit')"
+                    @click="openEdit(row)"
+                  />
+                </el-tooltip>
+                <el-tooltip v-if="canDelete" :content="t('common.delete')" placement="top">
+                  <el-button
+                    :icon="Delete"
+                    link
+                    type="danger"
+                    :aria-label="t('common.delete')"
+                    @click="remove(row)"
+                  />
+                </el-tooltip>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <div class="color-swatch-pagination">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          size="small"
+          background
+          layout="total, sizes, prev, pager, next"
+          :total="total"
+          :page-sizes="[25, 50, 100, 200]"
+        />
+      </div>
     </div>
 
-    <el-dialog v-model="formVisible" :title="editId ? t('common.edit') : t('common.create')" width="680px" destroy-on-close>
-      <el-form label-position="top">
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item :label="t('pages.colorSwatch.formCustomer')" required>
-              <el-select
-                v-model="form.customer_id"
-                filterable
-                clearable
-                class="w-full"
-                :placeholder="t('pages.colorSwatch.formCustomerPlaceholder')"
-                @change="onCustomerChange"
-              >
-                <el-option
-                  v-for="c in formOptions.customers"
-                  :key="c.id"
-                  :label="customerOptionLabel(c)"
-                  :value="c.id"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('pages.colorSwatch.colFactory')" required>
-              <el-select
-                v-model="form.factory_key"
-                filterable
-                allow-create
-                default-first-option
-                class="w-full"
-                :placeholder="t('pages.colorSwatch.formFactoryPlaceholder')"
-              >
-                <el-option v-for="fk in factoryKeyOptions" :key="fk" :label="fk" :value="fk" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('common.buyer')" required>
-              <el-select v-model="form.buyer_code" filterable class="w-full" :placeholder="t('common.buyer')">
-                <el-option v-for="b in formOptions.buyer_codes" :key="b" :label="b" :value="b" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('common.material')" required>
-              <el-select
-                v-model="form.material_name"
-                filterable
-                allow-create
-                default-first-option
-                class="w-full"
-                :placeholder="t('pages.colorSwatch.formMaterialPlaceholder')"
-                @change="onMaterialChange"
-              >
-                <el-option v-for="m in formOptions.materials" :key="m" :label="m" :value="m" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('pages.colorSwatch.colCode')">
-              <el-input v-model="form.color_code" maxlength="64" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('common.color')" required>
-              <el-select
-                v-model="form.color_name"
-                filterable
-                allow-create
-                default-first-option
-                class="w-full"
-                :placeholder="t('pages.colorSwatch.formColorPlaceholder')"
-              >
-                <el-option v-for="c in colorOptions" :key="c" :label="c" :value="c" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('pages.po.emboss')">
-              <el-select
-                v-model="form.emboss"
-                filterable
-                allow-create
-                default-first-option
-                clearable
-                class="w-full"
-                :placeholder="t('pages.colorSwatch.formEmbossPlaceholder')"
-              >
-                <el-option v-for="e in embossOptions" :key="e" :label="e" :value="e" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('pages.po.colorStandart')">
-              <el-input v-model="form.color_standard" maxlength="255" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('common.backing')">
-              <el-select
-                v-model="form.backing"
-                filterable
-                allow-create
-                default-first-option
-                clearable
-                class="w-full"
-                :placeholder="t('pages.colorSwatch.formBackingPlaceholder')"
-              >
-                <el-option v-for="b in formOptions.backings" :key="b" :label="b" :value="b" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('pages.colorSwatch.colUrut')">
-              <el-input v-model="form.legacy_urut" maxlength="32" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-      </el-form>
+    <el-dialog
+      v-model="formVisible"
+      width="720px"
+      destroy-on-close
+      align-center
+      class="color-swatch-dialog"
+      :show-close="true"
+      @closed="resetForm"
+    >
+      <template #header>
+        <div class="color-swatch-dialog-header">
+          <div class="color-swatch-dialog-header__main">
+            <h3 class="color-swatch-dialog-header__title">
+              {{ editId ? t('pages.colorSwatch.editTitle') : t('pages.colorSwatch.createTitle') }}
+            </h3>
+            <p class="color-swatch-dialog-header__sub">{{ t('pages.colorSwatch.dialogFormSub') }}</p>
+          </div>
+        </div>
+      </template>
+
+      <div class="color-swatch-dialog-body color-swatch-dialog-body--stack">
+        <div class="color-swatch-dialog-panel">
+          <div class="color-swatch-dialog-panel__head">
+            <h4 class="color-swatch-dialog-panel__title">{{ t('pages.colorSwatch.dialogGroupLocation') }}</h4>
+          </div>
+          <div class="color-swatch-dialog-panel__body">
+            <el-form label-position="top" @submit.prevent>
+              <el-row :gutter="16">
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('pages.colorSwatch.formCustomer')" required>
+                    <el-select
+                      v-model="form.customer_id"
+                      filterable
+                      clearable
+                      class="w-full"
+                      :placeholder="t('pages.colorSwatch.formCustomerPlaceholder')"
+                      @change="onCustomerChange"
+                    >
+                      <el-option
+                        v-for="c in formOptions.customers"
+                        :key="c.id"
+                        :label="customerOptionLabel(c)"
+                        :value="c.id"
+                      />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('pages.colorSwatch.colFactory')" required>
+                    <el-select
+                      v-model="form.factory_key"
+                      filterable
+                      allow-create
+                      default-first-option
+                      class="w-full"
+                      :placeholder="t('pages.colorSwatch.formFactoryPlaceholder')"
+                    >
+                      <el-option v-for="fk in factoryKeyOptions" :key="fk" :label="fk" :value="fk" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('common.buyer')" required>
+                    <el-select v-model="form.buyer_code" filterable class="w-full" :placeholder="t('common.buyer')">
+                      <el-option v-for="b in formOptions.buyer_codes" :key="b" :label="b" :value="b" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+            </el-form>
+          </div>
+        </div>
+
+        <div class="color-swatch-dialog-panel color-swatch-dialog-panel--sub">
+          <div class="color-swatch-dialog-panel__head">
+            <h4 class="color-swatch-dialog-panel__title">{{ t('pages.colorSwatch.dialogGroupRecipe') }}</h4>
+          </div>
+          <div class="color-swatch-dialog-panel__body">
+            <el-form label-position="top" @submit.prevent>
+              <el-row :gutter="16">
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('common.material')" required>
+                    <el-select
+                      v-model="form.material_name"
+                      filterable
+                      allow-create
+                      default-first-option
+                      class="w-full"
+                      :placeholder="t('pages.colorSwatch.formMaterialPlaceholder')"
+                      @change="onMaterialChange"
+                    >
+                      <el-option v-for="m in formOptions.materials" :key="m" :label="m" :value="m" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('pages.colorSwatch.colCode')">
+                    <el-input v-model="form.color_code" maxlength="64" clearable />
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('common.color')" required>
+                    <el-select
+                      v-model="form.color_name"
+                      filterable
+                      allow-create
+                      default-first-option
+                      class="w-full"
+                      :placeholder="t('pages.colorSwatch.formColorPlaceholder')"
+                    >
+                      <el-option v-for="c in colorOptions" :key="c" :label="c" :value="c" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('pages.po.emboss')">
+                    <el-select
+                      v-model="form.emboss"
+                      filterable
+                      allow-create
+                      default-first-option
+                      clearable
+                      class="w-full"
+                      :placeholder="t('pages.colorSwatch.formEmbossPlaceholder')"
+                    >
+                      <el-option v-for="e in embossOptions" :key="e" :label="e" :value="e" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+            </el-form>
+          </div>
+        </div>
+
+        <div class="color-swatch-dialog-panel color-swatch-dialog-panel--sub">
+          <div class="color-swatch-dialog-panel__head">
+            <h4 class="color-swatch-dialog-panel__title">{{ t('pages.colorSwatch.dialogGroupDetail') }}</h4>
+          </div>
+          <div class="color-swatch-dialog-panel__body">
+            <el-form label-position="top" @submit.prevent>
+              <el-row :gutter="16">
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('pages.po.colorStandart')">
+                    <el-input v-model="form.color_standard" maxlength="255" clearable />
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('common.backing')">
+                    <el-select
+                      v-model="form.backing"
+                      filterable
+                      allow-create
+                      default-first-option
+                      clearable
+                      class="w-full"
+                      :placeholder="t('pages.colorSwatch.formBackingPlaceholder')"
+                    >
+                      <el-option v-for="b in formOptions.backings" :key="b" :label="b" :value="b" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('pages.colorSwatch.colUrut')">
+                    <el-input v-model="form.legacy_urut" maxlength="32" clearable />
+                  </el-form-item>
+                </el-col>
+              </el-row>
+            </el-form>
+          </div>
+        </div>
+      </div>
+
       <template #footer>
-        <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
+        <div class="color-swatch-dialog-footer">
+          <el-button :icon="Close" @click="formVisible = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :icon="Check" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="importDialogVisible"
+      width="520px"
+      destroy-on-close
+      align-center
+      class="color-swatch-dialog"
+      :show-close="true"
+      @closed="resetImportState"
+    >
+      <template #header>
+        <div class="color-swatch-dialog-header">
+          <div class="color-swatch-dialog-header__main">
+            <h3 class="color-swatch-dialog-header__title">{{ t('pages.colorSwatch.importTitle') }}</h3>
+            <p class="color-swatch-dialog-header__sub">{{ t('pages.colorSwatch.importSub') }}</p>
+          </div>
+          <el-tooltip placement="top-start" :show-after="200">
+            <template #content>{{ t('pages.colorSwatch.importHint') }}</template>
+            <el-icon class="color-swatch-page-hint" :size="16" tabindex="0" :aria-label="t('pages.colorSwatch.importHint')">
+              <InfoFilled />
+            </el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+
+      <div class="color-swatch-dialog-body">
+        <div class="color-swatch-dialog-panel">
+          <div class="color-swatch-dialog-panel__head">
+            <h4 class="color-swatch-dialog-panel__title">{{ t('pages.colorSwatch.importPanelTitle') }}</h4>
+          </div>
+          <div class="color-swatch-dialog-panel__body">
+            <el-upload
+              ref="uploadRef"
+              :auto-upload="false"
+              :limit="1"
+              accept=".csv"
+              :on-change="handleImportFileChange"
+              :on-remove="handleImportFileRemove"
+            >
+              <el-button type="primary" :icon="Upload">{{ t('pages.colorSwatch.selectFile') }}</el-button>
+            </el-upload>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="color-swatch-dialog-footer">
+          <el-button :icon="Close" @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :icon="Check" :loading="importing" :disabled="!importFile" @click="handleImportCsv">
+            {{ t('pages.colorSwatch.doImport') }}
+          </el-button>
+        </div>
       </template>
     </el-dialog>
   </AdminSection>
@@ -180,7 +385,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Check, Close, Delete, EditPen, InfoFilled, Plus, Refresh, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import {
   createColorSwatchRecipe,
@@ -192,10 +397,9 @@ import {
   me,
   updateColorSwatchRecipe,
 } from '../../api/client'
-
-const { t } = useI18n()
 import { useModulePermission } from '../../composables/useModulePermission'
 
+const { t } = useI18n()
 const { canCreate, canUpdate, canDelete } = useModulePermission('colorSwatch')
 const isAdmin = ref(false)
 
@@ -211,6 +415,9 @@ const keyword = ref('')
 const filterFactory = ref('')
 const filterBuyer = ref('')
 const formVisible = ref(false)
+const importDialogVisible = ref(false)
+const importFile = ref(null)
+const uploadRef = ref(null)
 const editId = ref(null)
 
 const formOptions = reactive({
@@ -236,6 +443,12 @@ const form = reactive({
   backing: '',
   legacy_urut: '',
 })
+
+const listStats = computed(() => ({
+  factories: formOptions.factory_keys.length,
+  buyers: formOptions.buyer_codes.length,
+  materials: formOptions.materials.length,
+}))
 
 const factoryKeyOptions = computed(() => {
   const cid = form.customer_id
@@ -276,12 +489,7 @@ function onCustomerChange() {
 }
 
 function onMaterialChange() {
-  if (form.color_name && colorOptions.value.length && !colorOptions.value.includes(form.color_name)) {
-    // keep custom value (allow-create)
-  }
-  if (form.emboss && embossOptions.value.length && !embossOptions.value.includes(form.emboss)) {
-    // keep custom value
-  }
+  // keep custom values via allow-create
 }
 
 async function loadFormOptions() {
@@ -340,6 +548,16 @@ function resetForm() {
   form.color_standard = ''
   form.backing = ''
   form.legacy_urut = ''
+}
+
+function resetImportState() {
+  importFile.value = null
+  uploadRef.value?.clearFiles?.()
+}
+
+function openImportDialog() {
+  resetImportState()
+  importDialogVisible.value = true
 }
 
 function openCreate() {
@@ -413,12 +631,19 @@ async function remove(row) {
   }
 }
 
-async function onUploadCsv(uploadFile) {
-  const file = uploadFile?.raw
-  if (!file) return
+function handleImportFileChange(file) {
+  importFile.value = file.raw
+}
+
+function handleImportFileRemove() {
+  importFile.value = null
+}
+
+async function handleImportCsv() {
+  if (!importFile.value) return
   importing.value = true
   try {
-    const r = await importColorSwatchCsv(file)
+    const r = await importColorSwatchCsv(importFile.value)
     ElMessage.success(
       t('pages.colorSwatch.importDone', {
         inserted: r.inserted,
@@ -426,6 +651,7 @@ async function onUploadCsv(uploadFile) {
         total: r.total,
       }),
     )
+    importDialogVisible.value = false
     await Promise.all([load(), loadFormOptions()])
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
@@ -435,6 +661,11 @@ async function onUploadCsv(uploadFile) {
 }
 
 async function importBundled() {
+  try {
+    await ElMessageBox.confirm(t('pages.colorSwatch.importBundledConfirm'), t('common.confirm'), { type: 'info' })
+  } catch {
+    return
+  }
   importingBundled.value = true
   try {
     const r = await importColorSwatchBundled()
@@ -469,3 +700,164 @@ onMounted(async () => {
   await Promise.all([loadFormOptions(), load()])
 })
 </script>
+
+<style scoped>
+.color-swatch-inner-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.color-swatch-page-hint {
+  color: #94a3b8;
+  cursor: help;
+  flex-shrink: 0;
+  outline: none;
+}
+
+.color-swatch-page-hint:hover,
+.color-swatch-page-hint:focus-visible {
+  color: var(--el-color-primary);
+}
+
+.color-swatch-stats {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.color-swatch-filter-panel {
+  margin: 0 16px;
+}
+
+.color-swatch-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.color-swatch-filter-factory,
+.color-swatch-filter-buyer {
+  min-width: 0;
+  flex: 1 1 180px;
+  max-width: 280px;
+}
+
+.color-swatch-table-wrap {
+  padding: 0 16px;
+}
+
+.color-swatch-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.color-swatch-cell-empty {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.color-swatch-row-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+:deep(.color-swatch-dialog.el-dialog) {
+  border-radius: 14px;
+  overflow: hidden;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.color-swatch-dialog .el-dialog__header) {
+  padding: 16px 20px 12px;
+  margin: 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+:deep(.color-swatch-dialog .el-dialog__body) {
+  padding: 0;
+  background: #f8fafc;
+  overflow-y: auto;
+}
+
+:deep(.color-swatch-dialog .el-dialog__footer) {
+  padding: 12px 20px 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.color-swatch-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 28px;
+}
+
+.color-swatch-dialog-header__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.color-swatch-dialog-header__sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.color-swatch-dialog-body {
+  padding: 16px;
+}
+
+.color-swatch-dialog-body--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.color-swatch-dialog-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.color-swatch-dialog-panel--sub {
+  background: #f8fafc;
+}
+
+.color-swatch-dialog-panel__head {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.color-swatch-dialog-panel__title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.color-swatch-dialog-panel__body {
+  padding: 16px;
+}
+
+.color-swatch-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+</style>

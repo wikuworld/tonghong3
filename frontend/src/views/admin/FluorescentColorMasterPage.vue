@@ -1,163 +1,371 @@
 <template>
   <AdminSection :title="t('pages.fluorescentColors.title')" :subtitle="t('pages.fluorescentColors.subtitle')">
     <template #actions>
-      <el-select v-model="filterBuyer" clearable filterable :placeholder="t('common.buyer')" class="w-40">
-        <el-option v-for="b in formOptions.buyer_codes" :key="b" :label="b" :value="b" />
-      </el-select>
-      <el-select v-model="filterClass" clearable :placeholder="t('pages.fluorescentColors.colClass')" class="w-36">
-        <el-option v-for="c in formOptions.color_classes" :key="c" :label="c" :value="c" />
-      </el-select>
-      <el-input v-model="keyword" clearable :placeholder="t('pages.fluorescentColors.searchPlaceholder')" class="w-56" />
-      <el-button :icon="Refresh" @click="reload">{{ t('common.refresh') }}</el-button>
-      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
-      <el-upload v-if="canCreate" :auto-upload="false" :show-file-list="false" accept=".csv" @change="onUploadCsv">
-        <el-button type="success" :loading="importing">{{ t('pages.fluorescentColors.importCsv') }}</el-button>
-      </el-upload>
-      <el-button v-if="isAdmin" type="warning" plain :loading="importingBundled" @click="importBundled">
+      <el-input
+        v-model="keyword"
+        clearable
+        :placeholder="t('pages.fluorescentColors.searchPlaceholder')"
+        class="fluorescent-toolbar-search"
+      />
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
+      <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
+      <el-button v-if="canCreate" :icon="Upload" @click="openImportDialog">{{ t('pages.fluorescentColors.importCsv') }}</el-button>
+      <el-button
+        v-if="isAdmin"
+        plain
+        :loading="importingBundled"
+        @click="importBundled"
+      >
         {{ t('pages.fluorescentColors.importBundled') }}
       </el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
-    <div class="mb-3 flex flex-wrap items-center gap-2">
-      <el-tag type="info">{{ t('common.total') }}: {{ total }}</el-tag>
-      <el-tag>GLOBAL: {{ summary.GLOBAL }}</el-tag>
-      <el-tag>NB: {{ summary.NB }}</el-tag>
-      <el-tag>ADIDAS: {{ summary.ADIDAS }}</el-tag>
-      <el-tag>UA: {{ summary.UA }}</el-tag>
+    <div class="admin-inner-card">
+      <div class="admin-inner-card__head fluorescent-inner-head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.fluorescentColors.listSectionTitle') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.fluorescentColors.listSubtitle') }}</p>
+        </div>
+        <el-tooltip placement="top-start" :show-after="200">
+          <template #content>{{ t('pages.fluorescentColors.pageHint') }}</template>
+          <el-icon class="fluorescent-page-hint" :size="16" tabindex="0" :aria-label="t('pages.fluorescentColors.pageHint')">
+            <InfoFilled />
+          </el-icon>
+        </el-tooltip>
+      </div>
+
+      <div class="admin-stats-grid admin-stats-grid--5 fluorescent-stats">
+        <div class="admin-stat-card admin-stat-card--info">
+          <span class="admin-stat-card__value">{{ total }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.fluorescentColors.statShown') }}</span>
+        </div>
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__value">{{ summary.GLOBAL }}</span>
+          <span class="admin-stat-card__label">GLOBAL</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--success">
+          <span class="admin-stat-card__value">{{ summary.NB }}</span>
+          <span class="admin-stat-card__label">NB</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--warn">
+          <span class="admin-stat-card__value">{{ summary.ADIDAS }}</span>
+          <span class="admin-stat-card__label">ADIDAS</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--info">
+          <span class="admin-stat-card__value">{{ summary.UA }}</span>
+          <span class="admin-stat-card__label">UA</span>
+        </div>
+      </div>
+
+      <div class="filter-panel fluorescent-filter-panel">
+        <p class="filter-panel__title">{{ t('common.filter') }}</p>
+        <div class="fluorescent-filter-row">
+          <el-select
+            v-model="filterBuyer"
+            clearable
+            filterable
+            class="fluorescent-filter-buyer"
+            :placeholder="t('common.buyer')"
+          >
+            <el-option v-for="b in formOptions.buyer_codes" :key="b" :label="b" :value="b" />
+          </el-select>
+          <el-select
+            v-model="filterClass"
+            clearable
+            class="fluorescent-filter-class"
+            :placeholder="t('pages.fluorescentColors.colClass')"
+          >
+            <el-option v-for="c in formOptions.color_classes" :key="c" :label="c" :value="c" />
+          </el-select>
+        </div>
+      </div>
+
+      <p class="admin-scroll-hint">{{ t('pages.fluorescentColors.scrollHint') }}</p>
+
+      <div class="admin-table-scroll fluorescent-table-wrap">
+        <el-table
+          :data="rows"
+          v-loading="loading"
+          border
+          stripe
+          size="small"
+          class="admin-table fluorescent-table"
+          table-layout="fixed"
+          max-height="52vh"
+          :empty-text="t('pages.fluorescentColors.tableEmpty')"
+        >
+          <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
+          <el-table-column prop="buyer_code" :label="t('common.buyer')" width="100" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" effect="plain" type="info">{{ row.buyer_code || '—' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="season_label" :label="t('pages.fluorescentColors.colSeason')" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="season_year" :label="t('pages.fluorescentColors.colYear')" width="72" align="center" />
+          <el-table-column prop="season_type" :label="t('pages.fluorescentColors.colSeasonType')" width="72" align="center" />
+          <el-table-column prop="color_code" :label="t('pages.fluorescentColors.colCode')" width="120" show-overflow-tooltip />
+          <el-table-column prop="color_name" :label="t('common.color')" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="color_class" :label="t('pages.fluorescentColors.colClass')" width="110" align="center">
+            <template #default="{ row }">
+              <el-tag size="small" effect="plain" :type="classTagType(row.color_class)">
+                {{ row.color_class || '—' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="source_file" :label="t('pages.fluorescentColors.colSource')" min-width="120" show-overflow-tooltip />
+          <el-table-column :label="t('common.actions')" width="100" fixed="right" align="center">
+            <template #default="{ row }">
+              <div class="fluorescent-row-actions">
+                <el-tooltip v-if="canUpdate" :content="t('common.edit')" placement="top">
+                  <el-button
+                    :icon="EditPen"
+                    link
+                    type="primary"
+                    :aria-label="t('common.edit')"
+                    @click="openEdit(row)"
+                  />
+                </el-tooltip>
+                <el-tooltip v-if="canDelete" :content="t('common.delete')" placement="top">
+                  <el-button
+                    :icon="Delete"
+                    link
+                    type="danger"
+                    :aria-label="t('common.delete')"
+                    @click="remove(row)"
+                  />
+                </el-tooltip>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <div class="fluorescent-pagination">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          size="small"
+          background
+          layout="total, sizes, prev, pager, next"
+          :total="total"
+          :page-sizes="[20, 50, 100, 200]"
+        />
+      </div>
     </div>
 
-    <el-table :data="rows" v-loading="loading" border stripe size="small" table-layout="fixed">
-      <el-table-column type="index" :label="t('common.noLabel')" width="50" align="center" />
-      <el-table-column prop="buyer_code" :label="t('common.buyer')" width="100" align="center" />
-      <el-table-column prop="season_label" :label="t('pages.fluorescentColors.colSeason')" min-width="130" show-overflow-tooltip />
-      <el-table-column prop="season_year" :label="t('pages.fluorescentColors.colYear')" width="72" align="center" />
-      <el-table-column prop="season_type" :label="t('pages.fluorescentColors.colSeasonType')" width="72" align="center" />
-      <el-table-column prop="color_code" :label="t('pages.fluorescentColors.colCode')" width="120" show-overflow-tooltip />
-      <el-table-column prop="color_name" :label="t('common.color')" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="color_class" :label="t('pages.fluorescentColors.colClass')" width="100" align="center" />
-      <el-table-column prop="source_file" :label="t('pages.fluorescentColors.colSource')" min-width="120" show-overflow-tooltip />
-      <el-table-column :label="t('common.actions')" width="100" fixed="right" align="center">
-        <template #default="{ row }">
-          <el-button v-if="canUpdate" link type="primary" size="small" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
-          <el-button v-if="canDelete" link type="danger" size="small" @click="remove(row)">{{ t('common.delete') }}</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <el-dialog
+      v-model="formVisible"
+      width="680px"
+      destroy-on-close
+      align-center
+      class="fluorescent-dialog"
+      :show-close="true"
+      @closed="resetForm"
+    >
+      <template #header>
+        <div class="fluorescent-dialog-header">
+          <div class="fluorescent-dialog-header__main">
+            <h3 class="fluorescent-dialog-header__title">
+              {{ editId ? t('pages.fluorescentColors.editTitle') : t('pages.fluorescentColors.createTitle') }}
+            </h3>
+            <p class="fluorescent-dialog-header__sub">{{ t('pages.fluorescentColors.dialogFormSub') }}</p>
+          </div>
+        </div>
+      </template>
 
-    <div class="mt-3 flex justify-end">
-      <el-pagination
-        v-model:current-page="page"
-        v-model:page-size="pageSize"
-        size="small"
-        layout="total, sizes, prev, pager, next"
-        :total="total"
-        :page-sizes="[20, 50, 100, 200]"
-      />
-    </div>
+      <div class="fluorescent-dialog-body fluorescent-dialog-body--stack">
+        <div class="fluorescent-dialog-panel">
+          <div class="fluorescent-dialog-panel__head">
+            <h4 class="fluorescent-dialog-panel__title">{{ t('pages.fluorescentColors.dialogGroupBuyer') }}</h4>
+          </div>
+          <div class="fluorescent-dialog-panel__body">
+            <el-form label-position="top" @submit.prevent>
+              <el-row :gutter="16">
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('common.buyer')" required>
+                    <el-select
+                      v-model="form.buyer_code"
+                      filterable
+                      class="w-full"
+                      :placeholder="t('pages.fluorescentColors.formBuyerPlaceholder')"
+                      @change="onBuyerChange"
+                    >
+                      <el-option v-for="b in formOptions.buyer_codes" :key="b" :label="b" :value="b" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('pages.fluorescentColors.colClass')" required>
+                    <el-select v-model="form.color_class" class="w-full">
+                      <el-option v-for="c in formOptions.color_classes" :key="c" :label="c" :value="c" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+            </el-form>
+          </div>
+        </div>
 
-    <el-dialog v-model="formVisible" :title="editId ? t('common.edit') : t('common.create')" width="600px" destroy-on-close>
-      <el-form label-position="top">
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item :label="t('common.buyer')" required>
-              <el-select
-                v-model="form.buyer_code"
-                filterable
-                class="w-full"
-                :placeholder="t('pages.fluorescentColors.formBuyerPlaceholder')"
-                @change="onBuyerChange"
-              >
-                <el-option v-for="b in formOptions.buyer_codes" :key="b" :label="b" :value="b" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('pages.fluorescentColors.colClass')" required>
-              <el-select v-model="form.color_class" class="w-full">
-                <el-option v-for="c in formOptions.color_classes" :key="c" :label="c" :value="c" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('pages.fluorescentColors.colSeason')">
-              <el-select
-                v-model="form.season_label"
-                filterable
-                allow-create
-                default-first-option
-                clearable
-                class="w-full"
-                :placeholder="t('pages.fluorescentColors.formSeasonPlaceholder')"
-                @change="onSeasonChange"
-              >
-                <el-option v-for="s in seasonLabelOptions" :key="s" :label="s" :value="s" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item :label="t('pages.fluorescentColors.colYear')">
-              <el-select
-                v-model="form.season_year"
-                filterable
-                allow-create
-                default-first-option
-                clearable
-                class="w-full"
-                :placeholder="t('pages.fluorescentColors.formYearPlaceholder')"
-              >
-                <el-option v-for="y in formOptions.season_years" :key="y" :label="String(y)" :value="y" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="6">
-            <el-form-item :label="t('pages.fluorescentColors.colSeasonType')">
-              <el-select
-                v-model="form.season_type"
-                filterable
-                allow-create
-                default-first-option
-                clearable
-                class="w-full"
-                :placeholder="t('pages.fluorescentColors.formSeasonTypePlaceholder')"
-              >
-                <el-option v-for="st in seasonTypeOptions" :key="st" :label="st" :value="st" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('pages.fluorescentColors.colCode')">
-              <el-select
-                v-model="form.color_code"
-                filterable
-                allow-create
-                default-first-option
-                clearable
-                class="w-full"
-                :placeholder="t('pages.fluorescentColors.formCodePlaceholder')"
-              >
-                <el-option v-for="c in colorCodeOptions" :key="c" :label="c" :value="c" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('common.color')" required>
-              <el-select
-                v-model="form.color_name"
-                filterable
-                allow-create
-                default-first-option
-                class="w-full"
-                :placeholder="t('pages.fluorescentColors.formColorPlaceholder')"
-              >
-                <el-option v-for="c in colorNameOptions" :key="c" :label="c" :value="c" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
-      </el-form>
+        <div class="fluorescent-dialog-panel fluorescent-dialog-panel--sub">
+          <div class="fluorescent-dialog-panel__head">
+            <h4 class="fluorescent-dialog-panel__title">{{ t('pages.fluorescentColors.dialogGroupSeason') }}</h4>
+          </div>
+          <div class="fluorescent-dialog-panel__body">
+            <el-form label-position="top" @submit.prevent>
+              <el-row :gutter="16">
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('pages.fluorescentColors.colSeason')">
+                    <el-select
+                      v-model="form.season_label"
+                      filterable
+                      allow-create
+                      default-first-option
+                      clearable
+                      class="w-full"
+                      :placeholder="t('pages.fluorescentColors.formSeasonPlaceholder')"
+                      @change="onSeasonChange"
+                    >
+                      <el-option v-for="s in seasonLabelOptions" :key="s" :label="s" :value="s" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="12" :md="6">
+                  <el-form-item :label="t('pages.fluorescentColors.colYear')">
+                    <el-select
+                      v-model="form.season_year"
+                      filterable
+                      allow-create
+                      default-first-option
+                      clearable
+                      class="w-full"
+                      :placeholder="t('pages.fluorescentColors.formYearPlaceholder')"
+                    >
+                      <el-option v-for="y in formOptions.season_years" :key="y" :label="String(y)" :value="y" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="12" :md="6">
+                  <el-form-item :label="t('pages.fluorescentColors.colSeasonType')">
+                    <el-select
+                      v-model="form.season_type"
+                      filterable
+                      allow-create
+                      default-first-option
+                      clearable
+                      class="w-full"
+                      :placeholder="t('pages.fluorescentColors.formSeasonTypePlaceholder')"
+                    >
+                      <el-option v-for="st in seasonTypeOptions" :key="st" :label="st" :value="st" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+            </el-form>
+          </div>
+        </div>
+
+        <div class="fluorescent-dialog-panel fluorescent-dialog-panel--sub">
+          <div class="fluorescent-dialog-panel__head">
+            <h4 class="fluorescent-dialog-panel__title">{{ t('pages.fluorescentColors.dialogGroupColor') }}</h4>
+          </div>
+          <div class="fluorescent-dialog-panel__body">
+            <el-form label-position="top" @submit.prevent>
+              <el-row :gutter="16">
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('pages.fluorescentColors.colCode')">
+                    <el-select
+                      v-model="form.color_code"
+                      filterable
+                      allow-create
+                      default-first-option
+                      clearable
+                      class="w-full"
+                      :placeholder="t('pages.fluorescentColors.formCodePlaceholder')"
+                    >
+                      <el-option v-for="c in colorCodeOptions" :key="c" :label="c" :value="c" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('common.color')" required>
+                    <el-select
+                      v-model="form.color_name"
+                      filterable
+                      allow-create
+                      default-first-option
+                      class="w-full"
+                      :placeholder="t('pages.fluorescentColors.formColorPlaceholder')"
+                    >
+                      <el-option v-for="c in colorNameOptions" :key="c" :label="c" :value="c" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+              </el-row>
+            </el-form>
+          </div>
+        </div>
+      </div>
+
       <template #footer>
-        <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
+        <div class="fluorescent-dialog-footer">
+          <el-button :icon="Close" @click="formVisible = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :icon="Check" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="importDialogVisible"
+      width="520px"
+      destroy-on-close
+      align-center
+      class="fluorescent-dialog"
+      :show-close="true"
+      @closed="resetImportState"
+    >
+      <template #header>
+        <div class="fluorescent-dialog-header">
+          <div class="fluorescent-dialog-header__main">
+            <h3 class="fluorescent-dialog-header__title">{{ t('pages.fluorescentColors.importTitle') }}</h3>
+            <p class="fluorescent-dialog-header__sub">{{ t('pages.fluorescentColors.importSub') }}</p>
+          </div>
+          <el-tooltip placement="top-start" :show-after="200">
+            <template #content>{{ t('pages.fluorescentColors.importHint') }}</template>
+            <el-icon class="fluorescent-page-hint" :size="16" tabindex="0" :aria-label="t('pages.fluorescentColors.importHint')">
+              <InfoFilled />
+            </el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+
+      <div class="fluorescent-dialog-body">
+        <div class="fluorescent-dialog-panel">
+          <div class="fluorescent-dialog-panel__head">
+            <h4 class="fluorescent-dialog-panel__title">{{ t('pages.fluorescentColors.importPanelTitle') }}</h4>
+          </div>
+          <div class="fluorescent-dialog-panel__body">
+            <el-upload
+              ref="uploadRef"
+              :auto-upload="false"
+              :limit="1"
+              accept=".csv"
+              :on-change="handleImportFileChange"
+              :on-remove="handleImportFileRemove"
+            >
+              <el-button type="primary" :icon="Upload">{{ t('pages.fluorescentColors.selectFile') }}</el-button>
+            </el-upload>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div class="fluorescent-dialog-footer">
+          <el-button :icon="Close" @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" :icon="Check" :loading="importing" :disabled="!importFile" @click="handleImportCsv">
+            {{ t('pages.fluorescentColors.doImport') }}
+          </el-button>
+        </div>
       </template>
     </el-dialog>
   </AdminSection>
@@ -167,7 +375,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Check, Close, Delete, EditPen, InfoFilled, Plus, Refresh, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import {
   createFluorescentColor,
@@ -179,10 +387,9 @@ import {
   me,
   updateFluorescentColor,
 } from '../../api/client'
-
-const { t } = useI18n()
 import { useModulePermission } from '../../composables/useModulePermission'
 
+const { t } = useI18n()
 const { canCreate, canUpdate, canDelete } = useModulePermission('fluorescentColors')
 const isAdmin = ref(false)
 
@@ -198,6 +405,9 @@ const keyword = ref('')
 const filterBuyer = ref('')
 const filterClass = ref('')
 const formVisible = ref(false)
+const importDialogVisible = ref(false)
+const importFile = ref(null)
+const uploadRef = ref(null)
 const editId = ref(null)
 
 const formOptions = reactive({
@@ -261,6 +471,10 @@ const colorCodeOptions = computed(() => {
   return list
 })
 
+function classTagType(colorClass) {
+  return String(colorClass || '').toLowerCase() === 'metallic' ? 'warning' : 'primary'
+}
+
 async function loadFormOptions() {
   try {
     const r = await listFluorescentFormOptions()
@@ -279,9 +493,7 @@ async function loadFormOptions() {
 }
 
 function onBuyerChange() {
-  const seasons = form.buyer_code
-    ? formOptions.season_labels_by_buyer[form.buyer_code]
-    : null
+  const seasons = form.buyer_code ? formOptions.season_labels_by_buyer[form.buyer_code] : null
   if (form.season_label && seasons?.length && !seasons.includes(form.season_label)) {
     form.season_label = ''
   }
@@ -344,6 +556,16 @@ function resetForm() {
   form.color_code = ''
   form.color_name = ''
   form.color_class = 'fluorescent'
+}
+
+function resetImportState() {
+  importFile.value = null
+  uploadRef.value?.clearFiles?.()
+}
+
+function openImportDialog() {
+  resetImportState()
+  importDialogVisible.value = true
 }
 
 function openCreate() {
@@ -412,12 +634,19 @@ async function remove(row) {
   }
 }
 
-async function onUploadCsv(uploadFile) {
-  const file = uploadFile?.raw
-  if (!file) return
+function handleImportFileChange(file) {
+  importFile.value = file.raw
+}
+
+function handleImportFileRemove() {
+  importFile.value = null
+}
+
+async function handleImportCsv() {
+  if (!importFile.value) return
   importing.value = true
   try {
-    const r = await importFluorescentCsv(file)
+    const r = await importFluorescentCsv(importFile.value)
     ElMessage.success(
       t('pages.fluorescentColors.importDone', {
         inserted: r.inserted,
@@ -425,6 +654,7 @@ async function onUploadCsv(uploadFile) {
         total: r.total,
       }),
     )
+    importDialogVisible.value = false
     await Promise.all([load(), loadSummary(), loadFormOptions()])
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
@@ -473,3 +703,159 @@ onMounted(async () => {
   await Promise.all([loadFormOptions(), load(), loadSummary()])
 })
 </script>
+
+<style scoped>
+.fluorescent-inner-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fluorescent-page-hint {
+  color: #94a3b8;
+  cursor: help;
+  flex-shrink: 0;
+  outline: none;
+}
+
+.fluorescent-page-hint:hover,
+.fluorescent-page-hint:focus-visible {
+  color: var(--el-color-primary);
+}
+
+.fluorescent-stats {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.fluorescent-filter-panel {
+  margin: 0 16px;
+}
+
+.fluorescent-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.fluorescent-filter-buyer,
+.fluorescent-filter-class {
+  min-width: 0;
+  flex: 1 1 180px;
+  max-width: 280px;
+}
+
+.fluorescent-table-wrap {
+  padding: 0 16px;
+}
+
+.fluorescent-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.fluorescent-row-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+:deep(.fluorescent-dialog.el-dialog) {
+  border-radius: 14px;
+  overflow: hidden;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.fluorescent-dialog .el-dialog__header) {
+  padding: 16px 20px 12px;
+  margin: 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+:deep(.fluorescent-dialog .el-dialog__body) {
+  padding: 0;
+  background: #f8fafc;
+  overflow-y: auto;
+}
+
+:deep(.fluorescent-dialog .el-dialog__footer) {
+  padding: 12px 20px 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.fluorescent-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 28px;
+}
+
+.fluorescent-dialog-header__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.fluorescent-dialog-header__sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.fluorescent-dialog-body {
+  padding: 16px;
+}
+
+.fluorescent-dialog-body--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fluorescent-dialog-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.fluorescent-dialog-panel--sub {
+  background: #f8fafc;
+}
+
+.fluorescent-dialog-panel__head {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.fluorescent-dialog-panel__title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.fluorescent-dialog-panel__body {
+  padding: 16px;
+}
+
+.fluorescent-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+</style>
