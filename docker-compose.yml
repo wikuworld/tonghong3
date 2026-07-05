@@ -4,8 +4,8 @@ services:
     restart: unless-stopped
     privileged: true
     security_opt:
-      - seccomp=unconfined
-      - apparmor=unconfined
+      - seccomp:unconfined
+      - apparmor:unconfined
     command:
       - mariadbd
       - --socket=/run/mysqld/mysqld.sock
@@ -31,15 +31,11 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
-    privileged: true
-    security_opt:
-      - seccomp=unconfined
-      - apparmor=unconfined
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-tonghong}:${MYSQL_PASSWORD:-tonghong_secret}@mariadb:3306/${MYSQL_DATABASE:-tonghong}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081,https://tonghong.creativedigitalsolutions.id}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8080}
     depends_on:
       mariadb:
         condition: service_healthy
@@ -60,141 +56,7 @@ services:
       retries: 18
       start_period: 120s
 
-  # Backend dev + auto reload (profile dev — dipakai web-hmr / Vite HMR)
-  backend-dev:
-    profiles: ["dev"]
-    build: ./backend
-    restart: unless-stopped
-    privileged: true
-    security_opt:
-      - seccomp=unconfined
-      - apparmor=unconfined
-    ports:
-      - "${BACKEND_PORT_DEV:-8001}:8000"
-    environment:
-      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-tonghong}:${MYSQL_PASSWORD:-tonghong_secret}@mariadb:3306/${MYSQL_DATABASE:-tonghong}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8080,http://localhost:8001,http://127.0.0.1:8001,http://localhost:8081,http://127.0.0.1:8081,https://tonghong.creativedigitalsolutions.id}
-    depends_on:
-      mariadb:
-        condition: service_healthy
-    volumes:
-      - ./backend:/app
-      - ./dokumentasi:/app/dokumentasi:ro
-    command: >
-      sh -c "alembic upgrade head &&
-      exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --loop asyncio"
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/docs', timeout=3).read(64)\"",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 90s
-
-  trello:
-    build: ./trello
-    restart: unless-stopped
-    privileged: true
-    security_opt:
-      - seccomp=unconfined
-      - apparmor=unconfined
-    ports:
-      - "${TRELLO_PORT:-8003}:8000"
-    environment:
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8080,http://localhost:8081,http://127.0.0.1:8081,https://tonghong.creativedigitalsolutions.id}
-      TRELLO_API_KEY: ${TRELLO_API_KEY:-}
-      TRELLO_API_SECRET: ${TRELLO_API_SECRET:-}
-      TRELLO_ACCESS_TOKEN: ${TRELLO_ACCESS_TOKEN:-}
-      TRELLO_APP_NAME: ${TRELLO_APP_NAME:-Tonghong ERP}
-      TRELLO_DEFAULT_BOARD_ID: ${TRELLO_DEFAULT_BOARD_ID:-}
-      TRELLO_DEFAULT_LIST_ID: ${TRELLO_DEFAULT_LIST_ID:-}
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()\"",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-
-  # Dev + auto reload
-  trello-dev:
-    profiles: ["dev"]
-    build: ./trello
-    restart: unless-stopped
-    privileged: true
-    security_opt:
-      - seccomp=unconfined
-      - apparmor=unconfined
-    ports:
-      - "${TRELLO_PORT_DEV:-8004}:8000"
-    environment:
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8080,http://127.0.0.1:5173,http://127.0.0.1:8080,http://localhost:8001,http://127.0.0.1:8001,http://localhost:8081,http://127.0.0.1:8081,https://tonghong.creativedigitalsolutions.id}
-      TRELLO_API_KEY: ${TRELLO_API_KEY:-}
-      TRELLO_API_SECRET: ${TRELLO_API_SECRET:-}
-      TRELLO_ACCESS_TOKEN: ${TRELLO_ACCESS_TOKEN:-}
-      TRELLO_APP_NAME: ${TRELLO_APP_NAME:-Tonghong ERP}
-      TRELLO_DEFAULT_BOARD_ID: ${TRELLO_DEFAULT_BOARD_ID:-}
-      TRELLO_DEFAULT_LIST_ID: ${TRELLO_DEFAULT_LIST_ID:-}
-    volumes:
-      - ./trello:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --loop asyncio
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()\"",
-        ]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
-
-  # Frontend production (build statis + nginx) — default di WEB_PORT (8080).
-  # Cloudflare Flexible → origin HTTP port 8080.
-  web:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    privileged: true
-    security_opt:
-      - seccomp=unconfined
-      - apparmor=unconfined
-    ports:
-      - "${WEB_PORT:-8080}:80"
-    depends_on:
-      backend:
-        condition: service_healthy
-
-  # Dev only: reverse proxy + Vite HMR.
-  # Untuk domain yang sama (Cloudflare → origin :8080): set WEB_HMR_PORT=8080 & stop service `web`.
-  web-hmr:
-    profiles: ["dev"]
-    image: nginx:1.27-alpine
-    restart: unless-stopped
-    privileged: true
-    security_opt:
-      - seccomp=unconfined
-      - apparmor=unconfined
-    ports:
-      - "${WEB_HMR_PORT:-8081}:80"
-    volumes:
-      - ./frontend/nginx.hmr.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      frontend-dev:
-        condition: service_healthy
-      backend:
-        condition: service_healthy
-
-  # Dev only: Vite dev server + HMR (API via web-hmr → backend)
   frontend-dev:
-    profiles: ["dev"]
     image: node:22-alpine
     restart: unless-stopped
     working_dir: /app
@@ -214,13 +76,24 @@ services:
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
       VITE_API_PROXY: ${VITE_API_PROXY:-http://backend:8000}
-      # HMR lewat domain HTTPS (Cloudflare): browser wss://host:443 → nginx → Vite :5173
-      VITE_HMR_HOST: ${HMR_PUBLIC_HOST:-tonghong.creativedigitalsolutions.id}
-      VITE_HMR_PROTOCOL: ${HMR_WSS_PROTOCOL:-wss}
+      WEB_PORT: ${WEB_PORT:-8080}
+      VITE_HMR_PROTOCOL: ${VITE_HMR_PROTOCOL:-ws}
       VITE_HMR_PORT: "5173"
-      VITE_HMR_CLIENT_PORT: ${HMR_PUBLIC_CLIENT_PORT:-443}
-      VITE_DEV_PUBLIC_ORIGIN: ${VITE_DEV_PUBLIC_ORIGIN:-https://tonghong.creativedigitalsolutions.id}
+      VITE_HMR_CLIENT_PORT: ${WEB_PORT:-8080}
     depends_on:
+      backend:
+        condition: service_healthy
+
+  web-hmr:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    volumes:
+      - ./frontend/nginx.hmr.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      frontend-dev:
+        condition: service_healthy
       backend:
         condition: service_healthy
 

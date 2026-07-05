@@ -1,34 +1,83 @@
 ---
-description: Stack & konteks proyek Tonghong (Vue, Docker)
+description: Stack & konteks proyek Tonghong — server dev (Vue, Docker)
 alwaysApply: false
 ---
 
 # Proyek Tonghong
 
-- **Frontend**: Vue 3 + Vite + Element Plus + Tailwind + vue-i18n (locale `id` default, fallback `en`, plus `zh`).
-- **Struktur**: workspace root `package.json` memanggil skrip di `frontend/`; halaman admin di `frontend/src/views/admin/`, layout `AdminLayout.vue`, router `/admin/*`.
-- **Docker**: `docker-compose.yml` — service **`web`** (build statis + Nginx, port **8080**), profile **`dev`**: **`frontend-dev`** (Vite **5173** internal), **`web-hmr`** (Nginx proxy ke Vite + API, port **`WEB_HMR_PORT`**). Setelah ubah kode frontend untuk image production, perlu **`docker compose build`** / **`up --build`**.
-- **HMR lewat domain yang sama (HTTPS / Cloudflare)**:
-  - Set di `.env`: **`WEB_HMR_PORT=8080`** (sama dengan **`WEB_PORT`** origin Cloudflare), **`HMR_PUBLIC_HOST`**, **`VITE_DEV_PUBLIC_ORIGIN`**, **`HMR_PUBLIC_CLIENT_PORT=443`**, **`HMR_WSS_PROTOCOL=wss`**.
-  - Jalankan **`./tools/stack-hmr-domain.sh`** (atau `npm run stack:hmr`) — stop **`web`**, start **`web-hmr` + `frontend-dev`** di port 8080. API tetap lewat **`backend`** (bukan backend-dev).
-  - Kembali production statis: **`./tools/stack-prod-web.sh`** (`npm run stack:prod`) — opsional **`--build`** untuk rebuild image `web`.
-  - **502**: Vite belum healthy (tunggu `npm install`); atau port origin Cloudflare bukan 8080.
-- **Workflow Docker (dev vs production)**:
-  - **Frontend HMR** lewat **`frontend-dev`** + proxy **`web-hmr`** (bukan service **`web`** statis).
-  - Untuk perubahan kode backend harian (source di-mount volume), **cukup restart backend** (`docker compose restart backend`) tanpa rebuild image.
-  - Untuk perubahan schema/model database, **wajib buat migration Alembic baru** (`docker compose exec backend alembic revision --autogenerate -m "<pesan>"`) dan review isi file migration sebelum dijalankan.
-  - Jalankan `docker compose exec backend alembic upgrade head` saat ada migration baru.
-  - Setelah migration dibuat, validasi dengan `docker compose exec backend alembic heads` (pastikan head tunggal) lalu `docker compose exec backend alembic upgrade head`.
-  - Pakai `docker compose up --build` hanya saat perlu rebuild image (mis. ubah `Dockerfile`, dependency image, atau mau refresh image production `web`/`backend`).
-- **Master Color Swatch**: tabel `color_swatch_recipes` (pabrik × buyer × material × emboss); API `/masters/color-swatch-recipes/*`; halaman `/admin/color-swatch`; import CSV atau tombol import file `dokumentasi/DATA COLOR SWATCH.csv`. PO: dropdown resep (mode longgar, tidak memblokir simpan); baris PO menyimpan FK `color_swatch_recipe_id` ke resep yang dipakai. Lookup swatch: `resolve_swatch_factory_keys()` memetakan KODE SYSTEM customer (mis. CS004) ke `factory_key` swatch (mis. CHANGSHIN) via `customer_id`; param `include_all_materials` untuk abaikan filter material.
-- **Master Fluorescent Color**: tabel `fluorescent_color_masters`; API CRUD + `import-bundled` / `import-csv`; halaman `/admin/fluorescent-colors`; validasi warna fluorescent di PO.
-- **PO / Lot**: preview lot via `peek_lot_number()` (`POST /po/generate-lot`, tidak commit sequence); lot final saat simpan baris (`generate_lot_number()` di `add_po_detail`). Preview nomor SO via `GET /po/next-number` (`peek_number()`). Jadwal kirim 8 gelombang per baris PO (`PoDetailDelivery`); total jadwal boleh ≠ qty order (soft warning). Saldo order = qty order − kiriman aktual; modul delivery menolak kirim melebihi saldo.
-- **Modul Delivery (admin)**: daftar baris memakai `GET /marketing/delivery-lines` (pagination + filter tanggal/kategori/customer/kode pabrik); detail per header memakai `GET /delivery/{id}/details` (baris diperkaya PO/lot/material). Alur bisnis umum: QC OK → packing done → baris delivery → tandai SJ/INVPL → status sent → invoice; pembatalan delivery memicu notifikasi ke peran terkait.
-- **Quality gates CI**: frontend wajib `npm run lint` + `npm run build`; backend wajib `python -m ruff check --select F,E9 app tests` + `python -m pytest`; workflow GitHub Actions divalidasi dengan `actionlint`. Tes HTTP router PO/delivery ada di `backend/tests/test_po_http.py`, `test_delivery_http.py` (fixture bersama `tests/http_fixtures.py`).
-- **Terminal Cursor / PATH (npm, nvm)**: (1) `.vscode/settings.json` — profil default **zsh `-il`** (macOS) / **bash `-l`** (Linux) untuk terminal terpadu. (2) **`tools/nvm-load.sh`** — sebelum menjalankan `npm`/`node` dari **agen Cursor** atau shell minimal, jalankan dari root repo: `source tools/nvm-load.sh` (atau satu baris: `bash -c 'source tools/nvm-load.sh && cd frontend && npm run lint'`). Skrip root `package.json` (`npm run build`, `dev`, dll.) sudah mem-`source` file ini lewat `bash -c`. Pastikan nvm terpasang di `~/.nvm` atau path Homebrew di skrip tersebut.
+## Server dev ini
 
-Saat menyentuh halaman admin baru atau mengubah UI, ikuti rule **`tonghong-admin-vue`** (file di folder yang sama, glob `frontend/src/views/admin/**/*.vue`).
-Untuk konsistensi UI/UX, ikuti rule **`tonghong-element-plus-ui`** agar tetap memakai komponen + theming Element Plus tanpa custom CSS/hardcode per halaman.
-Util PO bertahap: `frontend/src/utils/poEtdSchedule.js`, `poAudit.js`, `poDraft.js`, `poColorSwatch.js`, `poMasterResolve.js`, `poDetailPayload.js`, `poApi.js`, `poList.js`; composable `usePoList.js`, `usePoMarketingRevise.js`, `usePoFormWizard.js`, `poFormWizardContext.js`; komponen `PoFormWizardDialog.vue`, `PoDetailAuditPanel.vue`, dialog PO sekunder.
-Tes HTTP router: `test_po_http.py`, `test_delivery_http.py`, `test_qc_http.py`, `test_packing_http.py`, `test_invoice_http.py`, `test_production_http.py`, `test_subcon_http.py`, `test_marketing_http.py` (fixture `tests/http_fixtures.py`).
-Komponen PO admin: `PoDetailAuditPanel`, `PoMarketingReviseDialog`, `PoDetailDialog`, `PoPrintPreviewDialog`, `PoCopyItemDialog`, `PoAmbiguousMasterDialog`; composable `usePoMarketingRevise.js`.
+- **Peran**: server pengembangan (bukan production). Tidak ada domain/Cloudflare/nginx di host — akses lewat **IP atau localhost + port**.
+- **Lokasi proyek**: `/home/developer/project`
+- **Docker**: engine sistem (`docker.io`); perintah compose sering perlu **`sudo docker compose`** jika grup `docker` belum aktif di sesi shell.
+- **Env**: salin `.env.example` → `.env` (`APP_ENV=dev`). Tambahkan IP server ke `CORS_ORIGINS` bila UI dibuka dari mesin lain.
+
+### Stack Docker (hanya 4 service)
+
+`docker-compose.yml` — **tidak ada** service `web` (build statis), `trello`, `backend-dev`, atau profile `dev` terpisah.
+
+| Service | Port host | Fungsi |
+|---------|-----------|--------|
+| `mariadb` | internal 3306 | MariaDB 11, volume `mariadb_data` |
+| `backend` | **8000** | FastAPI; mount `./backend:/app`; startup `alembic upgrade head` + uvicorn |
+| `frontend-dev` | internal 5173 | Vite + HMR (Node 22); volume `frontend_node_modules` |
+| `web-hmr` | **8080** (`WEB_PORT`) | Nginx: `/` → Vite, `/api` → backend (`frontend/nginx.hmr.conf`) |
+
+**Jalankan:**
+
+```bash
+docker compose up -d
+# atau
+./tools/stack-dev.sh    # npm run stack:dev
+```
+
+**URL:**
+
+- UI + API: `http://<host>:8080`
+- API / Swagger: `http://<host>:8000/api/v1`, `http://<host>:8000/docs`
+- Health: `http://<host>:8000/health`
+
+**Login dev:** `admin` / `admin123`; demo per role password `TonghongDemo2026`.
+
+### Database
+
+- Data produksi di-import dari `database/tonghong-20260701-135221.sql` (bukan DB kosong).
+- Alembic head: **`k2l3m4n5o6p7`** — cek: `docker compose exec backend alembic current`.
+- Import ulang dump (hentikan backend dulu):
+
+```bash
+docker compose stop backend
+docker compose exec -T mariadb mariadb -uroot -p"${MYSQL_ROOT_PASSWORD:-root}" < database/tonghong-20260701-135221.sql
+docker compose run --rm --no-deps backend alembic upgrade head
+docker compose up -d backend
+```
+
+### Workflow Docker
+
+- Ubah **frontend** (`./frontend/`): HMR otomatis; akses via **web-hmr :8080** (bukan port 5173 langsung).
+- Ubah **backend** Python: `docker compose restart backend` (tanpa `--reload` di service `backend`).
+- Ubah **schema/model**: buat migration (`docker compose exec backend alembic revision --autogenerate -m "..."`), review file, lalu `alembic upgrade head`; validasi `alembic heads` (head tunggal).
+- Ubah **`backend/Dockerfile`** atau `requirements.txt`: `docker compose up -d --build backend`.
+- Log: `docker compose logs -f [service]`; status: `docker compose ps`.
+
+---
+
+## Aplikasi
+
+- **Frontend**: Vue 3 + Vite + Element Plus + Tailwind + vue-i18n (locale `id` default, fallback `en`, plus `zh`).
+- **Backend**: FastAPI + SQLAlchemy + Alembic + MariaDB.
+- **Struktur**: root `package.json` → skrip di `frontend/`; halaman admin `frontend/src/views/admin/`, layout `AdminLayout.vue`, router `/admin/*`.
+- **Master Color Swatch**: tabel `color_swatch_recipes`; API `/masters/color-swatch-recipes/*`; halaman `/admin/color-swatch`; import CSV / `dokumentasi/DATA COLOR SWATCH.csv`. PO: FK `color_swatch_recipe_id`; lookup `resolve_swatch_factory_keys()` (customer → `factory_key` swatch).
+- **Master Fluorescent Color**: `fluorescent_color_masters`; halaman `/admin/fluorescent-colors`.
+- **PO / Lot**: preview lot `POST /po/generate-lot`; final di `add_po_detail`; preview SO `GET /po/next-number`; jadwal kirim 8 gelombang (`PoDetailDelivery`); saldo order = qty − kiriman aktual.
+- **Delivery**: daftar `GET /marketing/delivery-lines`; detail `GET /delivery/{id}/details`. Alur: QC OK → packing done → delivery → sent → invoice.
+
+## Terminal / npm di host
+
+Frontend dev utama jalan **di container** `frontend-dev`. Untuk npm di host (opsional): `source tools/nvm-load.sh` lalu perintah di `frontend/`, atau skrip root `npm run build` / `dev`.
+
+---
+
+Saat menyentuh halaman admin, ikuti **`tonghong-admin-vue`** dan **`tonghong-element-plus-ui`**.
+
+Util PO: `frontend/src/utils/poEtdSchedule.js`, `poAudit.js`, `poDraft.js`, `poColorSwatch.js`, `poMasterResolve.js`, `poDetailPayload.js`, `poApi.js`, `poList.js`; composable `usePoList.js`, `usePoMarketingRevise.js`, `usePoFormWizard.js`; komponen `PoFormWizardDialog.vue`, `PoDetailAuditPanel.vue`, dialog PO sekunder.
