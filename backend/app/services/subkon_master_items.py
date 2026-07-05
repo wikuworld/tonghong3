@@ -41,24 +41,62 @@ def _clean_text(value: str | None) -> str | None:
     return raw
 
 
+def _pick_row_value(row: dict[str, str | None], *keys: str) -> str | None:
+    lower_map = {str(k).strip().lower(): v for k, v in row.items()}
+    for key in keys:
+        if key in row:
+            val = row.get(key)
+            if val is not None and str(val).strip():
+                return str(val)
+        lk = key.lower()
+        if lk in lower_map:
+            val = lower_map[lk]
+            if val is not None and str(val).strip():
+                return str(val)
+    return None
+
+
+def map_subkon_source_row(row: dict[str, str | None]) -> dict[str, str | None]:
+    return {
+        "item_code": _pick_row_value(row, "item_code", "KODE BARANG", "kode barang"),
+        "thickness_range": _pick_row_value(row, "thickness_range", "thickness", "THICKNESS", "ketebalan"),
+        "material_name": _pick_row_value(row, "material_name", "MATERIAL NAME", "material name"),
+        "color": _pick_row_value(row, "color", "COLOR", "warna"),
+        "emboss": _pick_row_value(row, "emboss", "EMBOSS"),
+    }
+
+
 def normalize_subkon_row(row: dict[str, str | None]) -> dict[str, str | None]:
-    thickness_raw = _clean_text(row.get("thickness_range") or row.get("thickness"))
+    mapped = map_subkon_source_row(row) if any(
+        k.lower() in {str(x).strip().lower() for x in row.keys()}
+        for k in ("KODE BARANG", "MATERIAL NAME", "THICKNESS", "COLOR", "EMBOSS")
+    ) else row
+    thickness_raw = _clean_text(mapped.get("thickness_range") or mapped.get("thickness"))
     thickness = canonical_thickness_range(thickness_raw) if thickness_raw else None
     if thickness == "":
         thickness = None
     return {
         "category": SUBKON_CATEGORY,
-        "item_code": _clean_text(row.get("item_code")),
-        "material_name": _clean_text(row.get("material_name")),
+        "item_code": _clean_text(mapped.get("item_code")),
+        "material_name": _clean_text(mapped.get("material_name")),
         "thickness_range": thickness,
-        "color": _clean_text(row.get("color")),
-        "emboss": _clean_text(row.get("emboss")),
+        "color": _clean_text(mapped.get("color")),
+        "emboss": _clean_text(mapped.get("emboss")),
     }
 
 
-def iter_subkon_rows_from_csv(path: Path) -> Iterable[dict[str, str | None]]:
+def _detect_csv_delimiter(path: Path) -> str:
     with open(path, newline="", encoding="utf-8-sig") as f:
-        for row in csv.DictReader(f):
+        first_line = f.readline()
+    if first_line.count(";") >= first_line.count(","):
+        return ";"
+    return ","
+
+
+def iter_subkon_rows_from_csv(path: Path) -> Iterable[dict[str, str | None]]:
+    delimiter = _detect_csv_delimiter(path)
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f, delimiter=delimiter):
             yield normalize_subkon_row(row)
 
 
@@ -77,12 +115,17 @@ def import_subkon_master_items(
     inserted = 0
     updated = 0
     skipped = 0
+    seen_codes: set[str] = set()
 
     for item_data in rows:
         code = item_data.get("item_code")
         if not code:
             skipped += 1
             continue
+        if code in seen_codes:
+            skipped += 1
+            continue
+        seen_codes.add(code)
 
         existing = db.scalars(select(MasterItem).where(MasterItem.item_code == code)).first()
         if existing:
