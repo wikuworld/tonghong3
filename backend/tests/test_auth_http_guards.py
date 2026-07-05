@@ -48,6 +48,12 @@ def test_admin_routes_require_auth_token():
         _assert_status(client, "GET", "/api/v1/customs/declarations", 401)
         _assert_status(client, "GET", "/api/v1/exchange-rates", 401)
         _assert_status(client, "GET", "/api/v1/buyer-prices/lists", 401)
+        _assert_status(client, "GET", "/api/v1/pricing/special-prices", 401)
+        _assert_status(client, "GET", "/api/v1/accounting/mappings", 401)
+        _assert_status(client, "GET", "/api/v1/journal/entries", 401)
+        _assert_status(client, "GET", "/api/v1/wilayah/provinces", 401)
+        _assert_status(client, "GET", "/api/v1/workflow/ppic/dashboard", 401)
+        _assert_status(client, "GET", "/api/v1/masters/brands", 401)
     finally:
         app.dependency_overrides.clear()
 
@@ -83,6 +89,43 @@ def test_write_routes_reject_guest_role_with_403():
             "/api/v1/exchange-rates",
             403,
             {"idr_per_usd": "16000", "effective_date": "2026-04-08"},
+        )
+        _assert_status(
+            client,
+            "POST",
+            "/api/v1/pricing/special-prices",
+            403,
+            {
+                "buyer_code": "NB",
+                "material_pattern": "SUEDE",
+                "discount_value": "0",
+                "currency": "USD",
+            },
+        )
+        _assert_status(
+            client,
+            "POST",
+            "/api/v1/accounting/mappings",
+            403,
+            {
+                "transaction_type": "po_created",
+                "coa_code": "1100",
+                "coa_name": "Piutang",
+            },
+        )
+        _assert_status(
+            client,
+            "POST",
+            "/api/v1/journal/entries/generate-from-transaction",
+            403,
+            {"transaction_type": "po_created", "transaction_id": 1},
+        )
+        _assert_status(
+            client,
+            "POST",
+            "/api/v1/workflow/po/1/assign-to-ppic",
+            403,
+            {"ppic_user_id": 1},
         )
     finally:
         app.dependency_overrides.clear()

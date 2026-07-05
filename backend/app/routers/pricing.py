@@ -6,13 +6,18 @@ import csv
 import io
 from app.db import get_db
 from app.models import SpecialPrice, CustomerSpecialPrice, BuyerPriceList
+from app.routers.auth import get_current_user, require_roles
 from app.schemas import SpecialPriceCreate, SpecialPriceUpdate, SpecialPriceOut, CustomerSpecialPriceCreate, CustomerSpecialPriceUpdate, CustomerSpecialPriceOut
 
 router = APIRouter(prefix="/pricing", tags=["pricing"])
 
 
 @router.get("/special-prices", response_model=list[SpecialPriceOut])
-def list_special_prices(buyer_code: str = None, db: Session = Depends(get_db)):
+def list_special_prices(
+    buyer_code: str = None,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
     query = db.query(SpecialPrice).filter(SpecialPrice.is_active)
     if buyer_code:
         query = query.filter(SpecialPrice.buyer_code == buyer_code)
@@ -20,7 +25,11 @@ def list_special_prices(buyer_code: str = None, db: Session = Depends(get_db)):
 
 
 @router.post("/special-prices", response_model=SpecialPriceOut)
-def create_special_price(body: SpecialPriceCreate, db: Session = Depends(get_db)):
+def create_special_price(
+    body: SpecialPriceCreate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+):
     row = SpecialPrice(**body.model_dump())
     db.add(row)
     db.commit()
@@ -29,7 +38,12 @@ def create_special_price(body: SpecialPriceCreate, db: Session = Depends(get_db)
 
 
 @router.put("/special-prices/{price_id}", response_model=SpecialPriceOut)
-def update_special_price(price_id: int, body: SpecialPriceUpdate, db: Session = Depends(get_db)):
+def update_special_price(
+    price_id: int,
+    body: SpecialPriceUpdate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+):
     row = db.query(SpecialPrice).get(price_id)
     if not row:
         raise HTTPException(404, "Special price not found")
@@ -41,7 +55,11 @@ def update_special_price(price_id: int, body: SpecialPriceUpdate, db: Session = 
 
 
 @router.delete("/special-prices/{price_id}")
-def delete_special_price(price_id: int, db: Session = Depends(get_db)):
+def delete_special_price(
+    price_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+):
     row = db.query(SpecialPrice).get(price_id)
     if not row:
         raise HTTPException(404, "Special price not found")
@@ -51,7 +69,11 @@ def delete_special_price(price_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/customer-prices", response_model=list[CustomerSpecialPriceOut])
-def list_customer_prices(customer_id: int = None, db: Session = Depends(get_db)):
+def list_customer_prices(
+    customer_id: int = None,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
     query = db.query(CustomerSpecialPrice).filter(CustomerSpecialPrice.is_active)
     if customer_id:
         query = query.filter(CustomerSpecialPrice.customer_id == customer_id)
@@ -59,7 +81,11 @@ def list_customer_prices(customer_id: int = None, db: Session = Depends(get_db))
 
 
 @router.post("/customer-prices", response_model=CustomerSpecialPriceOut)
-def create_customer_price(body: CustomerSpecialPriceCreate, db: Session = Depends(get_db)):
+def create_customer_price(
+    body: CustomerSpecialPriceCreate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+):
     row = CustomerSpecialPrice(**body.model_dump())
     db.add(row)
     db.commit()
@@ -68,7 +94,12 @@ def create_customer_price(body: CustomerSpecialPriceCreate, db: Session = Depend
 
 
 @router.put("/customer-prices/{price_id}", response_model=CustomerSpecialPriceOut)
-def update_customer_price(price_id: int, body: CustomerSpecialPriceUpdate, db: Session = Depends(get_db)):
+def update_customer_price(
+    price_id: int,
+    body: CustomerSpecialPriceUpdate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+):
     row = db.query(CustomerSpecialPrice).get(price_id)
     if not row:
         raise HTTPException(404, "Customer special price not found")
@@ -80,7 +111,11 @@ def update_customer_price(price_id: int, body: CustomerSpecialPriceUpdate, db: S
 
 
 @router.delete("/customer-prices/{price_id}")
-def delete_customer_price(price_id: int, db: Session = Depends(get_db)):
+def delete_customer_price(
+    price_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+):
     row = db.query(CustomerSpecialPrice).get(price_id)
     if not row:
         raise HTTPException(404, "Customer special price not found")
@@ -109,7 +144,11 @@ def _get_price_columns(meta_json: dict | None) -> list[str]:
 
 
 @router.post("/bulk-update", response_model=dict)
-def bulk_update_prices(body: BulkPriceUpdate, db: Session = Depends(get_db)):
+def bulk_update_prices(
+    body: BulkPriceUpdate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+):
     """Update multiple prices at once."""
     updated = 0
     for item in body.updates:
@@ -135,7 +174,11 @@ def bulk_update_prices(body: BulkPriceUpdate, db: Session = Depends(get_db)):
 
 
 @router.post("/bulk-update-csv")
-async def bulk_update_prices_csv(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def bulk_update_prices_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+):
     """Bulk update from CSV file."""
     content = await file.read()
     decoded = content.decode('utf-8')
