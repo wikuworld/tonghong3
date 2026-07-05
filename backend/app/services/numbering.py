@@ -1,4 +1,8 @@
-"""Nomor dokumen berjalan (SO / produksi / packing)."""
+"""Nomor dokumen berjalan (produksi / packing / quotation).
+
+Catatan: nomor Sales Order (PO) memakai ``app.services.so_numbering`` (format marketing).
+Modul ini tetap dipakai untuk PRD/PACK/QUO berbasis periode ``PREFIX-YYYYMM-NNNNN``.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +16,19 @@ from app.models import DocumentSequence
 
 def _period() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m")
+
+
+def peek_number(db: Session, doc_type: str, prefix: str) -> str:
+    """Preview nomor berikutnya tanpa increment (untuk form draft)."""
+    period = _period()
+    seq = db.scalars(
+        select(DocumentSequence).where(
+            DocumentSequence.doc_type == doc_type,
+            DocumentSequence.period == period,
+        )
+    ).first()
+    n = (int(seq.last_value) + 1) if seq else 1
+    return f"{prefix}-{period}-{n:05d}"
 
 
 def next_number(db: Session, doc_type: str, prefix: str) -> str:

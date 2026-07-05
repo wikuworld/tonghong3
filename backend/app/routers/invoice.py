@@ -1,32 +1,52 @@
 from datetime import date, datetime, timedelta
 from email.message import EmailMessage
+import logging
 import smtplib
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+logger = logging.getLogger(__name__)
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.config import settings
 from app.models import Customer, DeliveryHeader, Invoice, InvoiceDetail
-from app.schemas import InvoiceCreate, InvoiceDetailCreate, InvoiceUpdate, row_to_dict
+from app.schemas import InvoiceCreate, InvoiceDetailCreate, InvoiceDetailOut, InvoiceOut, InvoiceUpdate
 from app.services.business_rules import validate_invoice_against_delivery
 from app.services.mkt_workflow import sync_invoice_billing_from_delivery
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
+from app.services.notifications import create_notification_for_roles
 
 router = APIRouter(tags=["invoice"])
 
 
-@router.post("/invoice")
+@router.post("/invoice", response_model=InvoiceOut)
 def create_invoice(
     body: InvoiceCreate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "finance")),
-) -> dict:
+) -> Invoice:
+    from app.models import DeliveryHeader, PackingHeader, ProductionOrder
+    
     validate_invoice_against_delivery(db, body.delivery_id, body.po_number)
+    
+    delivery = db.get(DeliveryHeader, body.delivery_id)
+    
     data = body.model_dump(exclude_unset=True)
+    
+    if delivery and not data.get("customer_id"):
+        data["customer_id"] = delivery.customer_id
+    
+    if delivery and delivery.packing_id:
+        packing = db.get(PackingHeader, delivery.packing_id)
+        if packing and packing.production_id:
+            production = db.get(ProductionOrder, packing.production_id)
+            if production and not data.get("po_id"):
+                data["po_id"] = production.po_id
+    
     row = Invoice(**data)
     db.add(row)
     db.flush()
@@ -35,24 +55,52 @@ def create_invoice(
         entity_type="invoice",
         entity_id=row.id,
         action="create",
-        after={"invoice_number": row.invoice_number, "delivery_id": row.delivery_id},
+        after={"invoice_number": row.invoice_number, "delivery_id": row.delivery_id, "customer_id": row.customer_id, "po_id": row.po_id},
         actor=user.username,
+    )
+    create_notification_for_roles(
+        db,
+        ("admin", "finance", "marketing"),
+        title=f"Invoice {row.invoice_number or row.id} dibuat",
+        message=f"Terhubung ke delivery ID {row.delivery_id}",
+        category="invoice",
+        entity_type="invoice",
+        entity_id=row.id,
+        route_path="/admin/invoice",
+        route_query={"invoice_id": row.id},
     )
     sync_invoice_billing_from_delivery(db, body.delivery_id)
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row
 
 
-@router.get("/invoice")
+@router.get("/invoice", response_model=list[InvoiceOut])
 def list_invoice(
     db: Session = Depends(get_db),
     q: Optional[str] = Query(None, description="Search invoice no/PO/customer"),
+    customer_id: Optional[int] = Query(None, description="Filter by customer ID"),
+    po_id: Optional[int] = Query(None, description="Filter by PO ID"),
+    delivery_id: Optional[int] = Query(None, description="Filter by delivery ID"),
+    payment_status: Optional[str] = Query(None, description="Filter by payment status"),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     _user=Depends(get_current_user),
-) -> list[dict]:
+) -> list[Invoice]:
     stmt = select(Invoice).order_by(Invoice.id.desc()).limit(limit).offset(offset)
+    
+    if customer_id is not None:
+        stmt = stmt.where(Invoice.customer_id == customer_id)
+    
+    if po_id is not None:
+        stmt = stmt.where(Invoice.po_id == po_id)
+    
+    if delivery_id is not None:
+        stmt = stmt.where(Invoice.delivery_id == delivery_id)
+    
+    if payment_status:
+        stmt = stmt.where(Invoice.payment_status == payment_status)
+    
     if q:
         like = f"%{q}%"
         stmt = stmt.where(
@@ -66,17 +114,17 @@ def list_invoice(
             )
         )
     rows = db.scalars(stmt).all()
-    return [row_to_dict(r) for r in rows]
+    return rows
 
 
-@router.get("/invoice/outstanding")
+@router.get("/invoice/outstanding", response_model=list[InvoiceOut])
 def list_outstanding_invoice(
     db: Session = Depends(get_db),
     overdue_only: bool = Query(False),
     due_within_days: Optional[int] = Query(None, ge=0, le=365),
     hide_po: bool = Query(False),
     _user=Depends(get_current_user),
-) -> list[dict]:
+) -> list[Invoice]:
     today = date.today()
     stmt = select(Invoice).order_by(Invoice.id.desc())
     if overdue_only:
@@ -90,32 +138,78 @@ def list_outstanding_invoice(
             )
         )
     rows = db.scalars(stmt).all()
-    out: list[dict] = []
+    out: list[Invoice] = []
     for r in rows:
-        x = row_to_dict(r)
         if hide_po:
-            x["po_number"] = None
-        out.append(x)
+            r.po_number = None
+        out.append(r)
     return out
 
 
-@router.get("/invoice/{invoice_id}")
+@router.post("/invoice/backfill-fks")
+def backfill_invoice_fks(
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> dict:
+    """Backfill customer_id and po_id for existing invoices based on delivery chain."""
+    from app.models import DeliveryHeader, PackingHeader, ProductionOrder
+    
+    updated = 0
+    skipped = 0
+    
+    invoices = db.query(Invoice).filter(
+        (Invoice.customer_id.is_(None)) | (Invoice.po_id.is_(None))
+    ).all()
+    
+    for inv in invoices:
+        changed = False
+        
+        if inv.delivery_id and inv.customer_id is None:
+            delivery = db.get(DeliveryHeader, inv.delivery_id)
+            if delivery and delivery.customer_id:
+                inv.customer_id = delivery.customer_id
+                changed = True
+        
+        if inv.delivery_id and inv.po_id is None:
+            delivery = db.get(DeliveryHeader, inv.delivery_id)
+            if delivery and delivery.packing_id:
+                packing = db.get(PackingHeader, delivery.packing_id)
+                if packing and packing.production_id:
+                    production = db.get(ProductionOrder, packing.production_id)
+                    if production and production.po_id:
+                        inv.po_id = production.po_id
+                        changed = True
+        
+        if changed:
+            updated += 1
+        else:
+            skipped += 1
+    
+    db.commit()
+    return {
+        "updated": updated,
+        "skipped": skipped,
+        "message": f"Updated {updated} invoices, skipped {skipped} (no FK chain found)"
+    }
+
+
+@router.get("/invoice/{invoice_id}", response_model=InvoiceOut)
 def get_invoice(
     invoice_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
-) -> dict:
+) -> Invoice:
     row = db.get(Invoice, invoice_id)
     if not row:
         raise HTTPException(status_code=404, detail="Invoice tidak ditemukan")
-    return row_to_dict(row)
+    return row
 
 
-@router.put("/invoice/{invoice_id}")
+@router.put("/invoice/{invoice_id}", response_model=InvoiceOut)
 def update_invoice(
     invoice_id: int,
     body: InvoiceUpdate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "finance")),
-) -> dict:
+) -> Invoice:
     row = db.get(Invoice, invoice_id)
     if not row:
         raise HTTPException(status_code=404, detail="Invoice tidak ditemukan")
@@ -151,7 +245,7 @@ def update_invoice(
     )
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row
 
 
 def _send_email(to_email: str, subject: str, body: str) -> None:
@@ -239,10 +333,10 @@ def run_invoice_reminders(
     db.commit()
     return {"mode": mode, "days": days, "sent": sent, "skipped": skipped, "errors": errors[:20]}
 
-@router.get("/invoice/{invoice_id}/details")
+@router.get("/invoice/{invoice_id}/details", response_model=list[InvoiceDetailOut])
 def list_invoice_details(
     invoice_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
-) -> list[dict]:
+) -> list[InvoiceDetail]:
     if not db.get(Invoice, invoice_id):
         raise HTTPException(status_code=404, detail="Invoice tidak ditemukan")
     rows = db.scalars(
@@ -250,16 +344,16 @@ def list_invoice_details(
         .where(InvoiceDetail.invoice_id == invoice_id)
         .order_by(InvoiceDetail.id.asc())
     ).all()
-    return [row_to_dict(r) for r in rows]
+    return rows
 
 
-@router.post("/invoice/{invoice_id}/details")
+@router.post("/invoice/{invoice_id}/details", response_model=InvoiceDetailOut)
 def add_invoice_detail(
     invoice_id: int,
     body: InvoiceDetailCreate,
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "finance")),
-) -> dict:
+) -> InvoiceDetail:
     inv = db.get(Invoice, invoice_id)
     if not inv:
         raise HTTPException(status_code=404, detail="Invoice tidak ditemukan")
@@ -276,4 +370,4 @@ def add_invoice_detail(
     )
     db.commit()
     db.refresh(row)
-    return row_to_dict(row)
+    return row

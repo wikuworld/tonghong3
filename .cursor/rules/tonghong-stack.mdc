@@ -1,13 +1,83 @@
 ---
-description: Stack & konteks proyek Tonghong (Vue, Docker)
-alwaysApply: true
+description: Stack & konteks proyek Tonghong — server dev (Vue, Docker)
+alwaysApply: false
 ---
 
 # Proyek Tonghong
 
-- **Frontend**: Vue 3 + Vite + Element Plus + Tailwind + vue-i18n (locale `id` default, fallback `en`, plus `zh`).
-- **Struktur**: workspace root `package.json` memanggil skrip di `frontend/`; halaman admin di `frontend/src/views/admin/`, layout `AdminLayout.vue`, router `/admin/*`.
-- **Docker**: `docker-compose.yml` — service **`web`** (build statis + Nginx, port **8080**), profile **`dev`** + **`frontend-dev`** untuk Vite + HMR (port **5173**). Setelah ubah kode frontend untuk image production, perlu **`docker compose build`** / **`up --build`**.
-- **Quality gates CI**: frontend wajib `npm run lint` + `npm run build`; backend wajib `python -m ruff check --select F,E9 app tests` + `python -m pytest`; workflow GitHub Actions divalidasi dengan `actionlint`.
+## Server dev ini
 
-Saat menyentuh halaman admin baru atau mengubah UI, ikuti rule **`tonghong-admin-vue`** (file di folder yang sama, glob `frontend/src/views/admin/**/*.vue`).
+- **Peran**: server pengembangan (bukan production). Tidak ada domain/Cloudflare/nginx di host — akses lewat **IP atau localhost + port**.
+- **Lokasi proyek**: `/home/developer/project`
+- **Docker**: engine sistem (`docker.io`); perintah compose sering perlu **`sudo docker compose`** jika grup `docker` belum aktif di sesi shell.
+- **Env**: salin `.env.example` → `.env` (`APP_ENV=dev`). Tambahkan IP server ke `CORS_ORIGINS` bila UI dibuka dari mesin lain.
+
+### Stack Docker (hanya 4 service)
+
+`docker-compose.yml` — **tidak ada** service `web` (build statis), `trello`, `backend-dev`, atau profile `dev` terpisah.
+
+| Service | Port host | Fungsi |
+|---------|-----------|--------|
+| `mariadb` | internal 3306 | MariaDB 11, volume `mariadb_data` |
+| `backend` | **8000** | FastAPI; mount `./backend:/app`; startup `alembic upgrade head` + uvicorn |
+| `frontend-dev` | internal 5173 | Vite + HMR (Node 22); volume `frontend_node_modules` |
+| `web-hmr` | **8080** (`WEB_PORT`) | Nginx: `/` → Vite, `/api` → backend (`frontend/nginx.hmr.conf`) |
+
+**Jalankan:**
+
+```bash
+docker compose up -d
+# atau
+./tools/stack-dev.sh    # npm run stack:dev
+```
+
+**URL:**
+
+- UI + API: `http://<host>:8080`
+- API / Swagger: `http://<host>:8000/api/v1`, `http://<host>:8000/docs`
+- Health: `http://<host>:8000/health`
+
+**Login dev:** `admin` / `admin123`; demo per role password `TonghongDemo2026`.
+
+### Database
+
+- Data produksi di-import dari `database/tonghong-20260701-135221.sql` (bukan DB kosong).
+- Alembic head: **`k2l3m4n5o6p7`** — cek: `docker compose exec backend alembic current`.
+- Import ulang dump (hentikan backend dulu):
+
+```bash
+docker compose stop backend
+docker compose exec -T mariadb mariadb -uroot -p"${MYSQL_ROOT_PASSWORD:-root}" < database/tonghong-20260701-135221.sql
+docker compose run --rm --no-deps backend alembic upgrade head
+docker compose up -d backend
+```
+
+### Workflow Docker
+
+- Ubah **frontend** (`./frontend/`): HMR otomatis; akses via **web-hmr :8080** (bukan port 5173 langsung).
+- Ubah **backend** Python: `docker compose restart backend` (tanpa `--reload` di service `backend`).
+- Ubah **schema/model**: buat migration (`docker compose exec backend alembic revision --autogenerate -m "..."`), review file, lalu `alembic upgrade head`; validasi `alembic heads` (head tunggal).
+- Ubah **`backend/Dockerfile`** atau `requirements.txt`: `docker compose up -d --build backend`.
+- Log: `docker compose logs -f [service]`; status: `docker compose ps`.
+
+---
+
+## Aplikasi
+
+- **Frontend**: Vue 3 + Vite + Element Plus + Tailwind + vue-i18n (locale `id` default, fallback `en`, plus `zh`).
+- **Backend**: FastAPI + SQLAlchemy + Alembic + MariaDB.
+- **Struktur**: root `package.json` → skrip di `frontend/`; halaman admin `frontend/src/views/admin/`, layout `AdminLayout.vue`, router `/admin/*`.
+- **Master Color Swatch**: tabel `color_swatch_recipes`; API `/masters/color-swatch-recipes/*`; halaman `/admin/color-swatch`; import CSV / `dokumentasi/DATA COLOR SWATCH.csv`. PO: FK `color_swatch_recipe_id`; lookup `resolve_swatch_factory_keys()` (customer → `factory_key` swatch).
+- **Master Fluorescent Color**: `fluorescent_color_masters`; halaman `/admin/fluorescent-colors`.
+- **PO / Lot**: preview lot `POST /po/generate-lot`; final di `add_po_detail`; preview SO `GET /po/next-number`; jadwal kirim 8 gelombang (`PoDetailDelivery`); saldo order = qty − kiriman aktual.
+- **Delivery**: daftar `GET /marketing/delivery-lines`; detail `GET /delivery/{id}/details`. Alur: QC OK → packing done → delivery → sent → invoice.
+
+## Terminal / npm di host
+
+Frontend dev utama jalan **di container** `frontend-dev`. Untuk npm di host (opsional): `source tools/nvm-load.sh` lalu perintah di `frontend/`, atau skrip root `npm run build` / `dev`.
+
+---
+
+Saat menyentuh halaman admin, ikuti **`tonghong-admin-vue`** dan **`tonghong-element-plus-ui`**.
+
+Util PO: `frontend/src/utils/poEtdSchedule.js`, `poAudit.js`, `poDraft.js`, `poColorSwatch.js`, `poMasterResolve.js`, `poDetailPayload.js`, `poApi.js`, `poList.js`; composable `usePoList.js`, `usePoMarketingRevise.js`, `usePoFormWizard.js`; komponen `PoFormWizardDialog.vue`, `PoDetailAuditPanel.vue`, dialog PO sekunder.

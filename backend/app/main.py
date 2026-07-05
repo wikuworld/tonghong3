@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import (
+    accounting,
     audit,
     auth,
     buyer_prices,
+    color_swatch,
     customs,
     customers,
     dashboard,
@@ -13,15 +15,22 @@ from app.routers import (
     documents,
     exchange_rates,
     invoice,
+    inventory,
+    journal,
     marketing,
     masters,
+    notifications,
     permissions,
     packing,
     po,
+    pricing,
     production,
+    quotations,
     qc,
     reports,
     sales_orders,
+    subcon,
+    workflow,
     wilayah,
 )
 
@@ -43,6 +52,8 @@ app.include_router(customers.router, prefix=_PREFIX)
 app.include_router(wilayah.router, prefix=_PREFIX)
 app.include_router(sales_orders.router, prefix=_PREFIX)
 app.include_router(po.router, prefix=_PREFIX)
+app.include_router(quotations.router, prefix=_PREFIX)
+app.include_router(subcon.router, prefix=_PREFIX)
 app.include_router(marketing.router, prefix=_PREFIX)
 app.include_router(production.router, prefix=_PREFIX)
 app.include_router(qc.router, prefix=_PREFIX)
@@ -52,11 +63,18 @@ app.include_router(invoice.router, prefix=_PREFIX)
 app.include_router(dashboard.router, prefix=_PREFIX)
 app.include_router(exchange_rates.router, prefix=_PREFIX)
 app.include_router(masters.router, prefix=_PREFIX)
+app.include_router(color_swatch.router, prefix=_PREFIX)
+app.include_router(notifications.router, prefix=_PREFIX)
 app.include_router(permissions.router, prefix=_PREFIX)
 app.include_router(reports.router, prefix=_PREFIX)
 app.include_router(documents.router, prefix=_PREFIX)
 app.include_router(customs.router, prefix=_PREFIX)
 app.include_router(buyer_prices.router, prefix=_PREFIX)
+app.include_router(pricing.router, prefix=_PREFIX)
+app.include_router(workflow.router, prefix=_PREFIX)
+app.include_router(accounting.router, prefix=_PREFIX)
+app.include_router(inventory.router, prefix=_PREFIX)
+app.include_router(journal.router, prefix=_PREFIX)
 
 
 @app.on_event("startup")
@@ -89,6 +107,15 @@ def _bootstrap_admin() -> None:
         db = SessionLocal()
         try:
             ensure_default_permissions(db)
+            if str(settings.app_env or "dev").strip().lower() in {
+                "dev",
+                "local",
+                "development",
+                "test",
+            }:
+                from app.services.demo_users import ensure_demo_role_users
+
+                ensure_demo_role_users(db)
         finally:
             db.close()
     except Exception:

@@ -26,8 +26,7 @@ Sistem ERP ringan untuk alur **Sales/PO → Produksi → QC → Packing → Deli
 
 - `backend/`: FastAPI + SQLAlchemy + Alembic (MariaDB/MySQL)
 - `frontend/`: Vue 3 + Vite + Element Plus (admin UI)
-- `docker-compose.yml`: MariaDB + backend + web (Nginx) + profil dev untuk Vite HMR
-- `api_flow_tonghong.md`: daftar endpoint & ringkasan business rules
+- `docker-compose.yml`: MariaDB + backend + frontend-dev + web-hmr (stack dev)
 
 ## Menjalankan dengan Docker (disarankan)
 
@@ -37,40 +36,31 @@ Sistem ERP ringan untuk alur **Sales/PO → Produksi → QC → Packing → Deli
 cp .env.example .env
 ```
 
-Untuk deploy non-dev, set minimal:
-
-```bash
-APP_ENV=production
-JWT_SECRET=<secret-kuat-minimal-32-karakter>
-ADMIN_USERNAME=<admin-non-default>
-ADMIN_PASSWORD=<password-kuat>
-```
-
 2. Jalankan:
 
 ```bash
-docker compose up --build
+docker compose up -d
+```
+
+Atau:
+
+```bash
+./tools/stack-dev.sh
 ```
 
 Yang terjadi:
-- MariaDB hidup di port `${MYSQL_PORT:-3306}`
-- Backend FastAPI di `${BACKEND_PORT:-8000}` dan **otomatis menjalankan** `alembic upgrade head`
-- Web (Nginx + build frontend) di `${WEB_PORT:-8080}`
+- MariaDB (internal)
+- Backend FastAPI di `${BACKEND_PORT:-8000}` — otomatis `alembic upgrade head`
+- Frontend Vite + HMR (internal, lewat `web-hmr`)
+- Nginx proxy di `${WEB_PORT:-8080}` — UI + `/api`
 
 URL:
-- **Web**: `http://localhost:8080`
-- **API**: `http://localhost:8000/api/v1`
+- **UI + API**: `http://localhost:8080`
+- **API langsung**: `http://localhost:8000/api/v1`
+- **Swagger**: `http://localhost:8000/docs`
 - **Healthcheck**: `http://localhost:8000/health`
 
-### Mode dev frontend (HMR)
-
-Jika ingin Vite dev server:
-
-```bash
-docker compose --profile dev up --build frontend-dev
-```
-
-Frontend dev: `http://localhost:5173` (proxy API ke backend via `VITE_API_PROXY`).
+Setelah ubah kode Python: `docker compose restart backend`
 
 ## Menjalankan tanpa Docker (opsional)
 
@@ -112,7 +102,7 @@ Alur MKT (flowchart kantor) ada di `po_headers.mkt_workflow_stage`:
 
 `input_system` → `rekap_printed` → `with_ppic` → `back_to_mkt` → `in_outstanding` → `material_followup` → `delivery_arranged` → `sj_invpl` → `invoice_billing`
 
-Detail aturan bisnis lebih lengkap ada di `api_flow_tonghong.md`.
+Detail aturan bisnis: `backend/app/services/business_rules.py` dan Swagger `/docs`.
 
 ## Endpoint penting (ringkas)
 
@@ -125,9 +115,9 @@ Base: `/api/v1`
   - `GET /marketing/delivery-lines.csv`
 - **Reports**
   - `GET /reports/po-daily-recap.csv?date=YYYY-MM-DD`
-- **Documents**
-  - `GET /documents/surat-jalan/{delivery_id}`
-  - `GET /documents/invpl/{packing_id}`
+- **Documents** (format marketing Tong Hong)
+  - Surat jalan: `GET /documents/surat-jalan/{delivery_id}` (HTML), `GET /documents/surat-jalan/{delivery_id}/pdf`
+  - INVPL: `GET /documents/invpl/{packing_id}` (HTML), `GET /documents/invpl/{packing_id}/pdf`, `GET /documents/invpl/{packing_id}/xlsx`
 
 ## Catatan pengembangan
 

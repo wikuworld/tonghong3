@@ -10,39 +10,41 @@
       <el-button v-if="canManage" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
-    <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.qc.tableEmpty')">
+    <el-table :data="filteredRows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" :empty-text="t('pages.qc.tableEmpty')">
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
       <el-table-column prop="qc_number" :label="t('common.qcNo')" min-width="130" />
-      <el-table-column prop="production_label" label="Production" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="production_label" :label="t('common.productionNo')" min-width="160" show-overflow-tooltip />
       <el-table-column prop="qc_date" :label="t('common.date')" width="120" />
       <el-table-column :label="t('common.result')" width="100" align="center">
         <template #default="{ row }">
           <el-tag v-if="row.sample_result" :type="row.sample_result === 'ok' ? 'success' : 'danger'" size="small">
             {{ row.sample_result === 'ok' ? t('status.ok') : t('status.ng') }}
           </el-tag>
-          <span v-else>—</span>
+          <span v-else>{{ t('common.emptyValue') }}</span>
         </template>
       </el-table-column>
       <el-table-column :label="t('common.actions')" width="90" align="center" fixed="right">
         <template #default="{ row }">
-          <el-button :icon="View" link type="primary" @click="openDetail(row)" />
+          <el-tooltip :content="t('common.detail')" placement="top">
+            <el-button :icon="View" link type="primary" :aria-label="t('common.detail')" @click="openDetail(row)" />
+          </el-tooltip>
         </template>
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="detailVisible" :title="t('pages.qc.dialogDetail')" width="640px" destroy-on-close>
+    <el-dialog v-model="detailVisible" :title="t('pages.qc.dialogDetail')" width="640px" destroy-on-close align-center>
       <el-descriptions v-if="detailHdr" :column="1" border size="small">
         <el-descriptions-item :label="t('common.qcNo')">{{ detailHdr.qc_number }}</el-descriptions-item>
-        <el-descriptions-item label="Production ID">{{ detailHdr.production_id }}</el-descriptions-item>
-        <el-descriptions-item :label="t('common.date')">{{ detailHdr.qc_date || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.productionNo')">{{ detailHdr.production_id }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.date')">{{ detailHdr.qc_date || t('common.emptyValue') }}</el-descriptions-item>
       </el-descriptions>
-      <el-table v-if="detailLines.length" :data="detailLines" class="mt-3" border size="small" max-height="280">
+      <el-table v-if="detailLines.length" :data="detailLines" class="mt-3" border size="small" table-layout="auto" max-height="280">
         <el-table-column prop="thickness_actual" :label="t('common.actual')" width="100" />
-        <el-table-column prop="thickness_min" label="Min" width="80" />
-        <el-table-column prop="thickness_max" label="Max" width="80" />
+        <el-table-column prop="thickness_min" :label="t('common.min')" width="80" />
+        <el-table-column prop="thickness_max" :label="t('common.max')" width="80" />
         <el-table-column prop="is_ok" :label="t('common.result')" width="90">
           <template #default="{ row }">
-            <el-tag :type="row.is_ok ? 'success' : 'danger'" size="small">{{ row.is_ok ? 'OK' : 'NG' }}</el-tag>
+            <el-tag :type="row.is_ok ? 'success' : 'danger'" size="small">{{ row.is_ok ? t('status.ok') : t('status.ng') }}</el-tag>
           </template>
         </el-table-column>
       </el-table>
@@ -51,24 +53,24 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="formVisible" :title="t('pages.qc.dialogAdd')" width="560px" destroy-on-close @closed="resetForm">
+    <el-dialog v-model="formVisible" :title="t('pages.qc.dialogAdd')" width="560px" destroy-on-close align-center @closed="resetForm">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
-        <el-form-item label="Production" prop="production_id">
+        <el-form-item :label="t('common.productionNo')" prop="production_id">
           <el-select v-model="form.production_id" filterable class="w-full" @change="onProdChange">
             <el-option
               v-for="p in productions"
               :key="p.id"
-              :label="`${p.production_number || p.id} · PO ${poNum(p.po_id)}`"
+              :label="`${p.production_number || p.id} ${t('common.dotSeparator')} ${t('common.poNo')} ${poNum(p.po_id)}`"
               :value="p.id"
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="Baris produksi (lot)" prop="production_detail_id">
-          <el-select v-model="form.production_detail_id" filterable clearable class="w-full" placeholder="Pilih lot / baris">
+        <el-form-item :label="t('pages.qc.productionLineLabel')" prop="production_detail_id">
+          <el-select v-model="form.production_detail_id" filterable clearable class="w-full" :placeholder="t('pages.qc.productionLinePlaceholder')">
             <el-option
               v-for="d in prodDetails"
               :key="d.id"
-              :label="`#${d.id} lot ${d.lot_number || '—'}`"
+              :label="`#${d.id} ${t('common.lot')} ${d.lot_number || t('common.emptyValue')}`"
               :value="d.id"
             />
           </el-select>
@@ -76,17 +78,17 @@
         <el-form-item :label="t('common.date')">
           <el-date-picker v-model="form.qc_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
         </el-form-item>
-        <el-form-item :label="t('common.actual') + ' (thickness)'">
+        <el-form-item :label="`${t('common.actual')} (${t('common.thickness')})`">
           <el-input v-model="form.thickness_actual" type="number" step="0.01" />
         </el-form-item>
         <el-row :gutter="12">
           <el-col :span="12">
-            <el-form-item label="Min">
+            <el-form-item :label="t('common.min')">
               <el-input v-model="form.thickness_min" type="number" step="0.01" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="Max">
+            <el-form-item :label="t('common.max')">
               <el-input v-model="form.thickness_max" type="number" step="0.01" />
             </el-form-item>
           </el-col>
@@ -103,6 +105,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
@@ -118,6 +121,7 @@ import {
 } from '../../api/client'
 
 const { t } = useI18n()
+const route = useRoute()
 const canManage = canWrite('qc')
 const loading = ref(false)
 const saving = ref(false)
@@ -151,13 +155,21 @@ async function load() {
       }
     })
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     loading.value = false
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  const qcIdRaw = route.query.qc_id
+  const qcId = Number(qcIdRaw)
+  if (!Number.isNaN(qcId) && qcId > 0) {
+    const target = rows.value.find((r) => Number(r.id) === qcId)
+    if (target) await openDetail(target)
+  }
+})
 
 const filteredRows = computed(() => {
   const q = keyword.value.trim().toLowerCase()
@@ -187,7 +199,7 @@ const form = reactive({
 })
 
 const rules = {
-  production_id: [{ required: true, message: 'Pilih production', trigger: 'change' }],
+  production_id: [{ required: true, message: t('pages.qc.pickProductionWarning'), trigger: 'change' }],
 }
 
 function resetForm() {
@@ -217,7 +229,7 @@ async function submit() {
     return
   }
   if (!form.production_detail_id) {
-    ElMessage.warning('Pilih baris produksi')
+    ElMessage.warning(t('pages.qc.pickProductionLineWarning'))
     return
   }
   saving.value = true
@@ -234,11 +246,11 @@ async function submit() {
       thickness_min: form.thickness_min ? Number(form.thickness_min) : undefined,
       thickness_max: form.thickness_max ? Number(form.thickness_max) : undefined,
     })
-    ElMessage.success(t('pages.customers.saved'))
+    ElMessage.success(t('pages.qc.saved'))
     formVisible.value = false
     await load()
   } catch (e) {
-    ElMessage.error(e.message || 'Error')
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     saving.value = false
   }
@@ -246,7 +258,4 @@ async function submit() {
 </script>
 
 <style scoped>
-.admin-table {
-  width: 100%;
-}
 </style>

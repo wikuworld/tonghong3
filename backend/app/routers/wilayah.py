@@ -7,7 +7,9 @@ import urllib.error
 import urllib.request
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.routers.auth import get_current_user
 
 router = APIRouter(tags=["wilayah"])
 
@@ -37,20 +39,20 @@ def _fetch_json(path: str) -> dict:
 
 
 @router.get("/wilayah/provinces")
-def wilayah_provinces() -> dict:
+def wilayah_provinces(_user=Depends(get_current_user)) -> dict:
     return _fetch_json("/provinces.json")
 
 
 @router.get("/wilayah/regencies/{province_code}")
-def wilayah_regencies(province_code: str) -> dict:
+def wilayah_regencies(province_code: str, _user=Depends(get_current_user)) -> dict:
     return _fetch_json(f"/regencies/{_code_path_segment(province_code)}.json")
 
 
 @router.get("/wilayah/districts/{regency_code}")
-def wilayah_districts(regency_code: str) -> dict:
+def wilayah_districts(regency_code: str, _user=Depends(get_current_user)) -> dict:
     return _fetch_json(f"/districts/{_code_path_segment(regency_code)}.json")
 
 
 @router.get("/wilayah/villages/{district_code}")
-def wilayah_villages(district_code: str) -> dict:
+def wilayah_villages(district_code: str, _user=Depends(get_current_user)) -> dict:
     return _fetch_json(f"/villages/{_code_path_segment(district_code)}.json")

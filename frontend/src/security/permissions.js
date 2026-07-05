@@ -1,15 +1,38 @@
+import { ref } from 'vue'
+
+const ALL_ROLES = ['marketing', 'ppic', 'production', 'qc', 'warehouse', 'finance', 'exim', 'sales']
+
 export const ACTION_MATRIX = {
+  dashboard: {
+    view: ['admin', ...ALL_ROLES],
+  },
   customers: {
     view: ['admin', 'marketing', 'sales', 'finance'],
     create: ['admin', 'marketing', 'sales'],
     update: ['admin', 'marketing', 'sales'],
     delete: ['admin'],
   },
+  exchangeRates: {
+    view: ['admin', 'marketing', 'exim', 'finance'],
+    create: ['admin', 'marketing', 'exim', 'finance'],
+    update: ['admin', 'marketing', 'exim', 'finance'],
+  },
   po: {
     view: ['admin', 'marketing', 'ppic', 'sales', 'production', 'finance'],
-    create: ['admin', 'marketing', 'ppic', 'sales'],
-    update: ['admin', 'marketing', 'ppic', 'finance'],
+    create: ['admin', 'marketing', 'sales'],
+    update: ['admin', 'marketing', 'sales', 'ppic', 'finance'],
     delete: ['admin'],
+    advance: ['admin', 'marketing', 'ppic'],
+  },
+  quotations: {
+    view: ['admin', 'marketing', 'sales', 'finance'],
+    create: ['admin', 'marketing', 'sales'],
+    update: ['admin', 'marketing', 'sales'],
+    delete: ['admin', 'marketing'],
+  },
+  marketingFlow: {
+    view: ['admin', 'marketing', 'ppic'],
+    update: ['admin', 'marketing', 'ppic'],
     advance: ['admin', 'marketing', 'ppic'],
   },
   production: {
@@ -39,13 +62,100 @@ export const ACTION_MATRIX = {
     create: ['admin', 'finance'],
     update: ['admin', 'finance'],
   },
+  subconInvoice: {
+    view: ['admin', 'finance'],
+    create: ['admin', 'finance'],
+    update: ['admin', 'finance'],
+    delete: ['admin'],
+  },
   reports: {
     view: ['admin', 'marketing', 'ppic', 'finance', 'exim', 'sales'],
     export: ['admin', 'marketing', 'ppic', 'finance', 'exim', 'sales'],
   },
+  buyerPrices: {
+    view: ['admin', 'marketing'],
+    create: ['admin', 'marketing'],
+    update: ['admin', 'marketing'],
+    delete: ['admin', 'marketing'],
+  },
+  brandMaster: {
+    view: ['admin', 'marketing', 'sales'],
+    create: ['admin', 'marketing'],
+    update: ['admin', 'marketing'],
+    delete: ['admin'],
+  },
+  specialPrices: {
+    view: ['admin', 'marketing', 'sales'],
+    create: ['admin', 'marketing'],
+    update: ['admin', 'marketing'],
+    delete: ['admin'],
+  },
+  customerPrices: {
+    view: ['admin', 'marketing', 'sales'],
+    create: ['admin', 'marketing'],
+    update: ['admin', 'marketing'],
+    delete: ['admin'],
+  },
+  bulkPriceUpdate: {
+    view: ['admin', 'marketing'],
+    update: ['admin', 'marketing'],
+  },
+  customs: {
+    view: ['admin', 'exim'],
+    create: ['admin', 'exim'],
+    update: ['admin', 'exim'],
+    delete: ['admin'],
+  },
   masterImport: {
     view: ['admin'],
     create: ['admin'],
+  },
+  masterItems: {
+    view: ['admin'],
+    create: ['admin'],
+    update: ['admin'],
+    delete: ['admin'],
+  },
+  fluorescentColors: {
+    view: ['admin', 'marketing', 'sales'],
+    create: ['admin', 'marketing'],
+    update: ['admin', 'marketing'],
+    delete: ['admin'],
+  },
+  colorSwatch: {
+    view: ['admin', 'marketing', 'sales'],
+    create: ['admin', 'marketing'],
+    update: ['admin', 'marketing'],
+    delete: ['admin'],
+  },
+  customerBrandMapping: {
+    view: ['admin', 'marketing', 'sales'],
+    create: ['admin', 'marketing'],
+    update: ['admin', 'marketing', 'sales'],
+    delete: ['admin', 'marketing'],
+  },
+  ppicDashboard: {
+    view: ['admin', 'ppic'],
+    update: ['admin', 'ppic'],
+  },
+  outstandingMaterials: {
+    view: ['admin', 'marketing', 'ppic'],
+    update: ['admin', 'marketing', 'ppic'],
+  },
+  accountingMappings: {
+    view: ['admin', 'finance'],
+    create: ['admin', 'finance'],
+    update: ['admin', 'finance'],
+    delete: ['admin', 'finance'],
+  },
+  journalEntries: {
+    view: ['admin', 'finance'],
+    create: ['admin', 'finance'],
+  },
+  inventory: {
+    view: ['admin', 'warehouse'],
+    create: ['admin', 'warehouse'],
+    update: ['admin', 'warehouse'],
   },
   userAccess: {
     view: ['admin'],
@@ -55,9 +165,11 @@ export const ACTION_MATRIX = {
 }
 
 let runtimeMatrix = null
+export const permissionMatrixVersion = ref(0)
 
 export function setRuntimePermissionMatrix(matrix) {
   runtimeMatrix = matrix && typeof matrix === 'object' ? matrix : null
+  permissionMatrixVersion.value += 1
 }
 
 export function getRuntimePermissionMatrix() {
@@ -90,3 +202,7 @@ export function can(moduleKey, action, role = currentRoleFromToken()) {
   return roles.includes(role)
 }
 
+export function rolesWithView(moduleKey) {
+  const actions = getRuntimePermissionMatrix()[moduleKey] || ACTION_MATRIX[moduleKey] || {}
+  return actions.view || []
+}

@@ -78,10 +78,14 @@ def import_items(session) -> int:
             if existing:
                 continue
             t = dec(row.get("thickness_mm"))
+            from app.services.thickness_format import canonical_thickness_range
+
+            tr = canonical_thickness_range(str(t)) if t is not None else None
             session.add(
                 MasterItem(
                     item_code=code,
                     thickness_mm=t,
+                    thickness_range=tr or None,
                     material_name=(row.get("material_name") or "").strip() or None,
                     emboss=(row.get("emboss") or "").strip() or None,
                     color=(row.get("color") or "").strip() or None,

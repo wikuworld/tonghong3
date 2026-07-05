@@ -126,9 +126,18 @@ body {
 /* Input pencarian di toolbar: tidak memaksa overflow horizontal */
 .customer-toolbar-search,
 .po-toolbar-search,
+.buyer-price-toolbar-search,
+.brand-master-toolbar-search,
+.master-items-toolbar-search,
+.fluorescent-toolbar-search,
+.color-swatch-toolbar-search,
+.user-access-toolbar-search,
 .production-toolbar-search,
 .qc-toolbar-search,
 .delivery-toolbar-search,
+.outstanding-toolbar-search,
+.ppic-toolbar-search,
+.marketing-flow-search,
 .invoice-toolbar-search,
 .reports-toolbar-search {
   min-width: 0;
@@ -139,11 +148,173 @@ body {
 @media (min-width: 640px) {
   .customer-toolbar-search,
   .po-toolbar-search,
+  .buyer-price-toolbar-search,
+.brand-master-toolbar-search,
+.master-items-toolbar-search,
+.fluorescent-toolbar-search,
+.color-swatch-toolbar-search,
+.user-access-toolbar-search,
   .production-toolbar-search,
   .qc-toolbar-search,
   .delivery-toolbar-search,
+  .outstanding-toolbar-search,
+  .ppic-toolbar-search,
+  .marketing-flow-search,
   .invoice-toolbar-search,
   .reports-toolbar-search {
     flex: 0 1 240px;
   }
+}
+
+/* Kartu konten dalam halaman admin */
+.admin-inner-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.admin-inner-card__head {
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);
+}
+
+.admin-inner-card__title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.admin-inner-card__sub {
+  margin: 4px 0 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+/* Kartu statistik ringkas */
+.admin-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+
+.admin-stats-grid--4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-stats-grid--3 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-stats-grid--5 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 640px) {
+  .admin-stats-grid--3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-stats-grid--5 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .admin-stats-grid--4 {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .admin-stats-grid--5 {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.admin-stat-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  padding: 12px 14px;
+}
+
+.admin-stat-card__value {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #0f172a;
+}
+
+.admin-stat-card__label {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.admin-stat-card--info .admin-stat-card__value {
+  color: #0369a1;
+}
+
+.admin-stat-card--warn .admin-stat-card__value {
+  color: #b45309;
+}
+
+.admin-stat-card--success .admin-stat-card__value {
+  color: #15803d;
+}
+
+.admin-scroll-hint {
+  margin: 0;
+  padding: 0 16px 12px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.admin-action-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+@media (min-width: 768px) {
+  .admin-action-bar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+}
+
+.admin-action-bar__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.admin-action-bar__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-stats-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mkt-section-body {
+  padding: 16px;
 }

@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     admin_username: str = "admin"
     admin_password: str = "admin123"
 
+    # User demo per role (dev/staging — lihat ensure_demo_role_users)
+    demo_users_password: str = "TonghongDemo2026"
+
     # Email (invoice reminders)
     smtp_host: str = ""
     smtp_port: int = 587
