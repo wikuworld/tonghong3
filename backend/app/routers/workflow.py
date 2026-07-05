@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from app.db import get_db
 from app.models import OutstandingMaterial, PoDetail, PoHeader, PpicsAssignment, User
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, require_roles
 from app.schemas import (
     OutstandingMaterialCreate,
     OutstandingMaterialOut,
@@ -47,7 +47,7 @@ def assign_po_to_ppic(
     po_id: int,
     body: PpicsAssignmentCreate,
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_roles("admin", "ppic")),
 ) -> PpicsAssignmentOut:
     po = db.scalars(select(PoHeader).where(PoHeader.id == po_id)).first()
     if not po:
@@ -95,6 +95,26 @@ def assign_po_to_ppic(
 
 
 # --- Outstanding Materials ---
+
+def _outstanding_material_out(m: OutstandingMaterial) -> OutstandingMaterialOut:
+    po = m.po_detail.po if m.po_detail else None
+    po_id = m.po_detail.po_id if m.po_detail else None
+    return OutstandingMaterialOut(
+        id=m.id,
+        po_detail_id=m.po_detail_id,
+        po_id=po_id,
+        material_name=m.material_name,
+        total_qty=m.total_qty,
+        delivered_qty=m.delivered_qty,
+        balance_qty=m.balance_qty,
+        status=m.status,
+        updated_at=m.updated_at,
+        po_number=po.po_number if po else None,
+        customer_id=po.customer_id if po else None,
+        customer_name=po.customer_name_snapshot if po else None,
+    )
+
+
 @router.get("/outstanding-materials", response_model=list[OutstandingMaterialOut])
 def list_outstanding_materials(
     db: Session = Depends(get_db),
@@ -114,31 +134,14 @@ def list_outstanding_materials(
         query = query.where(OutstandingMaterial.status == status)
 
     materials = db.scalars(query).all()
-
-    result = []
-    for m in materials:
-        po = m.po_detail.po if m.po_detail else None
-        result.append(OutstandingMaterialOut(
-            id=m.id,
-            po_detail_id=m.po_detail_id,
-            material_name=m.material_name,
-            total_qty=m.total_qty,
-            delivered_qty=m.delivered_qty,
-            balance_qty=m.balance_qty,
-            status=m.status,
-            updated_at=m.updated_at,
-            po_number=po.po_number if po else None,
-            customer_id=po.customer_id if po else None,
-            customer_name=po.customer_name_snapshot if po else None,
-        ))
-    return result
+    return [_outstanding_material_out(m) for m in materials]
 
 
 @router.post("/outstanding-materials", response_model=OutstandingMaterialOut)
 def create_outstanding_material(
     body: OutstandingMaterialCreate,
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_roles("admin", "marketing", "ppic")),
 ) -> OutstandingMaterialOut:
     po_detail = db.scalars(select(PoDetail).where(PoDetail.id == body.po_detail_id)).first()
     if not po_detail:
@@ -170,20 +173,11 @@ def create_outstanding_material(
     db.commit()
     db.refresh(material)
 
-    po = po_detail.po
-    return OutstandingMaterialOut(
-        id=material.id,
-        po_detail_id=material.po_detail_id,
-        material_name=material.material_name,
-        total_qty=material.total_qty,
-        delivered_qty=material.delivered_qty,
-        balance_qty=material.balance_qty,
-        status=material.status,
-        updated_at=material.updated_at,
-        po_number=po.po_number if po else None,
-        customer_id=po.customer_id if po else None,
-        customer_name=po.customer_name_snapshot if po else None,
-    )
+    po_detail = db.scalars(
+        select(PoDetail).options(selectinload(PoDetail.po)).where(PoDetail.id == material.po_detail_id)
+    ).first()
+    material.po_detail = po_detail
+    return _outstanding_material_out(material)
 
 
 @router.put("/outstanding-materials/{material_id}", response_model=OutstandingMaterialOut)
@@ -191,7 +185,7 @@ def update_outstanding_material(
     material_id: int,
     body: OutstandingMaterialUpdate,
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_roles("admin", "marketing", "ppic")),
 ) -> OutstandingMaterialOut:
     material = db.scalars(
         select(OutstandingMaterial)
@@ -220,27 +214,14 @@ def update_outstanding_material(
     db.commit()
     db.refresh(material)
 
-    po = material.po_detail.po if material.po_detail else None
-    return OutstandingMaterialOut(
-        id=material.id,
-        po_detail_id=material.po_detail_id,
-        material_name=material.material_name,
-        total_qty=material.total_qty,
-        delivered_qty=material.delivered_qty,
-        balance_qty=material.balance_qty,
-        status=material.status,
-        updated_at=material.updated_at,
-        po_number=po.po_number if po else None,
-        customer_id=po.customer_id if po else None,
-        customer_name=po.customer_name_snapshot if po else None,
-    )
+    return _outstanding_material_out(material)
 
 
 @router.delete("/outstanding-materials/{material_id}")
 def delete_outstanding_material(
     material_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_roles("admin", "marketing", "ppic")),
 ) -> dict:
     material = db.scalars(select(OutstandingMaterial).where(OutstandingMaterial.id == material_id)).first()
     if not material:
@@ -255,7 +236,7 @@ def delete_outstanding_material(
 def generate_outstanding_materials_from_po(
     po_id: int,
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_roles("admin", "marketing", "ppic")),
 ) -> list[OutstandingMaterialOut]:
     po = db.scalars(select(PoHeader).where(PoHeader.id == po_id)).first()
     if not po:
@@ -293,21 +274,11 @@ def generate_outstanding_materials_from_po(
     materials = []
     for m in result:
         db.refresh(m)
-        po_detail = db.scalars(select(PoDetail).where(PoDetail.id == m.po_detail_id)).first()
-        po = po_detail.po if po_detail else None
-        materials.append(OutstandingMaterialOut(
-            id=m.id,
-            po_detail_id=m.po_detail_id,
-            material_name=m.material_name,
-            total_qty=m.total_qty,
-            delivered_qty=m.delivered_qty,
-            balance_qty=m.balance_qty,
-            status=m.status,
-            updated_at=m.updated_at,
-            po_number=po.po_number if po else None,
-            customer_id=po.customer_id if po else None,
-            customer_name=po.customer_name_snapshot if po else None,
-        ))
+        po_detail = db.scalars(
+            select(PoDetail).options(selectinload(PoDetail.po)).where(PoDetail.id == m.po_detail_id)
+        ).first()
+        m.po_detail = po_detail
+        materials.append(_outstanding_material_out(m))
 
     return materials
 
@@ -317,11 +288,15 @@ def deliver_outstanding_material(
     material_id: int,
     body: dict,
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_roles("admin", "marketing", "ppic")),
 ) -> OutstandingMaterialOut:
     qty = body.get("delivered_qty")
     if qty is None:
         raise HTTPException(status_code=400, detail="delivered_qty diperlukan")
+
+    increment = Decimal(str(qty))
+    if increment <= 0:
+        raise HTTPException(status_code=400, detail="delivered_qty harus lebih dari 0")
 
     material = db.scalars(
         select(OutstandingMaterial)
@@ -332,8 +307,13 @@ def deliver_outstanding_material(
     if not material:
         raise HTTPException(status_code=404, detail="Material tidak ditemukan")
 
-    material.delivered_qty = Decimal(str(qty))
-    material.balance_qty = (material.total_qty or Decimal("0")) - material.delivered_qty
+    new_delivered = (material.delivered_qty or Decimal("0")) + increment
+    total = material.total_qty or Decimal("0")
+    if new_delivered > total:
+        raise HTTPException(status_code=400, detail="Qty kirim melebihi sisa outstanding")
+
+    material.delivered_qty = new_delivered
+    material.balance_qty = total - new_delivered
     if material.balance_qty < 0:
         material.balance_qty = Decimal("0")
 
@@ -348,20 +328,7 @@ def deliver_outstanding_material(
     db.commit()
     db.refresh(material)
 
-    po = material.po_detail.po if material.po_detail else None
-    return OutstandingMaterialOut(
-        id=material.id,
-        po_detail_id=material.po_detail_id,
-        material_name=material.material_name,
-        total_qty=material.total_qty,
-        delivered_qty=material.delivered_qty,
-        balance_qty=material.balance_qty,
-        status=material.status,
-        updated_at=material.updated_at,
-        po_number=po.po_number if po else None,
-        customer_id=po.customer_id if po else None,
-        customer_name=po.customer_name_snapshot if po else None,
-    )
+    return _outstanding_material_out(material)
 
 
 @router.get("/ppic/dashboard", response_model=list[PpicsAssignmentOut])
@@ -406,7 +373,7 @@ def update_assignment_status(
     assignment_id: int,
     body: PpicsAssignmentUpdate,
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_roles("admin", "ppic")),
 ) -> PpicsAssignmentOut:
     assignment = db.scalars(
         select(PpicsAssignment)

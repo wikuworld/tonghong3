@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import AccountingMapping
+from app.routers.auth import get_current_user, require_roles
 from app.schemas import (
     AccountingMappingCreate,
     AccountingMappingUpdate,
@@ -17,6 +18,7 @@ def list_mappings(
     transaction_type: str = Query(None),
     status: str = Query(None),
     db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
 ):
     query = db.query(AccountingMapping).filter(AccountingMapping.is_active.is_(True))
     if transaction_type:
@@ -27,7 +29,11 @@ def list_mappings(
 
 
 @router.post("/mappings", response_model=AccountingMappingOut)
-def create_mapping(body: AccountingMappingCreate, db: Session = Depends(get_db)):
+def create_mapping(
+    body: AccountingMappingCreate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "finance")),
+):
     row = AccountingMapping(**body.model_dump())
     db.add(row)
     db.commit()
@@ -36,7 +42,12 @@ def create_mapping(body: AccountingMappingCreate, db: Session = Depends(get_db))
 
 
 @router.put("/mappings/{mapping_id}", response_model=AccountingMappingOut)
-def update_mapping(mapping_id: int, body: AccountingMappingUpdate, db: Session = Depends(get_db)):
+def update_mapping(
+    mapping_id: int,
+    body: AccountingMappingUpdate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "finance")),
+):
     row = db.query(AccountingMapping).get(mapping_id)
     if not row:
         raise HTTPException(404, "Mapping not found")
@@ -48,7 +59,11 @@ def update_mapping(mapping_id: int, body: AccountingMappingUpdate, db: Session =
 
 
 @router.delete("/mappings/{mapping_id}")
-def delete_mapping(mapping_id: int, db: Session = Depends(get_db)):
+def delete_mapping(
+    mapping_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "finance")),
+):
     row = db.query(AccountingMapping).get(mapping_id)
     if not row:
         raise HTTPException(404, "Mapping not found")
@@ -62,6 +77,7 @@ def resolve_mapping(
     transaction_type: str = Query(...),
     status: str = Query(None),
     db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
 ):
     query = db.query(AccountingMapping).filter(
         AccountingMapping.is_active.is_(True),

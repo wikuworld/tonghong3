@@ -6,6 +6,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import JournalEntry, AccountingMapping, PoHeader, Invoice
+from app.routers.auth import get_current_user, require_roles
 from app.schemas import JournalEntryOut, JournalEntryGenerate, TrialBalanceReport, TrialBalanceRow
 
 router = APIRouter(prefix="/journal", tags=["journal"])
@@ -17,6 +18,7 @@ def list_entries(
     date_to: date = Query(None),
     transaction_type: str = Query(None),
     db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
 ):
     query = db.query(JournalEntry)
     if date_from:
@@ -29,7 +31,11 @@ def list_entries(
 
 
 @router.post("/entries/generate-from-transaction", response_model=list[JournalEntryOut])
-def generate_from_transaction(body: JournalEntryGenerate, db: Session = Depends(get_db)):
+def generate_from_transaction(
+    body: JournalEntryGenerate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "finance")),
+):
     if body.transaction_type == "po_created":
         return _generate_from_po(body.transaction_id, db)
     elif body.transaction_type == "invoice":
@@ -187,6 +193,7 @@ def trial_balance(
     date_from: date = Query(None),
     date_to: date = Query(None),
     db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
 ):
     query = db.query(
         JournalEntry.coa_code,
