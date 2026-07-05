@@ -9,7 +9,9 @@
         <el-statistic :title="t('pages.inventory.totalMaterials')" :value="summary.total_materials || 0" />
       </el-col>
       <el-col :span="6">
-        <el-statistic :title="t('pages.inventory.totalValue')" :value="formatCurrency(summary.total_value)" />
+        <el-statistic :title="t('pages.inventory.totalValue')" :value="Number(summary.total_value) || 0">
+          <template #formatter="{ value }">{{ formatCurrency(value) }}</template>
+        </el-statistic>
       </el-col>
       <el-col :span="6">
         <el-statistic :title="t('pages.inventory.lowStock')" :value="summary.low_stock_count || 0" class="text-red-600">
@@ -54,6 +56,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import { listStocks, getStockSummary } from '../../../api/client'
@@ -69,6 +72,8 @@ async function refresh() {
   try {
     stocks.value = await listStocks()
     summary.value = await getStockSummary()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     loading.value = false
   }

@@ -117,7 +117,7 @@
     >
       <div v-if="detailLoading" class="py-12 text-center text-slate-500">
         <el-icon class="is-loading text-2xl"><Loading /></el-icon>
-        <p class="mt-2 text-sm">{{ t('common.loading') }}</p>
+        <p class="mt-2 text-sm">{{ t('common.loadingData') }}</p>
       </div>
       <template v-else-if="detailRow">
         <el-card shadow="never" class="mb-4">

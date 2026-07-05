@@ -1,56 +1,129 @@
 <template>
   <AdminSection :title="t('pages.marketingFlow.title')" :subtitle="t('pages.marketingFlow.subtitle')">
-    <el-card shadow="never" class="mb-4">
-      <template #header>
-        <div class="flex items-center justify-between flex-wrap gap-2">
-          <span class="font-semibold">{{ t('pages.marketingFlow.tabFlow') }}</span>
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-xs text-slate-600 shrink-0 max-md:hidden">{{ t('pages.marketingFlow.orderDateRangeFlow') }}</span>
-            <el-date-picker
-              v-model="flowDateRange"
-              type="daterange"
-              unlink-panels
-              range-separator="—"
-              value-format="YYYY-MM-DD"
-              size="small"
-              class="min-w-[220px] max-w-[340px]"
-              :shortcuts="orderDateRangeShortcuts"
-              clearable
-              :start-placeholder="t('common.fromDate')"
-              :end-placeholder="t('common.toDate')"
-              @change="load"
-            />
-            <el-button type="warning" size="small" @click="pullCrToday">
-              {{ t('pages.marketingFlow.pullCrToday') }}
-            </el-button>
-            <el-button type="success" size="small" :loading="poDailyXlsxLoading" @click="downloadDailyPoReportXlsx">
-              {{ t('pages.marketingFlow.dailyPoReportXlsx') }}
-            </el-button>
-            <el-button type="primary" size="small" :icon="Download" @click="downloadRekap">{{ t('pages.marketingFlow.rekapToday') }}</el-button>
-          </div>
+    <template #actions>
+      <el-input
+        v-model="flowKeyword"
+        clearable
+        class="marketing-flow-search"
+        :placeholder="t('pages.marketingFlow.flowSearchPlaceholder')"
+      />
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
+      <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
+    </template>
+
+    <div class="admin-inner-card mb-4">
+      <div class="admin-inner-card__head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.marketingFlow.tabFlow') }}</h3>
+          <p v-if="filterStage" class="mkt-active-filter">
+            {{ t('pages.marketingFlow.filterStage') }}: {{ labelFor(filterStage) }}
+            <el-button link type="primary" size="small" @click="clearFilter">{{ t('common.reset') }}</el-button>
+          </p>
         </div>
-      </template>
-      
-      <div class="flex items-center gap-2 overflow-x-auto py-2">
+      </div>
+
+      <div class="admin-action-bar">
+        <p class="admin-action-bar__hint">{{ t('pages.marketingFlow.flowExportHint') }}</p>
+        <div class="admin-action-bar__buttons">
+          <el-dropdown trigger="click" @command="handleFlowExportCommand">
+            <el-button :icon="Download" :loading="poDailyXlsxLoading">
+              {{ t('pages.marketingFlow.flowExportMenu') }}
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="daily">{{ t('pages.marketingFlow.dailyPoReportXlsx') }}</el-dropdown-item>
+                <el-dropdown-item command="rekap">{{ t('pages.marketingFlow.rekapToday') }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button type="warning" @click="pullCrToday">{{ t('pages.marketingFlow.pullCrToday') }}</el-button>
+        </div>
+      </div>
+
+      <div class="mkt-section-body">
+      <div class="filter-panel mb-4">
+        <p class="filter-panel__title">{{ t('common.filter') }}</p>
+        <el-form class="filter-form" label-position="top">
+          <el-row :gutter="12" align="bottom">
+            <el-col :xs="24" :sm="14" :md="10" :lg="8">
+              <el-form-item :label="t('pages.marketingFlow.orderDateRangeFlow')">
+                <el-date-picker
+                  v-model="flowDateRange"
+                  type="daterange"
+                  unlink-panels
+                  range-separator="—"
+                  value-format="YYYY-MM-DD"
+                  class="w-full"
+                  :shortcuts="orderDateRangeShortcuts"
+                  clearable
+                  :start-placeholder="t('common.placeholder.fromDate')"
+                  :end-placeholder="t('common.placeholder.toDate')"
+                  @change="load"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="8" :md="6" :lg="4" class="mkt-filter-action-col">
+              <el-form-item label="&nbsp;">
+                <el-button class="w-full" :icon="RefreshLeft" @click="resetFlowFilters">{{ t('common.reset') }}</el-button>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+      </div>
+
+      <div class="admin-stats-grid admin-stats-grid--4 mb-4">
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__value">{{ rows.length }}</span>
+          <span class="admin-stat-card__label">{{ t('common.total') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--warn">
+          <span class="admin-stat-card__value">{{ flowStats.stuck }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.marketingFlow.stuckReason') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--success">
+          <span class="admin-stat-card__value">{{ flowStats.ready }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.marketingFlow.readyToAdvance') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--info">
+          <span class="admin-stat-card__value">{{ displayedFlowRows.length }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.marketingFlow.shownRows') }}</span>
+        </div>
+      </div>
+
+      <p class="admin-scroll-hint mkt-stage-hint">{{ t('pages.marketingFlow.flowStageHint') }}</p>
+      <div class="mkt-stage-pipeline mb-4">
         <template v-for="(s, i) in stageList" :key="s">
-          <div v-if="i > 0" class="text-gray-400 flex-shrink-0 text-lg leading-none">›</div>
-          <div class="flex flex-col items-center flex-shrink-0 cursor-pointer" @click="toggleStageFilter(s)">
+          <div v-if="i > 0" class="mkt-stage-separator">›</div>
+          <div class="mkt-stage-item" @click="toggleStageFilter(s)">
             <el-tag :type="stageTagType(s)" effect="light" size="small">
               {{ i + 1 }}. {{ labelFor(s) }}
             </el-tag>
             <el-badge :value="stageCounts[s]" :max="99" :type="stageCounts[s] > 0 ? 'primary' : 'info'" class="mt-1" />
           </div>
         </template>
-        <el-tag v-if="filterStage" type="info" effect="plain" size="small" class="cursor-pointer ml-2" @click="clearFilter">
-          <el-icon class="cursor-pointer" @click.stop="clearFilter"><Close /></el-icon>
-        </el-tag>
       </div>
-    </el-card>
 
-    <div>
-      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed">
-        <el-table-column type="index" width="50" align="center" fixed="left" />
-        <el-table-column prop="po_number" :label="t('common.poNo')" min-width="140" show-overflow-tooltip />
+      <p class="admin-scroll-hint mb-3">{{ t('pages.marketingFlow.scrollHint') }}</p>
+
+      <div class="admin-table-scroll">
+        <el-table
+          :data="displayedFlowRows"
+          v-loading="loading"
+          border
+          stripe
+          size="small"
+          class="admin-table marketing-flow-table"
+          :empty-text="t('common.tableEmpty')"
+        >
+        <el-table-column type="index" :label="t('common.noLabel')" width="50" align="center" fixed="left" />
+        <el-table-column prop="po_number" :label="t('common.poNo')" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-button link type="primary" @click="goPo(row.id)">
+              {{ row.po_number || `#${row.id}` }}
+            </el-button>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('pages.marketingFlow.stage')" width="150">
           <template #default="{ row }">
             <el-tag size="small">{{ labelFor(row.mkt_workflow_stage) }}</el-tag>
@@ -154,84 +227,146 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
+      </div>
     </div>
 
-    <el-card shadow="never" class="mt-4 marketing-tabs">
-      <template #header>
-        <div class="flex items-center justify-between flex-wrap gap-2">
-          <div class="font-semibold">{{ t('pages.marketingFlow.tabOutstanding') }}</div>
-          <p class="text-xs text-slate-500 font-normal w-full mt-1 mb-0">{{ t('pages.marketingFlow.outstandingSubtitle') }}</p>
-          <div class="flex items-center gap-2 flex-wrap">
-            <el-button size="small" :icon="Search" @click="loadOutstanding">{{ t('pages.marketingFlow.outstandingRefresh') }}</el-button>
-            <el-button size="small" :icon="Download" @click="downloadOutstanding">{{ t('pages.marketingFlow.outstandingDownloadCsv') }}</el-button>
-            <el-button size="small" type="success" :icon="Download" :loading="outstandingXlsxLoading" @click="downloadOutstandingXlsx">
-              {{ t('pages.marketingFlow.outstandingDownloadXlsx') }}
-            </el-button>
-            <el-button size="small" type="warning" :icon="Download" :loading="outstandingReturnXlsxLoading" @click="downloadReturnXlsx">
-              {{ t('pages.marketingFlow.outstandingDownloadReturXlsx') }}
-            </el-button>
-            <el-button size="small" type="success" plain :icon="Download" :loading="outstandingManualXlsxLoading" @click="downloadManualWorkbook">
-              {{ t('pages.marketingFlow.outstandingDownloadManualXlsx') }}
-            </el-button>
-            <el-button size="small" type="primary" plain @click="proposeScheduleFromSelection">
-              {{ t('pages.marketingFlow.scheduleDraftButton') }}
-            </el-button>
-          </div>
+    <div class="admin-inner-card mb-4">
+      <div class="admin-inner-card__head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.marketingFlow.tabOutstanding') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.marketingFlow.outstandingSubtitle') }}</p>
         </div>
-      </template>
-
-      <div class="mb-2 flex flex-wrap items-center gap-2">
-        <span class="text-sm text-slate-600 shrink-0">{{ t('pages.marketingFlow.orderDateRangeOutstanding') }}</span>
-        <el-date-picker
-          v-model="outstandingDateRange"
-          type="daterange"
-          unlink-panels
-          range-separator="—"
-          value-format="YYYY-MM-DD"
-          size="small"
-          class="min-w-[200px] max-w-[320px]"
-          :shortcuts="orderDateRangeShortcuts"
-          clearable
-          :start-placeholder="t('common.fromDate')"
-          :end-placeholder="t('common.toDate')"
-          @change="loadOutstanding"
-        />
-      </div>
-      <div class="mb-2 flex flex-wrap items-center gap-2">
-        <span class="text-sm text-slate-600 shrink-0">{{ t('pages.marketingFlow.outstandingSheetFilter') }}</span>
-        <el-radio-group v-model="outstandingPoCategory" size="small" @change="loadOutstanding">
-          <el-radio-button label="">{{ t('pages.marketingFlow.outstandingSheetAll') }}</el-radio-button>
-          <el-radio-button label="production">{{ t('pages.marketingFlow.outstandingSheetProd') }}</el-radio-button>
-          <el-radio-button label="claim">{{ t('pages.marketingFlow.outstandingSheetClaim') }}</el-radio-button>
-          <el-radio-button label="sample">{{ t('pages.marketingFlow.outstandingSheetSample') }}</el-radio-button>
-          <el-radio-button label="subcont">{{ t('pages.marketingFlow.outstandingSheetSubcont') }}</el-radio-button>
-          <el-radio-button label="return">{{ t('pages.marketingFlow.outstandingSheetReturn') }}</el-radio-button>
-        </el-radio-group>
-      </div>
-      <div class="mb-2 flex flex-wrap items-center gap-2">
-        <span class="text-sm text-slate-600 shrink-0">{{ t('pages.marketingFlow.balanceFilter') }}</span>
-        <el-radio-group v-model="balanceFilter" size="small" @change="loadOutstanding">
-          <el-radio-button label="exclude_zero">{{ t('pages.marketingFlow.balanceFilterExcludeZero') }}</el-radio-button>
-          <el-radio-button label="all">{{ t('pages.marketingFlow.balanceFilterAll') }}</el-radio-button>
-          <el-radio-button label="positive_only">{{ t('pages.marketingFlow.balanceFilterPositiveOnly') }}</el-radio-button>
-        </el-radio-group>
-      </div>
-      <div class="mb-3 grid grid-cols-1 md:grid-cols-3 gap-2">
-        <el-input v-model="poSearch" size="small" clearable :placeholder="t('common.poNo')" @keyup.enter="loadOutstanding" />
-        <el-input v-model="factoryCode" size="small" clearable :placeholder="t('pages.marketingFlow.filterFactoryCode')" @keyup.enter="loadOutstanding" />
-        <el-select v-model="materialStatus" size="small" clearable :placeholder="t('pages.marketingFlow.filterMaterialStatus')" @change="loadOutstanding">
-          <el-option :label="t('pages.marketingFlow.materialFilterAll')" value="all" />
-          <el-option :label="t('pages.marketingFlow.materialFilterSent')" value="sent" />
-          <el-option :label="t('pages.marketingFlow.materialFilterNotSent')" value="not_sent" />
-          <el-option :label="t('pages.marketingFlow.materialFilterCancelled')" value="cancelled" />
-        </el-select>
       </div>
 
-      <div class="mb-2 flex flex-wrap items-center gap-2">
+      <div class="admin-action-bar">
+        <p class="admin-action-bar__hint">
+          <template v-if="outstandingSelection.length">
+            {{ t('pages.marketingFlow.selectedCount', { n: outstandingSelection.length }) }}
+          </template>
+          <template v-else>{{ t('pages.marketingFlow.outstandingActionHint') }}</template>
+        </p>
+        <div class="admin-action-bar__buttons">
+          <el-button :icon="Refresh" :loading="outstandingLoading" @click="loadOutstanding">
+            {{ t('pages.marketingFlow.outstandingRefresh') }}
+          </el-button>
+          <el-dropdown trigger="click" @command="handleOutstandingExportCommand">
+            <el-button :icon="Download" :loading="outstandingXlsxLoading || outstandingReturnXlsxLoading || outstandingManualXlsxLoading">
+              {{ t('pages.marketingFlow.outstandingExportMenu') }}
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="csv">{{ t('pages.marketingFlow.outstandingDownloadCsv') }}</el-dropdown-item>
+                <el-dropdown-item command="xlsx">{{ t('pages.marketingFlow.outstandingDownloadXlsx') }}</el-dropdown-item>
+                <el-dropdown-item command="retur">{{ t('pages.marketingFlow.outstandingDownloadReturXlsx') }}</el-dropdown-item>
+                <el-dropdown-item command="manual">{{ t('pages.marketingFlow.outstandingDownloadManualXlsx') }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button type="primary" plain @click="proposeScheduleFromSelection">
+            {{ t('pages.marketingFlow.scheduleDraftButton') }}
+          </el-button>
+        </div>
+      </div>
+
+      <div class="mkt-section-body">
+      <div class="filter-panel mb-4">
+        <p class="filter-panel__title">{{ t('common.filter') }}</p>
+        <el-form class="filter-form" label-position="top">
+          <el-row :gutter="12">
+            <el-col :xs="24" :sm="14" :md="10" :lg="8">
+              <el-form-item :label="t('pages.marketingFlow.orderDateRangeOutstanding')">
+                <el-date-picker
+                  v-model="outstandingDateRange"
+                  type="daterange"
+                  unlink-panels
+                  range-separator="—"
+                  value-format="YYYY-MM-DD"
+                  size="small"
+                  class="w-full"
+                  :shortcuts="orderDateRangeShortcuts"
+                  clearable
+                  :start-placeholder="t('common.placeholder.fromDate')"
+                  :end-placeholder="t('common.placeholder.toDate')"
+                  @change="loadOutstanding"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :md="8" :lg="6">
+              <el-form-item :label="t('common.poNo')">
+                <el-input v-model="poSearch" clearable :placeholder="t('common.poNo')" @keyup.enter="loadOutstanding" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :md="8" :lg="6">
+              <el-form-item :label="t('pages.marketingFlow.filterFactoryCode')">
+                <el-input v-model="factoryCode" clearable :placeholder="t('pages.marketingFlow.filterFactoryCode')" @keyup.enter="loadOutstanding" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :md="8" :lg="6">
+              <el-form-item :label="t('pages.marketingFlow.filterMaterialStatus')">
+                <el-select v-model="materialStatus" clearable class="w-full" :placeholder="t('pages.marketingFlow.filterMaterialStatus')" @change="loadOutstanding">
+                  <el-option :label="t('pages.marketingFlow.materialFilterAll')" value="all" />
+                  <el-option :label="t('pages.marketingFlow.materialFilterSent')" value="sent" />
+                  <el-option :label="t('pages.marketingFlow.materialFilterNotSent')" value="not_sent" />
+                  <el-option :label="t('pages.marketingFlow.materialFilterCancelled')" value="cancelled" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="24" :md="16" :lg="14">
+              <el-form-item :label="t('pages.marketingFlow.outstandingSheetFilter')">
+                <el-radio-group v-model="outstandingPoCategory" size="small" @change="loadOutstanding">
+                  <el-radio-button label="">{{ t('pages.marketingFlow.outstandingSheetAll') }}</el-radio-button>
+                  <el-radio-button label="production">{{ t('pages.marketingFlow.outstandingSheetProd') }}</el-radio-button>
+                  <el-radio-button label="claim">{{ t('pages.marketingFlow.outstandingSheetClaim') }}</el-radio-button>
+                  <el-radio-button label="sample">{{ t('pages.marketingFlow.outstandingSheetSample') }}</el-radio-button>
+                  <el-radio-button label="subcont">{{ t('pages.marketingFlow.outstandingSheetSubcont') }}</el-radio-button>
+                  <el-radio-button label="return">{{ t('pages.marketingFlow.outstandingSheetReturn') }}</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="24" :md="16" :lg="14">
+              <el-form-item :label="t('pages.marketingFlow.balanceFilter')">
+                <el-radio-group v-model="balanceFilter" size="small" @change="loadOutstanding">
+                  <el-radio-button label="exclude_zero">{{ t('pages.marketingFlow.balanceFilterExcludeZero') }}</el-radio-button>
+                  <el-radio-button label="all">{{ t('pages.marketingFlow.balanceFilterAll') }}</el-radio-button>
+                  <el-radio-button label="positive_only">{{ t('pages.marketingFlow.balanceFilterPositiveOnly') }}</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="8" :md="6" :lg="4" class="mkt-filter-action-col">
+              <el-form-item label="&nbsp;">
+                <div class="mkt-filter-actions__row">
+                  <el-button type="primary" class="flex-1" :loading="outstandingLoading" @click="loadOutstanding">
+                    {{ t('pages.marketingFlow.outstandingRefresh') }}
+                  </el-button>
+                  <el-button class="flex-1" :icon="RefreshLeft" @click="resetOutstandingFilters">{{ t('common.reset') }}</el-button>
+                </div>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+      </div>
+
+      <div class="admin-stats-grid admin-stats-grid--2 mb-4">
+        <div class="admin-stat-card admin-stat-card--info">
+          <span class="admin-stat-card__value">{{ outstandingStats.total }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.marketingFlow.shownRows') }}</span>
+        </div>
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__value">{{ outstandingStats.selected }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.marketingFlow.selectedLabel') }}</span>
+        </div>
+      </div>
+
+      <div class="mkt-outstanding-options mb-3">
         <el-switch v-model="outstandingShowAllColumns" size="small" />
         <span class="text-sm text-slate-600">{{ t('pages.marketingFlow.outstandingShowAllColumns') }}</span>
       </div>
 
+      <p class="admin-scroll-hint mb-3">{{ t('pages.marketingFlow.scrollHint') }}</p>
+
+      <div class="admin-table-scroll">
       <el-table
         ref="outstandingTableRef"
         :data="outstandingDisplayRows"
@@ -239,7 +374,7 @@
         border
         stripe
         size="small"
-        class="outstanding-table"
+        class="outstanding-table marketing-outstanding-table"
         show-summary
         :summary-method="outstandingSummary"
         @selection-change="onOutstandingSelectionChange"
@@ -292,12 +427,15 @@
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
+      </div>
+      </div>
+    </div>
 
-    <el-card shadow="never" class="mt-4">
-      <template #header>
-        <div class="font-semibold">{{ t('pages.marketingFlow.tabMasterPlanning') }}</div>
-      </template>
+    <div class="admin-inner-card marketing-tabs">
+      <div class="admin-inner-card__head">
+        <h3 class="admin-inner-card__title">{{ t('pages.marketingFlow.tabMasterPlanning') }}</h3>
+      </div>
+      <div class="mkt-section-body">
       <el-tabs v-model="masterPlanningTab" @tab-change="onMasterPlanningTabChange">
         <el-tab-pane name="planning" :label="t('pages.marketingFlow.planningTitle')">
           <div class="mb-2 flex flex-wrap items-center gap-2">
@@ -311,8 +449,8 @@
               class="min-w-[200px] max-w-[320px]"
               range-separator="—"
               :shortcuts="orderDateRangeShortcuts"
-              :start-placeholder="t('common.fromDate')"
-              :end-placeholder="t('common.toDate')"
+              :start-placeholder="t('common.placeholder.fromDate')"
+              :end-placeholder="t('common.placeholder.toDate')"
               @change="loadPlanning"
             />
             <el-input
@@ -428,8 +566,8 @@
               range-separator="—"
               :shortcuts="orderDateRangeShortcuts"
               clearable
-              :start-placeholder="t('common.fromDate')"
-              :end-placeholder="t('common.toDate')"
+              :start-placeholder="t('common.placeholder.fromDate')"
+              :end-placeholder="t('common.placeholder.toDate')"
               @change="loadDelivery"
             />
             <el-button size="small" :icon="Search" @click="loadDelivery">{{ t('pages.marketingFlow.deliveryRefresh') }}</el-button>
@@ -459,7 +597,8 @@
           </div>
         </el-tab-pane>
       </el-tabs>
-    </el-card>
+      </div>
+    </div>
 
     <el-dialog
       v-model="snapshotDetailVisible"
@@ -526,7 +665,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DArrowLeft, DArrowRight, Document, Download, User, Search, Close, Check, Warning, CircleCheck } from '@element-plus/icons-vue'
+import { DArrowLeft, DArrowRight, Document, Download, User, Search, Close, Check, Warning, CircleCheck, Refresh, RefreshLeft, ArrowDown } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import {
   advanceMktWorkflow,
@@ -571,6 +710,7 @@ const rollingBack = ref(null)
 const rows = ref([])
 const stageList = ref([])
 const filterStage = ref(null)
+const flowKeyword = ref('')
 
 function isoDateLocal(d) {
   const x = new Date(d)
@@ -1051,6 +1191,32 @@ const stageCounts = computed(() => {
   return counts
 })
 
+const displayedFlowRows = computed(() => {
+  const q = flowKeyword.value.trim().toLowerCase()
+  if (!q) return rows.value
+  return rows.value.filter((row) => {
+    const assignment = ppicAssignments.value[row.id]
+    const haystack = [
+      row.po_number,
+      row.status,
+      row.order_date,
+      labelFor(row.mkt_workflow_stage),
+      row.material_followup_remark,
+      stuckReasonLabel(row.stuck_reason),
+      assignment ? ppicStatusLabel(assignment.status) : '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return haystack.includes(q)
+  })
+})
+
+const flowStats = computed(() => ({
+  stuck: rows.value.filter((row) => Boolean(row.stuck_reason)).length,
+  ready: rows.value.filter((row) => isStageComplete(row)).length,
+}))
+
 function isStageComplete(row) {
   const s = row.mkt_workflow_stage
   if (!s) return false
@@ -1109,6 +1275,28 @@ async function loadOutstanding() {
     outstandingLoading.value = false
   }
 }
+
+function resetOutstandingFilters() {
+  outstandingDateRange.value = null
+  outstandingPoCategory.value = ''
+  balanceFilter.value = 'exclude_zero'
+  poSearch.value = ''
+  factoryCode.value = ''
+  materialStatus.value = ''
+  loadOutstanding()
+}
+
+function resetFlowFilters() {
+  flowDateRange.value = defaultMonthToTodayRange()
+  flowKeyword.value = ''
+  filterStage.value = null
+  load()
+}
+
+const outstandingStats = computed(() => ({
+  total: outstandingDisplayRows.value.length,
+  selected: outstandingSelection.value.length,
+}))
 
 async function loadDelivery() {
   deliveryLoading.value = true
@@ -1274,7 +1462,7 @@ function openAssignDialog(row) {
 
 async function submitAssignment() {
   if (!assignForm.value.ppic_user_id) {
-    ElMessage.warning(t('ppicWorkflow.ppicUser') + ' ' + t('common.required'))
+    ElMessage.warning(t('common.fillRequired'))
     return
   }
   assigning.value = true
@@ -1485,9 +1673,90 @@ async function downloadDeliveryXlsx() {
     ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
+
+function handleFlowExportCommand(command) {
+  if (command === 'daily') downloadDailyPoReportXlsx()
+  else if (command === 'rekap') downloadRekap()
+}
+
+function handleOutstandingExportCommand(command) {
+  if (command === 'csv') downloadOutstanding()
+  else if (command === 'xlsx') downloadOutstandingXlsx()
+  else if (command === 'retur') downloadReturnXlsx()
+  else if (command === 'manual') downloadManualWorkbook()
+}
 </script>
 
 <style scoped>
+.mkt-active-filter {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.mkt-stage-hint {
+  padding: 0 0 8px;
+}
+
+.mkt-stage-pipeline {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mkt-stage-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 auto;
+  cursor: pointer;
+  min-width: 88px;
+}
+
+.mkt-stage-separator {
+  flex: 0 0 auto;
+  color: #94a3b8;
+  font-size: 18px;
+  line-height: 1;
+  padding-top: 4px;
+}
+
+.mkt-filter-action-col {
+  display: flex;
+  align-items: flex-end;
+}
+
+.mkt-filter-actions__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+.mkt-outstanding-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.marketing-flow-table {
+  width: 100%;
+  min-width: 1280px;
+}
+
+.marketing-outstanding-table {
+  width: 100%;
+  min-width: 1400px;
+}
+
 .admin-table {
   width: 100%;
 }
