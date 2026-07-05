@@ -1246,6 +1246,21 @@ class MasterItemOut(ORMBase):
     created_at: Optional[datetime] = None
 
 
+class MasterItemStatsOut(BaseModel):
+    total: int
+    pu: int
+    suide: int
+    subkon: int
+
+
+class MasterItemPageOut(BaseModel):
+    items: list[MasterItemOut]
+    total: int
+    limit: int
+    offset: int
+    stats: MasterItemStatsOut
+
+
 class MasterItemDimensionValuesOut(BaseModel):
     """Nilai unik untuk cascade: material → ketebalan → warna."""
 

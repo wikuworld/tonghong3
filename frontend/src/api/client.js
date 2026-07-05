@@ -632,6 +632,13 @@ export function listMasterItems() {
   return apiFetch('/masters/items')
 }
 
+export function listMasterItemsPage({ limit = 50, offset = 0, keyword, category } = {}) {
+  const p = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (keyword != null && String(keyword).trim()) p.append('keyword', String(keyword).trim())
+  if (category != null && String(category).trim()) p.append('category', String(category).trim())
+  return apiFetch(`/masters/items/page?${p}`)
+}
+
 /** Cascade PO: nilai unik material → ketebalan → warna dari master_items. */
 export function listMasterItemDimensionValues(kind, { material_name, thickness_text, category } = {}) {
   const p = new URLSearchParams({ kind })
