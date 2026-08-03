@@ -61,13 +61,6 @@ export function auditFieldLabel(key, labels = PO_AUDIT_FIELD_LABELS) {
   return labels[key] || key
 }
 
-export function prettyAudit(a, { beforeLabel = 'Before', afterLabel = 'After' } = {}) {
-  const b = a.before ? JSON.stringify(a.before, null, 2) : ''
-  const af = a.after ? JSON.stringify(a.after, null, 2) : ''
-  if (b && af) return `${beforeLabel}:\n${b}\n\n${afterLabel}:\n${af}`
-  return b || af || ''
-}
-
 export function auditChangedFields(a, labels = PO_AUDIT_FIELD_LABELS) {
   const before = a.before || {}
   const after = a.after || {}

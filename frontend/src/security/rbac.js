@@ -1,4 +1,4 @@
-import { can, rolesWithView } from './permissions'
+import { can } from './permissions'
 
 export const MODULE_LABEL_KEYS = {
   dashboard: 'menu.dashboard',
@@ -76,39 +76,6 @@ export const MENU_MODULE_MAP = {
   'menu.inventory': 'inventory',
 }
 
-export const ROUTE_MODULES = {
-  dashboard: 'dashboard',
-  customers: 'customers',
-  exchangeRates: 'exchangeRates',
-  po: 'po',
-  quotations: 'quotations',
-  marketingFlow: 'marketingFlow',
-  production: 'production',
-  qc: 'qc',
-  packing: 'packing',
-  delivery: 'delivery',
-  invoice: 'invoice',
-  subconInvoice: 'subconInvoice',
-  reports: 'reports',
-  buyerPrices: 'buyerPrices',
-  brandMaster: 'brandMaster',
-  specialPrices: 'specialPrices',
-  customerPrices: 'customerPrices',
-  bulkPriceUpdate: 'bulkPriceUpdate',
-  customs: 'customs',
-  masterImport: 'masterImport',
-  masterItems: 'masterItems',
-  fluorescentColors: 'fluorescentColors',
-  colorSwatch: 'colorSwatch',
-  userAccess: 'userAccess',
-  customerBrandMapping: 'customerBrandMapping',
-  ppicDashboard: 'ppicDashboard',
-  outstandingMaterials: 'outstandingMaterials',
-  accountingMappings: 'accountingMappings',
-  journalEntries: 'journalEntries',
-  inventory: 'inventory',
-}
-
 export function moduleForMenu(labelKey) {
   return MENU_MODULE_MAP[labelKey] || null
 }
@@ -118,14 +85,3 @@ export function roleAllowsMenu(role, labelKey) {
   if (!moduleKey) return role === 'admin'
   return can(moduleKey, 'view', role)
 }
-
-export function roleAllowsRoute(role, routeKey) {
-  const moduleKey = ROUTE_MODULES[routeKey]
-  if (!moduleKey) return role === 'admin'
-  return can(moduleKey, 'view', role)
-}
-
-/** @deprecated use meta.module + can() — kept for gradual migration */
-export const ROUTE_ROLES = Object.fromEntries(
-  Object.entries(ROUTE_MODULES).map(([routeKey, moduleKey]) => [routeKey, rolesWithView(moduleKey)]),
-)

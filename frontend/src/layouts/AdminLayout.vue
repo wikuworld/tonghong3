@@ -548,27 +548,6 @@ async function loadMenuBadges() {
   opacity: 0.7;
 }
 
-.admin-subgroup-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: #cbd5e1;
-}
-
-.admin-subgroup-title :deep(.el-icon) {
-  color: #94a3b8;
-  opacity: 0.9;
-}
-
-:deep(.el-sub-menu.is-active > .el-sub-menu__title .admin-subgroup-title) {
-  color: #e2e8f0;
-}
-
-:deep(.el-sub-menu.is-active > .el-sub-menu__title .admin-subgroup-title .el-icon) {
-  color: #cbd5e1;
-  opacity: 1;
-}
-
 :deep(.el-menu-item:hover) {
   background-color: #1e293b;
 }

@@ -114,15 +114,6 @@ export function savePoDraftLocalStorage(payload, key = PO_DRAFT_STORAGE_KEY) {
   }
 }
 
-export function readPoDraftLocalStorage(key = PO_DRAFT_STORAGE_KEY) {
-  try {
-    const raw = localStorage.getItem(key) || ''
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
-  }
-}
-
 export function clearPoDraftLocalStorage(key = PO_DRAFT_STORAGE_KEY) {
   try {
     localStorage.removeItem(key)

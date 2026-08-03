@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import io
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -99,12 +98,6 @@ def iter_subkon_rows_from_csv(path: Path) -> Iterable[dict[str, str | None]]:
     with open(path, newline="", encoding="utf-8-sig") as f:
         for row in csv.DictReader(f, delimiter=delimiter):
             yield normalize_subkon_row(row)
-
-
-def iter_subkon_rows_from_bytes(content: bytes) -> Iterable[dict[str, str | None]]:
-    text = content.decode("utf-8-sig", errors="ignore")
-    for row in csv.DictReader(io.StringIO(text)):
-        yield normalize_subkon_row(row)
 
 
 def import_subkon_master_items(

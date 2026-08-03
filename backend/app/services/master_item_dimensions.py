@@ -46,11 +46,6 @@ def master_item_thickness_display(row: MasterItem) -> str:
     return ""
 
 
-def master_item_thickness_label(row: MasterItem) -> str:
-    disp = master_item_thickness_display(row)
-    return display_thickness_range(disp) if disp else ""
-
-
 def thickness_matches(row: MasterItem, thickness_text: str | None) -> bool:
     u = (thickness_text or "").strip()
     if not u:

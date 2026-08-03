@@ -244,31 +244,3 @@ def list_ready_to_ship(
             or kw in (r.get("packing_number") or "").lower()
         ]
     return out
-
-
-def aggregate_overall(lines: list[dict[str, Any]]) -> dict[str, Any]:
-    total_sf = Decimal(0)
-    total_roll = 0
-    total_pcs = 0
-    total_weight = Decimal(0)
-    for ln in lines:
-        total_sf += _dec(ln.get("qty") or ln.get("qty_available"))
-        if ln.get("qty_roll") is not None:
-            total_roll += int(ln["qty_roll"])
-        if ln.get("qty_pcs") is not None:
-            total_pcs += int(ln["qty_pcs"])
-        if ln.get("weight") is not None:
-            total_weight += _dec(ln["weight"])
-        elif ln.get("weight_net") is not None:
-            total_weight += _dec(ln["weight_net"])
-    brands = {str(ln.get("brand") or "").strip() for ln in lines if ln.get("brand")}
-    customers = {str(ln.get("customer_name") or "").strip() for ln in lines if ln.get("customer_name")}
-    return {
-        "line_count": len(lines),
-        "total_sf": float(total_sf),
-        "total_roll": total_roll,
-        "total_pcs": total_pcs,
-        "total_weight": float(total_weight),
-        "brand": next(iter(brands)) if len(brands) == 1 else "",
-        "customer_name": next(iter(customers)) if len(customers) == 1 else "",
-    }
