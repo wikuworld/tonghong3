@@ -30,6 +30,7 @@ from app.services.business_rules import po_numbers_from_delivery
 from app.services.delivery_shipment import (
     list_ready_to_ship,
     lot_number_for_line,
+    qty_available_for_packing_line,
     so_number_for_line,
     validate_delivery_detail_fits_header,
     validate_same_customer_and_brand,
@@ -49,6 +50,7 @@ def _delivery_detail_enriched(
         id=dd.id,
         delivery_id=dd.delivery_id,
         production_detail_id=dd.production_detail_id,
+        packing_detail_id=dd.packing_detail_id,
         qty=float(dd.qty) if dd.qty is not None else None,
         qty_roll=dd.qty_roll,
         qty_pcs=dd.qty_pcs,
@@ -181,16 +183,37 @@ def create_delivery_from_packing_lines(
                 status_code=400,
                 detail=f"Production detail #{ln.production_detail_id} belum QC OK",
             )
+        qty = ln.qty
+        if qty is None or qty <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Qty kirim wajib > 0 (production detail #{ln.production_detail_id})",
+            )
+        available = qty_available_for_packing_line(
+            db,
+            packing_id=int(body.packing_id),
+            production_detail_id=int(ln.production_detail_id),
+            packing_detail_id=int(ln.packing_detail_id) if ln.packing_detail_id else None,
+        )
+        if qty > available:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Qty kirim ({qty}) melebihi sisa packing tersedia ({available}) "
+                    f"untuk production detail #{ln.production_detail_id}"
+                ),
+            )
         validate_delivery_qty_against_po_balance(
             db,
             production_detail_id=int(ln.production_detail_id),
-            qty=ln.qty,
+            qty=qty,
         )
         db.add(
             DeliveryDetail(
                 delivery_id=hdr.id,
                 production_detail_id=ln.production_detail_id,
-                qty=ln.qty,
+                packing_detail_id=ln.packing_detail_id,
+                qty=qty,
                 qty_roll=ln.qty_roll,
                 qty_pcs=ln.qty_pcs,
                 weight=ln.weight,
