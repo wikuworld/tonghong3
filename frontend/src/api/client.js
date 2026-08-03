@@ -969,8 +969,30 @@ export function deleteCustomsDeclaration(id) {
   return apiFetch(`/customs/declarations/${id}`, { method: 'DELETE' })
 }
 
+export function importCustomsZip(file, sourceLabel) {
+  const fd = new FormData()
+  fd.append('file', file)
+  if (sourceLabel) fd.append('source_label', sourceLabel)
+  return apiFetch('/customs/declarations/import-zip', { method: 'POST', body: fd })
+}
+
+export function importCustomsCsvFiles(files, sourceLabel) {
+  const fd = new FormData()
+  for (const f of files) fd.append('files', f)
+  if (sourceLabel) fd.append('source_label', sourceLabel)
+  return apiFetch('/customs/declarations/import-upload', { method: 'POST', body: fd })
+}
+
 export function generateCustomsFromDelivery(deliveryId) {
   return apiFetch(`/customs/generate-from-delivery/${deliveryId}`, { method: 'POST' })
+}
+
+/** Unduh ZIP CSV BC 3.0 untuk unggah ke CEISA / Core Customs. */
+export function exportCustomsZip(declarationId) {
+  return fetchAuthenticatedDocument(`/customs/declarations/${declarationId}/export-zip`, {
+    mode: 'download',
+    downloadFallbackName: `customs-${declarationId}.zip`,
+  })
 }
 
 // --- Buyer prices ---

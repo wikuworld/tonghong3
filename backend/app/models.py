@@ -780,9 +780,16 @@ class DeliveryHeader(Base):
     delivery_zone: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     # production / sample / return / subcont / claim — terpisah dari teks destination/remark
     delivery_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    customs_declaration_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("customs_declarations.id", ondelete="SET NULL")
+    )
 
     invoices: Mapped[list["Invoice"]] = relationship("Invoice", back_populates="delivery")
     customer: Mapped[Optional["Customer"]] = relationship("Customer")
+    customs_declaration: Mapped[Optional["CustomsDeclaration"]] = relationship(
+        "CustomsDeclaration",
+        foreign_keys=[customs_declaration_id],
+    )
 
 
 class DeliveryDetail(Base):

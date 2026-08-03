@@ -112,6 +112,18 @@ def extract_versi(sheets: dict[str, list[dict[str, Any]]]) -> Optional[str]:
     return str(list(r0.values())[0]).strip() if r0 else None
 
 
+def _column_keys_from_rows(rows: list[dict[str, Any]]) -> list[str]:
+    keys: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        for k in row.keys():
+            kk = (k or "").strip()
+            if kk and kk not in seen:
+                seen.add(kk)
+                keys.append(kk)
+    return keys
+
+
 def persist_declaration(
     db: Any,
     sheets: dict[str, list[dict[str, Any]]],
@@ -127,6 +139,7 @@ def persist_declaration(
         raise ValueError("NOMOR AJU tidak ditemukan di sheet HEADER")
 
     versi = extract_versi(sheets)
+    sheet_column_keys = {code: _column_keys_from_rows(rows) for code, rows in sheets.items()}
     existing = db.scalars(
         select(CustomsDeclaration).where(CustomsDeclaration.nomor_aju == nomor)
     ).first()
@@ -142,6 +155,7 @@ def persist_declaration(
         meta_json={
             "sheet_codes_present": sorted(sheets.keys()),
             "row_counts": {k: len(v) for k, v in sheets.items()},
+            "sheet_column_keys": sheet_column_keys,
         },
     )
     db.add(dec)

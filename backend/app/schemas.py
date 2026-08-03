@@ -1030,6 +1030,7 @@ class DeliveryHeaderOut(ORMBase):
     surat_jalan_printed_at: Optional[datetime] = None
     delivery_zone: Optional[str] = None
     delivery_type: Optional[str] = None
+    customs_declaration_id: Optional[int] = None
 
 
 class DeliveryDetailOut(ORMBase):

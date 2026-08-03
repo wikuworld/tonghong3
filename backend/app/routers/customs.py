@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -17,13 +18,6 @@ from app.db import get_db
 from app.models import (
     CustomsAjuSheetRow,
     CustomsDeclaration,
-    Customer,
-    DeliveryDetail,
-    DeliveryHeader,
-    PackingHeader,
-    ProductionDetail,
-    ProductionOrder,
-    PoHeader,
 )
 from app.routers.auth import get_current_user, require_roles
 from app.schemas import (
@@ -36,6 +30,8 @@ from app.services.customs_import import (
     load_folder_csvs,
     persist_declaration,
 )
+from app.services.customs_export import export_declaration_zip
+from app.services.customs_from_delivery import create_declaration_from_delivery
 
 router = APIRouter(tags=["customs"])
 
@@ -68,6 +64,26 @@ class CustomsSummaryOut(BaseModel):
     kode_dokumen: Optional[str] = None
     source_label: Optional[str] = None
     versi_template: Optional[str] = None
+    delivery_number: Optional[str] = None
+    po_number: Optional[str] = None
+    customer_name: Optional[str] = None
+    sheet_count: int = 0
+
+
+def _summary_from_declaration(dec: CustomsDeclaration) -> CustomsSummaryOut:
+    meta = dec.meta_json or {}
+    row_counts = meta.get("row_counts") or {}
+    return CustomsSummaryOut(
+        id=dec.id,
+        nomor_aju=dec.nomor_aju,
+        kode_dokumen=dec.kode_dokumen,
+        source_label=dec.source_label,
+        versi_template=dec.versi_template,
+        delivery_number=meta.get("delivery_number"),
+        po_number=meta.get("po_number"),
+        customer_name=meta.get("customer_name"),
+        sheet_count=len(row_counts),
+    )
 
 
 @router.get("/customs/declarations", response_model=list[CustomsSummaryOut])
@@ -75,10 +91,11 @@ def list_declarations(
     db: Session = Depends(get_db),
     limit: int = Query(200, ge=1, le=1000),
     _user=Depends(get_current_user),
-) -> list[CustomsDeclaration]:
-    return list(
+) -> list[CustomsSummaryOut]:
+    rows = list(
         db.scalars(select(CustomsDeclaration).order_by(CustomsDeclaration.id.desc()).limit(limit)).all()
     )
+    return [_summary_from_declaration(d) for d in rows]
 
 
 @router.post("/customs/declarations", response_model=CustomsSummaryOut)
@@ -272,84 +289,32 @@ async def import_zip(
     return declaration_to_api_dict(db, dec.id)
 
 
-def generate_aju_number() -> str:
-    """Generate AJU number format: timestamp + random suffix."""
-    import random
-    now = datetime.utcnow()
-    serial = now.strftime("%d%m%Y%H%M%S")
-    suffix = random.randint(1000, 9999)
-    return f"AJU{serial}{suffix}"
-
-
 @router.post("/customs/generate-from-delivery/{delivery_id}")
 def generate_aju_from_delivery(
     delivery_id: int,
     db: Session = Depends(get_db),
-    _user=Depends(get_current_user),
+    _user=Depends(require_roles("admin", "exim")),
 ) -> dict[str, Any]:
-    """Generate AJU data structure from delivery record."""
-    delivery = db.get(DeliveryHeader, delivery_id)
-    if not delivery:
-        raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
+    """Buat draft AJU dari delivery, simpan ke DB, tautkan delivery & PO."""
+    return create_declaration_from_delivery(db, delivery_id)
 
-    packing = db.get(PackingHeader, delivery.packing_id) if delivery.packing_id else None
-    production = None
-    po_header = None
-    customer = None
 
-    if packing and packing.production_id:
-        production = db.get(ProductionOrder, packing.production_id)
-        if production and production.po_id:
-            po_header = db.get(PoHeader, production.po_id)
-            if po_header and po_header.customer_id:
-                customer = db.get(Customer, po_header.customer_id)
-            elif delivery.customer_id:
-                customer = db.get(Customer, delivery.customer_id)
-    elif delivery.customer_id:
-        customer = db.get(Customer, delivery.customer_id)
-
-    delivery_details = db.scalars(
-        select(DeliveryDetail).where(DeliveryDetail.delivery_id == delivery_id)
-    ).all()
-
-    items = []
-    for detail in delivery_details:
-        production_detail = None
-        if detail.production_detail_id:
-            production_detail = db.get(ProductionDetail, detail.production_detail_id)
-        
-        item = {
-            "qty": float(detail.qty) if detail.qty else 0,
-            "qty_roll": detail.qty_roll,
-            "qty_pcs": detail.qty_pcs,
-            "weight": float(detail.weight) if detail.weight else None,
-            "production_detail_id": detail.production_detail_id,
-            "lot_number": None,
-            "material_name": None,
-            "color": None,
-            "thickness": None,
-        }
-        
-        if production_detail:
-            item["lot_number"] = production_detail.lot_number
-            item["batch_number"] = production_detail.batch_number
-        
-        items.append(item)
-
-    aju_data = {
-        "delivery_id": delivery_id,
-        "nomor_aju": generate_aju_number(),
-        "delivery_number": delivery.delivery_number,
-        "delivery_date": str(delivery.delivery_date) if delivery.delivery_date else None,
-        "customer_name": customer.name if customer else None,
-        "customer_code": customer.code if customer else None,
-        "po_number": po_header.po_number if po_header else None,
-        "production_number": production.production_number if production else None,
-        "packing_number": packing.packing_number if packing else None,
-        "items": items,
-        "total_qty": sum(i.get("qty", 0) for i in items),
-        "total_roll": sum(i.get("qty_roll") or 0 for i in items),
-        "total_pcs": sum(i.get("qty_pcs") or 0 for i in items),
-    }
-
-    return aju_data
+@router.get("/customs/declarations/{declaration_id}/export-zip")
+def export_declaration_zip_file(
+    declaration_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "exim")),
+) -> Response:
+    """Unduh ZIP CSV format Core Customs (BC 3.0) untuk unggah ke CEISA."""
+    dec = db.get(CustomsDeclaration, declaration_id)
+    if not dec:
+        raise HTTPException(status_code=404, detail="Deklarasi tidak ditemukan")
+    try:
+        data, filename = export_declaration_zip(db, declaration_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
