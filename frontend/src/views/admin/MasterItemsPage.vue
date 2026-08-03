@@ -21,7 +21,18 @@
       · {{ t('pages.masterItems.statShown') }}: {{ total }}
     </p>
 
-    <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" table-layout="fixed" max-height="58vh" :empty-text="t('pages.masterItems.tableEmpty')">
+    <el-table
+      :data="rows"
+      v-loading="loading"
+      border
+      stripe
+      size="small"
+      class="admin-table"
+      table-layout="fixed"
+      max-height="58vh"
+      :empty-text="t('pages.masterItems.tableEmpty')"
+      @sort-change="onSortChange"
+    >
       <el-table-column :label="t('common.noLabel')" width="56" align="center">
         <template #default="{ $index }">{{ rowNumber($index) }}</template>
       </el-table-column>
@@ -31,6 +42,24 @@
       <el-table-column prop="thickness_range" :label="t('common.thickness')" width="90" align="center" />
       <el-table-column prop="color" :label="t('common.color')" min-width="120" show-overflow-tooltip />
       <el-table-column prop="emboss" :label="t('common.emboss')" min-width="120" show-overflow-tooltip />
+      <el-table-column
+        prop="created_at"
+        :label="t('pages.masterItems.colCreatedAt')"
+        width="148"
+        align="center"
+        sortable="custom"
+      >
+        <template #default="{ row }">{{ formatAuditDateTime(row.created_at) }}</template>
+      </el-table-column>
+      <el-table-column
+        prop="updated_at"
+        :label="t('pages.masterItems.colUpdatedAt')"
+        width="148"
+        align="center"
+        sortable="custom"
+      >
+        <template #default="{ row }">{{ formatAuditDateTime(row.updated_at) }}</template>
+      </el-table-column>
       <el-table-column :label="t('common.actions')" width="120" align="center" fixed="right">
         <template #default="{ row }">
           <div class="flex flex-wrap items-center justify-center gap-1">
@@ -126,6 +155,8 @@
         <el-descriptions-item :label="t('common.thickness')">{{ detailRow.thickness_range || detailRow.thickness_mm || '-' }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.color')">{{ detailRow.color || '-' }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.emboss')">{{ detailRow.emboss || '-' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.masterItems.colCreatedAt')">{{ formatAuditDateTime(detailRow.created_at) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.masterItems.colUpdatedAt')">{{ formatAuditDateTime(detailRow.updated_at) }}</el-descriptions-item>
       </el-descriptions>
       <template #footer>
         <el-button type="primary" :icon="Close" @click="detailVisible = false">{{ t('common.close') }}</el-button>
@@ -167,6 +198,8 @@ const loading = ref(false)
 const saving = ref(false)
 const keyword = ref('')
 const filterCategory = ref('')
+const sortBy = ref('')
+const sortDir = ref('asc')
 const rows = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -199,6 +232,8 @@ async function load() {
       offset: (page.value - 1) * pageSize.value,
       keyword: keyword.value,
       category: filterCategory.value,
+      sort_by: sortBy.value || undefined,
+      sort_dir: sortBy.value ? sortDir.value : undefined,
     })
     rows.value = data.items || []
     total.value = data.total || 0
@@ -213,6 +248,24 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function formatAuditDateTime(value) {
+  if (!value) return '—'
+  const s = String(value).replace('T', ' ')
+  return s.length > 19 ? s.slice(0, 19) : s
+}
+
+function onSortChange({ prop, order }) {
+  if (!order || !prop) {
+    sortBy.value = ''
+    sortDir.value = 'asc'
+  } else {
+    sortBy.value = prop
+    sortDir.value = order === 'descending' ? 'desc' : 'asc'
+  }
+  if (page.value !== 1) page.value = 1
+  else load()
 }
 
 function rowNumber(index) {

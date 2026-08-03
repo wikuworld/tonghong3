@@ -88,6 +88,7 @@
           table-layout="fixed"
           max-height="52vh"
           :empty-text="t('pages.colorSwatch.tableEmpty')"
+          @sort-change="onSortChange"
         >
           <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
           <el-table-column prop="factory_key" :label="t('pages.colorSwatch.colFactory')" width="120" show-overflow-tooltip />
@@ -105,6 +106,33 @@
           <el-table-column prop="color_standard" :label="t('pages.po.colorStandart')" width="120" show-overflow-tooltip />
           <el-table-column prop="backing" :label="t('common.backing')" width="90" show-overflow-tooltip />
           <el-table-column prop="legacy_urut" :label="t('pages.colorSwatch.colUrut')" width="80" align="center" />
+          <el-table-column
+            prop="entered_at"
+            :label="t('pages.colorSwatch.colEnteredAt')"
+            width="118"
+            align="center"
+            sortable="custom"
+          >
+            <template #default="{ row }">{{ formatAuditDate(row.entered_at) }}</template>
+          </el-table-column>
+          <el-table-column
+            prop="created_at"
+            :label="t('pages.colorSwatch.colCreatedAt')"
+            width="148"
+            align="center"
+            sortable="custom"
+          >
+            <template #default="{ row }">{{ formatAuditDateTime(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column
+            prop="updated_at"
+            :label="t('pages.colorSwatch.colUpdatedAt')"
+            width="148"
+            align="center"
+            sortable="custom"
+          >
+            <template #default="{ row }">{{ formatAuditDateTime(row.updated_at) }}</template>
+          </el-table-column>
           <el-table-column :label="t('common.actions')" width="100" fixed="right" align="center">
             <template #default="{ row }">
               <div class="color-swatch-row-actions">
@@ -414,6 +442,8 @@ const pageSize = ref(50)
 const keyword = ref('')
 const filterFactory = ref('')
 const filterBuyer = ref('')
+const sortBy = ref('')
+const sortDir = ref('asc')
 const formVisible = ref(false)
 const importDialogVisible = ref(false)
 const importFile = ref(null)
@@ -519,6 +549,8 @@ async function load() {
       factory_key: filterFactory.value || undefined,
       buyer_code: filterBuyer.value || undefined,
       q: keyword.value || undefined,
+      sort_by: sortBy.value || undefined,
+      sort_dir: sortBy.value ? sortDir.value : undefined,
       limit: pageSize.value,
       offset: (page.value - 1) * pageSize.value,
     })
@@ -529,6 +561,31 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function formatAuditDate(value) {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10) || '—'
+  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function formatAuditDateTime(value) {
+  if (!value) return '—'
+  const s = String(value).replace('T', ' ')
+  return s.length > 19 ? s.slice(0, 19) : s
+}
+
+function onSortChange({ prop, order }) {
+  if (!order || !prop) {
+    sortBy.value = ''
+    sortDir.value = 'asc'
+  } else {
+    sortBy.value = prop
+    sortDir.value = order === 'descending' ? 'desc' : 'asc'
+  }
+  if (page.value !== 1) page.value = 1
+  else load()
 }
 
 function reload() {

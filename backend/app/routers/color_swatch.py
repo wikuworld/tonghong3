@@ -17,6 +17,7 @@ from app.models import ColorSwatchRecipe, Customer, MasterItem
 from app.routers.auth import get_current_user, require_roles
 from app.services.color_swatch import (
     _VALID_BUYERS,
+    UnknownBuyerRejectError,
     filter_swatch_recipes_by_dimensions,
     import_recipes,
     iter_csv_recipes,
@@ -49,6 +50,20 @@ class ColorSwatchRecipeOut(BaseModel):
     entered_at: Optional[date] = None
     source_file: Optional[str] = None
     is_active: bool = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+_SORTABLE_COLUMNS = {
+    "created_at": ColorSwatchRecipe.created_at,
+    "updated_at": ColorSwatchRecipe.updated_at,
+    "entered_at": ColorSwatchRecipe.entered_at,
+    "factory_key": ColorSwatchRecipe.factory_key,
+    "buyer_code": ColorSwatchRecipe.buyer_code,
+    "color_code": ColorSwatchRecipe.color_code,
+    "color_name": ColorSwatchRecipe.color_name,
+    "material_name": ColorSwatchRecipe.material_name,
+}
 
 
 class ColorSwatchRecipePageOut(BaseModel):
@@ -81,6 +96,7 @@ class ImportResultOut(BaseModel):
     skipped: int
     deactivated: int = 0
     total: int
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ColorSwatchCustomerOptionOut(BaseModel):
@@ -112,14 +128,19 @@ def _apply_in(data: ColorSwatchRecipeIn, db: Session | None = None) -> dict[str,
     color_standard = (data.color_standard or "").strip() or None
     customer_id = data.customer_id
     factory_key = normalize_factory_key(data.factory_key)
+    buyer_code = data.buyer_code.strip().upper()
     if customer_id is None and db is not None:
         customer_id = resolve_swatch_customer_id(
             db, factory_key, color_standard=color_standard
         )
+    if db is not None and buyer_code:
+        from app.services.buyer_registry import ensure_buyer_code
+
+        ensure_buyer_code(db, buyer_code)
     return {
         "factory_key": factory_key,
         "customer_id": customer_id,
-        "buyer_code": data.buyer_code.strip().upper(),
+        "buyer_code": buyer_code,
         "brand_id": data.brand_id,
         "color_code": (data.color_code or "").strip(),
         "color_name": (data.color_name or "").strip(),
@@ -152,9 +173,11 @@ def color_swatch_form_options(
     )
     master_rows = list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all())
 
+    from app.services.buyer_registry import list_active_buyer_codes
+
     factory_keys = sorted({r.factory_key for r in recipes if r.factory_key})
     factory_by_customer: dict[int, list[str]] = {}
-    buyer_codes: set[str] = set(_VALID_BUYERS)
+    buyer_codes: set[str] = set(list_active_buyer_codes(db)) | set(_VALID_BUYERS)
     materials: set[str] = set(distinct_material_names(master_rows))
     colors_by_material: dict[str, set[str]] = {}
     embosses_by_material: dict[str, set[str]] = {}
@@ -207,6 +230,11 @@ def list_color_swatch_page(
     material_name: Optional[str] = Query(None),
     q: Optional[str] = Query(None, description="Search code/name/emboss/factory/material"),
     active_only: bool = Query(True),
+    sort_by: Optional[str] = Query(
+        None,
+        description="Kolom sort: created_at, updated_at, entered_at, factory_key, buyer_code, color_code, color_name, material_name",
+    ),
+    sort_dir: str = Query("asc", description="asc atau desc"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -242,16 +270,22 @@ def list_color_swatch_page(
         stmt = stmt.where(where)
         count_stmt = count_stmt.where(where)
     total = int(db.scalar(count_stmt) or 0)
+
+    sort_key = (sort_by or "").strip().lower()
+    col = _SORTABLE_COLUMNS.get(sort_key)
+    if col is not None:
+        descending = sort_dir.strip().lower() == "desc"
+        primary = col.desc() if descending else col.asc()
+        order_clauses = (primary, ColorSwatchRecipe.id.asc())
+    else:
+        order_clauses = (
+            ColorSwatchRecipe.factory_key.asc(),
+            ColorSwatchRecipe.buyer_code.asc(),
+            ColorSwatchRecipe.color_name.asc(),
+        )
+
     items = list(
-        db.scalars(
-            stmt.order_by(
-                ColorSwatchRecipe.factory_key.asc(),
-                ColorSwatchRecipe.buyer_code.asc(),
-                ColorSwatchRecipe.color_name.asc(),
-            )
-            .limit(limit)
-            .offset(offset)
-        ).all()
+        db.scalars(stmt.order_by(*order_clauses).limit(limit).offset(offset)).all()
     )
     return ColorSwatchRecipePageOut(
         items=[_recipe_to_out(db, row) for row in items],
@@ -308,12 +342,13 @@ def lookup_color_swatch(
     rows = list(
         db.scalars(stmt.order_by(ColorSwatchRecipe.color_name.asc()).limit(fetch_limit)).all()
     )
-    if color_name or emboss:
+    if color_name or emboss or material_name:
         rows = filter_swatch_recipes_by_dimensions(
             rows,
             material_name=material_name,
             color_name=color_name,
             emboss=emboss,
+            db=db,
         )
     return rows[:limit]
 
@@ -418,6 +453,10 @@ async def import_color_swatch_csv(
         False,
         description="Nonaktifkan resep aktif (factory+buyer sama) yang tidak ada di file import",
     ),
+    reject_unknown_buyer: bool = Query(
+        False,
+        description="Tolak import (400) jika ada buyer_code di luar registry",
+    ),
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin", "marketing")),
 ) -> ImportResultOut:
@@ -426,23 +465,55 @@ async def import_color_swatch_csv(
     recipes = iter_csv_recipes(io.BytesIO(raw), source)
     if not recipes:
         raise HTTPException(status_code=400, detail="Tidak ada baris valid dalam file CSV")
-    stats = import_recipes(db, recipes, replace_inactive=replace_inactive)
+    try:
+        stats = import_recipes(
+            db,
+            recipes,
+            replace_inactive=replace_inactive,
+            reject_unknown_buyer=reject_unknown_buyer,
+        )
+    except UnknownBuyerRejectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ImportResultOut(**stats)
 
 
 @router.post("/masters/color-swatch-recipes/import-bundled", response_model=ImportResultOut)
 def import_color_swatch_bundled(
     replace_inactive: bool = Query(False, description="Nonaktifkan resep yang tidak ada di file bundled"),
+    reject_unknown_buyer: bool = Query(
+        False,
+        description="Tolak import (400) jika ada buyer_code di luar registry",
+    ),
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin")),
 ) -> ImportResultOut:
-    """Import dari dokumentasi/DATA COLOR SWATCH.csv di repo (dev/seed)."""
-    path = Path(__file__).resolve().parents[2] / "dokumentasi" / "DATA COLOR SWATCH.csv"
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail=f"File tidak ditemukan: {path}")
+    """Import Color Swatch dari folder dokumentasi (dev/seed).
+
+    Prefer DATA_CS_2026-07-28.csv; fallback ke DATA COLOR SWATCH.csv.
+    """
+    dok = Path(__file__).resolve().parents[2] / "dokumentasi"
+    candidates = [
+        dok / "master-color-standart" / "DATA_CS_2026-07-28.csv",
+        dok / "DATA COLOR SWATCH.csv",
+    ]
+    path = next((p for p in candidates if p.is_file()), None)
+    if path is None:
+        raise HTTPException(
+            status_code=404,
+            detail="File tidak ditemukan: "
+            + " atau ".join(str(p) for p in candidates),
+        )
     text = path.read_text(encoding="utf-8-sig", errors="replace")
     recipes = iter_csv_recipes(io.StringIO(text), str(path.name))
     if not recipes:
         raise HTTPException(status_code=400, detail="Tidak ada baris valid")
-    stats = import_recipes(db, recipes, replace_inactive=replace_inactive)
+    try:
+        stats = import_recipes(
+            db,
+            recipes,
+            replace_inactive=replace_inactive,
+            reject_unknown_buyer=reject_unknown_buyer,
+        )
+    except UnknownBuyerRejectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ImportResultOut(**stats)

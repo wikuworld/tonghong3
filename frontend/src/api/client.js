@@ -646,10 +646,12 @@ export function listMasterItems() {
   return apiFetch('/masters/items')
 }
 
-export function listMasterItemsPage({ limit = 50, offset = 0, keyword, category } = {}) {
+export function listMasterItemsPage({ limit = 50, offset = 0, keyword, category, sort_by, sort_dir } = {}) {
   const p = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   if (keyword != null && String(keyword).trim()) p.append('keyword', String(keyword).trim())
   if (category != null && String(category).trim()) p.append('category', String(category).trim())
+  if (sort_by != null && String(sort_by).trim()) p.append('sort_by', String(sort_by).trim())
+  if (sort_dir != null && String(sort_dir).trim()) p.append('sort_dir', String(sort_dir).trim())
   return apiFetch(`/masters/items/page?${p}`)
 }
 
@@ -724,6 +726,8 @@ export function listFluorescentColorsPage(params = {}) {
   if (params.season_label && String(params.season_label).trim()) q.set('season_label', String(params.season_label).trim())
   if (params.color_class && String(params.color_class).trim()) q.set('color_class', String(params.color_class).trim())
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.sort_by && String(params.sort_by).trim()) q.set('sort_by', String(params.sort_by).trim())
+  if (params.sort_dir && String(params.sort_dir).trim()) q.set('sort_dir', String(params.sort_dir).trim())
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.offset != null) q.set('offset', String(params.offset))
   const suffix = q.toString() ? `?${q.toString()}` : ''
@@ -763,6 +767,8 @@ export function listColorSwatchRecipesPage(params = {}) {
   if (params.buyer_code && String(params.buyer_code).trim()) q.set('buyer_code', String(params.buyer_code).trim())
   if (params.material_name && String(params.material_name).trim()) q.set('material_name', String(params.material_name).trim())
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.sort_by && String(params.sort_by).trim()) q.set('sort_by', String(params.sort_by).trim())
+  if (params.sort_dir && String(params.sort_dir).trim()) q.set('sort_dir', String(params.sort_dir).trim())
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.offset != null) q.set('offset', String(params.offset))
   const suffix = q.toString() ? `?${q.toString()}` : ''

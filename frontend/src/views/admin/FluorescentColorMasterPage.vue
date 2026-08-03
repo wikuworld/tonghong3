@@ -94,6 +94,7 @@
           table-layout="fixed"
           max-height="52vh"
           :empty-text="t('pages.fluorescentColors.tableEmpty')"
+          @sort-change="onSortChange"
         >
           <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
           <el-table-column prop="buyer_code" :label="t('common.buyer')" width="100" align="center">
@@ -114,6 +115,24 @@
             </template>
           </el-table-column>
           <el-table-column prop="source_file" :label="t('pages.fluorescentColors.colSource')" min-width="120" show-overflow-tooltip />
+          <el-table-column
+            prop="created_at"
+            :label="t('pages.fluorescentColors.colCreatedAt')"
+            width="148"
+            align="center"
+            sortable="custom"
+          >
+            <template #default="{ row }">{{ formatAuditDateTime(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column
+            prop="updated_at"
+            :label="t('pages.fluorescentColors.colUpdatedAt')"
+            width="148"
+            align="center"
+            sortable="custom"
+          >
+            <template #default="{ row }">{{ formatAuditDateTime(row.updated_at) }}</template>
+          </el-table-column>
           <el-table-column :label="t('common.actions')" width="100" fixed="right" align="center">
             <template #default="{ row }">
               <div class="fluorescent-row-actions">
@@ -404,6 +423,8 @@ const pageSize = ref(50)
 const keyword = ref('')
 const filterBuyer = ref('')
 const filterClass = ref('')
+const sortBy = ref('')
+const sortDir = ref('asc')
 const formVisible = ref(false)
 const importDialogVisible = ref(false)
 const importFile = ref(null)
@@ -529,6 +550,8 @@ async function load() {
       buyer_code: filterBuyer.value || undefined,
       color_class: filterClass.value || undefined,
       q: keyword.value || undefined,
+      sort_by: sortBy.value || undefined,
+      sort_dir: sortBy.value ? sortDir.value : undefined,
       limit: pageSize.value,
       offset: (page.value - 1) * pageSize.value,
     })
@@ -539,6 +562,24 @@ async function load() {
   } finally {
     loading.value = false
   }
+}
+
+function formatAuditDateTime(value) {
+  if (!value) return '—'
+  const s = String(value).replace('T', ' ')
+  return s.length > 19 ? s.slice(0, 19) : s
+}
+
+function onSortChange({ prop, order }) {
+  if (!order || !prop) {
+    sortBy.value = ''
+    sortDir.value = 'asc'
+  } else {
+    sortBy.value = prop
+    sortDir.value = order === 'descending' ? 'desc' : 'asc'
+  }
+  if (page.value !== 1) page.value = 1
+  else load()
 }
 
 function reload() {
