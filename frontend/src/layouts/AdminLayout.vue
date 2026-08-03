@@ -37,7 +37,6 @@
           <el-menu-item v-for="item in filteredErpFlowMenus" :key="item.path" :index="item.path">
             <el-icon><component :is="item.icon" /></el-icon>
             <span>{{ t(item.labelKey) }}</span>
-            <el-badge v-if="getBadgeCount(item.path) > 0" :value="getBadgeCount(item.path)" :max="99" class="menu-badge" />
           </el-menu-item>
         </el-sub-menu>
 
@@ -81,7 +80,6 @@
         <el-menu-item v-for="item in filteredMrpMenus" :key="item.path" :index="item.path">
           <el-icon><component :is="item.icon" /></el-icon>
           <span>{{ t(item.labelKey) }}</span>
-          <el-badge v-if="getBadgeCount(item.path) > 0" :value="getBadgeCount(item.path)" :max="99" class="menu-badge" />
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -260,7 +258,6 @@ const notifications = ref([])
 const unreadCount = ref(0)
 const isSidebarCollapsed = ref(false)
 let unreadTimer = null
-let menuBadgeTimer = null
 
 function toggleSidebar() {
   isSidebarCollapsed.value = !isSidebarCollapsed.value
@@ -310,14 +307,6 @@ const mrpMenus = [
   { path: '/admin/qc', labelKey: 'menu.qc', icon: CircleCheck },
   { path: '/admin/packing', labelKey: 'menu.packing', icon: Box },
 ]
-
-const menuBadges = ref({
-  po: 0,
-  invoice: 0,
-  production: 0,
-  qc: 0,
-  outstanding: 0,
-})
 
 const filteredErpFlowMenus = computed(() => {
   permissionMatrixVersion.value
@@ -372,7 +361,6 @@ onMounted(async () => {
     unreadCount.value = Number((await unreadNotificationsCount()).unread_count || 0)
     const pm = await getPermissionMatrix().catch(() => null)
     if (pm?.matrix) setRuntimePermissionMatrix(pm.matrix)
-    loadMenuBadges()
   } catch (e) {
     localStorage.removeItem('auth_token')
     ElMessage.error(e.message || t('common.sessionExpired'))
@@ -385,14 +373,10 @@ onMounted(async () => {
       // ignore periodic polling error
     }
   }, 30000)
-  menuBadgeTimer = setInterval(() => {
-    if (currentUser.value) loadMenuBadges()
-  }, 60000)
 })
 
 onBeforeUnmount(() => {
   if (unreadTimer) clearInterval(unreadTimer)
-  if (menuBadgeTimer) clearInterval(menuBadgeTimer)
 })
 
 async function loadNotifications() {
@@ -441,20 +425,6 @@ async function handleMarkAllRead() {
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   }
-}
-
-function getBadgeCount(path) {
-  if (path === '/admin/po') return menuBadges.value.po
-  if (path === '/admin/invoice') return menuBadges.value.invoice
-  if (path === '/admin/production') return menuBadges.value.production
-  if (path === '/admin/qc') return menuBadges.value.qc
-  if (path === '/admin/outstanding-materials') return menuBadges.value.outstanding
-  return 0
-}
-
-async function loadMenuBadges() {
-  // Badge loading disabled - API functions not available
-  menuBadges.value = { po: 0, invoice: 0, production: 0, qc: 0, outstanding: 0 }
 }
 </script>
 
@@ -553,12 +523,5 @@ async function loadMenuBadges() {
 }
 :deep(.el-menu-item.is-active) {
   background-color: #2563eb;
-}
-:deep(.menu-badge) {
-  margin-left: auto;
-}
-:deep(.menu-badge .el-badge__content) {
-  background-color: #ef4444;
-  border: none;
 }
 </style>
