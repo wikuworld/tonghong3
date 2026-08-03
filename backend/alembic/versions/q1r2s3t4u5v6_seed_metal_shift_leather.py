@@ -1,7 +1,7 @@
 """Seed Master Item METAL SHIFT LEATHER for Color Swatch CSV coverage.
 
 Revision ID: q1r2s3t4u5v6
-Revises: p8q9r0s1t2u3
+Revises: m0a1b2c3d4e5
 Create Date: 2026-08-03
 """
 

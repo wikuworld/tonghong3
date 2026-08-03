@@ -37,7 +37,11 @@ def upgrade() -> None:
         raise RuntimeError(f"Tidak bisa UNIQUE brands.code; duplikat: {dups}")
 
     # nullable unique di MySQL mengizinkan beberapa NULL — ok
-    op.create_unique_constraint("uq_brands_code", "brands", ["code"])
+    from sqlalchemy import inspect as sa_inspect
+    insp = sa_inspect(conn)
+    uq_names = {u.get("name") for u in insp.get_unique_constraints("brands")}
+    if "uq_brands_code" not in uq_names:
+        op.create_unique_constraint("uq_brands_code", "brands", ["code"])
 
     # --- seed PUMA / REEBOK ---
     for code in SEED_BRANDS:
