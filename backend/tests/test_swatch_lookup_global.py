@@ -1,6 +1,7 @@
 """Lookup swatch harus berfungsi untuk seluruh resep aktif (bukan satu customer/material saja)."""
 
-from sqlalchemy import select
+import pytest
+from sqlalchemy import select, text
 
 from app.db import SessionLocal
 from app.models import ColorSwatchRecipe
@@ -8,6 +9,21 @@ from app.services.color_swatch import (
     filter_swatch_recipes_by_dimensions,
     resolve_swatch_factory_keys,
 )
+
+
+def _db_available() -> bool:
+    try:
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+            return True
+        finally:
+            db.close()
+    except Exception:
+        return False
+
+
+pytestmark = pytest.mark.skipif(not _db_available(), reason="MariaDB tidak tersedia (CI tanpa DB)")
 
 
 def test_every_active_recipe_matches_with_master_style_suffixes():
@@ -34,6 +50,7 @@ def test_every_active_recipe_matches_with_master_style_suffixes():
                 material_name=recipe.material_name,
                 color_name=f"{recipe.color_name} (TST)" if recipe.color_name else None,
                 emboss=f"{recipe.emboss} (MATTE)" if recipe.emboss else None,
+                db=db,
             )
             if not any(row.id == recipe.id for row in matched):
                 failures.append(recipe.id)
