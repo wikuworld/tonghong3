@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -65,12 +66,32 @@ def find_existing(
     return db.scalars(stmt).first()
 
 
-def upsert_fluorescent_rows(db: Session, rows: list[dict[str, Any]]) -> dict[str, int]:
+def upsert_fluorescent_rows(
+    db: Session,
+    rows: list[dict[str, Any]],
+    *,
+    reject_unknown_buyer: bool = False,
+) -> dict[str, Any]:
+    from app.models import Brand
+    from app.services.buyer_registry import collect_unknown_buyer_codes
+    from app.services.color_swatch import UnknownBuyerRejectError
+
     inserted = updated = 0
+    warnings: list[str] = []
+    seen_buyers: list[str] = []
+
+    def _brand_id_for(buyer: str) -> int | None:
+        if not buyer or buyer == "GLOBAL":
+            return None
+        b = db.scalars(select(Brand).where(Brand.code == buyer)).first()
+        return b.id if b else None
+
     for raw in rows:
         data = apply_fluorescent_fields(raw)
         if not data["color_name"]:
             continue
+        seen_buyers.append(data["buyer_code"])
+        data["brand_id"] = _brand_id_for(data["buyer_code"])
         existing = find_existing(
             db,
             buyer_code=data["buyer_code"],
@@ -84,14 +105,29 @@ def upsert_fluorescent_rows(db: Session, rows: list[dict[str, Any]]) -> dict[str
             existing.color_class = data["color_class"]
             if data.get("source_file"):
                 existing.source_file = data["source_file"]
+            existing.brand_id = data.get("brand_id")
             existing.is_active = True
+            existing.updated_at = datetime.utcnow()
             updated += 1
         else:
             db.add(FluorescentColorMaster(**data))
             inserted += 1
         db.flush()
+    unknown = collect_unknown_buyer_codes(db, seen_buyers)
+    if reject_unknown_buyer and unknown:
+        db.rollback()
+        raise UnknownBuyerRejectError(
+            "buyer_code tidak ada di registry: " + ", ".join(unknown)
+        )
+    for u in unknown:
+        warnings.append(f"buyer_code tidak ada di registry: {u}")
     db.commit()
-    return {"inserted": inserted, "updated": updated, "total": len(rows)}
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "total": len(rows),
+        "warnings": warnings,
+    }
 
 
 def _load_import_module():

@@ -266,7 +266,6 @@ def render_proforma_invoice_pdf(ctx: dict[str, Any]) -> bytes:
     center = ParagraphStyle(name="center", parent=styles["Normal"], alignment=1, fontSize=10, leading=12)
     center_bold = ParagraphStyle(name="center_b", parent=center, fontSize=11, leading=13)
     small = ParagraphStyle(name="pi_s", parent=styles["Normal"], fontSize=8.5, leading=11)
-    tiny = ParagraphStyle(name="pi_t", parent=styles["Normal"], fontSize=7.5, leading=9)
     story: list[Any] = []
 
     for i, ln in enumerate(COMPANY_LINES):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
@@ -136,6 +137,7 @@ def import_subkon_master_items(
                     setattr(existing, field, val)
                     changed = True
             if changed:
+                existing.updated_at = datetime.utcnow()
                 updated += 1
             else:
                 skipped += 1

@@ -1336,6 +1336,7 @@ class MasterItemOut(ORMBase):
     color_standard: Optional[str] = None
     model_takedown: Optional[str] = None
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class MasterItemStatsOut(BaseModel):

@@ -97,6 +97,7 @@ class MasterItem(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
     )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     po_details: Mapped[list["PoDetail"]] = relationship(
         "PoDetail", back_populates="master_item"
@@ -173,7 +174,11 @@ class BuyerPriceList(Base):
     __tablename__ = "buyer_price_lists"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    buyer_code: Mapped[str] = mapped_column(String(32), unique=True)
+    buyer_code: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("buyer_codes.code", ondelete="RESTRICT"),
+        unique=True,
+    )
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     title: Mapped[Optional[str]] = mapped_column(Text)
     period_label: Mapped[Optional[str]] = mapped_column(Text)
@@ -183,6 +188,7 @@ class BuyerPriceList(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
     )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     rows: Mapped[list["BuyerPriceSheetRow"]] = relationship(
         "BuyerPriceSheetRow",
@@ -193,6 +199,9 @@ class BuyerPriceList(Base):
 
 class BuyerPriceSheetRow(Base):
     __tablename__ = "buyer_price_sheet_rows"
+    __table_args__ = (
+        UniqueConstraint("list_id", "row_number", name="uq_buyer_price_sheet_rows_list_row"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     list_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("buyer_price_lists.id", ondelete="CASCADE"))
@@ -204,13 +213,47 @@ class BuyerPriceSheetRow(Base):
 
 class Brand(Base):
     __tablename__ = "brands"
+    __table_args__ = (UniqueConstraint("code", name="uq_brands_code"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     code: Mapped[Optional[str]] = mapped_column(String(50))
     name: Mapped[Optional[str]] = mapped_column(String(255))
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     customer_mappings: Mapped[list["CustomerBrandMapping"]] = relationship(
         "CustomerBrandMapping", back_populates="brand"
+    )
+
+
+class BuyerCode(Base):
+    """Registry kode buyer resmi (master integrity)."""
+
+    __tablename__ = "buyer_codes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True)
+    name: Mapped[Optional[str]] = mapped_column(String(120))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+
+
+class MaterialAlias(Base):
+    """Alias material kotor → nama kanonik (resolve runtime)."""
+
+    __tablename__ = "material_aliases"
+    __table_args__ = (UniqueConstraint("alias_name", name="uq_material_aliases_alias"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    alias_name: Mapped[str] = mapped_column(String(500))
+    canonical_name: Mapped[str] = mapped_column(String(500))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
     )
 
 
@@ -221,8 +264,12 @@ class CustomerBrandMapping(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    customer_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("customers.id"))
-    brand_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("brands.id"))
+    customer_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("customers.id", ondelete="RESTRICT")
+    )
+    brand_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("brands.id", ondelete="RESTRICT")
+    )
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
 
@@ -249,7 +296,9 @@ class BrandBuyerMap(Base):
     brand_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("brands.id", ondelete="CASCADE")
     )
-    buyer_code: Mapped[str] = mapped_column(String(32))
+    buyer_code: Mapped[str] = mapped_column(
+        String(32), ForeignKey("buyer_codes.code", ondelete="RESTRICT")
+    )
 
 
 class ColorSwatchRecipe(Base):
@@ -276,7 +325,9 @@ class ColorSwatchRecipe(Base):
     customer_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("customers.id", ondelete="SET NULL")
     )
-    buyer_code: Mapped[str] = mapped_column(String(32))
+    buyer_code: Mapped[str] = mapped_column(
+        String(32), ForeignKey("buyer_codes.code", ondelete="RESTRICT")
+    )
     brand_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("brands.id", ondelete="SET NULL")
     )
@@ -317,7 +368,14 @@ class FluorescentColorMaster(Base):
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    buyer_code: Mapped[str] = mapped_column(String(32), default="GLOBAL")
+    buyer_code: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("buyer_codes.code", ondelete="RESTRICT"),
+        default="GLOBAL",
+    )
+    brand_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("brands.id", ondelete="SET NULL")
+    )
     season_label: Mapped[Optional[str]] = mapped_column(String(64))
     season_year: Mapped[Optional[int]] = mapped_column(Integer)
     season_type: Mapped[Optional[str]] = mapped_column(String(16))
@@ -329,6 +387,9 @@ class FluorescentColorMaster(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
     )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    brand: Mapped[Optional["Brand"]] = relationship("Brand")
 
 
 class CustomerPic(Base):

@@ -110,11 +110,18 @@ def filter_swatch_recipes_by_dimensions(
     material_name: str | None = None,
     color_name: str | None = None,
     emboss: str | None = None,
+    db: Session | None = None,
 ) -> list[ColorSwatchRecipe]:
     """Filter resep setelah query DB — toleran suffix master item (warna/emboss)."""
+    from app.services.material_aliases import resolve_canonical_material_name
+
+    want_mat = resolve_canonical_material_name(db, material_name) if db else material_name
     out: list[ColorSwatchRecipe] = []
     for row in rows:
-        if material_name and not swatch_materials_match(row.material_name, material_name):
+        row_mat = (
+            resolve_canonical_material_name(db, row.material_name) if db else row.material_name
+        )
+        if want_mat and not swatch_materials_match(row_mat, want_mat):
             continue
         if color_name and not swatch_colors_match(row.color_name, color_name):
             continue
@@ -281,6 +288,12 @@ def parse_entered_date(raw: str | None) -> date | None:
     if not raw or not str(raw).strip():
         return None
     s = str(raw).strip()
+    # DATA_CS_2026-07-28.csv memakai 22/Jan/26 — coba sebelum format numerik.
+    for fmt in ("%d/%b/%y", "%d/%b/%Y", "%d-%b-%y", "%d-%b-%Y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
     for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y", "%m/%d/%y"):
         try:
             return datetime.strptime(s[:10] if len(s) > 10 else s, fmt).date()
@@ -291,11 +304,15 @@ def parse_entered_date(raw: str | None) -> date | None:
 
 def parse_csv_row(row: dict[str, str], source_file: str) -> dict[str, Any] | None:
     """Parse satu baris dictreader ke field recipe; None jika baris kosong."""
+    # Lazy import: swatch_factory_map mengimpor normalize_factory_key dari modul ini.
+    from app.services.swatch_factory_map import CANONICAL_FACTORY_KEYS
+
     code = (row.get("COLOR CODE") or row.get("color code") or "").strip()
     name = (row.get("COLOR NAME ") or row.get("COLOR NAME") or row.get("color name") or "").strip()
     if not code and not name:
         return None
     factory = normalize_factory_key(row.get("CUSTOMER") or row.get("customer"))
+    factory = CANONICAL_FACTORY_KEYS.get(factory, factory)
     buyer = normalize_buyer_code(row.get("BRAND") or row.get("brand"))
     if not factory or not buyer:
         return None
@@ -356,24 +373,44 @@ def _resolve_brand_id(db: Session, buyer_code: str) -> int | None:
     return int(brand.id) if brand else None
 
 
+class UnknownBuyerRejectError(ValueError):
+    """Unknown buyer_code when reject_unknown_buyer=True."""
+
+
 def import_recipes(
     db: Session,
     recipes: list[dict[str, Any]],
     *,
     replace_inactive: bool = False,
-) -> dict[str, int]:
-    """Upsert recipes. Returns counts inserted, updated, skipped."""
+    reject_unknown_buyer: bool = False,
+) -> dict[str, Any]:
+    """Upsert recipes. Returns counts inserted, updated, skipped (+ warnings)."""
+    from app.services.buyer_registry import collect_unknown_buyer_codes
+    from app.services.material_aliases import material_missing_in_master_items
+
     inserted = 0
     updated = 0
     skipped = 0
     deactivated = 0
+    warnings: list[str] = []
     imported_keys: set[tuple[str, str, str, str, str]] = set()
     customer_cache: dict[tuple[str, str | None], int | None] = {}
     brand_cache: dict[str, int | None] = {}
+    buyers_seen: list[str] = [str(d.get("buyer_code") or "") for d in recipes]
+    unknown_upfront = collect_unknown_buyer_codes(db, buyers_seen)
+    if reject_unknown_buyer and unknown_upfront:
+        raise UnknownBuyerRejectError(
+            "buyer_code tidak ada di registry: " + ", ".join(unknown_upfront)
+        )
+    mats_warned: set[str] = set()
 
     for data in recipes:
         fk = data["factory_key"]
         buyer = data["buyer_code"]
+        mat = data.get("material_name") or ""
+        if mat and mat not in mats_warned and material_missing_in_master_items(db, mat):
+            warnings.append(f"material tidak cocok master_items: {mat}")
+            mats_warned.add(mat)
         imported_keys.add(
             (fk, buyer, data["color_code"], data["material_name"], data["emboss"])
         )
@@ -454,12 +491,15 @@ def import_recipes(
                     deactivated += 1
 
     db.commit()
+    for u in collect_unknown_buyer_codes(db, buyers_seen):
+        warnings.append(f"buyer_code tidak ada di registry: {u}")
     return {
         "inserted": inserted,
         "updated": updated,
         "skipped": skipped,
         "deactivated": deactivated,
         "total": len(recipes),
+        "warnings": warnings,
     }
 
 

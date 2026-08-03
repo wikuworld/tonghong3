@@ -6,6 +6,7 @@ import csv
 import io
 import logging
 import zipfile
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
@@ -48,6 +49,7 @@ from app.services.fluorescent_color import (
     parse_fluorescent_upload,
     upsert_fluorescent_rows,
 )
+from app.services.color_swatch import UnknownBuyerRejectError
 from app.services.master_item_dimensions import (
     distinct_colors,
     distinct_material_names,
@@ -116,6 +118,7 @@ class FluorescentColorOut(BaseModel):
 
     id: int
     buyer_code: str
+    brand_id: Optional[int] = None
     season_label: Optional[str] = None
     season_year: Optional[int] = None
     season_type: Optional[str] = None
@@ -124,6 +127,20 @@ class FluorescentColorOut(BaseModel):
     color_class: str
     source_file: Optional[str] = None
     is_active: bool = True
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+
+_FLUORESCENT_SORTABLE = {
+    "created_at": FluorescentColorMaster.created_at,
+    "updated_at": FluorescentColorMaster.updated_at,
+    "buyer_code": FluorescentColorMaster.buyer_code,
+    "season_label": FluorescentColorMaster.season_label,
+    "season_year": FluorescentColorMaster.season_year,
+    "color_name": FluorescentColorMaster.color_name,
+    "color_code": FluorescentColorMaster.color_code,
+    "color_class": FluorescentColorMaster.color_class,
+}
 
 
 class FluorescentColorPageOut(BaseModel):
@@ -163,6 +180,7 @@ class FluorescentImportResultOut(BaseModel):
     inserted: int
     updated: int
     total: int
+    warnings: list[str] = Field(default_factory=list)
 
 
 @router.get("/masters/brands", response_model=list[BrandOut])
@@ -195,6 +213,12 @@ def create_brand(
     brand_name = (body.name or "").strip()
     if not brand_name:
         raise HTTPException(status_code=400, detail="Nama brand wajib diisi")
+    dup = db.scalars(select(Brand).where(Brand.code == brand_name)).first()
+    if dup:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Kode brand '{brand_name}' sudah dipakai (harus unik)",
+        )
     row = Brand(name=brand_name, code=brand_name)
     db.add(row)
     db.flush()
@@ -223,9 +247,18 @@ def update_brand(
         brand_name = (data.get("name") or "").strip()
         if not brand_name:
             raise HTTPException(status_code=400, detail="Nama brand wajib diisi")
+        other = db.scalars(
+            select(Brand).where(Brand.code == brand_name, Brand.id != brand_id)
+        ).first()
+        if other:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Kode brand '{brand_name}' sudah dipakai (harus unik)",
+            )
         row.name = brand_name
         # Tetap sinkronkan code dari nama agar modul lama tidak putus.
         row.code = brand_name
+        row.updated_at = datetime.utcnow()
     if "customer_ids" in data:
         customer_ids = sorted({int(x) for x in (data.get("customer_ids") or []) if x is not None})
         db.query(CustomerBrandMapping).filter(CustomerBrandMapping.brand_id == brand_id).delete()
@@ -276,10 +309,13 @@ def seed_brands_from_buyers(
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin")),
 ) -> dict[str, int]:
+    from app.services.buyer_registry import ensure_buyer_code
+
     buyer_codes = db.scalars(select(BuyerPriceList.buyer_code)).all()
     created = 0
     mapped = 0
     for code in sorted({str(x).strip() for x in buyer_codes if str(x).strip()}):
+        ensure_buyer_code(db, code)
         brand = db.scalars(select(Brand).where(Brand.code == code)).first()
         if not brand:
             brand = Brand(code=code, name=code)
@@ -324,9 +360,12 @@ def replace_brand_buyers(
 ) -> list[BrandBuyerMap]:
     if not db.get(Brand, brand_id):
         raise HTTPException(status_code=404, detail="Brand tidak ada")
+    from app.services.buyer_registry import ensure_buyer_code
+
     db.query(BrandBuyerMap).filter(BrandBuyerMap.brand_id == brand_id).delete()
-    cleaned = sorted({str(code).strip() for code in body.buyer_codes if str(code).strip()})
+    cleaned = sorted({str(code).strip().upper() for code in body.buyer_codes if str(code).strip()})
     for code in cleaned:
+        ensure_buyer_code(db, code)
         db.add(BrandBuyerMap(brand_id=brand_id, buyer_code=code))
     db.commit()
     rows = db.scalars(
@@ -369,6 +408,11 @@ def list_fluorescent_colors_page(
     season_label: Optional[str] = None,
     color_class: Optional[str] = None,
     q: Optional[str] = Query(None, description="Search color code/name/season"),
+    sort_by: Optional[str] = Query(
+        None,
+        description="Kolom sort: created_at, updated_at, buyer_code, season_label, season_year, color_name, color_code, color_class",
+    ),
+    sort_dir: str = Query("asc", description="asc atau desc"),
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -398,14 +442,22 @@ def list_fluorescent_colors_page(
         stmt = stmt.where(where_clause)
         count_stmt = count_stmt.where(where_clause)
     total = int(db.scalar(count_stmt) or 0)
+
+    sort_key = (sort_by or "").strip().lower()
+    col = _FLUORESCENT_SORTABLE.get(sort_key)
+    if col is not None:
+        descending = sort_dir.strip().lower() == "desc"
+        primary = col.desc() if descending else col.asc()
+        order_clauses = (primary, FluorescentColorMaster.id.asc())
+    else:
+        order_clauses = (
+            FluorescentColorMaster.buyer_code.asc(),
+            FluorescentColorMaster.season_year.desc(),
+            FluorescentColorMaster.color_name.asc(),
+        )
+
     items = list(
-        db.scalars(
-            stmt.order_by(
-                FluorescentColorMaster.buyer_code.asc(),
-                FluorescentColorMaster.season_year.desc(),
-                FluorescentColorMaster.color_name.asc(),
-            ).limit(limit).offset(offset)
-        ).all()
+        db.scalars(stmt.order_by(*order_clauses).limit(limit).offset(offset)).all()
     )
     return FluorescentColorPageOut(items=items, total=total, limit=limit, offset=offset)
 
@@ -415,16 +467,15 @@ def fluorescent_color_form_options(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> FluorescentColorFormOptionsOut:
-    """Opsi dropdown form tambah/edit fluorescent — dari master buyer & data existing."""
+    """Opsi dropdown form tambah/edit fluorescent — dari registry buyer & data existing."""
+    from app.services.buyer_registry import list_active_buyer_codes
+
     rows = list(
         db.scalars(
             select(FluorescentColorMaster).where(FluorescentColorMaster.is_active.is_(True))
         ).all()
     )
-    buyer_codes: set[str] = {"GLOBAL", "NB", "ADIDAS", "UA", "NIKE", "PUMA", "REEBOK"}
-    for bb in db.scalars(select(BrandBuyerMap.buyer_code).distinct()).all():
-        if bb:
-            buyer_codes.add(str(bb).strip().upper())
+    buyer_codes: set[str] = set(list_active_buyer_codes(db))
 
     season_labels: set[str] = set()
     season_labels_by_buyer: dict[str, set[str]] = {}
@@ -501,6 +552,15 @@ def create_fluorescent_color(
     )
     if dup:
         raise HTTPException(status_code=400, detail="Kombinasi buyer/season/kode/nama sudah ada")
+    from app.services.buyer_registry import ensure_buyer_code
+
+    buyer = data["buyer_code"]
+    ensure_buyer_code(db, buyer)
+    if buyer and buyer != "GLOBAL":
+        brand = db.scalars(select(Brand).where(Brand.code == buyer)).first()
+        data["brand_id"] = brand.id if brand else None
+    else:
+        data["brand_id"] = None
     row = FluorescentColorMaster(**data)
     db.add(row)
     db.commit()
@@ -529,8 +589,18 @@ def update_fluorescent_color(
     )
     if dup:
         raise HTTPException(status_code=400, detail="Kombinasi buyer/season/kode/nama bentrok")
+    from app.services.buyer_registry import ensure_buyer_code
+
     for key, val in data.items():
         setattr(row, key, val)
+    buyer = data["buyer_code"]
+    ensure_buyer_code(db, buyer)
+    if buyer and buyer != "GLOBAL":
+        brand = db.scalars(select(Brand).where(Brand.code == buyer)).first()
+        row.brand_id = brand.id if brand else None
+    else:
+        row.brand_id = None
+    row.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(row)
     return row
@@ -546,12 +616,17 @@ def delete_fluorescent_color(
     if not row:
         raise HTTPException(status_code=404, detail="Master fluorescent tidak ditemukan")
     row.is_active = False
+    row.updated_at = datetime.utcnow()
     db.commit()
     return {"status": "deactivated"}
 
 
 @router.post("/masters/fluorescent-colors/import-bundled", response_model=FluorescentImportResultOut)
 def import_fluorescent_bundled(
+    reject_unknown_buyer: bool = Query(
+        False,
+        description="Tolak import (400) jika ada buyer_code di luar registry",
+    ),
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin")),
 ) -> FluorescentImportResultOut:
@@ -562,13 +637,22 @@ def import_fluorescent_bundled(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     if not rows:
         raise HTTPException(status_code=400, detail="Tidak ada baris valid")
-    stats = upsert_fluorescent_rows(db, rows)
+    try:
+        stats = upsert_fluorescent_rows(
+            db, rows, reject_unknown_buyer=reject_unknown_buyer
+        )
+    except UnknownBuyerRejectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return FluorescentImportResultOut(**stats)
 
 
 @router.post("/masters/fluorescent-colors/import-csv", response_model=FluorescentImportResultOut)
 async def import_fluorescent_csv(
     file: UploadFile = File(...),
+    reject_unknown_buyer: bool = Query(
+        False,
+        description="Tolak import (400) jika ada buyer_code di luar registry",
+    ),
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin", "marketing")),
 ) -> FluorescentImportResultOut:
@@ -578,7 +662,12 @@ async def import_fluorescent_csv(
     rows = parse_fluorescent_upload(raw, filename)
     if not rows:
         raise HTTPException(status_code=400, detail="Tidak ada baris valid dalam file CSV")
-    stats = upsert_fluorescent_rows(db, rows)
+    try:
+        stats = upsert_fluorescent_rows(
+            db, rows, reject_unknown_buyer=reject_unknown_buyer
+        )
+    except UnknownBuyerRejectError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return FluorescentImportResultOut(**stats)
 
 

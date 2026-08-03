@@ -1,12 +1,24 @@
 """Tests color swatch import & parse."""
 
 import io
+from datetime import date
 
-from app.services.color_swatch import iter_csv_recipes, normalize_factory_key, parse_csv_row
+from app.services.color_swatch import (
+    iter_csv_recipes,
+    normalize_factory_key,
+    parse_csv_row,
+    parse_entered_date,
+)
 
 
 def test_normalize_factory_key():
     assert normalize_factory_key("  nikomas  ") == "NIKOMAS"
+
+
+def test_parse_entered_date_month_name():
+    assert parse_entered_date("22/Jan/26") == date(2026, 1, 22)
+    assert parse_entered_date("13/May/2026") == date(2026, 5, 13)
+    assert parse_entered_date("12-01-2019") == date(2019, 1, 12)
 
 
 def test_parse_csv_row_valid():
@@ -27,6 +39,27 @@ def test_parse_csv_row_valid():
     assert parsed["factory_key"] == "NIKOMAS"
     assert parsed["buyer_code"] == "ADIDAS"
     assert parsed["color_code"] == "ADBD"
+
+
+def test_parse_csv_row_canonical_factory_and_data_cs_date():
+    row = {
+        "CUSTOMER": "HWASEUNG HWP",
+        "COLOR CODE": "C123",
+        "COLOR NAME": "WOLF GREY",
+        "EMBOS": "DE-7",
+        "COLOR SWATCH": "TMHW036-WG",
+        "BACKING": "WHITE",
+        "NO URUT": "1",
+        "BRAND": "NIKE",
+        "MATERIAL": "METAL SHIFT LEATHER",
+        "TGGL MASUK": "22/Jan/26",
+    }
+    parsed = parse_csv_row(row, "DATA_CS_2026-07-28.csv")
+    assert parsed is not None
+    assert parsed["factory_key"] == "HWASEUNG (HWP)"
+    assert parsed["color_standard"] == "TMHW036-WG"
+    assert parsed["entered_at"] == date(2026, 1, 22)
+    assert parsed["material_name"] == "METAL SHIFT LEATHER"
 
 
 def test_parse_csv_row_skips_empty():
