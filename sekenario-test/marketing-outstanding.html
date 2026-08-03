@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Panduan Uji — Outstanding (Alur Marketing)</title>
+  <style>
+    :root {
+      --ink: #1a1a1a;
+      --muted: #555;
+      --line: #ccc;
+      --head: #0f3d5c;
+      --soft: #f4f7fa;
+    }
+
+    * { box-sizing: border-box; }
+
+    @page {
+      size: A4;
+      margin: 14mm 14mm 16mm 14mm;
+    }
+
+    body {
+      margin: 0 auto;
+      max-width: 210mm;
+      padding: 14mm;
+      color: var(--ink);
+      font: 10.5pt/1.45 "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: #e8e8e8;
+    }
+
+    .sheet { background: #fff; }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 16pt;
+      color: var(--head);
+    }
+
+    h2 {
+      margin: 16px 0 8px;
+      font-size: 12pt;
+      color: var(--head);
+      border-bottom: 1.5px solid var(--head);
+      padding-bottom: 3px;
+      page-break-after: avoid;
+    }
+
+    h3 {
+      margin: 12px 0 6px;
+      font-size: 10.5pt;
+      page-break-after: avoid;
+    }
+
+    p, li { margin: 0 0 6px; }
+    ul, ol { margin: 0 0 8px; padding-left: 1.25em; }
+
+    .meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 16px;
+      margin: 10px 0 14px;
+      padding: 8px 10px;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      font-size: 9.5pt;
+    }
+
+    .meta dt { font-weight: 600; color: var(--muted); }
+    .meta dd { margin: 0 0 4px; }
+
+    .badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 3px;
+      font-size: 8.5pt;
+      font-weight: 600;
+    }
+    .badge-ops { background: #eef2f6; color: #37474f; }
+    .badge-edit { background: #e8f5e9; color: #1b5e20; }
+    .badge-ro { background: #fce4ec; color: #880e4f; }
+
+    .from {
+      display: inline-block;
+      margin: 1px 0;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: #fff3cd;
+      color: #7a5b00;
+      font-size: 8pt;
+      font-weight: 700;
+    }
+
+    .to {
+      display: inline-block;
+      margin: 1px 0;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: #e3f2fd;
+      color: #0d47a1;
+      font-size: 8pt;
+      font-weight: 700;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 6px 0 12px;
+      font-size: 8.5pt;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 4px 6px;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: var(--head);
+      color: #fff;
+      font-weight: 600;
+    }
+
+    tr { page-break-inside: avoid; }
+    tbody tr:nth-child(even) { background: #fafbfc; }
+
+    .scenario {
+      border: 1px solid var(--line);
+      margin: 0 0 10px;
+      page-break-inside: avoid;
+    }
+
+    .scenario__head {
+      background: var(--soft);
+      padding: 5px 8px;
+      font-weight: 700;
+      font-size: 9.5pt;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .scenario__body { padding: 8px; }
+    .scenario__body p { margin-bottom: 4px; }
+    .scenario__body strong.label { color: var(--muted); font-weight: 600; }
+
+    .check {
+      display: grid;
+      grid-template-columns: 18px 1fr;
+      gap: 4px 6px;
+      margin: 4px 0 0;
+      font-size: 9pt;
+    }
+    .check span.box {
+      width: 12px; height: 12px;
+      border: 1.2px solid #666;
+      display: inline-block;
+      margin-top: 2px;
+    }
+
+    .note {
+      margin: 8px 0;
+      padding: 6px 8px;
+      border-left: 3px solid var(--head);
+      background: var(--soft);
+      font-size: 9pt;
+    }
+
+    .foot {
+      margin-top: 16px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+      font-size: 8.5pt;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    @media print {
+      body { background: #fff; padding: 0; max-width: none; }
+      a { color: inherit; text-decoration: none; }
+    }
+
+    @media screen {
+      .sheet {
+        box-shadow: 0 2px 12px rgba(0,0,0,.12);
+        padding: 12mm;
+        min-height: 277mm;
+      }
+      .print-hint {
+        text-align: center;
+        font-size: 9pt;
+        color: #666;
+        margin-bottom: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <p class="print-hint">Untuk mencetak atau menyimpan PDF: tekan Ctrl+P, pilih kertas A4</p>
+  <div class="sheet">
+    <h1>Panduan Uji — Outstanding (Alur Marketing)</h1>
+    <p style="margin:0 0 8px;color:var(--muted);font-size:9.5pt;">
+      Halaman memantau <strong>baris order yang belum selesai</strong> (qty masih ada sisa / outstanding).
+      Data diambil dari Order Penjualan (SO) + pengiriman — bukan input master baru.
+      Label <span class="from">← dari …</span> = sumber data.
+      Ringkasan master: <a href="00-korelasi-master-data.html"><strong>00-korelasi-master-data.html</strong></a>
+      · SO: <a href="order-penjualan-so.html"><strong>order-penjualan-so.html</strong></a>.
+    </p>
+
+    <dl class="meta">
+      <div>
+        <dt>Alamat halaman</dt>
+        <dd><a href="http://10.227.82.65:8080/admin/marketing-flow/outstanding">http://10.227.82.65:8080/admin/marketing-flow/outstanding</a></dd>
+        <dt>Cara membuka di menu</dt>
+        <dd>Alur Marketing → <strong>Outstanding</strong></dd>
+        <dt>Akun untuk uji coba</dt>
+        <dd>admin / admin123</dd>
+      </div>
+      <div>
+        <dt>Siapa yang boleh melihat</dt>
+        <dd>Admin, Marketing, PPIC</dd>
+        <dt>Siapa yang boleh isi remark marketing</dt>
+        <dd>Role yang boleh ubah SO (Admin, Marketing, Sales, PPIC, Finance)</dd>
+        <dt>Tanggal dokumen</dt>
+        <dd>15 Juli 2026</dd>
+      </div>
+    </dl>
+
+    <h2>1. Apa fungsi halaman ini?</h2>
+    <ul>
+      <li>Melihat sisa order per <strong>baris material</strong> dari SO yang belum berstatus «Selesai».</li>
+      <li>Mengisi <strong>remark marketing</strong> per baris.</li>
+      <li>Mengunduh laporan (CSV / Excel / Excel RETUR / Excel manual). Dengan checklist → hanya baris tercentang; tanpa checklist → ikut filter.</li>
+      <li>Centang baris lalu: <strong>Buat PI</strong> (multi-SO, customer sama), <strong>Jadwal kirim</strong> (qty + tanggal per baris), <strong>Susun kirim</strong> dari packing list status <strong>done</strong> + QC OK (qty default full lot, boleh parsial → delivery draft di modul Delivery).</li>
+    </ul>
+    <p class="note">
+      <strong>Tidak ada</strong> di halaman ini: lanjut/mundur tahap Alur MKT, dan simpan snapshot.
+      Lanjut tahap → menu <em>Alur &amp; daftar PO</em>.
+      Snapshot → menu <em>Master &amp; perencanaan kirim</em>.
+      <br />
+      Outstanding <strong>tidak wajib</strong> menunggu tahap MKT «Data outstanding» — yang penting SO belum «Selesai».
+    </p>
+
+    <h2>2. Tampilan &amp; filter</h2>
+    <h3>2.1 Toolbar</h3>
+    <ul>
+      <li>Counter baris terpilih (atau hint unduh mengikuti filter jika belum centang)</li>
+      <li>Menu <strong>Unduh</strong>: CSV · Excel · Excel RETUR · Excel manual — scope = checklist bila ada, else filter</li>
+      <li>Tombol checklist: <strong>Buat PI</strong> · <strong>Jadwal kirim</strong> · <strong>Susun kirim (packing)</strong></li>
+    </ul>
+
+    <h3>2.2 Filter</h3>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:28%">Filter</th>
+          <th style="width:42%">Cara memakai</th>
+          <th>Catatan</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Periode tanggal order</td>
+          <td>Pilih rentang tanggal order SO</td>
+          <td>Mengurangi daftar</td>
+        </tr>
+        <tr>
+          <td>No. PO</td>
+          <td>Ketik nomor SO / bagiannya</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td>Kode pabrik</td>
+          <td>Contoh LR028…</td>
+          <td><span class="from">← kode pabrik di SO / Customer</span></td>
+        </tr>
+        <tr>
+          <td>Status material</td>
+          <td>Semua / Sudah kirim / Belum kirim / Dibatalkan</td>
+          <td>«Dibatalkan» menampilkan SO cancel</td>
+        </tr>
+        <tr>
+          <td>Lembar kategori</td>
+          <td>Semua · PROD · CLAIM · SAMPLE · SUBCONT · RETUR</td>
+          <td><span class="from">← kategori PO di SO</span></td>
+        </tr>
+        <tr>
+          <td>Filter saldo (balance)</td>
+          <td>Sembunyikan balance 0 (default) · semua · hanya &gt; 0</td>
+          <td>Default: sisa 0 disembunyikan</td>
+        </tr>
+        <tr>
+          <td>Kolom lengkap</td>
+          <td>Saklar tampilkan kolom seperti export (tebal, warna, harga, slot jadwal, …)</td>
+          <td>Geser tabel ke kanan</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>3. Kolom penting (apa artinya)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:22%">Kolom</th>
+          <th style="width:12%">Edit?</th>
+          <th style="width:36%">Sumber</th>
+          <th>Arti untuk tester</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Tanggal order</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td><span class="from">← Order Penjualan (SO)</span></td>
+          <td>Tanggal SO</td>
+        </tr>
+        <tr>
+          <td>THI ORDER</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td><span class="from">← No. SO sistem</span></td>
+          <td>Nomor order di sistem</td>
+        </tr>
+        <tr>
+          <td>Customer / Brand</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td><span class="from">← snapshot di SO</span> (dari Master Customer / Brand saat SO dibuat)</td>
+          <td>Pembeli &amp; brand order</td>
+        </tr>
+        <tr>
+          <td>Order type</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td><span class="from">← kategori / tipe di SO</span></td>
+          <td>PROD / SAMPLE / CLAIM / …</td>
+        </tr>
+        <tr>
+          <td>NO PO / PO customer</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td><span class="from">← No. PO customer di SO</span></td>
+          <td>Label berubah di CLAIM/SAMPLE/SUBCONT</td>
+        </tr>
+        <tr>
+          <td>Material (+ spek di kolom lengkap)</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td><span class="from">← baris SO</span> (sering dari Master Item saat input)</td>
+          <td>Baris material outstanding</td>
+        </tr>
+        <tr>
+          <td>Qty (S/F)</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td><span class="from">← qty order baris SO</span></td>
+          <td>Jumlah order</td>
+        </tr>
+        <tr>
+          <td>Jadwal total / Belum dijadwal</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td><span class="from">← jadwal ETD di baris SO</span></td>
+          <td>Sudah dijadwal vs sisa belum dijadwal</td>
+        </tr>
+        <tr>
+          <td>Terkirim / Balance</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td><span class="from">← Delivery / produksi</span> · Balance = qty − terkirim</td>
+          <td>Sisa outstanding utama</td>
+        </tr>
+        <tr>
+          <td>Aktual vs jadwal</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td>Terkirim − jadwal total</td>
+          <td>Cek apakah kirim sesuai jadwal</td>
+        </tr>
+        <tr>
+          <td>System no</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td><span class="from">← lot / ref baris SO</span></td>
+          <td>Referensi lot / system</td>
+        </tr>
+        <tr>
+          <td>Status material</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td>Status produksi + follow-up material header SO</td>
+          <td>Hanya di tampilan Semua / PROD</td>
+        </tr>
+        <tr>
+          <td>Remark PO</td>
+          <td><span class="badge badge-ro">Baca saja</span></td>
+          <td><span class="from">← remark baris saat input SO</span></td>
+          <td>Catatan dari form SO</td>
+        </tr>
+        <tr>
+          <td>Remark (sistem)</td>
+          <td><span class="badge badge-ro">Otomatis</span></td>
+          <td>Dirangkai sistem (order / terkirim / saldo / stok / ETD)</td>
+          <td>Bukan diketik user</td>
+        </tr>
+        <tr>
+          <td><strong>Remark (marketing)</strong></td>
+          <td><span class="badge badge-edit">Bisa diedit</span></td>
+          <td>Isi di halaman ini → tersimpan ke baris SO</td>
+          <td>Satu-satunya kolom edit di Outstanding</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="note">
+      Slot jadwal kirim (1st, 2nd, … qty &amp; tanggal) muncul saat <strong>kolom lengkap</strong> aktif.
+      Jumlah slot: PROD banyak (hingga ~21), CLAIM/SAMPLE/SUBCONT ~5, RETUR ~3.
+    </p>
+
+    <h2>4. Apa yang diisi &amp; aksi user</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:28%">Aksi</th>
+          <th style="width:42%">Cara melakukan</th>
+          <th>Hasil diharapkan</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Isi remark marketing</td>
+          <td>Ketik di kolom Remark (marketing) → klik di luar kotak (blur)</td>
+          <td>Pesan tersimpan; tetap ada setelah Muat ulang</td>
+        </tr>
+        <tr>
+          <td>Jadwal kirim</td>
+          <td>Centang baris dari <strong>satu PO yang sama</strong> → Jadwal kirim (terpilih)</td>
+          <td>Buka form edit SO. Jika beda PO → peringatan</td>
+        </tr>
+        <tr>
+          <td>Unduh CSV / Excel</td>
+          <td>Menu Unduh → pilih format. Tanpa checklist: mengikuti filter. Dengan checklist: hanya baris tercentang</td>
+          <td>File terunduh sesuai scope di atas</td>
+        </tr>
+        <tr>
+          <td>Excel RETUR</td>
+          <td>Menu Unduh → Excel RETUR</td>
+          <td>Hanya baris kategori return</td>
+        </tr>
+        <tr>
+          <td>Excel manual</td>
+          <td>Menu Unduh → Excel manual (semua lembar)</td>
+          <td>Workbook berisi lembar PROD SUEDE, CLAIM SUEDE, SAMPLE SUEDE, SUBCONT, RETUR</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>5. Langkah uji coba</h2>
+
+    <div class="scenario">
+      <div class="scenario__head">Uji 1 — Buka halaman &amp; muat default</div>
+      <div class="scenario__body">
+        <p><strong class="label">Prasyarat:</strong> Ada SO belum «Selesai» dengan sisa qty (balance &gt; 0).</p>
+        <p><strong class="label">Langkah:</strong> Login (Admin/Marketing/PPIC) → Alur Marketing → Outstanding.</p>
+        <p><strong class="label">Yang diharapkan:</strong> Tabel terisi; baris balance 0 default tidak tampil; SO completed tidak muncul; footer jumlah qty/balance masuk akal.</p>
+        <div class="check"><span class="box"></span><span>Berhasil / Gagal</span></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario__head">Uji 2 — Filter lembar kategori</div>
+      <div class="scenario__body">
+        <p><strong class="label">Langkah:</strong> Pilih PROD, lalu CLAIM / SAMPLE / SUBCONT / RETUR. Nyalakan kolom lengkap.</p>
+        <p><strong class="label">Yang diharapkan:</strong> Daftar sesuai kategori SO. Label NO PO vs PO customer bisa berubah. Status material hilang di non-PROD. Slot jadwal berubah jumlahnya.</p>
+        <div class="check"><span class="box"></span><span>Berhasil / Gagal</span></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario__head">Uji 3 — Filter status material &amp; balance</div>
+      <div class="scenario__body">
+        <p><strong class="label">Langkah:</strong> Coba Belum kirim / Sudah kirim. Ganti filter balance: sembunyikan 0 · semua · hanya &gt; 0. Coba filter Dibatalkan.</p>
+        <p><strong class="label">Yang diharapkan:</strong> Belum kirim ≈ balance &gt; 0; Sudah kirim ≈ balance ≤ 0; Dibatalkan hanya SO cancel; tanpa filter cancel tidak ikut.</p>
+        <div class="check"><span class="box"></span><span>Berhasil / Gagal</span></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario__head">Uji 4 — Remark marketing</div>
+      <div class="scenario__body">
+        <p><strong class="label">Langkah:</strong> Isi remark pada satu baris → keluar dari kotak → Muat ulang. (Opsional: coba akun tanpa hak ubah SO — textarea seharusnya tidak bisa diedit.)</p>
+        <p><strong class="label">Yang diharapkan:</strong> Remark tetap tersimpan di baris yang sama.</p>
+        <div class="check"><span class="box"></span><span>Berhasil / Gagal</span></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario__head">Uji 5 — Jadwal kirim (terpilih, qty + tanggal per baris)</div>
+      <div class="scenario__body">
+        <p><strong class="label">Langkah:</strong> Centang 2+ baris (boleh lintas SO) → Jadwal kirim. Isi qty &amp; tanggal per baris (opsional: terapkan tanggal ke semua). Mode Tambah slot atau Ganti semua → Simpan.</p>
+        <p><strong class="label">Yang diharapkan:</strong> Slot jadwal terisi di kolom Kirim ke-n; sisa «Belum dijadwal» berubah.</p>
+        <div class="check"><span class="box"></span><span>Berhasil / Gagal</span></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario__head">Uji 6 — Unduh file (filter vs checklist)</div>
+      <div class="scenario__body">
+        <p><strong class="label">Langkah A:</strong> Tanpa centang → unduh CSV/Excel (mengikuti filter). Unduh Excel RETUR &amp; manual.</p>
+        <p><strong class="label">Langkah B:</strong> Centang beberapa baris → unduh lagi → file hanya berisi baris tercentang.</p>
+        <p><strong class="label">Yang diharapkan:</strong> Tanpa checklist = filter; dengan checklist = hanya baris terpilih.</p>
+        <div class="check"><span class="box"></span><span>Berhasil / Gagal</span></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario__head">Uji 7 — Korelasi SO selesai &amp; pengiriman</div>
+      <div class="scenario__body">
+        <p><strong class="label">Langkah:</strong> Ambil SO uji dengan balance &gt; 0 di Outstanding. Setelah (uji di modul lain) qty terkirim penuh / SO jadi Selesai → kembali ke Outstanding + Muat ulang.</p>
+        <p><strong class="label">Yang diharapkan:</strong> Baris hilang atau balance berubah sesuai pengiriman; SO completed tidak lagi di daftar.</p>
+        <div class="check"><span class="box"></span><span>Berhasil / Gagal</span></div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario__head">Uji 8 — Cari no. PO &amp; kode pabrik</div>
+      <div class="scenario__body">
+        <p><strong class="label">Langkah:</strong> Filter No. PO dan/atau kode pabrik dari SO yang diketahui → Reset filter.</p>
+        <p><strong class="label">Yang diharapkan:</strong> Hasil mengecil sesuai kata kunci; Reset mengembalikan tampilan default.</p>
+        <div class="check"><span class="box"></span><span>Berhasil / Gagal</span></div>
+      </div>
+    </div>
+
+    <h2>6. Korelasi dengan modul &amp; master</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:28%">Modul / master</th>
+          <th>Hubungan dengan Outstanding</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Order Penjualan (SO)</strong></td>
+          <td><span class="from">← sumber utama</span> semua baris, qty, material, jadwal, remark PO. Aksi checklist: jadwal multi-SO, PI multi-SO (<strong>hanya baris tercentang</strong>), packing kirim</td>
+        </tr>
+        <tr>
+          <td><strong>Delivery</strong></td>
+          <td>
+            <span class="from">← dibuat dari Outstanding</span> via Susun kirim (packing done + QC OK).
+            Marketing insert di Outstanding; halaman Delivery untuk pantau / cetak / mark sent (warehouse boleh Susun Kirim manual).
+            Qty default = min(sisa packing, balance SO); parsial boleh; qty &gt; sisa packing ditolak.
+          </td>
+        </tr>
+        <tr>
+          <td><strong>Master Customer / Brand</strong></td>
+          <td>Nama customer &amp; brand di tabel = snapshot dari saat SO dibuat</td>
+        </tr>
+        <tr>
+          <td><strong>Master Item</strong></td>
+          <td>Material / spek biasanya dari master saat input SO</td>
+        </tr>
+        <tr>
+          <td><strong>Delivery / Production</strong></td>
+          <td><span class="from">← qty terkirim</span> → mempengaruhi Balance &amp; Aktual vs jadwal</td>
+        </tr>
+        <tr>
+          <td>Alur &amp; daftar PO</td>
+          <td>Lanjut tahap MKT &amp; follow-up material (tidak di halaman Outstanding)</td>
+        </tr>
+        <tr>
+          <td>Master &amp; perencanaan kirim</td>
+          <td>Snapshot outstanding &amp; perencanaan delivery (rute terpisah)</td>
+        </tr>
+        <tr>
+          <td>Material Outstanding (menu lain)</td>
+          <td>Modul berbeda (tracking material follow-up/fulfillment) — jangan disamakan</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="note">
+      Urutan uji realistis: buat SO lengkap → pastikan muncul di Outstanding → isi remark → unduh → (opsional) buat delivery agar balance berubah.
+    </p>
+
+    <h2>7. Lembar hasil uji</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:8%">No.</th>
+          <th style="width:38%">Yang diuji</th>
+          <th style="width:18%">Hasil</th>
+          <th style="width:14%">Diuji oleh</th>
+          <th>Catatan</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>1</td><td>Buka &amp; muat default</td><td>☐ Berhasil ☐ Gagal</td><td></td><td></td></tr>
+        <tr><td>2</td><td>Filter kategori</td><td>☐ Berhasil ☐ Gagal</td><td></td><td></td></tr>
+        <tr><td>3</td><td>Status material &amp; balance</td><td>☐ Berhasil ☐ Gagal</td><td></td><td></td></tr>
+        <tr><td>4</td><td>Remark marketing</td><td>☐ Berhasil ☐ Gagal</td><td></td><td></td></tr>
+        <tr><td>5</td><td>Jadwal kirim multi-SO (checklist)</td><td>☐ Berhasil ☐ Gagal</td><td></td><td></td></tr>
+        <tr><td>6</td><td>Unduh CSV/Excel</td><td>☐ Berhasil ☐ Gagal</td><td></td><td></td></tr>
+        <tr><td>7</td><td>Filter teks per kolom (header)</td><td>☐ Berhasil ☐ Gagal</td><td></td><td></td></tr>
+        <tr><td>8</td><td>Buat PI multi-SO (customer sama)</td><td>☐ Berhasil ☐ Gagal</td><td></td><td></td></tr>
+        <tr><td>9</td><td>Susun kirim: packing done+QC, full lot / parsial, draft SJ</td><td>☐ Berhasil ☐ Gagal</td><td></td><td></td></tr>
+        <tr><td>10</td><td>Cari PO &amp; reset filter</td><td>☐ Berhasil ☐ Gagal</td><td></td><td></td></tr>
+      </tbody>
+    </table>
+
+    <div class="foot">
+      <span>Tonghong · Panduan uji Outstanding (Alur Marketing)</span>
+      <span>15 Juli 2026 · Kertas A4</span>
+    </div>
+  </div>
+</body>
+</html>

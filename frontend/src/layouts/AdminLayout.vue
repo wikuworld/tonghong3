@@ -34,10 +34,28 @@
             <el-icon><Share /></el-icon>
             <span>{{ t('common.nav.flow') }}</span>
           </template>
-          <el-menu-item v-for="item in filteredErpFlowMenus" :key="item.path" :index="item.path">
-            <el-icon><component :is="item.icon" /></el-icon>
-            <span>{{ t(item.labelKey) }}</span>
-          </el-menu-item>
+          <template v-for="item in filteredErpFlowMenus" :key="item.path">
+            <el-sub-menu v-if="item.children?.length" :index="item.path">
+              <template #title>
+                <span class="admin-subgroup-title">
+                  <el-icon><component :is="item.icon" /></el-icon>
+                  <span>{{ t(item.labelKey) }}</span>
+                </span>
+              </template>
+              <el-menu-item
+                v-for="child in item.children"
+                :key="child.path"
+                :index="child.path"
+              >
+                <el-icon><component :is="child.icon" /></el-icon>
+                <span>{{ t(child.labelKey) }}</span>
+              </el-menu-item>
+            </el-sub-menu>
+            <el-menu-item v-else :index="item.path">
+              <el-icon><component :is="item.icon" /></el-icon>
+              <span>{{ t(item.labelKey) }}</span>
+            </el-menu-item>
+          </template>
         </el-sub-menu>
 
         <el-sub-menu v-if="filteredErpFinanceMenus.length" index="erp-finance">
@@ -267,7 +285,16 @@ const erpFlowMenus = [
   { path: '/admin/dashboard', labelKey: 'menu.dashboard', icon: DataAnalysis },
   { path: '/admin/quotations', labelKey: 'menu.quotations', icon: DocumentCopy },
   { path: '/admin/po', labelKey: 'menu.po', icon: ShoppingCart },
-  { path: '/admin/marketing-flow', labelKey: 'menu.marketingFlow', icon: Guide },
+  {
+    path: '/admin/marketing-flow',
+    labelKey: 'menu.marketingFlow',
+    icon: Guide,
+    children: [
+      { path: '/admin/marketing-flow/po-list', labelKey: 'menu.marketingFlowPoList', icon: Guide },
+      { path: '/admin/marketing-flow/outstanding', labelKey: 'menu.marketingFlowOutstanding', icon: Document },
+      { path: '/admin/marketing-flow/planning', labelKey: 'menu.marketingFlowPlanning', icon: Files },
+    ],
+  },
   { path: '/admin/ppic-dashboard', labelKey: 'menu.ppicDashboard', icon: Operation },
   { path: '/admin/outstanding-materials', labelKey: 'menu.outstandingMaterials', icon: Document },
   { path: '/admin/delivery', labelKey: 'menu.delivery', icon: Van },
@@ -310,7 +337,13 @@ const mrpMenus = [
 
 const filteredErpFlowMenus = computed(() => {
   permissionMatrixVersion.value
-  return erpFlowMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
+  return erpFlowMenus
+    .map((m) => {
+      if (!m.children?.length) return m
+      const children = m.children.filter((c) => roleAllowsMenu(currentRole.value, c.labelKey))
+      return children.length ? { ...m, children } : null
+    })
+    .filter((m) => m && (m.children?.length || roleAllowsMenu(currentRole.value, m.labelKey)))
 })
 const filteredErpFinanceMenus = computed(() => {
   permissionMatrixVersion.value

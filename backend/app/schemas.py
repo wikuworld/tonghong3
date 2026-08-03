@@ -505,6 +505,9 @@ class PoHeaderOut(ORMBase):
     mkt_workflow_stage: Optional[str] = None
     mkt_workflow_updated_at: Optional[datetime] = None
     rekap_printed_at: Optional[datetime] = None
+    item_revised_at: Optional[datetime] = None
+    item_revised_has_update: bool = False
+    item_revised_has_delete: bool = False
     material_followup_remark: Optional[str] = None
     material_followup_done: Optional[bool] = None
     stuck_reason: Optional[str] = None
@@ -1059,6 +1062,10 @@ class MktWorkflowStagesOut(BaseModel):
     stages: list[str]
 
 
+class MktWorkflowRollbackIn(BaseModel):
+    reason: str
+
+
 class StatusDeletedOut(BaseModel):
     status: str
 
@@ -1593,9 +1600,77 @@ class PpicsAssignmentOut(ORMBase):
     po_number: Optional[str] = None
     customer_name: Optional[str] = None
     ppic_username: Optional[str] = None
+    item_revised_at: Optional[datetime] = None
+    item_revised_has_update: bool = False
+    item_revised_has_delete: bool = False
+class OutstandingScheduleLineIn(BaseModel):
+    po_detail_id: int
+    delivery_date: date
+    qty: Optional[Decimal] = None
+    sequence_no: Optional[int] = None
 
 
-# --- Outstanding Materials ---
+class OutstandingScheduleBatchIn(BaseModel):
+    """Tambah slot jadwal kirim ke baris outstanding (boleh lintas SO)."""
+
+    lines: list[OutstandingScheduleLineIn] = Field(default_factory=list)
+    mode: Literal["append", "replace"] = "append"
+
+
+class OutstandingScheduleBatchOut(BaseModel):
+    ok: bool = True
+    updated_count: int = 0
+    po_detail_ids: list[int] = Field(default_factory=list)
+
+
+class OutstandingPackingOptionOut(BaseModel):
+    po_detail_id: int
+    packing_id: int
+    packing_number: str = ""
+    packing_detail_id: Optional[int] = None
+    production_detail_id: int
+    lot_no: str = ""
+    so_number: str = ""
+    customer_id: Optional[int] = None
+    customer_name: str = ""
+    brand: str = ""
+    material_name: str = ""
+    qty_available: float = 0
+    qty_packed: float = 0
+    qty_shipped: float = 0
+
+
+class OutstandingPackingOptionsOut(BaseModel):
+    data: list[OutstandingPackingOptionOut] = Field(default_factory=list)
+    total: int = 0
+
+
+class OutstandingShipLineIn(BaseModel):
+    po_detail_id: int
+    packing_id: int
+    packing_detail_id: Optional[int] = None
+    production_detail_id: int
+    qty: Optional[Decimal] = None
+    delivery_date: Optional[date] = None
+
+
+class OutstandingShipBatchIn(BaseModel):
+    """Susun delivery dari packing list terpilih per baris outstanding."""
+
+    lines: list[OutstandingShipLineIn] = Field(default_factory=list)
+    delivery_type: Optional[str] = "production"
+    delivery_zone: Optional[str] = "outtown"
+    vehicle_number: Optional[str] = None
+    driver_name: Optional[str] = None
+    destination: Optional[str] = None
+
+
+class OutstandingShipBatchOut(BaseModel):
+    ok: bool = True
+    delivery_ids: list[int] = Field(default_factory=list)
+    delivery_count: int = 0
+    message: str = ""
+
 class OutstandingMaterialCreate(BaseModel):
     po_detail_id: int
     material_name: Optional[str] = None

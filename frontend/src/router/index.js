@@ -64,8 +64,34 @@ const router = createRouter({
         { path: 'po', component: PurchaseOrderPage, meta: { titleKey: 'menu.po', module: 'po' } },
         {
           path: 'marketing-flow',
+          redirect: '/admin/marketing-flow/po-list',
+        },
+        {
+          path: 'marketing-flow/po-list',
           component: MarketingFlowPage,
-          meta: { titleKey: 'menu.marketingFlow', module: 'marketingFlow' },
+          meta: {
+            titleKey: 'menu.marketingFlowPoList',
+            module: 'marketingFlow',
+            marketingSection: 'flow',
+          },
+        },
+        {
+          path: 'marketing-flow/outstanding',
+          component: MarketingFlowPage,
+          meta: {
+            titleKey: 'menu.marketingFlowOutstanding',
+            module: 'marketingFlow',
+            marketingSection: 'outstanding',
+          },
+        },
+        {
+          path: 'marketing-flow/planning',
+          component: MarketingFlowPage,
+          meta: {
+            titleKey: 'menu.marketingFlowPlanning',
+            module: 'marketingFlow',
+            marketingSection: 'planning',
+          },
         },
         { path: 'po-entry', redirect: '/admin/po' },
         { path: 'po-detail', redirect: '/admin/po' },

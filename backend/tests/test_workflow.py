@@ -1,17 +1,20 @@
 """Unit tests for MKT workflow transitions and PO operations."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock
 from fastapi import HTTPException
 
+from app.models import PoHeader, SubconInvoice
 from app.services.mkt_workflow import (
     MKT_STAGES_ORDER,
     mkt_stage_index,
     next_mkt_stage,
+    normalize_mkt_stage,
     prev_mkt_stage,
     validate_mkt_advance,
+    validate_mkt_rollback,
 )
-from app.models import PoHeader, SubconInvoice
 
 
 class TestMktStageTransitions:
@@ -20,7 +23,6 @@ class TestMktStageTransitions:
             "input_system",
             "rekap_printed",
             "with_ppic",
-            "back_to_mkt",
             "in_outstanding",
             "material_followup",
             "delivery_arranged",
@@ -32,7 +34,11 @@ class TestMktStageTransitions:
     def test_stage_index_returns_correct_position(self):
         assert mkt_stage_index("input_system") == 0
         assert mkt_stage_index("rekap_printed") == 1
-        assert mkt_stage_index("invoice_billing") == 8
+        assert mkt_stage_index("invoice_billing") == 7
+
+    def test_back_to_mkt_alias_maps_to_in_outstanding(self):
+        assert normalize_mkt_stage("back_to_mkt") == "in_outstanding"
+        assert mkt_stage_index("back_to_mkt") == mkt_stage_index("in_outstanding")
 
     def test_stage_index_unknown_returns_zero(self):
         assert mkt_stage_index("unknown_stage") == 0
@@ -64,6 +70,9 @@ class TestNextMktStage:
     def test_next_stage_from_input_system(self):
         assert next_mkt_stage("input_system") == "rekap_printed"
 
+    def test_next_after_with_ppic_is_in_outstanding(self):
+        assert next_mkt_stage("with_ppic") == "in_outstanding"
+
     def test_next_stage_from_final_returns_none(self):
         assert next_mkt_stage("invoice_billing") is None
 
@@ -82,6 +91,10 @@ class TestPrevMktStage:
     def test_prev_stage_none_defaults_to_first(self):
         assert prev_mkt_stage(None) is None
 
+    def test_in_outstanding_rolls_back_to_with_ppic(self):
+        assert prev_mkt_stage("in_outstanding") == "with_ppic"
+        assert prev_mkt_stage("back_to_mkt") == "with_ppic"
+
 
 class TestPoDeleteBlocked:
     def test_po_delete_blocked_with_active_invoices(self, db_session):
@@ -99,59 +112,55 @@ class TestPoDeleteBlocked:
 
 
 class TestWorkflowRollback:
-    def test_rollback_from_rekap_printed_to_input_system(self):
-        """Can rollback from rekap_printed to input_system."""
-        assert prev_mkt_stage("rekap_printed") == "input_system"
-
-    def test_rollback_from_with_ppic_to_rekap_printed(self):
-        """Can rollback from with_ppic to rekap_printed."""
-        assert prev_mkt_stage("with_ppic") == "rekap_printed"
-
-    def test_rollback_from_back_to_mkt_to_with_ppic(self):
-        """Can rollback from back_to_mkt to with_ppic."""
-        assert prev_mkt_stage("back_to_mkt") == "with_ppic"
-
-    def test_rollback_from_in_outstanding_to_back_to_mkt(self):
-        """Can rollback from in_outstanding to back_to_mkt."""
-        assert prev_mkt_stage("in_outstanding") == "back_to_mkt"
-
-    def test_rollback_from_material_followup_to_in_outstanding(self):
-        """Can rollback from material_followup to in_outstanding."""
-        assert prev_mkt_stage("material_followup") == "in_outstanding"
-
-    def test_rollback_from_delivery_arranged_to_material_followup(self):
-        """Can rollback from delivery_arranged to material_followup."""
-        assert prev_mkt_stage("delivery_arranged") == "material_followup"
-
-    def test_rollback_from_sj_invpl_to_delivery_arranged(self):
-        """Can rollback from sj_invpl to delivery_arranged."""
-        assert prev_mkt_stage("sj_invpl") == "delivery_arranged"
-
-    def test_rollback_from_invoice_billing_to_sj_invpl(self):
-        """Can rollback from invoice_billing to sj_invpl."""
-        assert prev_mkt_stage("invoice_billing") == "sj_invpl"
-
-    def test_cannot_rollback_from_input_system(self):
-        """Cannot rollback from input_system stage - already at first stage."""
-        assert prev_mkt_stage("input_system") is None
-
-    def test_rollback_blocked_for_first_stage_in_workflow(self):
-        """First stage in workflow has no previous stage to rollback to."""
-        first_stage = MKT_STAGES_ORDER[0]
-        assert first_stage == "input_system"
-        assert prev_mkt_stage(first_stage) is None
-
-    def test_rollback_preserves_stage_order_integrity(self):
-        """Each stage can only rollback to its immediate predecessor."""
+    def test_rollback_pairs(self):
         expected_pairs = [
             ("rekap_printed", "input_system"),
             ("with_ppic", "rekap_printed"),
-            ("back_to_mkt", "with_ppic"),
-            ("in_outstanding", "back_to_mkt"),
+            ("in_outstanding", "with_ppic"),
             ("material_followup", "in_outstanding"),
             ("delivery_arranged", "material_followup"),
             ("sj_invpl", "delivery_arranged"),
             ("invoice_billing", "sj_invpl"),
         ]
         for stage, expected_prev in expected_pairs:
-            assert prev_mkt_stage(stage) == expected_prev, f"Rollback from {stage} should go to {expected_prev}"
+            assert prev_mkt_stage(stage) == expected_prev
+
+    def test_cannot_rollback_from_input_system(self):
+        assert prev_mkt_stage("input_system") is None
+
+    def test_validate_rollback_requires_reason(self, db_session):
+        po = MagicMock(spec=PoHeader)
+        po.mkt_workflow_stage = "with_ppic"
+        db_session.get.return_value = po
+        with pytest.raises(HTTPException) as exc:
+            validate_mkt_rollback(db_session, 1, reason="abc")
+        assert exc.value.status_code == 400
+        assert "Alasan rollback" in exc.value.detail
+
+    def test_validate_rollback_blocks_locked_stage(self, db_session):
+        po = MagicMock(spec=PoHeader)
+        po.mkt_workflow_stage = "delivery_arranged"
+        db_session.get.return_value = po
+        with pytest.raises(HTTPException) as exc:
+            validate_mkt_rollback(db_session, 1, reason="salah tahap admin")
+        assert "terkunci" in exc.value.detail
+
+    def test_validate_rollback_blocks_when_delivery_exists(self, db_session):
+        po = MagicMock(spec=PoHeader)
+        po.mkt_workflow_stage = "material_followup"
+        db_session.get.return_value = po
+        with patch("app.services.mkt_workflow.po_has_invoice_for_po", return_value=False):
+            with patch("app.services.mkt_workflow.po_has_delivery_for_po", return_value=True):
+                with pytest.raises(HTTPException) as exc:
+                    validate_mkt_rollback(db_session, 1, reason="koreksi tahap admin")
+        assert "delivery" in exc.value.detail.lower()
+
+    def test_validate_rollback_ok(self, db_session):
+        po = MagicMock(spec=PoHeader)
+        po.mkt_workflow_stage = "in_outstanding"
+        db_session.get.return_value = po
+        with patch("app.services.mkt_workflow.po_has_invoice_for_po", return_value=False):
+            with patch("app.services.mkt_workflow.po_has_delivery_for_po", return_value=False):
+                prev, reason = validate_mkt_rollback(db_session, 1, reason="koreksi tahap admin")
+        assert prev == "with_ppic"
+        assert reason == "koreksi tahap admin"

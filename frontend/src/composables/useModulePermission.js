@@ -36,6 +36,10 @@ export function useModulePermission(moduleKey) {
     tick.value
     return can(moduleKey, 'advance')
   })
+  const canRollback = computed(() => {
+    tick.value
+    return can(moduleKey, 'rollback')
+  })
 
   return {
     canView,
@@ -46,5 +50,6 @@ export function useModulePermission(moduleKey) {
     canExport,
     canPrint,
     canAdvance,
+    canRollback,
   }
 }

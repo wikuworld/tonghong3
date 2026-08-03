@@ -335,9 +335,12 @@ def _ensure_unique_pi_number(db: Session, pi_number: str) -> str:
     base = (pi_number or "").strip() or "001/PI/XX/PROD/I/2026"
     candidate = base
     n = 1
-    while db.scalars(
-        select(ProformaInvoiceRecord).where(ProformaInvoiceRecord.pi_number == candidate).limit(1)
-    ).first():
+    while n < 100:
+        row = db.scalars(
+            select(ProformaInvoiceRecord).where(ProformaInvoiceRecord.pi_number == candidate).limit(1)
+        ).first()
+        if not row:
+            return candidate
         n += 1
         candidate = f"{base}-R{n}"
     return candidate

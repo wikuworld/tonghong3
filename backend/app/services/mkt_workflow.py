@@ -11,11 +11,11 @@ from sqlalchemy import select
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
+# Tahap efektif (back_to_mkt digabung ke in_outstanding — lihat normalize_mkt_stage).
 MKT_STAGES_ORDER = (
     "input_system",
     "rekap_printed",
     "with_ppic",
-    "back_to_mkt",
     "in_outstanding",
     "material_followup",
     "delivery_arranged",
@@ -23,9 +23,28 @@ MKT_STAGES_ORDER = (
     "invoice_billing",
 )
 
+# Alias historis → tahap kanonik (data lama / audit).
+MKT_STAGE_ALIASES = {
+    "back_to_mkt": "in_outstanding",
+}
+
+# Tahap yang tidak boleh di-rollback manual (dokumen/pengiriman).
+MKT_ROLLBACK_LOCKED_STAGES = frozenset(
+    {
+        "delivery_arranged",
+        "sj_invpl",
+        "invoice_billing",
+    }
+)
+
+
+def normalize_mkt_stage(stage: str | None) -> str:
+    s = (stage or "input_system").strip() or "input_system"
+    return MKT_STAGE_ALIASES.get(s, s)
+
 
 def mkt_stage_index(stage: str | None) -> int:
-    s = (stage or "input_system").strip() or "input_system"
+    s = normalize_mkt_stage(stage)
     try:
         return MKT_STAGES_ORDER.index(s)
     except ValueError:
@@ -44,6 +63,20 @@ def prev_mkt_stage(current: str | None) -> str | None:
     if i <= 0:
         return None
     return MKT_STAGES_ORDER[i - 1]
+
+
+def po_has_delivery_for_po(db: "Session", po_id: int) -> bool:
+    from app.models import DeliveryDetail, DeliveryHeader, PoDetail, ProductionDetail
+
+    row = db.scalars(
+        select(DeliveryHeader.id)
+        .join(DeliveryDetail, DeliveryDetail.delivery_id == DeliveryHeader.id)
+        .join(ProductionDetail, ProductionDetail.id == DeliveryDetail.production_detail_id)
+        .join(PoDetail, PoDetail.id == ProductionDetail.po_detail_id)
+        .where(PoDetail.po_id == po_id)
+        .limit(1)
+    ).first()
+    return row is not None
 
 
 def po_has_sj_invpl_prints(db: "Session", po_id: int) -> bool:
@@ -74,11 +107,31 @@ def po_has_sj_invpl_prints(db: "Session", po_id: int) -> bool:
     return False
 
 
+def po_has_invoice_for_po(db: "Session", po_id: int) -> bool:
+    from app.models import DeliveryDetail, DeliveryHeader, Invoice, PoDetail, ProductionDetail
+
+    row = db.scalars(
+        select(Invoice.id)
+        .join(DeliveryHeader, DeliveryHeader.id == Invoice.delivery_id)
+        .join(DeliveryDetail, DeliveryDetail.delivery_id == DeliveryHeader.id)
+        .join(ProductionDetail, ProductionDetail.id == DeliveryDetail.production_detail_id)
+        .join(PoDetail, PoDetail.id == ProductionDetail.po_detail_id)
+        .where(PoDetail.po_id == po_id)
+        .limit(1)
+    ).first()
+    return row is not None
+
+
 def po_has_ppic_assignment(db: "Session", po_id: int) -> bool:
     from app.models import PpicsAssignment
 
     row = db.scalars(
-        select(PpicsAssignment).where(PpicsAssignment.po_id == po_id).limit(1)
+        select(PpicsAssignment)
+        .where(
+            PpicsAssignment.po_id == po_id,
+            PpicsAssignment.status.in_(("pending", "in_progress", "completed")),
+        )
+        .limit(1)
     ).first()
     return row is not None
 
@@ -94,6 +147,57 @@ def po_ppic_is_complete(db: "Session", po_id: int) -> bool:
     return row is not None
 
 
+def invalidate_ppic_assignments_for_rollback(db: "Session", po_id: int, target_stage: str) -> None:
+    """Saat rollback mundur melewati pintu PPIC, void assignment lama agar tidak auto-loncat ke outstanding."""
+    from app.models import PpicsAssignment
+
+    target = normalize_mkt_stage(target_stage)
+    target_idx = mkt_stage_index(target)
+    with_ppic_idx = mkt_stage_index("with_ppic")
+    rows = list(
+        db.scalars(select(PpicsAssignment).where(PpicsAssignment.po_id == po_id)).all()
+    )
+    if not rows:
+        return
+
+    if target_idx < with_ppic_idx:
+        # Kembali sebelum «with_ppic»: wajib assign ulang.
+        for a in rows:
+            a.status = "cancelled"
+            a.completed_at = None
+            note = (a.notes or "").strip()
+            tag = "[rollback: void assignment]"
+            if tag not in note:
+                a.notes = f"{note} {tag}".strip() if note else tag
+    elif target == "with_ppic":
+        # Kembali ke «with_ppic»: PPIC harus complete ulang.
+        for a in rows:
+            if a.status == "cancelled":
+                continue
+            a.status = "pending"
+            a.completed_at = None
+            note = (a.notes or "").strip()
+            tag = "[rollback: reopen PPIC]"
+            if tag not in note:
+                a.notes = f"{note} {tag}".strip() if note else tag
+
+
+def clear_rekap_printed_on_rollback(db: "Session", po_id: int, target_stage: str) -> None:
+    """Rollback ke input_system → hapus stamp print agar cetak harus dikonfirmasi lagi."""
+    from app.models import PoHeader
+
+    if normalize_mkt_stage(target_stage) != "input_system":
+        return
+    row = db.get(PoHeader, po_id)
+    if row and row.rekap_printed_at is not None:
+        row.rekap_printed_at = None
+
+
+def apply_mkt_rollback_side_effects(db: "Session", po_id: int, target_stage: str) -> None:
+    clear_rekap_printed_on_rollback(db, po_id, target_stage)
+    invalidate_ppic_assignments_for_rollback(db, po_id, target_stage)
+
+
 def _stuck_reason_for_header(
   row,
   *,
@@ -104,7 +208,7 @@ def _stuck_reason_for_header(
   has_invoice: bool,
 ) -> str | None:
     """Hitung stuck reason dari header + flags yang sudah di-preload."""
-    current_stage = (row.mkt_workflow_stage or "input_system").strip()
+    current_stage = normalize_mkt_stage(row.mkt_workflow_stage)
     nxt = next_mkt_stage(current_stage)
 
     if nxt is None:
@@ -119,10 +223,6 @@ def _stuck_reason_for_header(
     elif nxt == "with_ppic":
         if not has_ppic:
             return "Belum di-assign ke PPIC"
-
-    elif nxt == "back_to_mkt":
-        if not ppic_complete:
-            return "Menunggu PPIC menyelesaikan tugas"
 
     elif nxt == "in_outstanding":
         if not ppic_complete:
@@ -253,7 +353,7 @@ def auto_advance_if_ready(db: "Session", po_id: int) -> str | None:
     if not row:
         return None
 
-    current_stage = (row.mkt_workflow_stage or "input_system").strip()
+    current_stage = normalize_mkt_stage(row.mkt_workflow_stage)
     nxt = next_mkt_stage(current_stage)
 
     if nxt is None:
@@ -267,9 +367,7 @@ def auto_advance_if_ready(db: "Session", po_id: int) -> str | None:
     row.mkt_workflow_stage = nxt
     row.mkt_workflow_updated_at = now
 
-    if nxt == "rekap_printed" and row.rekap_printed_at is None:
-        row.rekap_printed_at = now
-
+    # rekap_printed_at hanya via konfirmasi cetak dialog (stamp_rekap_printed_for_recap)
     return nxt
 
 
@@ -278,12 +376,20 @@ def sync_mkt_workflow_auto_advance(
     po_id: int,
     *,
     actor: str = "system",
+    max_steps: int | None = None,
+    stop_at_stage: str | None = None,
 ) -> list[str]:
-    """Naikkan tahap MKT berurutan selama syarat terpenuhi (maks. satu putaran penuh)."""
+    """Naikkan tahap MKT berurutan selama syarat terpenuhi.
+
+    max_steps: batasi jumlah loncatan (None = satu putaran penuh pipeline).
+    stop_at_stage: berhenti setelah mencapai tahap ini (tidak lanjut berikutnya).
+    """
     from app.services.audit import log_change
 
+    limit = max_steps if max_steps is not None else len(MKT_STAGES_ORDER)
+    stop = normalize_mkt_stage(stop_at_stage) if stop_at_stage else None
     advanced: list[str] = []
-    for _ in range(len(MKT_STAGES_ORDER)):
+    for _ in range(max(0, limit)):
         new_stage = auto_advance_if_ready(db, po_id)
         if not new_stage:
             break
@@ -296,6 +402,8 @@ def sync_mkt_workflow_auto_advance(
             after={"mkt_workflow_stage": new_stage},
             actor=actor,
         )
+        if stop and normalize_mkt_stage(new_stage) == stop:
+            break
     return advanced
 
 
@@ -343,11 +451,12 @@ def validate_mkt_advance(
     if not row:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
 
-    cur = (row.mkt_workflow_stage or "input_system").strip()
+    cur = normalize_mkt_stage(row.mkt_workflow_stage)
     nxt = next_mkt_stage(cur)
+    target_norm = normalize_mkt_stage(target)
     if nxt is None:
         raise HTTPException(status_code=400, detail="PO sudah di tahap akhir alur MKT")
-    if target != nxt:
+    if target_norm != nxt:
         raise HTTPException(
             status_code=400,
             detail=f"Langkah MKT berikutnya harus {nxt!r}, bukan {target!r}",
@@ -356,6 +465,58 @@ def validate_mkt_advance(
     stuck = get_stuck_reason(db, po_id)
     if stuck:
         raise HTTPException(status_code=400, detail=stuck)
+
+    # Sabuk pengaman: naik ke rekap_printed hanya setelah konfirmasi cetak dialog.
+    if target_norm == "rekap_printed" and row.rekap_printed_at is None:
+        raise HTTPException(status_code=400, detail="Menunggu rekap PO diprint")
+
+
+def validate_mkt_rollback(
+    db: "Session",
+    po_id: int,
+    *,
+    reason: str | None,
+) -> tuple[str, str]:
+    """Validasi rollback production-safe. Return (prev_stage, reason_clean)."""
+    from app.models import PoHeader
+
+    reason_clean = " ".join(str(reason or "").split()).strip()
+    if len(reason_clean) < 5:
+        raise HTTPException(
+            status_code=400,
+            detail="Alasan rollback wajib diisi (minimal 5 karakter)",
+        )
+
+    row = db.get(PoHeader, po_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="PO tidak ditemukan")
+
+    cur = normalize_mkt_stage(row.mkt_workflow_stage)
+    prev = prev_mkt_stage(cur)
+    if not prev:
+        raise HTTPException(status_code=400, detail="PO sudah di tahap awal alur MKT")
+
+    if cur in MKT_ROLLBACK_LOCKED_STAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Tidak bisa rollback dari tahap «{cur}»: "
+                "tahap pengiriman/dokumen terkunci"
+            ),
+        )
+
+    if po_has_invoice_for_po(db, po_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Tidak bisa rollback: invoice sudah dibuat untuk PO ini",
+        )
+    if po_has_delivery_for_po(db, po_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Tidak bisa rollback: delivery sudah dibuat untuk PO ini",
+        )
+
+    return prev, reason_clean
 
 
 def apply_mkt_stage(
@@ -369,10 +530,9 @@ def apply_mkt_stage(
     if not row:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
     now = datetime.utcnow()
-    row.mkt_workflow_stage = target
+    row.mkt_workflow_stage = normalize_mkt_stage(target)
     row.mkt_workflow_updated_at = now
-    if target == "rekap_printed" and row.rekap_printed_at is None:
-        row.rekap_printed_at = now
+    # Jangan auto-stamp rekap_printed_at di sini — hanya lewat dialog konfirmasi cetak.
 
 
 def stamp_rekap_printed_for_recap(
@@ -381,7 +541,7 @@ def stamp_rekap_printed_for_recap(
     *,
     actor: str | None = None,
 ) -> int:
-    """Tandai rekap PO sudah dicetak/diunduh untuk header yang belum punya timestamp."""
+    """Tandai rekap PO sudah dicetak (konfirmasi dari dialog HTML) untuk header tanpa timestamp."""
     from app.models import PoHeader
 
     now = datetime.utcnow()

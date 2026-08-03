@@ -42,9 +42,19 @@ from app.schemas import (
     MarketingOutstandingSnapshotCreate,
     MarketingOutstandingSnapshotDetailOut,
     MarketingOutstandingSnapshotListItem,
+    OutstandingPackingOptionOut,
+    OutstandingPackingOptionsOut,
+    OutstandingScheduleBatchIn,
+    OutstandingScheduleBatchOut,
+    OutstandingShipBatchIn,
+    OutstandingShipBatchOut,
 )
 from app.services.document_numbers import invoice_display_number, surat_jalan_display_number
-
+from app.services.outstanding_actions import (
+    apply_outstanding_schedule_batch,
+    apply_outstanding_ship_batch,
+    packing_options_for_details,
+)
 router = APIRouter(tags=["marketing"])
 
 # Selaras lembar manual «DATA OUTSTANDING ORDER» (PROD 21 gelombang, claim/sample 5, retur 3).
@@ -352,8 +362,10 @@ def _query_outstanding_rows(
     po_category: Optional[str] = None,
     order_date_from: Optional[date] = None,
     order_date_to: Optional[date] = None,
+    po_detail_ids: Optional[list[int]] = None,
 ) -> list[dict[str, Any]]:
     """Baris dari PO yang belum completed (aliran outstanding marketing)."""
+    wanted_details = {int(x) for x in (po_detail_ids or []) if x is not None}
     headers = db.scalars(
         select(PoHeader)
         .options(
@@ -407,6 +419,8 @@ def _query_outstanding_rows(
             if po_needle not in pn:
                 continue
         for ln in h.details or []:
+            if wanted_details and int(ln.id) not in wanted_details:
+                continue
             if computed_balance:
                 delivered = delivered_by_po_detail.get(int(ln.id), Decimal(0))
                 qty = ln.quantity_order or Decimal(0)
@@ -945,6 +959,17 @@ def _query_delivery_lines_rows(
     return out
 
 
+def _parse_po_detail_ids(raw: Optional[str]) -> Optional[list[int]]:
+    if not raw or not str(raw).strip():
+        return None
+    out: list[int] = []
+    for part in str(raw).split(","):
+        part = part.strip()
+        if part.isdigit():
+            out.append(int(part))
+    return out or None
+
+
 @router.get("/marketing/outstanding-lines", response_model=MarketingOutstandingPageOut)
 def marketing_outstanding_lines(
     db: Session = Depends(get_db),
@@ -969,6 +994,7 @@ def marketing_outstanding_lines(
     po_category: Optional[str] = Query(None, description="Filter kategori PO: production/sample/claim/return/subcont/suede"),
     order_date_from: Optional[str] = Query(None, description="Tanggal order PO header: dari (YYYY-MM-DD)"),
     order_date_to: Optional[str] = Query(None, description="Tanggal order PO header: sampai (YYYY-MM-DD)"),
+    po_detail_ids: Optional[str] = Query(None, description="CSV po_detail_id — batasi ke baris terpilih"),
     skip: int = Query(0, ge=0, description="Offset for pagination"),
     limit: int = Query(100, ge=1, le=1000, description="Limit for pagination"),
     _user=Depends(get_current_user),
@@ -984,6 +1010,7 @@ def marketing_outstanding_lines(
         po_category=po_category,
         order_date_from=_parse_iso_date_optional(order_date_from),
         order_date_to=_parse_iso_date_optional(order_date_to),
+        po_detail_ids=_parse_po_detail_ids(po_detail_ids),
     )
     total = len(rows)
     paginated = rows[skip : skip + limit]
@@ -1005,6 +1032,7 @@ def marketing_outstanding_lines_csv(
     po_category: Optional[str] = Query(None),
     order_date_from: Optional[str] = Query(None),
     order_date_to: Optional[str] = Query(None),
+    po_detail_ids: Optional[str] = Query(None),
     _user=Depends(get_current_user),
 ) -> Response:
     rows = _query_outstanding_rows(
@@ -1018,6 +1046,7 @@ def marketing_outstanding_lines_csv(
         po_category=po_category,
         order_date_from=_parse_iso_date_optional(order_date_from),
         order_date_to=_parse_iso_date_optional(order_date_to),
+        po_detail_ids=_parse_po_detail_ids(po_detail_ids),
     )
     buf = io.StringIO()
     if not rows:
@@ -1047,6 +1076,7 @@ def marketing_outstanding_lines_xlsx(
     po_category: Optional[str] = Query(None),
     order_date_from: Optional[str] = Query(None),
     order_date_to: Optional[str] = Query(None),
+    po_detail_ids: Optional[str] = Query(None),
     _user=Depends(get_current_user),
 ) -> Response:
     rows = _query_outstanding_rows(
@@ -1060,6 +1090,7 @@ def marketing_outstanding_lines_xlsx(
         po_category=po_category,
         order_date_from=_parse_iso_date_optional(order_date_from),
         order_date_to=_parse_iso_date_optional(order_date_to),
+        po_detail_ids=_parse_po_detail_ids(po_detail_ids),
     )
     data = _outstanding_rows_to_xlsx_bytes(rows)
     return Response(
@@ -1080,6 +1111,7 @@ def marketing_outstanding_return_lines_xlsx(
     factory_code: Optional[str] = Query(None),
     order_date_from: Optional[str] = Query(None),
     order_date_to: Optional[str] = Query(None),
+    po_detail_ids: Optional[str] = Query(None),
     _user=Depends(get_current_user),
 ) -> Response:
     """Export lembar RETUR (hanya `po_category=return`) — kolom diselaraskan contoh Excel marketing."""
@@ -1094,6 +1126,7 @@ def marketing_outstanding_return_lines_xlsx(
         po_category="return",
         order_date_from=_parse_iso_date_optional(order_date_from),
         order_date_to=_parse_iso_date_optional(order_date_to),
+        po_detail_ids=_parse_po_detail_ids(po_detail_ids),
     )
     data = _return_rows_to_xlsx_bytes(rows)
     return Response(
@@ -1114,6 +1147,7 @@ def marketing_outstanding_manual_workbook_xlsx(
     factory_code: Optional[str] = Query(None),
     order_date_from: Optional[str] = Query(None),
     order_date_to: Optional[str] = Query(None),
+    po_detail_ids: Optional[str] = Query(None),
     _user=Depends(get_current_user),
 ) -> Response:
     """Unduh workbook multi-lembar (PROD / CLAIM / SAMPLE / SUBCONT / RETUR) seperti Excel manual marketing."""
@@ -1128,6 +1162,7 @@ def marketing_outstanding_manual_workbook_xlsx(
         po_category=None,
         order_date_from=_parse_iso_date_optional(order_date_from),
         order_date_to=_parse_iso_date_optional(order_date_to),
+        po_detail_ids=_parse_po_detail_ids(po_detail_ids),
     )
     data = _outstanding_manual_workbook_bytes(rows)
     return Response(
@@ -1485,3 +1520,44 @@ def marketing_delivery_today(
         lines_reply_etd_today=[MarketingLineEtdTodayOut.model_validate(s) for s in line_etd],
         surat_jalan_lines=[MarketingDeliveryLineOut.model_validate(s) for s in sj_lines],
     )
+
+
+@router.post("/marketing/outstanding-schedule-batch", response_model=OutstandingScheduleBatchOut)
+def marketing_outstanding_schedule_batch(
+    body: OutstandingScheduleBatchIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "marketing")),
+) -> OutstandingScheduleBatchOut:
+    """Jadwalkan delivery untuk satu/banyak baris outstanding (lintas SO)."""
+    result = apply_outstanding_schedule_batch(db, body, actor=user.username)
+    return OutstandingScheduleBatchOut.model_validate(result)
+
+
+@router.get("/marketing/outstanding-packing-options", response_model=OutstandingPackingOptionsOut)
+def marketing_outstanding_packing_options(
+    po_detail_ids: str = Query(..., description="CSV po_detail_id"),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> OutstandingPackingOptionsOut:
+    """Daftar packing list (MRP/QC OK) siap kirim untuk baris outstanding terpilih."""
+    ids: list[int] = []
+    for part in str(po_detail_ids).split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.append(int(part))
+    rows = packing_options_for_details(db, ids)
+    return OutstandingPackingOptionsOut(
+        data=[OutstandingPackingOptionOut.model_validate(r) for r in rows],
+        total=len(rows),
+    )
+
+
+@router.post("/marketing/outstanding-ship-batch", response_model=OutstandingShipBatchOut)
+def marketing_outstanding_ship_batch(
+    body: OutstandingShipBatchIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "marketing", "warehouse")),
+) -> OutstandingShipBatchOut:
+    """Susun delivery dari packing list yang dipilih per baris outstanding."""
+    result = apply_outstanding_ship_batch(db, body, actor=user.username)
+    return OutstandingShipBatchOut.model_validate(result)

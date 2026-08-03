@@ -123,3 +123,37 @@ def po_list_count(
         order_date_to=order_date_to,
     )
     return int(db.scalar(stmt) or 0)
+
+
+def po_list_stage_counts(
+    db: Session,
+    *,
+    mkt_workflow_stage: Optional[str] = None,
+    q: Optional[str] = None,
+    customer_id: Optional[int] = None,
+    buyer: Optional[str] = None,
+    status: Optional[str] = None,
+    po_category: Optional[str] = None,
+    order_date: Optional[str] = None,
+    order_date_from: Optional[str] = None,
+    order_date_to: Optional[str] = None,
+) -> dict[str, int]:
+    """Agg mkt_workflow_stage untuk badge pipeline (tanpa load semua header)."""
+    stmt = apply_po_list_filters(
+        select(PoHeader.mkt_workflow_stage, func.count(PoHeader.id)),
+        mkt_workflow_stage=mkt_workflow_stage,
+        q=q,
+        customer_id=customer_id,
+        buyer=buyer,
+        status=status,
+        po_category=po_category,
+        order_date=order_date,
+        order_date_from=order_date_from,
+        order_date_to=order_date_to,
+    ).group_by(PoHeader.mkt_workflow_stage)
+    out: dict[str, int] = {}
+    for stage, cnt in db.execute(stmt).all():
+        if stage is None:
+            continue
+        out[str(stage)] = int(cnt or 0)
+    return out

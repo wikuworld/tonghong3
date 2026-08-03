@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import get_column_letter
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
@@ -21,6 +22,13 @@ from app.routers.auth import get_current_user
 from app.services.mkt_workflow import stamp_rekap_printed_for_recap, sync_mkt_workflow_auto_advance
 
 router = APIRouter(tags=["reports"])
+
+
+class PoDailyRecapConfirmIn(BaseModel):
+    """Konfirmasi setelah MKT benar-benar mencetak rekap (bukan unduh CSV)."""
+
+    report_date: Optional[date] = None
+    po_ids: Optional[list[int]] = None
 
 
 def _thickness_display(d: PoDetail | None) -> str:
@@ -411,28 +419,153 @@ def export_po_daily_marketing_xlsx(
     )
 
 
+def _headers_for_daily_recap(db: Session, d: date) -> list[PoHeader]:
+    return list(
+        db.scalars(
+            select(PoHeader)
+            .options(selectinload(PoHeader.details))
+            .where(
+                or_(
+                    PoHeader.order_date == d,
+                    func.date(PoHeader.created_at) == d,
+                )
+            )
+            .order_by(PoHeader.id.desc())
+        ).all()
+    )
+
+
+def _headers_for_recap_by_ids(db: Session, po_ids: list[int]) -> list[PoHeader]:
+    if not po_ids:
+        return []
+    wanted = {int(x) for x in po_ids}
+    rows = list(
+        db.scalars(
+            select(PoHeader)
+            .options(selectinload(PoHeader.details))
+            .where(PoHeader.id.in_(wanted))
+            .order_by(PoHeader.id.desc())
+        ).all()
+    )
+    return rows
+
+
+def _payload_from_headers(headers: list[PoHeader], *, report_date: Optional[date] = None) -> dict[str, Any]:
+    """Bangun payload HTML/print dari daftar header — tanpa stamp status."""
+    orders: list[dict[str, Any]] = []
+    lines: list[dict[str, Any]] = []
+    for h in headers:
+        cust = (h.customer_name_snapshot or h.customer_code or "").strip() or "—"
+        orders.append(
+            {
+                "po_id": h.id,
+                "so_number": h.po_number or f"SO-{h.id}",
+                "customer": cust,
+                "customer_id": h.customer_id,
+                "buyer": (h.buyer or "").strip(),
+                "brand": (h.brand_name_snapshot or "").strip(),
+                "order_type": _order_type_label(h),
+                "status": h.status or "draft",
+                "mkt_workflow_stage": h.mkt_workflow_stage or "",
+                "order_date": h.order_date.isoformat() if h.order_date else None,
+                "etd": h.etd.isoformat() if h.etd else None,
+                "po_customer_ref": (h.po_customer_ref or "").strip(),
+                "rekap_printed_at": h.rekap_printed_at.isoformat() if h.rekap_printed_at else None,
+                "line_count": len(h.details or []),
+            }
+        )
+        for ln in h.details or []:
+            row = _base_marketing_daily_row(h, ln)
+            row["po_id"] = h.id
+            lines.append(row)
+
+    pending_ids = [o["po_id"] for o in orders if not o["rekap_printed_at"]]
+    d = report_date
+    if d is None and headers:
+        h0 = headers[0]
+        d = h0.order_date or (h0.created_at.date() if h0.created_at else None)
+    return {
+        "report_title": "REKAP PO / SO MARKETING",
+        "report_date": d.isoformat() if d else None,
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "order_count": len(orders),
+        "line_count": len(lines),
+        "pending_print_count": len(pending_ids),
+        "pending_po_ids": pending_ids,
+        "orders": orders,
+        "lines": lines,
+    }
+
+
+def _build_po_daily_recap_payload(db: Session, d: date) -> dict[str, Any]:
+    """Payload HTML/print rekap harian — tanpa mengubah status print."""
+    return _payload_from_headers(_headers_for_daily_recap(db, d), report_date=d)
+
+
+@router.get("/reports/po-daily-recap")
+def get_po_daily_recap(
+    report_date: Optional[date] = Query(None, alias="date"),
+    po_id: Optional[int] = Query(None, description="Rekap satu SO (prioritas di atas filter tanggal)"),
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Data rekap PO/SO untuk dialog cetak HTML — tidak mengubah tahap/status."""
+    _ = _user
+    if po_id is not None:
+        return _payload_from_headers(_headers_for_recap_by_ids(db, [po_id]))
+    return _build_po_daily_recap_payload(db, report_date or date.today())
+
+
+@router.post("/reports/po-daily-recap/confirm-print")
+def confirm_po_daily_recap_print(
+    body: PoDailyRecapConfirmIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Stamp rekap_printed setelah MKT mengonfirmasi cetak dari dialog HTML."""
+    if body.po_ids:
+        headers = _headers_for_recap_by_ids(db, list(body.po_ids))
+        d = body.report_date or date.today()
+        if headers and headers[0].order_date:
+            d = headers[0].order_date
+    else:
+        d = body.report_date or date.today()
+        headers = _headers_for_daily_recap(db, d)
+    stamped = stamp_rekap_printed_for_recap(db, headers, actor=user.username)
+    for h in headers:
+        # Setelah konfirmasi cetak: hanya naik sampai rekap_printed.
+        # Jangan loncat with_ppic/outstanding hanya karena assign PPIC lama.
+        sync_mkt_workflow_auto_advance(
+            db,
+            h.id,
+            actor=user.username,
+            stop_at_stage="rekap_printed",
+        )
+    db.commit()
+    return {
+        "ok": True,
+        "report_date": d.isoformat() if isinstance(d, date) else str(d),
+        "stamped_count": stamped,
+        "po_ids": [h.id for h in headers],
+    }
+
+
 @router.get("/reports/po-daily-recap.csv")
 def export_po_daily_recap_csv(
     report_date: Optional[date] = Query(None, alias="date"),
+    po_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Response:
-    """Rekap laporan PO hari ini (filter tanggal order atau tanggal input = hari tersebut)."""
+    """Export CSV rekap (arsip) — tidak menandai status print; gunakan dialog cetak HTML."""
+    _ = user
     d = report_date or date.today()
-    headers = db.scalars(
-        select(PoHeader)
-        .where(
-            or_(
-                PoHeader.order_date == d,
-                func.date(PoHeader.created_at) == d,
-            )
-        )
-        .order_by(PoHeader.id.desc())
-    ).all()
-    stamp_rekap_printed_for_recap(db, headers, actor=user.username)
-    for h in headers:
-        sync_mkt_workflow_auto_advance(db, h.id, actor=user.username)
-    db.commit()
+    if po_id is not None:
+        headers = _headers_for_recap_by_ids(db, [po_id])
+        if headers and headers[0].order_date:
+            d = headers[0].order_date
+    else:
+        headers = _headers_for_daily_recap(db, d)
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(

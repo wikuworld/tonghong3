@@ -27,6 +27,34 @@ from app.schemas import (
 router = APIRouter(prefix="/workflow", tags=["workflow"])
 
 
+def _assignment_to_out(
+    assignment: PpicsAssignment, po: Optional[PoHeader] = None, user: Optional[User] = None
+) -> dict:
+    header = po if po is not None else getattr(assignment, "po", None)
+    ppic_user = user if user is not None else getattr(assignment, "ppic_user", None)
+    return {
+        "id": assignment.id,
+        "po_id": assignment.po_id,
+        "ppic_user_id": assignment.ppic_user_id,
+        "status": assignment.status,
+        "notes": assignment.notes,
+        "assigned_at": assignment.assigned_at,
+        "completed_at": assignment.completed_at,
+        "po_number": header.po_number if header else None,
+        "customer_name": header.customer_name_snapshot if header else None,
+        "ppic_username": ppic_user.username if ppic_user else None,
+        "item_revised_at": getattr(header, "item_revised_at", None) if header else None,
+        "item_revised_has_update": bool(getattr(header, "item_revised_has_update", False)) if header else False,
+        "item_revised_has_delete": bool(getattr(header, "item_revised_has_delete", False)) if header else False,
+    }
+
+
+def _assignment_out_model(
+    assignment: PpicsAssignment, po: Optional[PoHeader] = None, user: Optional[User] = None
+) -> PpicsAssignmentOut:
+    return PpicsAssignmentOut(**_assignment_to_out(assignment, po=po, user=user))
+
+
 @router.post("/po/{po_id}/assign-to-ppic", response_model=PpicsAssignmentOut)
 def assign_po_to_ppic(
     po_id: int,
@@ -37,6 +65,20 @@ def assign_po_to_ppic(
     po = db.scalars(select(PoHeader).where(PoHeader.id == po_id)).first()
     if not po:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
+
+    # Alur MKT: input_system → rekap_printed → with_ppic. Assign terlalu dini
+    # membuat stage tetap stuck di input_system meski PPIC sudah working.
+    status_norm = (po.status or "").strip().lower()
+    if status_norm not in {"confirmed", "production", "completed"}:
+        raise HTTPException(
+            status_code=400,
+            detail="PO harus di-confirm dulu sebelum assign ke PPIC",
+        )
+    if not po.rekap_printed_at:
+        raise HTTPException(
+            status_code=400,
+            detail="Rekap PO harus diprint dulu sebelum assign ke PPIC",
+        )
 
     if body.ppic_user_id:
         ppic_user = db.scalars(select(User).where(User.id == body.ppic_user_id)).first()
@@ -65,18 +107,7 @@ def assign_po_to_ppic(
     db.commit()
     db.refresh(assignment)
 
-    return PpicsAssignmentOut(
-        id=assignment.id,
-        po_id=assignment.po_id,
-        ppic_user_id=assignment.ppic_user_id,
-        status=assignment.status,
-        notes=assignment.notes,
-        assigned_at=assignment.assigned_at,
-        completed_at=assignment.completed_at,
-        po_number=assignment.po.po_number if assignment.po else None,
-        customer_name=assignment.po.customer_name_snapshot if assignment.po else None,
-        ppic_username=assignment.ppic_user.username if assignment.ppic_user else None,
-    )
+    return _assignment_out_model(assignment)
 
 
 # --- Outstanding Materials ---
@@ -338,18 +369,7 @@ def ppic_dashboard(
 
     result = []
     for a in assignments:
-        result.append(PpicsAssignmentOut(
-            id=a.id,
-            po_id=a.po_id,
-            ppic_user_id=a.ppic_user_id,
-            status=a.status,
-            notes=a.notes,
-            assigned_at=a.assigned_at,
-            completed_at=a.completed_at,
-            po_number=a.po.po_number if a.po else None,
-            customer_name=a.po.customer_name_snapshot if a.po else None,
-            ppic_username=a.ppic_user.username if a.ppic_user else None,
-        ))
+        result.append(_assignment_out_model(a))
     return result
 
 
@@ -386,18 +406,7 @@ def update_assignment_status(
     db.commit()
     db.refresh(assignment)
 
-    return PpicsAssignmentOut(
-        id=assignment.id,
-        po_id=assignment.po_id,
-        ppic_user_id=assignment.ppic_user_id,
-        status=assignment.status,
-        notes=assignment.notes,
-        assigned_at=assignment.assigned_at,
-        completed_at=assignment.completed_at,
-        po_number=assignment.po.po_number if assignment.po else None,
-        customer_name=assignment.po.customer_name_snapshot if assignment.po else None,
-        ppic_username=assignment.ppic_user.username if assignment.ppic_user else None,
-    )
+    return _assignment_out_model(assignment)
 
 
 @router.get("/ppic/users", response_model=list[UserOut])
@@ -431,15 +440,4 @@ def get_po_ppic_assignment(
     if not assignment:
         return None
 
-    return PpicsAssignmentOut(
-        id=assignment.id,
-        po_id=assignment.po_id,
-        ppic_user_id=assignment.ppic_user_id,
-        status=assignment.status,
-        notes=assignment.notes,
-        assigned_at=assignment.assigned_at,
-        completed_at=assignment.completed_at,
-        po_number=assignment.po.po_number if assignment.po else None,
-        customer_name=assignment.po.customer_name_snapshot if assignment.po else None,
-        ppic_username=assignment.ppic_user.username if assignment.ppic_user else None,
-    )
+    return _assignment_out_model(assignment)
