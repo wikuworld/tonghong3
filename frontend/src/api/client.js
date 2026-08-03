@@ -353,56 +353,13 @@ export function listMarketingOutstandingLines(params = {}) {
   return apiFetch(`/marketing/outstanding-lines${suffix}`)
 }
 
-export function marketingOutstandingCsvUrl(params = {}) {
-  const q = new URLSearchParams()
-  if (params.balance_filter) q.set('balance_filter', params.balance_filter)
-  if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
-  if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
-  if (params.shipment_status) q.set('shipment_status', params.shipment_status)
-  if (params.material_status) q.set('material_status', params.material_status)
-  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
-  if (params.po_category && String(params.po_category).trim()) q.set('po_category', String(params.po_category).trim())
-  if (params.order_date_from && String(params.order_date_from).trim())
-    q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
-  if (params.order_date_to && String(params.order_date_to).trim())
-    q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
-  const suffix = q.toString() ? `?${q}` : ''
-  return `/marketing/outstanding-lines.csv${suffix}`
-}
-
-/** Path unduhan Excel outstanding (Bearer di frontend saat fetch). */
-export function marketingOutstandingXlsxPath(params = {}) {
-  const q = new URLSearchParams()
-  if (params.balance_filter) q.set('balance_filter', params.balance_filter)
-  if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
-  if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
-  if (params.shipment_status) q.set('shipment_status', params.shipment_status)
-  if (params.material_status) q.set('material_status', params.material_status)
-  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
-  if (params.po_category && String(params.po_category).trim()) q.set('po_category', String(params.po_category).trim())
-  if (params.order_date_from && String(params.order_date_from).trim())
-    q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
-  if (params.order_date_to && String(params.order_date_to).trim())
-    q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
-  const suffix = q.toString() ? `?${q}` : ''
-  return `/marketing/outstanding-lines.xlsx${suffix}`
-}
-
-/** Unduhan Excel lembar RETUR (hanya baris `po_category=return`). Query sama seperti outstanding, tanpa `po_category`. */
-export function marketingOutstandingReturnXlsxPath(params = {}) {
-  const q = new URLSearchParams()
-  if (params.balance_filter) q.set('balance_filter', params.balance_filter)
-  if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
-  if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
-  if (params.shipment_status) q.set('shipment_status', params.shipment_status)
-  if (params.material_status) q.set('material_status', params.material_status)
-  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
-  if (params.order_date_from && String(params.order_date_from).trim())
-    q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
-  if (params.order_date_to && String(params.order_date_to).trim())
-    q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
-  const suffix = q.toString() ? `?${q}` : ''
-  return `/marketing/outstanding-return-lines.xlsx${suffix}`
+function _normalizePoDetailIdsCsv(raw) {
+  if (raw == null || raw === '') return ''
+  const parts = Array.isArray(raw) ? raw : String(raw).split(',')
+  return parts
+    .map((x) => String(x).trim())
+    .filter((x) => /^\d+$/.test(x))
+    .join(',')
 }
 
 function _marketingOutstandingExportQuery(params = {}, { includePoCategory = false } = {}) {

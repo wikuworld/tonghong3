@@ -1,24 +1,76 @@
 <template>
   <AdminSection :title="pageTitle" :subtitle="pageSubtitle">
-    <template v-if="section === 'flow'" #actions>
-      <el-input
-        v-model="flowKeyword"
-        clearable
-        class="marketing-flow-search"
-        :placeholder="t('pages.marketingFlow.flowSearchPlaceholder')"
-      />
-      <el-dropdown trigger="click" @command="handleFlowExportCommand">
-        <el-button :icon="Download" :loading="poDailyXlsxLoading">
-          {{ t('pages.marketingFlow.flowExportMenu') }}
-          <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-        </el-button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="daily">{{ t('pages.marketingFlow.dailyPoReportXlsx') }}</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
-      <el-button type="warning" @click="pullCrToday">{{ t('pages.marketingFlow.pullCrToday') }}</el-button>
+    <template #actions>
+      <template v-if="section === 'flow'">
+        <el-input
+          v-model="flowKeyword"
+          clearable
+          class="marketing-flow-search"
+          :placeholder="t('pages.marketingFlow.flowSearchPlaceholder')"
+        />
+        <el-dropdown trigger="click" @command="handleFlowExportCommand">
+          <el-button :icon="Download" :loading="poDailyXlsxLoading">
+            {{ t('pages.marketingFlow.flowExportMenu') }}
+            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="daily">{{ t('pages.marketingFlow.dailyPoReportXlsx') }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button type="warning" @click="pullCrToday">{{ t('pages.marketingFlow.pullCrToday') }}</el-button>
+      </template>
+      <template v-else-if="section === 'outstanding'">
+        <div class="mkt-out-toolbar">
+          <el-dropdown trigger="click" @command="handleOutstandingExportCommand">
+            <el-button :icon="Download" :loading="outstandingXlsxLoading || outstandingReturnXlsxLoading || outstandingManualXlsxLoading">
+              {{
+                outstandingSelection.length
+                  ? t('pages.marketingFlow.outstandingExportSelected', { n: outstandingSelection.length })
+                  : t('pages.marketingFlow.outstandingExportMenu')
+              }}
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="csv">{{ t('pages.marketingFlow.outstandingDownloadCsv') }}</el-dropdown-item>
+                <el-dropdown-item command="xlsx">{{ t('pages.marketingFlow.outstandingDownloadXlsx') }}</el-dropdown-item>
+                <el-dropdown-item command="retur">{{ t('pages.marketingFlow.outstandingDownloadReturXlsx') }}</el-dropdown-item>
+                <el-dropdown-item command="manual">{{ t('pages.marketingFlow.outstandingDownloadManualXlsx') }}</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-tooltip :content="t('pages.marketingFlow.checklistActionsHint')" placement="bottom" :disabled="Boolean(outstandingSelection.length)">
+            <span class="mkt-out-toolbar-actions">
+              <el-button
+                type="success"
+                plain
+                :disabled="!outstandingSelection.length"
+                @click="openOutstandingPi"
+              >
+                {{ t('pages.marketingFlow.actionMakePi') }}
+              </el-button>
+              <el-button
+                type="primary"
+                plain
+                :disabled="!outstandingSelection.length"
+                @click="openOutstandingSchedule"
+              >
+                {{ t('pages.marketingFlow.scheduleDraftButton') }}
+              </el-button>
+              <el-button
+                type="warning"
+                plain
+                :disabled="!outstandingSelection.length"
+                @click="openOutstandingShip"
+              >
+                {{ t('pages.marketingFlow.actionShipPacking') }}
+              </el-button>
+            </span>
+          </el-tooltip>
+        </div>
+      </template>
     </template>
 
     <PoRekapPrintDialog
@@ -273,57 +325,6 @@
       </div>
       </div>
     </div>
-
-    <template v-if="section === 'outstanding'" #actions>
-      <div class="mkt-out-toolbar">
-        <el-dropdown trigger="click" @command="handleOutstandingExportCommand">
-          <el-button :icon="Download" :loading="outstandingXlsxLoading || outstandingReturnXlsxLoading || outstandingManualXlsxLoading">
-            {{
-              outstandingSelection.length
-                ? t('pages.marketingFlow.outstandingExportSelected', { n: outstandingSelection.length })
-                : t('pages.marketingFlow.outstandingExportMenu')
-            }}
-            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="csv">{{ t('pages.marketingFlow.outstandingDownloadCsv') }}</el-dropdown-item>
-              <el-dropdown-item command="xlsx">{{ t('pages.marketingFlow.outstandingDownloadXlsx') }}</el-dropdown-item>
-              <el-dropdown-item command="retur">{{ t('pages.marketingFlow.outstandingDownloadReturXlsx') }}</el-dropdown-item>
-              <el-dropdown-item command="manual">{{ t('pages.marketingFlow.outstandingDownloadManualXlsx') }}</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-        <el-tooltip :content="t('pages.marketingFlow.checklistActionsHint')" placement="bottom" :disabled="Boolean(outstandingSelection.length)">
-          <span class="mkt-out-toolbar-actions">
-            <el-button
-              type="success"
-              plain
-              :disabled="!outstandingSelection.length"
-              @click="openOutstandingPi"
-            >
-              {{ t('pages.marketingFlow.actionMakePi') }}
-            </el-button>
-            <el-button
-              type="primary"
-              plain
-              :disabled="!outstandingSelection.length"
-              @click="openOutstandingSchedule"
-            >
-              {{ t('pages.marketingFlow.scheduleDraftButton') }}
-            </el-button>
-            <el-button
-              type="warning"
-              plain
-              :disabled="!outstandingSelection.length"
-              @click="openOutstandingShip"
-            >
-              {{ t('pages.marketingFlow.actionShipPacking') }}
-            </el-button>
-          </span>
-        </el-tooltip>
-      </div>
-    </template>
 
     <OutstandingWorkbenchDialogs
       v-if="section === 'outstanding'"
