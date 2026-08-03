@@ -22,13 +22,6 @@ export function formatDate(value) {
   return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-export function formatDateFull(value) {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (isNaN(d.getTime())) return '-'
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
-}
-
 export function statusType(status) {
   const map = {
     draft: 'info',

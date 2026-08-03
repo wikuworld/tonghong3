@@ -46,20 +46,6 @@ def prev_mkt_stage(current: str | None) -> str | None:
     return MKT_STAGES_ORDER[i - 1]
 
 
-def po_has_delivery_for_po(db: "Session", po_id: int) -> bool:
-    from app.models import DeliveryDetail, DeliveryHeader, PoDetail, ProductionDetail
-
-    row = db.scalars(
-        select(DeliveryHeader.id)
-        .join(DeliveryDetail, DeliveryDetail.delivery_id == DeliveryHeader.id)
-        .join(ProductionDetail, ProductionDetail.id == DeliveryDetail.production_detail_id)
-        .join(PoDetail, PoDetail.id == ProductionDetail.po_detail_id)
-        .where(PoDetail.po_id == po_id)
-        .limit(1)
-    ).first()
-    return row is not None
-
-
 def po_has_sj_invpl_prints(db: "Session", po_id: int) -> bool:
     """Minimal satu delivery untuk PO ini: SJ + INVPL (packing terkait) sudah dicetak."""
     from app.models import Customer, DeliveryDetail, DeliveryHeader, PackingHeader, PoDetail, ProductionDetail
@@ -86,21 +72,6 @@ def po_has_sj_invpl_prints(db: "Session", po_id: int) -> bool:
         if dh.surat_jalan_printed_at is not None:
             return True
     return False
-
-
-def po_has_invoice_for_po(db: "Session", po_id: int) -> bool:
-    from app.models import DeliveryDetail, DeliveryHeader, Invoice, PoDetail, ProductionDetail
-
-    row = db.scalars(
-        select(Invoice.id)
-        .join(DeliveryHeader, DeliveryHeader.id == Invoice.delivery_id)
-        .join(DeliveryDetail, DeliveryDetail.delivery_id == DeliveryHeader.id)
-        .join(ProductionDetail, ProductionDetail.id == DeliveryDetail.production_detail_id)
-        .join(PoDetail, PoDetail.id == ProductionDetail.po_detail_id)
-        .where(PoDetail.po_id == po_id)
-        .limit(1)
-    ).first()
-    return row is not None
 
 
 def po_has_ppic_assignment(db: "Session", po_id: int) -> bool:

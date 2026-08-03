@@ -27,21 +27,6 @@ from app.schemas import (
 router = APIRouter(prefix="/workflow", tags=["workflow"])
 
 
-def _assignment_to_out(assignment: PpicsAssignment, po: Optional[PoHeader] = None, user: Optional[User] = None) -> dict:
-    return {
-        "id": assignment.id,
-        "po_id": assignment.po_id,
-        "ppic_user_id": assignment.ppic_user_id,
-        "status": assignment.status,
-        "notes": assignment.notes,
-        "assigned_at": assignment.assigned_at,
-        "completed_at": assignment.completed_at,
-        "po_number": po.po_number if po else None,
-        "customer_name": po.customer_name_snapshot if po else None,
-        "ppic_username": user.username if user else None,
-    }
-
-
 @router.post("/po/{po_id}/assign-to-ppic", response_model=PpicsAssignmentOut)
 def assign_po_to_ppic(
     po_id: int,

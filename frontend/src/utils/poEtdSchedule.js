@@ -1,8 +1,5 @@
 /** Jadwal kirim (ETD) per baris PO — UI wizard: 1 jadwal per baris; backend/outstanding tetap mendukung hingga 21 slot. */
 
-export const ETD_SCHEDULE_SLOTS = 21
-export const ETD_SCHEDULE_UI_ROWS = 1
-
 export function createEtdScheduleRow(sequenceNo = 1) {
   return {
     sequence_no: sequenceNo,
@@ -13,13 +10,6 @@ export function createEtdScheduleRow(sequenceNo = 1) {
 
 export function emptyEtdScheduleRows() {
   return [createEtdScheduleRow(1)]
-}
-
-export function resequenceEtdScheduleRows(rows) {
-  return (rows || []).map((r, i) => ({
-    ...r,
-    sequence_no: i + 1,
-  }))
 }
 
 export function normalizeSchedulesFromApi(rows) {
@@ -114,23 +104,4 @@ export function formatLineEtdScheduleDisplay(schedules, empty = '—') {
   const uniqueDates = [...new Set(dates)]
   if (uniqueDates.length === 1) return first
   return `${first} +${uniqueDates.length - 1}`
-}
-
-export function buildEvenEtdScheduleRows(qty, startDateRaw) {
-  const base = Math.floor(qty / ETD_SCHEDULE_SLOTS)
-  const rem = qty % ETD_SCHEDULE_SLOTS
-  const startRaw = startDateRaw ? String(startDateRaw).slice(0, 10) : ''
-  return Array.from({ length: ETD_SCHEDULE_SLOTS }, (_, i) => {
-    let date = ''
-    if (startRaw) {
-      const d = new Date(startRaw)
-      d.setDate(d.getDate() + i * 7)
-      date = d.toISOString().slice(0, 10)
-    }
-    return {
-      sequence_no: i + 1,
-      qty: base + (i < rem ? 1 : 0),
-      date,
-    }
-  })
 }

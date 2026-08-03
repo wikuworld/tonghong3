@@ -1149,16 +1149,6 @@ class DeliveryFromPackingLinesIn(BaseModel):
     lines: list[DeliveryFromPackingLineIn] = Field(default_factory=list)
 
 
-class DeliveryOverallOut(BaseModel):
-    line_count: int = 0
-    total_sf: float = 0
-    total_roll: int = 0
-    total_pcs: int = 0
-    total_weight: float = 0
-    brand: str = ""
-    customer_name: str = ""
-
-
 class InvoiceOut(ORMBase):
     id: int
     delivery_id: Optional[int] = None
@@ -1545,19 +1535,6 @@ class BrandConstraintOut(ORMBase):
     customer_id: int
     allowed_brand_ids: list[int]
     created_at: Optional[datetime] = None
-
-
-def row_to_dict(obj: Any) -> dict[str, Any]:
-    """Serialisasi sederhana untuk respons fleksibel."""
-    if obj is None:
-        return {}
-    out: dict[str, Any] = {}
-    for c in obj.__table__.columns:
-        v = getattr(obj, c.key)
-        if isinstance(v, Decimal):
-            v = float(v) if v is not None else None
-        out[c.key] = v
-    return out
 
 
 class SubconInvoiceCreate(BaseModel):
