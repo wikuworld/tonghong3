@@ -619,13 +619,6 @@ export function listBrandBuyers(brandId) {
   return apiFetch(`/masters/brands/${brandId}/buyers`)
 }
 
-export function replaceBrandBuyers(brandId, buyer_codes) {
-  return apiFetch(`/masters/brands/${brandId}/buyers`, {
-    method: 'PUT',
-    body: JSON.stringify({ buyer_codes }),
-  })
-}
-
 export function createBrand(body) {
   return apiFetch('/masters/brands', { method: 'POST', body: JSON.stringify(body) })
 }
@@ -636,10 +629,6 @@ export function updateBrand(id, body) {
 
 export function deleteBrand(id) {
   return apiFetch(`/masters/brands/${id}`, { method: 'DELETE' })
-}
-
-export function seedBrandsFromBuyers() {
-  return apiFetch('/masters/brands/seed-from-buyers', { method: 'POST' })
 }
 
 export function listMasterItems() {
@@ -705,10 +694,6 @@ export async function importMasterItems(file) {
   const fd = new FormData()
   fd.append('file', file)
   return apiFetch('/masters/items/import', { method: 'POST', body: fd })
-}
-
-export function listMasterPrices() {
-  return apiFetch('/masters/prices')
 }
 
 export function listFluorescentColors(params = {}) {
@@ -820,10 +805,6 @@ export function importColorSwatchBundled() {
   return apiFetch('/masters/color-swatch-recipes/import-bundled', { method: 'POST' })
 }
 
-export function listCustomerPics() {
-  return apiFetch('/masters/customer-pics')
-}
-
 // --- Production ---
 export function listProduction() {
   return apiFetch('/production')
@@ -841,21 +822,9 @@ export function createProduction(body) {
   return apiFetch('/production', { method: 'POST', body: JSON.stringify(body) })
 }
 
-export function addProductionDetail(productionId, body) {
-  return apiFetch(`/production/${productionId}/details`, { method: 'POST', body: JSON.stringify(body) })
-}
-
-export function updateProductionDetail(detailId, body) {
-  return apiFetch(`/production-detail/${detailId}`, { method: 'PUT', body: JSON.stringify(body) })
-}
-
 // --- QC ---
 export function listQc() {
   return apiFetch('/qc')
-}
-
-export function getQc(id) {
-  return apiFetch(`/qc/${id}`)
 }
 
 export function listQcDetails(qcId) {
@@ -868,10 +837,6 @@ export function createQc(body) {
 
 export function addQcDetail(qcId, body) {
   return apiFetch(`/qc/${qcId}/details`, { method: 'POST', body: JSON.stringify(body) })
-}
-
-export function updateQcDetail(detailId, body) {
-  return apiFetch(`/qc-detail/${detailId}`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
 // --- Delivery ---
@@ -918,11 +883,6 @@ export function addDeliveryDetail(deliveryId, body, opts = {}) {
   return apiFetch(`/delivery/${deliveryId}/details${q}`, { method: 'POST', body: JSON.stringify(body) })
 }
 
-export function updateDeliveryDetail(detailId, body, opts = {}) {
-  const q = opts.bypass_qc ? '?bypass_qc=true' : ''
-  return apiFetch(`/delivery-detail/${detailId}${q}`, { method: 'PUT', body: JSON.stringify(body) })
-}
-
 // --- Packing ---
 export function listPacking() {
   return apiFetch('/packing')
@@ -944,14 +904,6 @@ export function markInvplPrinted(packingId) {
   return apiFetch(`/packing/${packingId}/mark-invpl-printed`, { method: 'POST' })
 }
 
-export function addPackingDetail(packingId, body) {
-  return apiFetch(`/packing/${packingId}/details`, { method: 'POST', body: JSON.stringify(body) })
-}
-
-export function listPackingDetails(packingId) {
-  return apiFetch(`/packing/${packingId}/details`)
-}
-
 export function listPackingCandidateLines(packingId) {
   return apiFetch(`/packing/${packingId}/candidate-lines`)
 }
@@ -961,14 +913,6 @@ export function savePackingDetailsBatch(packingId, lines) {
     method: 'POST',
     body: JSON.stringify({ lines }),
   })
-}
-
-export function updatePackingDetail(detailId, body) {
-  return apiFetch(`/packing-detail/${detailId}`, { method: 'PUT', body: JSON.stringify(body) })
-}
-
-export function deletePackingDetail(detailId) {
-  return apiFetch(`/packing-detail/${detailId}`, { method: 'DELETE' })
 }
 
 // --- Invoice ---
@@ -995,20 +939,8 @@ export async function importMasterZip(file) {
   return apiFetch('/masters/import-zip', { method: 'POST', body: fd })
 }
 
-export function getInvoice(id) {
-  return apiFetch(`/invoice/${id}`)
-}
-
-export function listInvoiceDetails(invoiceId) {
-  return apiFetch(`/invoice/${invoiceId}/details`)
-}
-
 export function createInvoice(body) {
   return apiFetch('/invoice', { method: 'POST', body: JSON.stringify(body) })
-}
-
-export function addInvoiceDetail(invoiceId, body) {
-  return apiFetch(`/invoice/${invoiceId}/details`, { method: 'POST', body: JSON.stringify(body) })
 }
 
 // --- Customs ---
@@ -1037,22 +969,6 @@ export function deleteCustomsDeclaration(id) {
   return apiFetch(`/customs/declarations/${id}`, { method: 'DELETE' })
 }
 
-/** @param {File} file - ZIP berisi CSV NN_*.csv */
-export function importCustomsZip(file, sourceLabel) {
-  const fd = new FormData()
-  fd.append('file', file)
-  if (sourceLabel) fd.append('source_label', sourceLabel)
-  return apiFetch('/customs/declarations/import-zip', { method: 'POST', body: fd })
-}
-
-/** @param {File[]} files - semua CSV satu AJU */
-export function importCustomsCsvFiles(files, sourceLabel) {
-  const fd = new FormData()
-  files.forEach((f) => fd.append('files', f))
-  if (sourceLabel) fd.append('source_label', sourceLabel)
-  return apiFetch('/customs/declarations/import-upload', { method: 'POST', body: fd })
-}
-
 export function generateCustomsFromDelivery(deliveryId) {
   return apiFetch(`/customs/generate-from-delivery/${deliveryId}`, { method: 'POST' })
 }
@@ -1064,12 +980,6 @@ export function listBuyerPriceLists() {
 
 export function getBuyerPriceList(id) {
   return apiFetch(`/buyer-prices/lists/${id}`)
-}
-
-/** Sheet list harga untuk buyer (sama struktur dengan GET lists/:id). */
-export function getBuyerPriceByBuyer(buyerCode) {
-  const code = encodeURIComponent(String(buyerCode || '').trim().toUpperCase())
-  return apiFetch(`/buyer-prices/by-buyer/${code}`)
 }
 
 /**
@@ -1095,20 +1005,6 @@ export function updateBuyerPriceList(id, body) {
 /** Simpan urutan kolom + seluruh baris sheet (master data). */
 export function saveBuyerPriceSheet(id, body) {
   return apiFetch(`/buyer-prices/lists/${id}/sheet`, { method: 'PUT', body: JSON.stringify(body) })
-}
-
-export function importBuyerPriceZip(file, sourceLabel) {
-  const fd = new FormData()
-  fd.append('file', file)
-  if (sourceLabel) fd.append('source_label', sourceLabel)
-  return apiFetch('/buyer-prices/import-zip', { method: 'POST', body: fd })
-}
-
-export function importBuyerPriceCsvFiles(files, sourceLabel) {
-  const fd = new FormData()
-  files.forEach((f) => fd.append('files', f))
-  if (sourceLabel) fd.append('source_label', sourceLabel)
-  return apiFetch('/buyer-prices/import-upload', { method: 'POST', body: fd })
 }
 
 // --- Reports (export) ---
@@ -1247,10 +1143,6 @@ export function listSubconInvoices(params = {}) {
   return apiFetch(`/subcon-invoices${suffix}`)
 }
 
-export function getSubconInvoice(id) {
-  return apiFetch(`/subcon-invoices/${id}`)
-}
-
 export function createSubconInvoice(body) {
   return apiFetch('/subcon-invoices', { method: 'POST', body: JSON.stringify(body) })
 }
@@ -1288,10 +1180,6 @@ export function listPpicUsers() {
   return apiFetch('/workflow/ppic/users')
 }
 
-export function getPoPpicAssignment(poId) {
-  return apiFetch(`/workflow/po/${poId}/ppic-assignment`)
-}
-
 // --- Outstanding Materials ---
 export function listOutstandingMaterials(params = {}) {
   const q = new URLSearchParams()
@@ -1299,22 +1187,6 @@ export function listOutstandingMaterials(params = {}) {
   if (params.status) q.set('status', params.status)
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/workflow/outstanding-materials${suffix}`)
-}
-
-export function createOutstandingMaterial(body) {
-  return apiFetch('/workflow/outstanding-materials', { method: 'POST', body: JSON.stringify(body) })
-}
-
-export function updateOutstandingMaterial(materialId, body) {
-  return apiFetch(`/workflow/outstanding-materials/${materialId}`, { method: 'PUT', body: JSON.stringify(body) })
-}
-
-export function deleteOutstandingMaterial(materialId) {
-  return apiFetch(`/workflow/outstanding-materials/${materialId}`, { method: 'DELETE' })
-}
-
-export function generateOutstandingMaterialsFromPo(poId) {
-  return apiFetch(`/workflow/outstanding-materials/generate-from-po/${poId}`, { method: 'POST' })
 }
 
 export function deliverOutstandingMaterial(materialId, deliveredQty) {
@@ -1345,13 +1217,6 @@ export function deleteAccountingMapping(id) {
   return apiFetch(`/accounting/mappings/${id}`, { method: 'DELETE' })
 }
 
-export function resolveAccountingMapping(transaction_type, status = null) {
-  const q = new URLSearchParams()
-  q.set('transaction_type', transaction_type)
-  if (status) q.set('status', status)
-  return apiFetch(`/accounting/mappings/resolve?${q}`)
-}
-
 // --- Inventory - Warehouse ---
 export function listWarehouses() {
   return apiFetch('/inventory/warehouses')
@@ -1365,10 +1230,6 @@ export function updateWarehouse(id, body) {
   return apiFetch(`/inventory/warehouses/${id}`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
-export function deleteWarehouse(id) {
-  return apiFetch(`/inventory/warehouses/${id}`, { method: 'DELETE' })
-}
-
 // --- Inventory - Materials ---
 export function listMaterials() {
   return apiFetch('/inventory/materials')
@@ -1380,10 +1241,6 @@ export function createMaterial(body) {
 
 export function updateMaterial(id, body) {
   return apiFetch(`/inventory/materials/${id}`, { method: 'PUT', body: JSON.stringify(body) })
-}
-
-export function deleteMaterial(id) {
-  return apiFetch(`/inventory/materials/${id}`, { method: 'DELETE' })
 }
 
 // --- Inventory - Stock ---
@@ -1409,14 +1266,6 @@ export function listReceipts(params = {}) {
 
 export function createReceipt(body) {
   return apiFetch('/inventory/receipts', { method: 'POST', body: JSON.stringify(body) })
-}
-
-export function updateReceipt(id, body) {
-  return apiFetch(`/inventory/receipts/${id}`, { method: 'PUT', body: JSON.stringify(body) })
-}
-
-export function confirmReceipt(id) {
-  return apiFetch(`/inventory/receipts/${id}/confirm`, { method: 'POST' })
 }
 
 // --- Journal Entries ---
