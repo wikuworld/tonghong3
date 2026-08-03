@@ -244,3 +244,91 @@ def list_ready_to_ship(
             or kw in (r.get("packing_number") or "").lower()
         ]
     return out
+def list_ready_to_ship_for_po_details(
+    db: Session,
+    po_detail_ids: list[int],
+    *,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Opsi packing list siap kirim untuk baris outstanding (po_detail_id)."""
+    wanted = {int(x) for x in po_detail_ids if x is not None}
+    if not wanted:
+        return []
+    rows = list_ready_to_ship(db, limit=limit)
+    enriched: list[dict[str, Any]] = []
+    for r in rows:
+        pd = db.get(ProductionDetail, int(r["production_detail_id"]))
+        if not pd or pd.po_detail_id is None:
+            continue
+        pod_id = int(pd.po_detail_id)
+        if pod_id not in wanted:
+            continue
+        item = dict(r)
+        item["po_detail_id"] = pod_id
+        enriched.append(item)
+    return enriched
+
+
+def qty_available_for_packing_line(
+    db: Session,
+    *,
+    packing_id: int,
+    production_detail_id: int,
+    packing_detail_id: int | None = None,
+) -> Decimal:
+    """Sisa qty packing yang boleh dikirim untuk lot (0 jika belum done / QC / habis)."""
+    pk = db.get(PackingHeader, packing_id)
+    if not pk or (pk.status or "").strip().lower() != "done":
+        return Decimal(0)
+    pd = db.get(ProductionDetail, production_detail_id)
+    if not pd:
+        return Decimal(0)
+    pkd: PackingDetail | None = None
+    if packing_detail_id is not None:
+        pkd = db.get(PackingDetail, packing_detail_id)
+        if not pkd or int(pkd.packing_id or 0) != int(packing_id):
+            return Decimal(0)
+        if pkd.production_detail_id and int(pkd.production_detail_id) != int(production_detail_id):
+            return Decimal(0)
+    else:
+        pkd = db.scalars(
+            select(PackingDetail).where(
+                and_(
+                    PackingDetail.packing_id == packing_id,
+                    PackingDetail.production_detail_id == production_detail_id,
+                )
+            )
+        ).first()
+    row = _packing_line_row(db, pk, pd, pkd)
+    if not row:
+        return Decimal(0)
+    return _dec(row.get("qty_available"))
+
+
+def aggregate_overall(lines: list[dict[str, Any]]) -> dict[str, Any]:
+    total_sf = Decimal(0)
+    total_roll = 0
+    total_pcs = 0
+    total_weight = Decimal(0)
+    for ln in lines:
+        total_sf += _dec(ln.get("qty") or ln.get("qty_available"))
+        if ln.get("qty_roll") is not None:
+            total_roll += int(ln["qty_roll"])
+        if ln.get("qty_pcs") is not None:
+            total_pcs += int(ln["qty_pcs"])
+        if ln.get("weight") is not None:
+            total_weight += _dec(ln["weight"])
+        elif ln.get("weight_net") is not None:
+            total_weight += _dec(ln["weight_net"])
+    brands = {str(ln.get("brand") or "").strip() for ln in lines if ln.get("brand")}
+    customers = {str(ln.get("customer_name") or "").strip() for ln in lines if ln.get("customer_name")}
+    return {
+        "line_count": len(lines),
+        "total_sf": float(total_sf),
+        "total_roll": total_roll,
+        "total_pcs": total_pcs,
+        "total_weight": float(total_weight),
+        "brand": next(iter(brands)) if len(brands) == 1 else "",
+        "customer_name": next(iter(customers)) if len(customers) == 1 else "",
+    }
+

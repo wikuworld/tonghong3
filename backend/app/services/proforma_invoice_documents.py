@@ -6,7 +6,7 @@ import io
 from datetime import date
 from decimal import Decimal
 from html import escape
-from typing import Any
+from typing import Any, Optional
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -169,7 +169,11 @@ def _resolve_payment_terms(cust: Customer | None, db: Session, customer_id: int 
     return DEFAULT_PAYMENT_TERMS
 
 
-def gather_proforma_invoice_ctx(db: Session, po_id: int) -> dict[str, Any]:
+def gather_proforma_invoice_ctx(
+    db: Session,
+    po_id: int,
+    po_detail_ids: Optional[set[int] | list[int]] = None,
+) -> dict[str, Any]:
     ph = db.get(PoHeader, po_id)
     if not ph:
         raise ValueError("po_not_found")
@@ -177,6 +181,11 @@ def gather_proforma_invoice_ctx(db: Session, po_id: int) -> dict[str, Any]:
     details = list(
         db.scalars(select(PoDetail).where(PoDetail.po_id == po_id).order_by(PoDetail.id.asc())).all()
     )
+    wanted = {int(x) for x in (po_detail_ids or []) if x is not None}
+    if wanted:
+        details = [d for d in details if int(d.id) in wanted]
+        if not details:
+            raise ValueError("details_not_found")
     po_number = (ph.po_number or str(ph.id)).strip()
     customer_name = (cust.name if cust and cust.name else ph.customer_name_snapshot or "").strip() or "—"
     ship_addr = (ph.delivery_address or (cust.address if cust else "") or ph.billing_address or "").strip()
@@ -199,6 +208,7 @@ def gather_proforma_invoice_ctx(db: Session, po_id: int) -> dict[str, Any]:
         etd_src = d.line_etd or ph.etd
         lines.append(
             {
+                "po_detail_id": int(d.id),
                 "po_no": po_number,
                 "item": (d.material_name or "").strip(),
                 "thickness": _thickness_text(d),
@@ -234,7 +244,129 @@ def gather_proforma_invoice_ctx(db: Session, po_id: int) -> dict[str, Any]:
         "total_qty": total_qty,
         "total_amount": total_amount,
         "unit": DEFAULT_UNIT,
+        "po_detail_ids": [int(d.id) for d in details],
+        "po_ids": [int(po_id)],
+        "customer_id": ph.customer_id,
     }
+
+
+def gather_proforma_invoice_ctx_multi(
+    db: Session,
+    po_ids: list[int],
+    po_detail_ids: Optional[list[int]] = None,
+) -> dict[str, Any]:
+    """Gabung beberapa SO jadi 1 PI — wajib customer yang sama.
+
+    Jika `po_detail_ids` diisi, hanya baris itu yang masuk dokumen (sesuai checklist outstanding).
+    """
+    ids = sorted({int(x) for x in po_ids if x is not None})
+    wanted = {int(x) for x in (po_detail_ids or []) if x is not None} or None
+    if not ids:
+        raise ValueError("po_ids_required")
+    if len(ids) == 1:
+        return gather_proforma_invoice_ctx(db, ids[0], wanted)
+
+    headers: list[PoHeader] = []
+    for pid in ids:
+        ph = db.get(PoHeader, pid)
+        if not ph:
+            raise ValueError("po_not_found")
+        headers.append(ph)
+
+    customer_ids = {(h.customer_id or 0) for h in headers}
+    if len(customer_ids) > 1 or (0 in customer_ids and len(headers) > 1):
+        raise ValueError("customer_mismatch")
+
+    all_lines: list[dict[str, Any]] = []
+    total_qty = Decimal(0)
+    total_amount = Decimal(0)
+    po_numbers: list[str] = []
+    included_detail_ids: list[int] = []
+    base: dict[str, Any] | None = None
+
+    for h in headers:
+        try:
+            ctx = gather_proforma_invoice_ctx(db, h.id, wanted)
+        except ValueError as e:
+            if str(e) == "details_not_found" and wanted is not None:
+                # SO ini tidak punya baris tercentang — lewati
+                continue
+            raise
+        if base is None:
+            base = dict(ctx)
+        po_numbers.append(str(ctx["po_number"]))
+        for ln in ctx["lines"]:
+            all_lines.append(ln)
+        total_qty += ctx["total_qty"] or Decimal(0)
+        total_amount += ctx["total_amount"] or Decimal(0)
+        included_detail_ids.extend(ctx.get("po_detail_ids") or [])
+
+    if base is None or (wanted is not None and not all_lines):
+        raise ValueError("details_not_found")
+
+    po_label = ", ".join(po_numbers[:4])
+    if len(po_numbers) > 4:
+        po_label = f"{po_label} +{len(po_numbers) - 4}"
+
+    base["po_number"] = po_label
+    primary = headers[0]
+    primary_details = list(
+        db.scalars(select(PoDetail).where(PoDetail.po_id == primary.id).order_by(PoDetail.id.asc())).all()
+    )
+    if wanted:
+        filtered = [d for d in primary_details if int(d.id) in wanted]
+        if filtered:
+            primary_details = filtered
+    base["pi_number"] = _ensure_unique_pi_number(db, _build_pi_number(db, primary, primary_details))
+    base["po_list_label"] = "AS LISTED BELLOW"
+    base["ex_factory_label"] = "AS LISTED BELLOW"
+    base["lines"] = all_lines
+    base["total_qty"] = total_qty
+    base["total_amount"] = total_amount
+    base["po_ids"] = ids
+    base["po_detail_ids"] = included_detail_ids
+    base["customer_id"] = primary.customer_id
+    return base
+
+
+def _ensure_unique_pi_number(db: Session, pi_number: str) -> str:
+    from app.models import ProformaInvoiceRecord
+
+    base = (pi_number or "").strip() or "001/PI/XX/PROD/I/2026"
+    candidate = base
+    n = 1
+    while db.scalars(
+        select(ProformaInvoiceRecord).where(ProformaInvoiceRecord.pi_number == candidate).limit(1)
+    ).first():
+        n += 1
+        candidate = f"{base}-R{n}"
+    return candidate
+
+
+def persist_proforma_invoice_record(
+    db: Session,
+    ctx: dict[str, Any],
+    *,
+    actor: str | None = None,
+) -> Any:
+    """Simpan nomor PI resmi setelah generate dokumen."""
+    from app.models import ProformaInvoiceRecord
+
+    pi_number = _ensure_unique_pi_number(db, str(ctx.get("pi_number") or ""))
+    ctx["pi_number"] = pi_number
+    row = ProformaInvoiceRecord(
+        pi_number=pi_number,
+        customer_id=ctx.get("customer_id"),
+        customer_name=str(ctx.get("customer_name") or "")[:255] or None,
+        po_ids_json=list(ctx.get("po_ids") or []),
+        po_detail_ids_json=list(ctx.get("po_detail_ids") or []),
+        total_qty=ctx.get("total_qty"),
+        total_amount=ctx.get("total_amount"),
+        created_by=actor,
+    )
+    db.add(row)
+    db.flush()
+    return row
 
 
 def _terms_paragraphs(ctx: dict[str, Any], style: ParagraphStyle) -> list[Any]:

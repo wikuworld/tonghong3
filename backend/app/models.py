@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import (
     BigInteger,
@@ -802,10 +802,35 @@ class DeliveryDetail(Base):
     production_detail_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("production_details.id")
     )
+    packing_detail_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("packing_details.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
     qty_roll: Mapped[Optional[int]] = mapped_column(Integer)
     qty_pcs: Mapped[Optional[int]] = mapped_column(Integer)
     weight: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
+
+
+class ProformaInvoiceRecord(Base):
+    """Catatan PI yang sudah digenerate (nomor resmi + scope SO/baris)."""
+
+    __tablename__ = "proforma_invoice_records"
+    __table_args__ = (Index("ix_proforma_invoice_records_customer_id", "customer_id"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    pi_number: Mapped[str] = mapped_column(String(120), unique=True)
+    customer_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True
+    )
+    customer_name: Mapped[Optional[str]] = mapped_column(String(255))
+    po_ids_json: Mapped[Any] = mapped_column(JSON, nullable=False)
+    po_detail_ids_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    total_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    total_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    created_by: Mapped[Optional[str]] = mapped_column(String(100))
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
 
 
 class Invoice(Base):
