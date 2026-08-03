@@ -111,6 +111,8 @@ def test_customs_require_auth_and_role_guards_and_limit_bounds():
         ("/customs/declarations/{declaration_id}", "DELETE"),
         ("/customs/declarations/import-upload", "POST"),
         ("/customs/declarations/import-zip", "POST"),
+        ("/customs/generate-from-delivery/{delivery_id}", "POST"),
+        ("/customs/declarations/{declaration_id}/export-zip", "GET"),
     ]:
         route = _get_route(customs.router, path, method)
         assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"

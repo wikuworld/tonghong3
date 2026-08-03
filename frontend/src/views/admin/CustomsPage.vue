@@ -1,6 +1,6 @@
 <template>
   <div class="space-y-4">
-    <AdminSection :title="t('pages.customs.title')" :subtitle="t('pages.customs.subtitle')">
+    <AdminSection :title="t('pages.customs.title')" :hint="pageHint">
       <template #actions>
         <el-input
           v-model="keyword"
@@ -8,6 +8,9 @@
           clearable
           class="customs-toolbar-search"
         />
+        <el-button v-if="canCreate" :icon="Upload" @click="openImportDialog">
+          {{ t('pages.customs.importZip') }}
+        </el-button>
         <el-button v-if="canCreate" type="primary" :icon="Plus" :loading="loading" @click="openCreateDialog">
           {{ t('common.create') }}
         </el-button>
@@ -30,7 +33,7 @@
               <el-option
                 v-for="d in deliveryOptions"
                 :key="d.id"
-                :label="`${d.delivery_number} - ${d.customer_name || ''}`"
+                :label="deliveryOptionLabel(d)"
                 :value="d.id"
               />
             </el-select>
@@ -49,6 +52,13 @@
 
         <div v-if="generatedAju" class="mt-4">
           <el-divider content-position="left">{{ t('pages.customs.ajuData') }}</el-divider>
+          <el-alert
+            v-if="generatedAju.already_linked"
+            type="info"
+            :closable="false"
+            class="mb-3"
+            :title="t('pages.customs.alreadyLinked')"
+          />
           <el-descriptions :column="2" border size="small">
             <el-descriptions-item :label="t('pages.customs.ajuNumber')">
               <strong>{{ generatedAju.nomor_aju }}</strong>
@@ -72,6 +82,11 @@
               {{ generatedAju.total_pcs }}
             </el-descriptions-item>
           </el-descriptions>
+          <div v-if="generatedAju.id && canUpdate" class="mt-3">
+            <el-button type="primary" @click="openMaster(generatedAju.id)">
+              {{ t('pages.customs.manageDraft') }}
+            </el-button>
+          </div>
         </div>
       </el-card>
 
@@ -86,13 +101,24 @@
         :empty-text="t('pages.customs.tableEmpty')"
       >
         <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
-        <el-table-column prop="nomor_aju" :label="t('pages.customs.nomorAju')" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="kode_dokumen" :label="t('pages.customs.kodeDok')" width="100" show-overflow-tooltip />
-        <el-table-column prop="source_label" :label="t('pages.customs.source')" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="versi_template" :label="t('pages.customs.versi')" width="88" show-overflow-tooltip />
-        <el-table-column :label="t('common.actions')" width="100" align="center" fixed="right">
+        <el-table-column prop="nomor_aju" :label="t('pages.customs.nomorAju')" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="kode_dokumen" :label="t('pages.customs.kodeDok')" width="88" show-overflow-tooltip />
+        <el-table-column prop="delivery_number" :label="t('pages.customs.deliveryNumber')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="customer_name" :label="t('pages.customs.customerName')" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="source_label" :label="t('pages.customs.source')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="versi_template" :label="t('pages.customs.versi')" width="72" show-overflow-tooltip />
+        <el-table-column :label="t('common.actions')" width="132" align="center" fixed="right">
           <template #default="{ row }">
             <div class="flex flex-wrap items-center justify-center gap-0">
+              <el-tooltip v-if="canUpdate" :content="t('pages.customs.exportZip')" placement="top">
+                <el-button
+                  :icon="Download"
+                  link
+                  type="success"
+                  :aria-label="t('pages.customs.exportZip')"
+                  @click="handleExportZip(row.id)"
+                />
+              </el-tooltip>
               <el-tooltip v-if="canUpdate" :content="t('pages.customs.manageData')" placement="top">
                 <el-button
                   :icon="EditPen"
@@ -113,13 +139,27 @@
 
     <el-dialog
       v-model="createVisible"
-      :title="t('pages.customs.dialogAdd')"
       width="520px"
       destroy-on-close
       align-center
       @closed="resetCreateForm"
     >
-      <p class="mb-3 text-sm text-slate-600">{{ t('pages.customs.formHint') }}</p>
+      <template #header>
+        <div class="customs-dialog-header">
+          <h3 class="customs-dialog-header__title">{{ t('pages.customs.dialogAdd') }}</h3>
+          <el-tooltip placement="top-start" :show-after="200">
+            <template #content>{{ t('pages.customs.formHint') }}</template>
+            <el-icon
+              class="customs-hint-icon"
+              :size="16"
+              tabindex="0"
+              :aria-label="t('pages.customs.formHint')"
+            >
+              <InfoFilled />
+            </el-icon>
+          </el-tooltip>
+        </div>
+      </template>
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top" @submit.prevent>
         <el-form-item :label="t('pages.customs.nomorAju')" prop="nomor_aju">
           <el-input
@@ -176,6 +216,9 @@
         <el-divider content-position="left">{{ t('pages.customs.sectionSheets') }}</el-divider>
         <div class="flex flex-wrap items-center gap-2 pb-2">
           <el-button v-if="canUpdate" type="primary" plain @click="promptAddSheet">{{ t('pages.customs.addSheet') }}</el-button>
+          <el-button v-if="canUpdate" type="success" plain :icon="Download" @click="handleExportZip(activeListId)">
+            {{ t('pages.customs.exportZip') }}
+          </el-button>
           <el-button v-if="canUpdate" type="primary" :loading="masterSaving" @click="saveMaster">{{ t('pages.customs.saveSheets') }}</el-button>
         </div>
 
@@ -233,20 +276,70 @@
         <p v-else class="text-sm text-slate-500">{{ t('pages.customs.addSheet') }}</p>
       </div>
     </el-drawer>
+
+    <el-dialog
+      v-model="importVisible"
+      width="520px"
+      destroy-on-close
+      align-center
+      @closed="resetImportForm"
+    >
+      <template #header>
+        <div class="customs-dialog-header">
+          <h3 class="customs-dialog-header__title">{{ t('pages.customs.importZip') }}</h3>
+          <el-tooltip placement="top-start" :show-after="200">
+            <template #content>{{ t('pages.customs.importHint') }}</template>
+            <el-icon
+              class="customs-hint-icon"
+              :size="16"
+              tabindex="0"
+              :aria-label="t('pages.customs.importHint')"
+            >
+              <InfoFilled />
+            </el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-form label-position="top">
+        <el-form-item :label="t('pages.customs.source')">
+          <el-input v-model="importSourceLabel" maxlength="255" clearable />
+        </el-form-item>
+        <el-form-item :label="t('pages.customs.importZip')">
+          <el-upload
+            ref="importUploadRef"
+            :auto-upload="false"
+            :limit="1"
+            accept=".zip"
+            :on-change="onImportFileChange"
+            :on-remove="onImportFileRemove"
+          >
+            <el-button type="primary">{{ t('pages.customs.selectZip') }}</el-button>
+          </el-upload>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="importVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button v-if="canCreate" type="primary" :loading="importSaving" :disabled="!importFile" @click="submitImport">
+          {{ t('pages.customs.importZip') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Delete, EditPen, Plus } from '@element-plus/icons-vue'
+import { Delete, Download, EditPen, InfoFilled, Plus, Upload } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminSection from '../../components/AdminSection.vue'
 import {
   createCustomsDeclaration,
   deleteCustomsDeclaration,
+  exportCustomsZip,
   generateCustomsFromDelivery,
   getCustomsDeclaration,
+  importCustomsZip,
   listCustomsDeclarations,
   listDelivery,
   saveCustomsSheetsData,
@@ -257,24 +350,85 @@ import { useModulePermission } from '../../composables/useModulePermission'
 const { t } = useI18n()
 const { canCreate, canUpdate, canDelete } = useModulePermission('customs')
 
+const pageHint = computed(() =>
+  [t('pages.customs.subtitle'), '', `${t('pages.customs.workflowTitle')}:`, t('pages.customs.workflowHint')].join('\n')
+)
+
 const selectedDeliveryId = ref(null)
 const deliveryOptions = ref([])
 const generating = ref(false)
 const generatedAju = ref(null)
 
+const importVisible = ref(false)
+const importSaving = ref(false)
+const importFile = ref(null)
+const importSourceLabel = ref('')
+const importUploadRef = ref(null)
+
+function openImportDialog() {
+  resetImportForm()
+  importVisible.value = true
+}
+
+function resetImportForm() {
+  importFile.value = null
+  importSourceLabel.value = ''
+  importUploadRef.value?.clearFiles?.()
+}
+
+function onImportFileChange(uploadFile) {
+  importFile.value = uploadFile?.raw || null
+}
+
+function onImportFileRemove() {
+  importFile.value = null
+}
+
+async function submitImport() {
+  if (!importFile.value) return
+  importSaving.value = true
+  try {
+    const created = await importCustomsZip(importFile.value, importSourceLabel.value.trim() || undefined)
+    ElMessage.success(t('pages.customs.importOk'))
+    importVisible.value = false
+    await load()
+    if (created?.id) await openMaster(created.id)
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    importSaving.value = false
+  }
+}
+
+async function handleExportZip(id) {
+  if (id == null) return
+  try {
+    await exportCustomsZip(id)
+    ElMessage.success(t('pages.customs.exportOk'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
 async function onDeliveryDropdown(open) {
-  if (open && deliveryOptions.value.length === 0) {
+  if (open) {
     try {
       const data = await listDelivery()
       deliveryOptions.value = data.map((d) => ({
         id: d.id,
         delivery_number: d.delivery_number,
         customer_name: d.customer_name || '',
+        customs_declaration_id: d.customs_declaration_id || null,
       }))
     } catch {
       deliveryOptions.value = []
     }
   }
+}
+
+function deliveryOptionLabel(d) {
+  const base = `${d.delivery_number || d.id} — ${d.customer_name || ''}`.trim()
+  return d.customs_declaration_id ? `${base} (${t('pages.customs.hasAju')})` : base
 }
 
 async function handleGenerateAju() {
@@ -285,7 +439,15 @@ async function handleGenerateAju() {
   generating.value = true
   try {
     generatedAju.value = await generateCustomsFromDelivery(selectedDeliveryId.value)
-    ElMessage.success(t('pages.customs.generatedSuccess'))
+    const msg = generatedAju.value?.already_linked
+      ? t('pages.customs.alreadyLinked')
+      : t('pages.customs.generatedSaved')
+    ElMessage.success(msg)
+    await load()
+    if (generatedAju.value?.id) {
+      const opt = deliveryOptions.value.find((d) => d.id === selectedDeliveryId.value)
+      if (opt) opt.customs_declaration_id = generatedAju.value.id
+    }
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
@@ -377,7 +539,15 @@ const filteredRows = computed(() => {
   const k = keyword.value.trim().toLowerCase()
   if (!k) return rows.value
   return rows.value.filter((r) => {
-    const hay = [r.nomor_aju, r.kode_dokumen, r.source_label, r.versi_template]
+    const hay = [
+      r.nomor_aju,
+      r.kode_dokumen,
+      r.source_label,
+      r.versi_template,
+      r.delivery_number,
+      r.customer_name,
+      r.po_number,
+    ]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()
@@ -678,5 +848,28 @@ onMounted(load)
 }
 .customs-tabs :deep(.el-tabs__content) {
   padding-top: 8px;
+}
+.customs-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-right: 8px;
+}
+.customs-dialog-header__title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+.customs-hint-icon {
+  color: #94a3b8;
+  cursor: help;
+  flex-shrink: 0;
+  outline: none;
+}
+.customs-hint-icon:hover,
+.customs-hint-icon:focus-visible {
+  color: var(--el-color-primary);
 }
 </style>
