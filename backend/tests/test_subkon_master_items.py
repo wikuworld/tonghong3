@@ -3,7 +3,6 @@
 from pathlib import Path
 
 from app.services.subkon_master_items import (
-    import_subkon_master_items,
     iter_subkon_rows_from_csv,
     normalize_subkon_row,
 )

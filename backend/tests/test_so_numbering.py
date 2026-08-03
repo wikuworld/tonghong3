@@ -1,6 +1,6 @@
 """Format nomor SO per kategori marketing."""
 
-from datetime import date, datetime
+from datetime import datetime
 
 from app.services.so_numbering import format_so_number, so_prefix_for_po
 
