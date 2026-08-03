@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import and_, func, select
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -320,9 +321,15 @@ def dashboard_summary(
     ) or 0
     n_qc_total = db.scalar(select(func.count()).select_from(QcDetail)) or 0
 
-    rate = db.scalars(
-        select(ExchangeRate).order_by(ExchangeRate.effective_date.desc()).limit(1)
-    ).first()
+    rate = None
+    try:
+        rate = db.scalars(
+            select(ExchangeRate).order_by(ExchangeRate.effective_date.desc()).limit(1)
+        ).first()
+    except ProgrammingError:
+        # Tabel exchange_rates belum ada / belum di-migrate — jangan gagalkan seluruh dashboard.
+        db.rollback()
+        rate = None
 
     today = date.today()
     trend_labels: list[str] = []
