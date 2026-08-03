@@ -70,3 +70,62 @@ def validate_delivery_qty_against_po_balance(
                 "Revisi PO/marketing jika perlu menambah qty order."
             ),
         )
+
+
+def _dec_qty(v: Decimal | float | int | None) -> Decimal:
+    if v is None:
+        return Decimal(0)
+    return Decimal(str(v))
+
+
+def schedule_qty_total(schedules: list) -> Decimal:
+    """Jumlah qty dari list jadwal (objek dengan atribut/qty key `qty`)."""
+    total = Decimal(0)
+    for item in schedules:
+        if isinstance(item, dict):
+            total += _dec_qty(item.get("qty"))
+        else:
+            total += _dec_qty(getattr(item, "qty", None))
+    return total
+
+
+def validate_schedule_total_against_order(
+    db: Session,
+    po_detail_id: int,
+    schedules: list,
+) -> None:
+    """Tolak jika total qty jadwal kirim > quantity_order baris PO."""
+    pod = db.get(PoDetail, po_detail_id)
+    if not pod or pod.quantity_order is None:
+        return
+    order_qty = _dec_qty(pod.quantity_order)
+    total = schedule_qty_total(schedules)
+    if total > order_qty:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Total jadwal kirim ({total}) melebihi qty order ({order_qty}) "
+                f"untuk baris PO #{po_detail_id}. Kurangi qty slot atau naikkan qty order."
+            ),
+        )
+
+
+def remaining_schedule_qty(db: Session, po_detail_id: int, existing_schedules: list | None = None) -> Decimal:
+    """Sisa qty yang masih boleh dijadwalkan (order − sum jadwal existing)."""
+    pod = db.get(PoDetail, po_detail_id)
+    if not pod or pod.quantity_order is None:
+        return Decimal(0)
+    order_qty = _dec_qty(pod.quantity_order)
+    if existing_schedules is None:
+        from app.models import PoDetailDelivery
+
+        existing_schedules = list(
+            db.scalars(
+                select(PoDetailDelivery)
+                .where(PoDetailDelivery.po_detail_id == po_detail_id)
+                .order_by(PoDetailDelivery.sequence_no.asc())
+            ).all()
+        )
+    used = schedule_qty_total(existing_schedules)
+    rem = order_qty - used
+    return rem if rem > 0 else Decimal(0)

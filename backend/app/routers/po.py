@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
 from app.models import Brand, CustomerBrandMapping, FluorescentColorMaster, PoDetail, PoDetailDelivery, PoHeader
-from app.services.audit import log_change
+from app.services.audit import log_change, mark_po_item_revised, po_detail_audit_snapshot
 from app.services.lot_numbers import infer_material_group
 from app.services.so_numbering import next_so_number, peek_so_number
 from app.schemas import (
@@ -30,20 +30,22 @@ from app.schemas import (
     PoMaterialHintsOut,
     PoMaterialHintItemOut,
     PoMarketingReviseBody,
+    MktWorkflowRollbackIn,
     MktWorkflowStagesOut,
     StatusDeletedOut,
 )
 from app.services.business_rules import validate_po_status_transition
 from app.services.mkt_workflow import (
     MKT_STAGES_ORDER,
+    apply_mkt_rollback_side_effects,
     apply_mkt_stage,
     next_mkt_stage,
-    prev_mkt_stage,
     sync_mkt_workflow_auto_advance,
     validate_mkt_advance,
+    validate_mkt_rollback,
 )
 from app.services.po_delete_guards import validate_po_deletable
-from app.services.po_query import po_list_count, po_list_select
+from app.services.po_query import po_list_count, po_list_select, po_list_stage_counts
 from app.services.po_header_snapshots import apply_header_snapshots
 from app.services.po_list_summary import compute_po_list_summaries, serialize_po_headers_for_list
 from app.services.lot_numbers import (
@@ -402,6 +404,9 @@ def list_po_page(
     order_date_to: Optional[str] = Query(None, description="Rentang order_date: akhir (YYYY-MM-DD)"),
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    include_stage_counts: bool = Query(
+        False, description="Sertakan agregat mkt_workflow_stage (untuk badge pipeline)"
+    ),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> PoHeaderPageOut:
@@ -423,7 +428,18 @@ def list_po_page(
         ).all()
     )
     items_out = serialize_po_headers_for_list(db, items)
-    return PoHeaderPageOut(items=items_out, total=total, limit=limit, offset=offset)
+    stage_counts = None
+    if include_stage_counts:
+        # Pipeline badge: hitung semua stage (abaikan filter stage terpilih)
+        stage_filters = {**filters, "mkt_workflow_stage": None}
+        stage_counts = po_list_stage_counts(db, **stage_filters)
+    return PoHeaderPageOut(
+        items=items_out,
+        total=total,
+        limit=limit,
+        offset=offset,
+        stage_counts=stage_counts,
+    )
 
 
 @router.get("/po/material-hints", response_model=PoMaterialHintsOut)
@@ -495,21 +511,23 @@ def advance_mkt_workflow(
 @router.post("/po/{po_id}/mkt-workflow/rollback", response_model=PoHeaderOut)
 def rollback_mkt_workflow(
     po_id: int,
+    body: MktWorkflowRollbackIn,
     db: Session = Depends(get_db),
-    _user=Depends(require_roles("admin", "marketing", "ppic")),
+    _user=Depends(require_roles("admin")),
 ) -> PoHeader:
+    """Rollback tahap MKT — hanya admin, wajib alasan, diblokir jika delivery/invoice ada."""
     row = db.get(PoHeader, po_id)
     if not row:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
-    prev = prev_mkt_stage(row.mkt_workflow_stage)
-    if not prev:
-        raise HTTPException(status_code=400, detail="PO sudah di tahap awal alur MKT")
+    prev, reason = validate_mkt_rollback(db, po_id, reason=body.reason)
+    before_stage = row.mkt_workflow_stage
     apply_mkt_stage(db, po_id, prev)
+    apply_mkt_rollback_side_effects(db, po_id, prev)
     create_notification_for_roles(
         db,
         ("admin", "marketing", "ppic"),
         title=f"PO {row.po_number or row.id} rollback ke tahap {prev}",
-        message=f"Tahap alur marketing dirollback menjadi: {prev}",
+        message=f"Tahap alur marketing dirollback menjadi: {prev}. Alasan: {reason}",
         category="workflow",
         entity_type="sales_order",
         entity_id=row.id,
@@ -521,7 +539,8 @@ def rollback_mkt_workflow(
         entity_type="sales_order",
         entity_id=row.id,
         action="workflow_rollback",
-        after={"mkt_workflow_stage": prev},
+        before={"mkt_workflow_stage": before_stage},
+        after={"mkt_workflow_stage": prev, "rollback_reason": reason},
         actor=_user.username,
     )
     db.commit()
@@ -889,6 +908,9 @@ def _replace_po_detail_delivery_schedules_core(
     schedules: list[DeliveryScheduleItem],
 ) -> None:
     _validate_delivery_schedule_items(schedules)
+    from app.services.po_delivery_balance import validate_schedule_total_against_order
+
+    validate_schedule_total_against_order(db, detail_id, schedules)
     db.query(PoDetailDelivery).filter(PoDetailDelivery.po_detail_id == detail_id).delete(synchronize_session=False)
     db.flush()
     for item in sorted(schedules, key=lambda x: x.sequence_no):
@@ -947,6 +969,7 @@ def marketing_revise_po(
                         for x in sched_raw
                     ]
                     _replace_po_detail_delivery_schedules_core(db, int(drow.id), schedules)
+            mark_po_item_revised(db, po_id, kind="update")
         log_change(
             db,
             entity_type="sales_order",
@@ -1049,14 +1072,7 @@ def add_po_detail(
         entity_type="sales_order_line",
         entity_id=row.id,
         action="create",
-        after={
-            "po_id": po_id,
-            "material_name": row.material_name,
-            "color": row.color,
-            "color_family": row.color_family,
-            "quantity_order": row.quantity_order,
-            "unit_price": row.unit_price,
-        },
+        after=po_detail_audit_snapshot(row, include_schedules=True),
         actor=user.username,
     )
     db.commit()
@@ -1088,20 +1104,7 @@ def update_po_detail(
     if "unit_price" in data and user.role not in ("admin", "finance"):
         raise HTTPException(status_code=403, detail="unit_price dikunci (harga otomatis)")
 
-    before = {
-        "material_name": row.material_name,
-        "color": row.color,
-        "color_family": row.color_family,
-        "color_reference": row.color_reference,
-        "color_standard": row.color_standard,
-        "thickness_text": row.thickness_text,
-        "thickness_min": row.thickness_min,
-        "thickness_max": row.thickness_max,
-        "quantity_order": row.quantity_order,
-        "line_etd": row.line_etd,
-        "backing": row.backing,
-        "unit_price": row.unit_price,
-    }
+    before = po_detail_audit_snapshot(row, include_schedules=True)
     for k, v in data.items():
         setattr(row, k, v)
     log_change(
@@ -1110,22 +1113,10 @@ def update_po_detail(
         entity_id=row.id,
         action="update",
         before=before,
-        after={
-            "material_name": row.material_name,
-            "color": row.color,
-            "color_family": row.color_family,
-            "color_reference": row.color_reference,
-            "color_standard": row.color_standard,
-            "thickness_text": row.thickness_text,
-            "thickness_min": row.thickness_min,
-            "thickness_max": row.thickness_max,
-            "quantity_order": row.quantity_order,
-            "line_etd": row.line_etd,
-            "backing": row.backing,
-            "unit_price": row.unit_price,
-        },
+        after=po_detail_audit_snapshot(row, include_schedules=True),
         actor=user.username,
     )
+    mark_po_item_revised(db, row.po_id, kind="update")
     db.commit()
     out = _detail_loaded(db, detail_id)
     return out or row
@@ -1142,18 +1133,21 @@ def generate_lot_for_po_detail(
     if not row:
         raise HTTPException(status_code=404, detail="Detail PO tidak ditemukan")
     try:
-        before_thi = row.thi_line_ref
+        before = po_detail_audit_snapshot(row, include_schedules=True)
         lot = generate_po_detail_lot_number(db, detail_id)
         row.thi_line_ref = lot
+        after = po_detail_audit_snapshot(row, include_schedules=True)
+        after["via"] = "generate_lot"
         log_change(
             db,
             entity_type="sales_order_line",
             entity_id=row.id,
             action="update",
-            before={"thi_line_ref": before_thi},
-            after={"thi_line_ref": lot, "via": "generate_lot"},
+            before=before,
+            after=after,
             actor=user.username,
         )
+        mark_po_item_revised(db, row.po_id, kind="update")
         db.commit()
         out = _detail_loaded(db, detail_id)
         return out or row
@@ -1203,9 +1197,10 @@ def delete_po_detail(
         entity_type="sales_order_line",
         entity_id=row.id,
         action="delete",
-        before={"material_name": row.material_name, "unit_price": row.unit_price},
+        before=po_detail_audit_snapshot(row, include_schedules=True),
         actor=user.username,
     )
+    mark_po_item_revised(db, row.po_id, kind="delete")
     db.delete(row)
     db.commit()
     return StatusDeletedOut(status="deleted")
@@ -1223,7 +1218,21 @@ def set_po_detail_delivery_schedules(
         raise HTTPException(status_code=404, detail="Detail PO tidak ditemukan")
 
     try:
+        before = po_detail_audit_snapshot(row, include_schedules=True)
         _replace_po_detail_delivery_schedules_core(db, detail_id, list(body.schedules))
+        db.flush()
+        db.expire(row, ["delivery_schedules"])
+        after = po_detail_audit_snapshot(row, include_schedules=True)
+        log_change(
+            db,
+            entity_type="sales_order_line",
+            entity_id=row.id,
+            action="update",
+            before=before,
+            after=after,
+            actor=user.username,
+        )
+        mark_po_item_revised(db, row.po_id, kind="update")
         db.commit()
         return list(
             db.scalars(

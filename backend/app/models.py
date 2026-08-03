@@ -540,6 +540,10 @@ class PoHeader(Base):
     mkt_workflow_stage: Mapped[str] = mapped_column(String(48), default="input_system")
     mkt_workflow_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     rekap_printed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Tanda untuk PPIC/marketing/admin: ada baris item yang diedit atau dihapus
+    item_revised_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    item_revised_has_update: Mapped[bool] = mapped_column(Boolean, default=False)
+    item_revised_has_delete: Mapped[bool] = mapped_column(Boolean, default=False)
     material_followup_remark: Mapped[Optional[str]] = mapped_column(Text)
     material_followup_done: Mapped[bool] = mapped_column(Boolean, default=False)
 

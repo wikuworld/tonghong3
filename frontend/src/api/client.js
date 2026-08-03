@@ -405,7 +405,7 @@ export function marketingOutstandingReturnXlsxPath(params = {}) {
   return `/marketing/outstanding-return-lines.xlsx${suffix}`
 }
 
-function _marketingOutstandingExportQuery(params = {}) {
+function _marketingOutstandingExportQuery(params = {}, { includePoCategory = false } = {}) {
   const q = new URLSearchParams()
   if (params.balance_filter) q.set('balance_filter', params.balance_filter)
   if (params.computed_balance != null) q.set('computed_balance', String(params.computed_balance))
@@ -413,11 +413,36 @@ function _marketingOutstandingExportQuery(params = {}) {
   if (params.shipment_status) q.set('shipment_status', params.shipment_status)
   if (params.material_status) q.set('material_status', params.material_status)
   if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
+  if (includePoCategory && params.po_category && String(params.po_category).trim()) {
+    q.set('po_category', String(params.po_category).trim())
+  }
   if (params.order_date_from && String(params.order_date_from).trim())
     q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
   if (params.order_date_to && String(params.order_date_to).trim())
     q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
+  const idsCsv = _normalizePoDetailIdsCsv(params.po_detail_ids)
+  if (idsCsv) q.set('po_detail_ids', idsCsv)
   return q
+}
+
+export function marketingOutstandingCsvUrl(params = {}) {
+  const q = _marketingOutstandingExportQuery(params, { includePoCategory: true })
+  const suffix = q.toString() ? `?${q}` : ''
+  return `/marketing/outstanding-lines.csv${suffix}`
+}
+
+/** Path unduhan Excel outstanding (Bearer di frontend saat fetch). */
+export function marketingOutstandingXlsxPath(params = {}) {
+  const q = _marketingOutstandingExportQuery(params, { includePoCategory: true })
+  const suffix = q.toString() ? `?${q}` : ''
+  return `/marketing/outstanding-lines.xlsx${suffix}`
+}
+
+/** Unduhan Excel lembar RETUR (hanya baris `po_category=return`). Query sama seperti outstanding, tanpa `po_category`. */
+export function marketingOutstandingReturnXlsxPath(params = {}) {
+  const q = _marketingOutstandingExportQuery(params)
+  const suffix = q.toString() ? `?${q}` : ''
+  return `/marketing/outstanding-return-lines.xlsx${suffix}`
 }
 
 /** Workbook multi-lembar PROD / CLAIM / SAMPLE / SUBCONT / RETUR (format manual marketing). */
@@ -549,12 +574,43 @@ export function proformaInvoiceDocxPath(poId) {
   return `/documents/proforma-invoice/${poId}/docx`
 }
 
+export function proformaInvoiceBatchPdfPath() {
+  return `/api/v1/documents/proforma-invoice/batch/pdf`
+}
+
+export function proformaInvoiceBatchDocxPath() {
+  return `/api/v1/documents/proforma-invoice/batch/docx`
+}
+
+export function createOutstandingScheduleBatch(body) {
+  return apiFetch('/marketing/outstanding-schedule-batch', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function listOutstandingPackingOptions(poDetailIds = []) {
+  const ids = (poDetailIds || []).filter((x) => x != null).join(',')
+  return apiFetch(`/marketing/outstanding-packing-options?po_detail_ids=${encodeURIComponent(ids)}`)
+}
+
+export function createOutstandingShipBatch(body) {
+  return apiFetch('/marketing/outstanding-ship-batch', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+
 export function advanceMktWorkflow(poId) {
   return apiFetch(`/po/${poId}/mkt-workflow/advance`, { method: 'POST' })
 }
 
-export function rollbackMktWorkflow(poId) {
-  return apiFetch(`/po/${poId}/mkt-workflow/rollback`, { method: 'POST' })
+export function rollbackMktWorkflow(poId, { reason } = {}) {
+  return apiFetch(`/po/${poId}/mkt-workflow/rollback`, {
+    method: 'POST',
+    body: JSON.stringify({ reason: reason || '' }),
+  })
 }
 
 export function getPo(id) {
@@ -1071,12 +1127,6 @@ export function reportPoDailyMarketingXlsxPath(params = {}) {
   return `/api/v1/reports/po-daily-marketing.xlsx${suffix}`
 }
 
-/** Rekap laporan PO (filter tanggal order atau input) */
-export function reportPoDailyRecapUrl(dateStr) {
-  const q = dateStr ? `?date=${encodeURIComponent(dateStr)}` : ''
-  return `/api/v1/reports/po-daily-recap.csv${q}`
-}
-
 // --- Special Prices ---
 export async function listSpecialPrices(params = {}) {
   const q = new URLSearchParams()
@@ -1124,6 +1174,33 @@ export async function bulkUpdatePricesCsv(file) {
   const fd = new FormData()
   fd.append('file', file)
   return apiFetch('/pricing/bulk-update-csv', { method: 'POST', body: fd })
+}
+
+
+/** Rekap laporan PO (filter tanggal order atau input) — CSV arsip saja */
+export function reportPoDailyRecapUrl(dateStr, poId) {
+  const q = new URLSearchParams()
+  if (dateStr) q.set('date', dateStr)
+  if (poId != null && poId !== '') q.set('po_id', String(poId))
+  const suffix = q.toString() ? `?${q}` : ''
+  return `/api/v1/reports/po-daily-recap.csv${suffix}`
+}
+
+/** Data JSON rekap PO/SO untuk dialog cetak HTML (tidak stamp status). */
+export function getPoDailyRecap({ date, poId } = {}) {
+  const q = new URLSearchParams()
+  if (date) q.set('date', date)
+  if (poId != null && poId !== '') q.set('po_id', String(poId))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/reports/po-daily-recap${suffix}`)
+}
+
+/** Konfirmasi setelah MKT mencetak rekap dari dialog HTML → stamp rekap_printed. */
+export function confirmPoDailyRecapPrint(body = {}) {
+  return apiFetch('/reports/po-daily-recap/confirm-print', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 // --- Customer Brand Mappings ---
