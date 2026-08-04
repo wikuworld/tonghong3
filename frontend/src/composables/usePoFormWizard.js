@@ -158,8 +158,8 @@ const buyerCodesFiltered = computed(() => {
   if (formModel.customer_id || formModel.brand_id) return []
   return buyerCodes.value
 })
-const isBrandDisabled = computed(() => Boolean(formModel.customer_id))
-const isBuyerDisabled = computed(() => Boolean(formModel.customer_id) || !formModel.brand_id || buyerCodesFiltered.value.length === 0)
+const isBrandDisabled = computed(() => !formModel.customer_id || allowedBrandIds.value.length === 0)
+const isBuyerDisabled = computed(() => !formModel.customer_id || !formModel.brand_id || buyerCodesFiltered.value.length === 0)
 const isPoCategoryDisabled = computed(() => !formModel.customer_id || !formModel.brand_id || !formModel.buyer)
 const isSubkonPo = computed(() => formModel.po_category === 'subcont')
 const subkonMasterItems = computed(() =>
