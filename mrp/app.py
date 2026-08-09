@@ -191,6 +191,17 @@ def ensure_extended_tables(cur):
         cur.execute("ALTER TABLE tbl_persiapan_kulit ADD COLUMN rencana_item_id INT DEFAULT NULL")
     if "material_name" not in item_cols:
         cur.execute("ALTER TABLE tbl_rencana_item ADD COLUMN material_name VARCHAR(150) DEFAULT NULL")
+    packing_cols = _col_names(cur, "tbl_packing")
+    if packing_cols:
+        if "softness" not in packing_cols:
+            cur.execute("ALTER TABLE tbl_packing ADD COLUMN softness VARCHAR(50) DEFAULT NULL")
+        if "gross_weight" not in packing_cols:
+            cur.execute("ALTER TABLE tbl_packing ADD COLUMN gross_weight DECIMAL(12,2) DEFAULT NULL")
+        if "net_weight" not in packing_cols:
+            cur.execute("ALTER TABLE tbl_packing ADD COLUMN net_weight DECIMAL(12,2) DEFAULT NULL")
+    roll_cols = _col_names(cur, "tbl_packing_roll")
+    if roll_cols and "remark" not in roll_cols:
+        cur.execute("ALTER TABLE tbl_packing_roll ADD COLUMN remark VARCHAR(255) DEFAULT NULL")
     erp_cols = _col_names(cur, "master_erp")
     if "material_name" not in erp_cols:
         cur.execute("ALTER TABLE master_erp ADD COLUMN material_name VARCHAR(150) DEFAULT NULL")
@@ -1651,14 +1662,27 @@ def packing_detail(packing_id):
     if request.method == "POST":
         action = request.form.get("action")
 
-        if action == "add_roll":
+        if action == "update_header":
+            softness = (request.form.get("softness") or "").strip() or None
+            gw = request.form.get("gross_weight")
+            nw = request.form.get("net_weight")
+            gross_weight = float(gw) if gw not in (None, "") else None
+            net_weight = float(nw) if nw not in (None, "") else None
+            cur.execute(
+                "UPDATE tbl_packing SET softness=%s, gross_weight=%s, net_weight=%s WHERE id=%s",
+                (softness, gross_weight, net_weight, packing_id),
+            )
+
+        elif action == "add_roll":
             lembar = int(request.form.get("lembar") or 1)
             ukuran = float(request.form.get("ukuran") or 0)
+            remark = (request.form.get("remark") or "").strip() or None
             cur.execute("SELECT COALESCE(MAX(roll_no),0)+1 AS nxt FROM tbl_packing_roll WHERE packing_id=%s", (packing_id,))
             roll_no = cur.fetchone()["nxt"]
             cur.execute(
-                "INSERT INTO tbl_packing_roll (packing_id, roll_no, lembar, ukuran) VALUES (%s,%s,%s,%s)",
-                (packing_id, roll_no, lembar, ukuran),
+                "INSERT INTO tbl_packing_roll (packing_id, roll_no, lembar, ukuran, remark) "
+                "VALUES (%s,%s,%s,%s,%s)",
+                (packing_id, roll_no, lembar, ukuran, remark),
             )
             cur.execute(
                 "UPDATE tbl_packing SET total_lembar=total_lembar+%s, total_ukuran=total_ukuran+%s WHERE id=%s",
@@ -1740,15 +1764,24 @@ def packing_detail(packing_id):
 
 @app.route("/packing/<int:packing_id>/print")
 def packing_print(packing_id):
+    from api_routes import _packing_print_payload
+
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
     cur.execute("SELECT * FROM tbl_packing WHERE id = %s", (packing_id,))
     packing = cur.fetchone()
-    cur.execute("SELECT * FROM tbl_packing_roll WHERE packing_id = %s ORDER BY roll_no", (packing_id,))
-    rolls = cur.fetchall()
+    if not packing:
+        cur.close()
+        conn.close()
+        return "Packing tidak ditemukan", 404
+    payload = _packing_print_payload(cur, packing)
     cur.close()
     conn.close()
-    return render_template("packing_print.html", packing=packing, rolls=rolls)
+    return render_template(
+        "packing_print.html",
+        packing=payload["packing"],
+        rolls=payload["rolls"],
+    )
 
 
 @app.route("/packing/history")

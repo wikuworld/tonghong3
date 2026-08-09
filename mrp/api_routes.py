@@ -1331,6 +1331,88 @@ def lab_create():
 
 
 # ---- packing FG ----
+def _packing_spec_for_wip(cur, kode_wip: str, no_po: str | None = None) -> dict:
+    """Ambil spek FG dari rencana item (+ PO) untuk packing list Tong Hong."""
+    cur.execute(
+        "SELECT i.kode_rencana_item, i.kode_lot_wip, i.thickness, i.color, i.emboss, "
+        "i.color_swatch, i.backer, i.material_name, i.keterangan, "
+        "c.nama_customer, "
+        "po.no_po, po.item_name, po.warna AS po_warna, po.tebal AS po_tebal, "
+        "po.emboss AS po_emboss, po.color_swatch AS po_color_swatch "
+        "FROM tbl_rencana_item i "
+        "LEFT JOIN master_customer c ON c.id = i.customer_id "
+        "LEFT JOIN tbl_rencana_item_po rip ON rip.item_id = i.id "
+        "LEFT JOIN tbl_master_po po ON po.id = rip.po_id "
+        "WHERE i.kode_lot_wip = %s "
+        "ORDER BY CASE WHEN po.no_po = %s THEN 0 ELSE 1 END, i.id "
+        "LIMIT 1",
+        (kode_wip, no_po or ""),
+    )
+    row = cur.fetchone() or {}
+    thickness = row.get("thickness") or row.get("po_tebal") or ""
+    color = row.get("color") or row.get("po_warna") or ""
+    emboss = row.get("emboss") or row.get("po_emboss") or ""
+    swatch = row.get("color_swatch") or row.get("po_color_swatch") or ""
+    description = row.get("item_name") or row.get("material_name") or ""
+    if emboss and description and emboss.upper() not in description.upper():
+        description = f"{description} ({emboss})" if description else emboss
+    elif emboss and not description:
+        description = emboss
+    return {
+        "description": description or "-",
+        "thickness": thickness or "-",
+        "color": color or "-",
+        "softness": "-",
+        "color_swatch": swatch or "-",
+        "work_order": row.get("kode_lot_wip") or kode_wip or "-",
+        "kode_rencana_item": row.get("kode_rencana_item") or "",
+        "material_name": row.get("material_name") or "",
+        "emboss": emboss or "",
+        "backer": row.get("backer") or "",
+        "customer_from_rencana": row.get("nama_customer") or "",
+    }
+
+
+def _packing_print_payload(cur, packing: dict) -> dict:
+    cur.execute(
+        "SELECT * FROM tbl_packing_roll WHERE packing_id = %s ORDER BY roll_no",
+        (packing["id"],),
+    )
+    rolls = _rows(cur.fetchall())
+    spec = _packing_spec_for_wip(cur, packing.get("kode_wip") or "", packing.get("no_po"))
+    total_rolls = len(rolls)
+    total_pieces = int(packing.get("total_lembar") or 0)
+    if not total_pieces:
+        total_pieces = sum(int(r.get("lembar") or 0) for r in rolls)
+    total_qty = float(packing.get("total_ukuran") or 0)
+    if not total_qty:
+        total_qty = sum(float(r.get("ukuran") or 0) for r in rolls)
+    header = {
+        **_row(packing),
+        "customer": packing.get("customer") or spec.get("customer_from_rencana") or "-",
+        "description": spec["description"],
+        "thickness": spec["thickness"],
+        "color": spec["color"],
+        "softness": packing.get("softness") or spec["softness"],
+        "color_swatch": spec["color_swatch"],
+        "work_order": spec["work_order"],
+        "emboss": spec["emboss"],
+        "backer": spec["backer"],
+        "material_name": spec["material_name"],
+        "kode_rencana_item": spec["kode_rencana_item"],
+        "total_rolls": total_rolls,
+        "total_pieces": total_pieces,
+        "total_quantity": round(total_qty, 2),
+        "qty_unit": "SF",
+        "gross_weight": packing.get("gross_weight"),
+        "net_weight": packing.get("net_weight"),
+        "form_code": "QER-48-A/0",
+        "company_name": "PT. TONG HONG TANNERY INDONESIA",
+        "company_name_zh": "東崇皮革印尼有限公司",
+    }
+    return {"packing": header, "rolls": rolls, "spec": spec}
+
+
 @api.get("/packing/scan-wip")
 def packing_scan_wip():
     kode_wip = (request.args.get("q") or "").strip()
@@ -1463,14 +1545,16 @@ def packing_detail_api(packing_id: int):
         (packing["kode_wip"],),
     )
     available_pos = _rows(cur.fetchall())
+    print_payload = _packing_print_payload(cur, packing)
     cur.close()
     conn.close()
     return jsonify(
         {
-            "packing": _row(packing),
+            "packing": print_payload["packing"],
             "rolls": rolls,
             "packing_pos": packing_pos,
             "available_pos": available_pos,
+            "spec": print_payload.get("spec"),
         }
     )
 
@@ -1485,14 +1569,10 @@ def packing_print_api(packing_id: int):
         cur.close()
         conn.close()
         return _err("Packing tidak ditemukan", 404)
-    cur.execute(
-        "SELECT * FROM tbl_packing_roll WHERE packing_id = %s ORDER BY roll_no",
-        (packing_id,),
-    )
-    rolls = _rows(cur.fetchall())
+    payload = _packing_print_payload(cur, packing)
     cur.close()
     conn.close()
-    return jsonify({"packing": _row(packing), "rolls": rolls})
+    return jsonify(payload)
 
 
 @api.post("/packing/<int:packing_id>/actions")
@@ -1522,21 +1602,41 @@ def packing_actions(packing_id: int):
             return _err("Packing sudah finished")
 
     msg = "ok"
-    if action == "add_roll":
+    if action == "update_header":
+        if packing["status"] == "finished":
+            cur.close()
+            conn.close()
+            return _err("Packing sudah finished")
+        softness = body.get("softness")
+        if softness is not None:
+            softness = str(softness).strip() or None
+        gw = body.get("gross_weight")
+        nw = body.get("net_weight")
+        gross_weight = float(gw) if gw not in (None, "") else None
+        net_weight = float(nw) if nw not in (None, "") else None
+        cur.execute(
+            "UPDATE tbl_packing SET softness=%s, gross_weight=%s, net_weight=%s WHERE id=%s",
+            (softness, gross_weight, net_weight, packing_id),
+        )
+        msg = "Header packing diperbarui"
+
+    elif action == "add_roll":
         if packing["status"] == "finished":
             cur.close()
             conn.close()
             return _err("Packing sudah finished")
         lembar = int(body.get("lembar") or 1)
         ukuran = float(body.get("ukuran") or 0)
+        remark = (body.get("remark") or "").strip() or None
         cur.execute(
             "SELECT COALESCE(MAX(roll_no),0)+1 AS nxt FROM tbl_packing_roll WHERE packing_id=%s",
             (packing_id,),
         )
         roll_no = cur.fetchone()["nxt"]
         cur.execute(
-            "INSERT INTO tbl_packing_roll (packing_id, roll_no, lembar, ukuran) VALUES (%s,%s,%s,%s)",
-            (packing_id, roll_no, lembar, ukuran),
+            "INSERT INTO tbl_packing_roll (packing_id, roll_no, lembar, ukuran, remark) "
+            "VALUES (%s,%s,%s,%s,%s)",
+            (packing_id, roll_no, lembar, ukuran, remark),
         )
         cur.execute(
             "UPDATE tbl_packing SET total_lembar=total_lembar+%s, total_ukuran=total_ukuran+%s WHERE id=%s",

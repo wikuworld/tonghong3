@@ -4,43 +4,132 @@
     <meta charset="UTF-8">
     <title>Packing List - {{ packing.kode_packing }}</title>
     <style>
-        body { font-family: Arial, sans-serif; padding: 30px; }
-        h2 { text-align: center; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #333; padding: 8px; text-align: left; }
-        th { background: #f0f0f0; }
-        @media print { .no-print { display: none; } }
+        @page { size: A4; margin: 12mm; }
+        body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; color: #111; margin: 0; padding: 16px; }
+        .company { text-align: center; line-height: 1.25; margin-bottom: 6px; }
+        .company .name { font-size: 18px; font-weight: 700; letter-spacing: 0.02em; }
+        .company .name-zh { font-size: 14px; margin-top: 2px; }
+        .doc-title { text-align: center; font-size: 20px; font-weight: 700; margin: 10px 0 4px; }
+        .doc-title-zh { text-align: center; font-size: 13px; margin-bottom: 12px; }
+        .meta { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+        .meta td { padding: 3px 6px; vertical-align: top; }
+        .meta .lbl { width: 18%; font-weight: 700; white-space: nowrap; }
+        .meta .val { width: 32%; border-bottom: 1px solid #bbb; }
+        table.rolls { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        table.rolls th, table.rolls td { border: 1px solid #333; padding: 5px 6px; }
+        table.rolls th { background: #f3f3f3; text-align: center; }
+        table.rolls td.num { text-align: center; }
+        table.rolls td.qty { text-align: right; }
+        .totals { margin-top: 14px; width: 100%; border-collapse: collapse; }
+        .totals td { padding: 3px 6px; }
+        .totals .lbl { font-weight: 700; width: 22%; }
+        .totals .val { border-bottom: 1px solid #bbb; width: 28%; }
+        .footer { margin-top: 18px; display: flex; justify-content: space-between; align-items: flex-end; }
+        .form-code { font-size: 11px; color: #444; }
+        .qrwrap { text-align: right; }
+        @media print { .no-print { display: none !important; } body { padding: 0; } }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
 </head>
 <body>
-    <h2>PACKING LIST</h2>
-    <div style="text-align:center;margin-bottom:16px;"><div id="qrcode" style="display:inline-block;"></div></div>
-    <table style="border:none">
-        <tr style="border:none"><td style="border:none"><strong>Kode Packing:</strong> {{ packing.kode_packing }}</td></tr>
-        <tr style="border:none"><td style="border:none"><strong>Customer:</strong> {{ packing.customer or '-' }}</td></tr>
-        <tr style="border:none"><td style="border:none"><strong>PO Order:</strong> {{ packing.no_po }}</td></tr>
-        <tr style="border:none"><td style="border:none"><strong>Kode WIP:</strong> {{ packing.kode_wip }}</td></tr>
-        <tr style="border:none"><td style="border:none"><strong>Tanggal:</strong> {{ packing.date_created }}</td></tr>
+    <div class="company">
+        <div class="name">{{ packing.company_name or 'PT. TONG HONG TANNERY INDONESIA' }}</div>
+        <div class="name-zh">{{ packing.company_name_zh or '東崇皮革印尼有限公司' }}</div>
+    </div>
+    <div class="doc-title">PACKING LIST</div>
+    <div class="doc-title-zh">裝貨單</div>
+
+    <table class="meta">
+        <tr>
+            <td class="lbl">Customer:</td>
+            <td class="val">{{ packing.customer or '-' }}</td>
+            <td class="lbl">Date:</td>
+            <td class="val">{{ packing.date_created or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="lbl">Description:</td>
+            <td class="val" colspan="3">{{ packing.description or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="lbl">PO#:</td>
+            <td class="val">{{ packing.no_po or '-' }}</td>
+            <td class="lbl">Thickness:</td>
+            <td class="val">{{ packing.thickness or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="lbl">Color:</td>
+            <td class="val">{{ packing.color or '-' }}</td>
+            <td class="lbl">Softness:</td>
+            <td class="val">{{ packing.softness or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="lbl">Color Swatch:</td>
+            <td class="val">{{ packing.color_swatch or '-' }}</td>
+            <td class="lbl">Work Order No:</td>
+            <td class="val">{{ packing.work_order or packing.kode_wip or '-' }}</td>
+        </tr>
+        <tr>
+            <td class="lbl">Packing Code:</td>
+            <td class="val">{{ packing.kode_packing or '-' }}</td>
+            <td class="lbl">WIP:</td>
+            <td class="val">{{ packing.kode_wip or '-' }}</td>
+        </tr>
     </table>
 
-    <h4>Rincian Per Roll</h4>
-    <table>
-        <thead><tr><th>Roll No</th><th>Lembar</th><th>Ukuran (sq)</th></tr></thead>
+    <table class="rolls">
+        <thead>
+            <tr>
+                <th style="width:12%">Art.no</th>
+                <th style="width:18%">Pieces</th>
+                <th style="width:22%">Quantity</th>
+                <th>Remark</th>
+            </tr>
+        </thead>
         <tbody>
             {% for r in rolls %}
-            <tr><td>{{ r.roll_no }}</td><td>{{ r.lembar }}</td><td>{{ r.ukuran }}</td></tr>
+            <tr>
+                <td class="num">{{ r.roll_no }}</td>
+                <td class="num">{{ r.lembar }}</td>
+                <td class="qty">{{ r.ukuran if r.ukuran is not none else 0 }}</td>
+                <td>{{ r.remark or '' }}</td>
+            </tr>
             {% endfor %}
         </tbody>
-        <tfoot>
-            <tr><th>Total</th><th>{{ packing.total_lembar }}</th><th>{{ packing.total_ukuran }}</th></tr>
-        </tfoot>
     </table>
-    <p class="no-print text-center mt-4"><button onclick="window.print()">Cetak Packing List</button></p>
+
+    <table class="totals">
+        <tr>
+            <td class="lbl">Total Rolls:</td>
+            <td class="val">{{ packing.total_rolls or rolls|length }} ROLL</td>
+            <td class="lbl">Total Pieces:</td>
+            <td class="val">{{ packing.total_pieces or packing.total_lembar or 0 }} PIECES</td>
+        </tr>
+        <tr>
+            <td class="lbl">Total Quantity:</td>
+            <td class="val">{{ packing.total_quantity or packing.total_ukuran or 0 }} {{ packing.qty_unit or 'SF' }}</td>
+            <td class="lbl">Gross Weight:</td>
+            <td class="val">{{ packing.gross_weight if packing.gross_weight is not none else '' }}</td>
+        </tr>
+        <tr>
+            <td class="lbl">Net Weight:</td>
+            <td class="val">{{ packing.net_weight if packing.net_weight is not none else '' }}</td>
+            <td></td>
+            <td></td>
+        </tr>
+    </table>
+
+    <div class="footer">
+        <div class="form-code">{{ packing.form_code or 'QER-48-A/0' }}</div>
+        <div class="qrwrap"><div id="qrcode"></div></div>
+    </div>
+
+    <p class="no-print" style="text-align:center;margin-top:20px;">
+        <button onclick="window.print()">Cetak Packing List</button>
+    </p>
     <script>
     new QRCode(document.getElementById('qrcode'), {
         text: '{{ packing.kode_packing }}',
-        width: 120, height: 120
+        width: 88, height: 88
     });
     </script>
 </body>
