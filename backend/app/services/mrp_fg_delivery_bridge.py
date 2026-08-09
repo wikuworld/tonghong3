@@ -44,6 +44,7 @@ class BridgeResult:
     packing_number: str | None
     created: bool
     line_count: int
+    po_detail_ids: list[int] | None = None
 
 
 def _dec(v: Any) -> Decimal:
@@ -270,4 +271,5 @@ def bridge_fg_out_to_delivery(
         packing_number=pk.packing_number,
         created=True,
         line_count=len(resolved),
+        po_detail_ids=list(touched_pods),
     )

@@ -58,13 +58,14 @@ CREATE TABLE IF NOT EXISTS tbl_master_po (
     INDEX idx_status (status)
 );
 
-CREATE TABLE IF NOT EXISTS master_customer (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    kode_customer VARCHAR(50) DEFAULT NULL,
-    nama_customer VARCHAR(150) NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_nama_customer (nama_customer)
-);
+-- ERP-only: removed mirror
+-- CREATE TABLE IF NOT EXISTS master_customer (
+--     id INT AUTO_INCREMENT PRIMARY KEY,
+--     kode_customer VARCHAR(50) DEFAULT NULL,
+--     nama_customer VARCHAR(150) NOT NULL,
+--     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     INDEX idx_nama_customer (nama_customer)
+-- );
 
 CREATE TABLE IF NOT EXISTS tbl_rencana_produksi (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -170,18 +171,9 @@ CREATE TABLE IF NOT EXISTS tbl_persiapan_reprint (
     FOREIGN KEY (persiapan_id) REFERENCES tbl_persiapan_kulit(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS master_chemical (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    nama_chemical VARCHAR(150) NOT NULL,
-    satuan VARCHAR(20) DEFAULT 'kg',
-    expired_days INT DEFAULT 365
-);
-
 CREATE TABLE IF NOT EXISTS master_resep (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    nama_resep VARCHAR(150) NOT NULL,
-    chemical_id INT DEFAULT NULL,
-    FOREIGN KEY (chemical_id) REFERENCES master_chemical(id) ON DELETE SET NULL
+    nama_resep VARCHAR(150) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS tbl_lab_lot (
@@ -229,15 +221,16 @@ CREATE TABLE IF NOT EXISTS tbl_usage_color (
     INDEX idx_kode_wip (kode_wip)
 );
 
-CREATE TABLE IF NOT EXISTS master_rp (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    kode_rp VARCHAR(50) NOT NULL UNIQUE,
-    nama_rp VARCHAR(150) NOT NULL,
-    deskripsi TEXT DEFAULT NULL,
-    satuan VARCHAR(20) DEFAULT 'meter',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_kode_rp (kode_rp)
-);
+-- ERP-only: removed mirror
+-- CREATE TABLE IF NOT EXISTS master_rp (
+--     id INT AUTO_INCREMENT PRIMARY KEY,
+--     kode_rp VARCHAR(50) NOT NULL UNIQUE,
+--     nama_rp VARCHAR(150) NOT NULL,
+--     deskripsi TEXT DEFAULT NULL,
+--     satuan VARCHAR(20) DEFAULT 'meter',
+--     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     INDEX idx_kode_rp (kode_rp)
+-- );
 
 CREATE TABLE IF NOT EXISTS tbl_usage_rp (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -249,16 +242,17 @@ CREATE TABLE IF NOT EXISTS tbl_usage_rp (
     INDEX idx_kode_wip (kode_wip)
 );
 
-CREATE TABLE IF NOT EXISTS master_kimia (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    kode_kimia VARCHAR(50) NOT NULL UNIQUE,
-    nama_kimia VARCHAR(150) NOT NULL,
-    deskripsi TEXT DEFAULT NULL,
-    satuan VARCHAR(20) DEFAULT 'kg',
-    expired_days INT DEFAULT 365,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_kode_kimia (kode_kimia)
-);
+-- ERP-only: removed mirror
+-- CREATE TABLE IF NOT EXISTS master_kimia (
+--     id INT AUTO_INCREMENT PRIMARY KEY,
+--     kode_kimia VARCHAR(50) NOT NULL UNIQUE,
+--     nama_kimia VARCHAR(150) NOT NULL,
+--     deskripsi TEXT DEFAULT NULL,
+--     satuan VARCHAR(20) DEFAULT 'kg',
+--     expired_days INT DEFAULT 365,
+--     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     INDEX idx_kode_kimia (kode_kimia)
+-- );
 
 CREATE TABLE IF NOT EXISTS tbl_stok_kimia_in (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -337,15 +331,16 @@ CREATE TABLE IF NOT EXISTS tbl_packing_roll (
     FOREIGN KEY (packing_id) REFERENCES tbl_packing(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS master_kulit (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    kode_kulit VARCHAR(50) NOT NULL UNIQUE,
-    nama_kulit VARCHAR(150) DEFAULT NULL,
-    thickness VARCHAR(30) DEFAULT NULL,
-    warna VARCHAR(100) DEFAULT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_kode_kulit (kode_kulit)
-);
+-- ERP-only: removed mirror
+-- CREATE TABLE IF NOT EXISTS master_kulit (
+--     id INT AUTO_INCREMENT PRIMARY KEY,
+--     kode_kulit VARCHAR(50) NOT NULL UNIQUE,
+--     nama_kulit VARCHAR(150) DEFAULT NULL,
+--     thickness VARCHAR(30) DEFAULT NULL,
+--     warna VARCHAR(100) DEFAULT NULL,
+--     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     INDEX idx_kode_kulit (kode_kulit)
+-- );
 
 CREATE TABLE IF NOT EXISTS tbl_seq (
     name VARCHAR(30) PRIMARY KEY,
@@ -354,25 +349,27 @@ CREATE TABLE IF NOT EXISTS tbl_seq (
     date_key VARCHAR(8) DEFAULT ''
 );
 
-CREATE TABLE IF NOT EXISTS master_erp (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    thickness VARCHAR(30) NOT NULL,
-    color VARCHAR(100) NOT NULL,
-    emboss VARCHAR(100) NOT NULL,
-    color_swatch VARCHAR(100) DEFAULT NULL,
-    backer VARCHAR(100) DEFAULT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_erp_combo (thickness, color, emboss)
-);
+-- ERP-only: removed mirror
+-- CREATE TABLE IF NOT EXISTS master_erp (
+--     id INT AUTO_INCREMENT PRIMARY KEY,
+--     thickness VARCHAR(30) NOT NULL,
+--     color VARCHAR(100) NOT NULL,
+--     emboss VARCHAR(100) NOT NULL,
+--     color_swatch VARCHAR(100) DEFAULT NULL,
+--     backer VARCHAR(100) DEFAULT NULL,
+--     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+--     UNIQUE KEY uk_erp_combo (thickness, color, emboss)
+-- );
 
-CREATE TABLE IF NOT EXISTS master_material_lain (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    kode_material VARCHAR(50) NOT NULL UNIQUE,
-    nama_material VARCHAR(150) NOT NULL,
-    deskripsi TEXT DEFAULT NULL,
-    satuan VARCHAR(20) DEFAULT 'pcs',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+-- ERP-only: removed mirror
+-- CREATE TABLE IF NOT EXISTS master_material_lain (
+--     id INT AUTO_INCREMENT PRIMARY KEY,
+--     kode_material VARCHAR(50) NOT NULL UNIQUE,
+--     nama_material VARCHAR(150) NOT NULL,
+--     deskripsi TEXT DEFAULT NULL,
+--     satuan VARCHAR(20) DEFAULT 'pcs',
+--     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+-- );
 
 CREATE TABLE IF NOT EXISTS tbl_stok_material_lain_in (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -464,9 +461,6 @@ CREATE TABLE IF NOT EXISTS tbl_kulit_lebih (
 -- Seed data
 INSERT IGNORE INTO tbl_master_treatment (jenis, nama_treatment) VALUES
 ('PU', 'Treatment A'), ('PU', 'Treatment B'), ('PU', 'Treatment C'), ('PU', 'Treatment D');
-
-INSERT IGNORE INTO master_chemical (nama_chemical, satuan) VALUES
-('Pigment Red', 'kg'), ('Pigment Blue', 'kg'), ('Pigment Black', 'kg'), ('Solvent Base', 'kg');
 
 INSERT IGNORE INTO master_resep (nama_resep) VALUES
 ('Resep Standard A'), ('Resep Standard B'), ('Resep Custom');

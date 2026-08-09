@@ -29,7 +29,10 @@ def generate_code(prefix):
 
 
 def _col_names(cur, table):
-    cur.execute(f"SHOW COLUMNS FROM {table}")
+    try:
+        cur.execute(f"SHOW COLUMNS FROM {table}")
+    except mysql.connector.Error:
+        return set()
     rows = cur.fetchall()
     if rows and isinstance(rows[0], dict):
         return {r["Field"] for r in rows}
@@ -43,14 +46,7 @@ def _row_first(row):
 
 
 def ensure_rencana_tables(cur):
-    cur.execute(
-        "CREATE TABLE IF NOT EXISTS master_customer ("
-        "id INT AUTO_INCREMENT PRIMARY KEY, "
-        "kode_customer VARCHAR(50) DEFAULT NULL, "
-        "nama_customer VARCHAR(150) NOT NULL, "
-        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
-        "INDEX idx_nama_customer (nama_customer))"
-    )
+    # ERP-only: jangan CREATE master_customer (mirror). Snapshot di tbl_rencana_item.
     cur.execute(
         "CREATE TABLE IF NOT EXISTS tbl_rencana_item ("
         "id INT AUTO_INCREMENT PRIMARY KEY, "
@@ -90,37 +86,61 @@ def ensure_rencana_tables(cur):
     lab_cols = _col_names(cur, "tbl_lab_lot")
     if "rencana_item_id" not in lab_cols:
         cur.execute("ALTER TABLE tbl_lab_lot ADD COLUMN rencana_item_id INT DEFAULT NULL")
-    cur.execute("SELECT DISTINCT customer FROM tbl_master_po WHERE customer IS NOT NULL AND customer != ''")
-    for row in cur.fetchall():
-        nama = _row_first(row)
-        cur.execute("SELECT id FROM master_customer WHERE nama_customer = %s", (nama,))
-        if not cur.fetchone():
-            kode = f"CUST-{nama[:20].upper().replace(' ', '-')}"
+    item_cols = _col_names(cur, "tbl_rencana_item")
+    if item_cols and "nama_customer" not in item_cols:
+        cur.execute(
+            "ALTER TABLE tbl_rencana_item ADD COLUMN nama_customer VARCHAR(150) DEFAULT NULL "
+            "AFTER customer_id"
+        )
+    try:
+        cur.execute(
+            "UPDATE tbl_rencana_item i "
+            ""
+            "SET i.nama_customer = c.nama_customer "
+            "WHERE (i.nama_customer IS NULL OR i.nama_customer='') "
+            "AND c.nama_customer IS NOT NULL"
+        )
+    except Exception:
+        pass
+    try:
+        from erp_customers import resolve_customer
+
+        cur.execute(
+            "SELECT DISTINCT customer FROM tbl_master_po "
+            "WHERE customer IS NOT NULL AND customer != ''"
+        )
+        for row in cur.fetchall():
+            nama = _row_first(row)
+            resolved = resolve_customer(nama)
+            if not resolved:
+                continue
             cur.execute(
-                "INSERT INTO master_customer (kode_customer, nama_customer) VALUES (%s, %s)",
-                (kode, nama),
+                "UPDATE tbl_master_po SET customer_id=%s WHERE customer=%s",
+                (resolved["id"], nama),
             )
-    cur.execute(
-        "UPDATE tbl_master_po p JOIN master_customer c ON c.nama_customer = p.customer "
-        "SET p.customer_id = c.id WHERE p.customer_id IS NULL AND p.customer IS NOT NULL"
-    )
+            cur.execute(
+                "UPDATE tbl_rencana_item i "
+                ""
+                "SET i.customer_id=%s, i.nama_customer=%s "
+                "WHERE mc.nama_customer=%s",
+                (resolved["id"], resolved["name"], nama),
+            )
+            cur.execute(
+                "UPDATE tbl_rencana_item SET customer_id=%s, nama_customer=%s "
+                "WHERE nama_customer=%s",
+                (resolved["id"], resolved["name"], nama),
+            )
+    except Exception:
+        pass
 
 
 def ensure_extended_tables(cur):
-    cur.execute(
-        "CREATE TABLE IF NOT EXISTS master_erp ("
-        "id INT AUTO_INCREMENT PRIMARY KEY, thickness VARCHAR(30) NOT NULL, "
-        "material_name VARCHAR(150) DEFAULT NULL, color VARCHAR(100) NOT NULL, "
-        "emboss VARCHAR(100) NOT NULL, customer VARCHAR(150) DEFAULT NULL, "
-        "color_swatch VARCHAR(100) DEFAULT NULL, backer VARCHAR(100) DEFAULT NULL, "
-        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
-    )
-    cur.execute(
-        "CREATE TABLE IF NOT EXISTS master_material_lain ("
-        "id INT AUTO_INCREMENT PRIMARY KEY, kode_material VARCHAR(50) NOT NULL UNIQUE, "
-        "nama_material VARCHAR(150) NOT NULL, deskripsi TEXT DEFAULT NULL, "
-        "satuan VARCHAR(20) DEFAULT 'pcs', created_at DATETIME DEFAULT CURRENT_TIMESTAMP)"
-    )
+    # ERP-only catalogs: jangan CREATE master_erp / master_material_lain.
+    try:
+        from lot_erp_columns import ensure_lot_erp_columns
+        ensure_lot_erp_columns(cur)
+    except Exception:
+        pass
     cur.execute(
         "CREATE TABLE IF NOT EXISTS tbl_stok_material_lain_in ("
         "id INT AUTO_INCREMENT PRIMARY KEY, kode_internal VARCHAR(50) NOT NULL UNIQUE, "
@@ -186,6 +206,15 @@ def ensure_extended_tables(cur):
     ukur_cols = _col_names(cur, "tbl_persiapan_ukur")
     if "ky_id" not in ukur_cols:
         cur.execute("ALTER TABLE tbl_persiapan_ukur ADD COLUMN ky_id INT DEFAULT NULL")
+    ky_cols = _col_names(cur, "tbl_persiapan_ky")
+    if "yl_consumed" not in ky_cols:
+        cur.execute(
+            "ALTER TABLE tbl_persiapan_ky ADD COLUMN yl_consumed TINYINT(1) NOT NULL DEFAULT 0"
+        )
+    if "qty_consumed" not in ky_cols:
+        cur.execute(
+            "ALTER TABLE tbl_persiapan_ky ADD COLUMN qty_consumed DECIMAL(12,2) NOT NULL DEFAULT 0"
+        )
     pers_cols = _col_names(cur, "tbl_persiapan_kulit")
     if "rencana_item_id" not in pers_cols:
         cur.execute("ALTER TABLE tbl_persiapan_kulit ADD COLUMN rencana_item_id INT DEFAULT NULL")
@@ -202,15 +231,7 @@ def ensure_extended_tables(cur):
     roll_cols = _col_names(cur, "tbl_packing_roll")
     if roll_cols and "remark" not in roll_cols:
         cur.execute("ALTER TABLE tbl_packing_roll ADD COLUMN remark VARCHAR(255) DEFAULT NULL")
-    erp_cols = _col_names(cur, "master_erp")
-    if "material_name" not in erp_cols:
-        cur.execute("ALTER TABLE master_erp ADD COLUMN material_name VARCHAR(150) DEFAULT NULL")
-    if "customer" not in erp_cols:
-        cur.execute("ALTER TABLE master_erp ADD COLUMN customer VARCHAR(150) DEFAULT NULL")
-    try:
-        cur.execute("ALTER TABLE master_erp DROP INDEX uk_erp_combo")
-    except mysql.connector.Error:
-        pass
+    # ERP-only: jangan ALTER/seed master_erp / master_* mirror (sudah di-drop).
     po_cols_ext = _col_names(cur, "tbl_master_po")
     if "color_swatch" not in po_cols_ext:
         cur.execute("ALTER TABLE tbl_master_po ADD COLUMN color_swatch VARCHAR(100) DEFAULT NULL")
@@ -246,17 +267,6 @@ def ensure_extended_tables(cur):
             cur.execute(
                 "ALTER TABLE tbl_rencana_item ADD COLUMN erp_production_detail_id BIGINT DEFAULT NULL"
             )
-    for master_tbl in ("master_kimia", "master_rp", "master_material_lain"):
-        mcols = _col_names(cur, master_tbl)
-        if mcols and "erp_material_id" not in mcols:
-            cur.execute(
-                f"ALTER TABLE {master_tbl} ADD COLUMN erp_material_id BIGINT DEFAULT NULL"
-            )
-    erp_map_cols = _col_names(cur, "master_erp")
-    if erp_map_cols and "erp_master_item_id" not in erp_map_cols:
-        cur.execute(
-            "ALTER TABLE master_erp ADD COLUMN erp_master_item_id BIGINT DEFAULT NULL"
-        )
     cur.execute(
         "CREATE TABLE IF NOT EXISTS tbl_checkpoint ("
         "id INT AUTO_INCREMENT PRIMARY KEY, "
@@ -292,53 +302,6 @@ def ensure_extended_tables(cur):
             cur.execute(
                 "ALTER TABLE tbl_gudang_fg ADD COLUMN bridge_error VARCHAR(255) DEFAULT NULL"
             )
-    cur.execute(
-        "UPDATE master_erp SET material_name = 'Standard Leather' "
-        "WHERE material_name IS NULL OR material_name = ''"
-    )
-    cur.execute(
-        "UPDATE master_erp e JOIN tbl_master_po p "
-        "ON p.tebal = e.thickness AND p.warna = e.color AND p.emboss = e.emboss "
-        "SET e.customer = p.customer WHERE e.customer IS NULL OR e.customer = ''"
-    )
-    cur.execute(
-        "UPDATE tbl_master_po p JOIN master_erp e "
-        "ON p.tebal = e.thickness AND p.warna = e.color AND p.emboss = e.emboss "
-        "SET p.color_swatch = e.color_swatch WHERE p.color_swatch IS NULL OR p.color_swatch = ''"
-    )
-    erp_seeds = [
-        ("1.0mm", "Standard Leather", "Brown", "Plain", "Customer A", "SW-BRN-01", "BK-PU-A"),
-        ("1.0mm", "Standard Leather", "Brown", "Plain", "Customer A", "SW-BRN-01B", "WHITE"),
-        ("1.0mm", "Standard Leather", "Black", "Emboss A", "Customer A", "SW-BLK-02", "BK-PU-B"),
-        ("1.2mm", "Premium Leather", "Brown", "Plain", "Customer A", "SW-BRN-03", "BK-PU-A"),
-        ("1.2mm", "Premium Leather", "Tan", "Emboss X", "Customer B", "SW-TAN-04", "BK-SUEDE-C"),
-        ("1.4mm", "Premium Leather", "Red", "Emboss B", "Customer B", "SW-RED-05", "BK-PU-D"),
-        ("1.4mm", "Premium Leather", "Maroon", "Emboss B", "Customer B", "SW-MAR-06", "BK-PU-D"),
-        ("1.0mm", "Standard Leather", "Black", "Emboss A", "NIKOMAS", "SW-BLK-02", "BLACK"),
-    ]
-    for th, mat, co, em, cust, sw, bk in erp_seeds:
-        cur.execute(
-            "SELECT id FROM master_erp WHERE thickness=%s AND material_name=%s AND color=%s "
-            "AND emboss=%s AND color_swatch=%s",
-            (th, mat, co, em, sw),
-        )
-        if not cur.fetchone():
-            cur.execute(
-                "INSERT INTO master_erp (thickness, material_name, color, emboss, customer, color_swatch, backer) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
-                (th, mat, co, em, cust, sw, bk),
-            )
-    mat_seeds = [
-        ("MAT-001", "Thread Nylon", "Benang jahit nylon", "roll"),
-        ("MAT-002", "Label Tag", "Label produk", "pcs"),
-        ("MAT-003", "Plastic Wrap", "Plastik pembungkus", "roll"),
-    ]
-    for km, nm, ds, sat in mat_seeds:
-        cur.execute(
-            "INSERT IGNORE INTO master_material_lain (kode_material, nama_material, deskripsi, satuan) "
-            "VALUES (%s,%s,%s,%s)",
-            (km, nm, ds, sat),
-        )
 
 
 def _make_rpi_barcode(thickness, emboss, color):
@@ -363,12 +326,24 @@ def ensure_master_treatment(cur):
         cur.execute(
             "ALTER TABLE tbl_master_treatment ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP"
         )
-    for nama in ("Treatment A", "Treatment B", "Treatment C", "Treatment D"):
+    # Seed realistis PU / Suede (nama unik karena UNIQUE pada nama_treatment).
+    seeds = (
+        ("PU", "PU - Degrease"),
+        ("PU", "PU - Base Coat"),
+        ("PU", "PU - Color Coat"),
+        ("PU", "PU - Top Coat"),
+        ("PU", "PU - Emboss / Press"),
+        ("Suede", "Suede - Buffing"),
+        ("Suede", "Suede - Dyeing"),
+        ("Suede", "Suede - Softener"),
+        ("Suede", "Suede - Finishing Spray"),
+    )
+    for jenis, nama in seeds:
         cur.execute("SELECT id FROM tbl_master_treatment WHERE nama_treatment = %s", (nama,))
         if not cur.fetchone():
             cur.execute(
-                "INSERT INTO tbl_master_treatment (jenis, nama_treatment) VALUES ('PU', %s)",
-                (nama,),
+                "INSERT INTO tbl_master_treatment (jenis, nama_treatment) VALUES (%s, %s)",
+                (jenis, nama),
             )
 
 
@@ -405,88 +380,9 @@ def init_db_tables():
             "name VARCHAR(30) PRIMARY KEY, last_val INT NOT NULL DEFAULT 0, "
             "prefix VARCHAR(10) DEFAULT '', date_key VARCHAR(8) DEFAULT '')"
         )
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS master_kulit ("
-            "id INT AUTO_INCREMENT PRIMARY KEY, "
-            "kode_kulit VARCHAR(50) NOT NULL UNIQUE, "
-            "nama_kulit VARCHAR(150) DEFAULT NULL, "
-            "thickness VARCHAR(30) DEFAULT NULL, "
-            "warna VARCHAR(100) DEFAULT NULL, "
-            "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
-            "INDEX idx_kode_kulit (kode_kulit))"
-        )
-        cur.execute("SHOW COLUMNS FROM master_kulit")
-        kulit_cols = {row[0] for row in cur.fetchall()}
-        if "nama_kulit" not in kulit_cols:
-            cur.execute("ALTER TABLE master_kulit ADD COLUMN nama_kulit VARCHAR(150) DEFAULT NULL AFTER kode_kulit")
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS master_rp ("
-            "id INT AUTO_INCREMENT PRIMARY KEY, "
-            "kode_rp VARCHAR(50) NOT NULL UNIQUE, "
-            "nama_rp VARCHAR(150) NOT NULL, "
-            "deskripsi TEXT DEFAULT NULL, "
-            "satuan VARCHAR(20) DEFAULT 'meter', "
-            "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
-            "INDEX idx_kode_rp (kode_rp))"
-        )
-        cur.execute("SHOW COLUMNS FROM master_rp")
-        rp_cols = {row[0] for row in cur.fetchall()}
-        if "kode_rp" not in rp_cols:
-            cur.execute("ALTER TABLE master_rp ADD COLUMN kode_rp VARCHAR(50) DEFAULT NULL")
-        if "nama_rp" not in rp_cols:
-            cur.execute("ALTER TABLE master_rp ADD COLUMN nama_rp VARCHAR(150) DEFAULT NULL")
-        if "deskripsi" not in rp_cols:
-            cur.execute("ALTER TABLE master_rp ADD COLUMN deskripsi TEXT DEFAULT NULL")
-        if "created_at" not in rp_cols:
-            cur.execute("ALTER TABLE master_rp ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP")
-        if "nama_jenis" in rp_cols:
-            cur.execute(
-                "UPDATE master_rp SET nama_rp = nama_jenis "
-                "WHERE (nama_rp IS NULL OR nama_rp = '') AND nama_jenis IS NOT NULL"
-            )
-        cur.execute("SELECT id FROM master_rp WHERE kode_rp IS NULL OR kode_rp = ''")
-        for (rp_id,) in cur.fetchall():
-            cur.execute(
-                "UPDATE master_rp SET kode_rp = %s WHERE id = %s",
-                (f"RP-{rp_id:03d}", rp_id),
-            )
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS master_kimia ("
-            "id INT AUTO_INCREMENT PRIMARY KEY, "
-            "kode_kimia VARCHAR(50) NOT NULL UNIQUE, "
-            "nama_kimia VARCHAR(150) NOT NULL, "
-            "deskripsi TEXT DEFAULT NULL, "
-            "satuan VARCHAR(20) DEFAULT 'kg', "
-            "expired_days INT DEFAULT 365, "
-            "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
-            "INDEX idx_kode_kimia (kode_kimia))"
-        )
-        cur.execute("SHOW COLUMNS FROM master_kimia")
-        kimia_cols = {row[0] for row in cur.fetchall()}
-        if "kode_kimia" not in kimia_cols:
-            cur.execute("ALTER TABLE master_kimia ADD COLUMN kode_kimia VARCHAR(50) DEFAULT NULL")
-        if "nama_kimia" not in kimia_cols:
-            cur.execute("ALTER TABLE master_kimia ADD COLUMN nama_kimia VARCHAR(150) DEFAULT NULL")
-        if "deskripsi" not in kimia_cols:
-            cur.execute("ALTER TABLE master_kimia ADD COLUMN deskripsi TEXT DEFAULT NULL")
-        if "created_at" not in kimia_cols:
-            cur.execute("ALTER TABLE master_kimia ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP")
-        if "kode_barang" in kimia_cols:
-            cur.execute(
-                "UPDATE master_kimia SET kode_kimia = kode_barang "
-                "WHERE (kode_kimia IS NULL OR kode_kimia = '') AND kode_barang IS NOT NULL"
-            )
-        if "nama_barang" in kimia_cols:
-            cur.execute(
-                "UPDATE master_kimia SET nama_kimia = nama_barang "
-                "WHERE (nama_kimia IS NULL OR nama_kimia = '') AND nama_barang IS NOT NULL"
-            )
-        cur.execute("SELECT id FROM master_kimia WHERE kode_kimia IS NULL OR kode_kimia = ''")
-        for (kimia_id,) in cur.fetchall():
-            cur.execute(
-                "UPDATE master_kimia SET kode_kimia = %s WHERE id = %s",
-                (f"KIM-{kimia_id:03d}", kimia_id),
-            )
+        # ERP-only: skip CREATE/ALTER master_kulit
+        kulit_cols = set()
+        # ERP-only: skip CREATE/ALTER master_rp & master_kimia (katalog di tonghong.raw_materials)
         cur.execute("SHOW INDEX FROM tbl_yl WHERE Key_name = 'uk_kode_yl'")
         if cur.fetchone():
             cur.execute("ALTER TABLE tbl_yl DROP INDEX uk_kode_yl")
@@ -550,10 +446,17 @@ def palet():
         "FROM tbl_palet_movement m ORDER BY m.created_at DESC LIMIT 100"
     )
     movements = cur.fetchall()
-    cur.execute(
-        "SELECT kode_kulit, nama_kulit, thickness, warna FROM master_kulit ORDER BY kode_kulit"
-    )
-    kulit_list = cur.fetchall()
+    from erp_raw_materials import list_materials
+
+    kulit_list = [
+        {
+            "kode_kulit": r["code"],
+            "nama_kulit": r["name"],
+            "thickness": None,
+            "warna": None,
+        }
+        for r in list_materials("kulit")
+    ]
     cur.close()
     conn.close()
     return render_template(
@@ -644,133 +547,223 @@ def api_yl_by_palet(kode_palet):
 
 
 # ==================== 3. RENCANA PRODUKSI ====================
+def _master_po_alloc_status(qty_order: float, qty_processed: float, current_status: str | None = None) -> str:
+    """Status alokasi plan di MRP (bukan status cancel ERP)."""
+    status = (current_status or "").strip()
+    if status == "cancelled":
+        return "cancelled"
+    if qty_processed >= qty_order > 0:
+        return "completed"
+    if qty_processed > 0:
+        return "partial"
+    return "outstanding"
+
+
+def _recompute_master_po_qty_processed(cur, po_id) -> float:
+    """Set qty_processed = SUM(qty_proses) alokasi aktif; kembalikan nilai baru."""
+    cur.execute(
+        "SELECT COALESCE(SUM(qty_proses), 0) AS tot FROM tbl_rencana_item_po WHERE po_id = %s",
+        (po_id,),
+    )
+    tot = float((cur.fetchone() or {}).get("tot") or 0)
+    cur.execute(
+        "SELECT id, qty_order, status FROM tbl_master_po WHERE id = %s",
+        (po_id,),
+    )
+    po = cur.fetchone()
+    if not po:
+        return tot
+    qty_order = float(po.get("qty_order") or 0)
+    new_status = _master_po_alloc_status(qty_order, tot, po.get("status"))
+    cur.execute(
+        "UPDATE tbl_master_po SET qty_processed=%s, status=%s WHERE id=%s",
+        (tot, new_status, po_id),
+    )
+    return tot
+
+
+def _recompute_all_master_po_qty_processed(cur) -> dict:
+    """Perbaiki seluruh qty_processed dari Σ alokasi (repair data historis)."""
+    cur.execute("SELECT id FROM tbl_master_po")
+    ids = [int(r["id"]) for r in (cur.fetchall() or []) if r.get("id") is not None]
+    fixed = 0
+    for po_id in ids:
+        _recompute_master_po_qty_processed(cur, po_id)
+        fixed += 1
+    return {"ok": True, "recomputed": fixed}
+
+
+def _release_item_po_selections(cur, item_id):
+    """Hapus link alokasi item lalu recompute qty_processed master PO terdampak."""
+    cur.execute(
+        "SELECT DISTINCT po_id FROM tbl_rencana_item_po WHERE item_id = %s",
+        (item_id,),
+    )
+    po_ids = [int(r["po_id"]) for r in (cur.fetchall() or []) if r.get("po_id") is not None]
+    cur.execute("DELETE FROM tbl_rencana_item_po WHERE item_id = %s", (item_id,))
+    for po_id in po_ids:
+        _recompute_master_po_qty_processed(cur, po_id)
+
+
 def _save_item_po_selections(cur, item_id, po_data):
+    """Tambah alokasi PO ke item. Cap: qty <= order − Σ alokasi lain (via qty_processed)."""
     for entry in po_data:
         po_id = entry.get("po_id")
         qty = float(entry.get("qty") or 0)
         if not po_id or qty <= 0:
             continue
+        po_id = int(po_id)
+        # Pastikan angka master selaras sebelum cek sisa.
+        _recompute_master_po_qty_processed(cur, po_id)
         cur.execute("SELECT * FROM tbl_master_po WHERE id = %s", (po_id,))
         po = cur.fetchone()
         if not po:
-            continue
-        qty_outstanding = float(po["qty_order"]) - float(po["qty_processed"])
+            raise ValueError(f"PO #{po_id} tidak ditemukan")
+        status = (po.get("status") or "").strip()
+        if status == "cancelled":
+            raise ValueError(
+                f"PO {po.get('no_po') or po_id} tidak dapat dialokasi (status=cancelled)"
+            )
+        qty_order = float(po.get("qty_order") or 0)
+        qty_processed = float(po.get("qty_processed") or 0)
+        qty_outstanding = qty_order - qty_processed
+        if qty > qty_outstanding + 1e-9:
+            raise ValueError(
+                f"Qty {qty} melebihi sisa alokasi {qty_outstanding} "
+                f"untuk PO {po.get('no_po') or po_id}"
+            )
         cur.execute(
             "INSERT INTO tbl_rencana_item_po (item_id, po_id, qty_outstanding, qty_proses) "
             "VALUES (%s, %s, %s, %s)",
             (item_id, po_id, qty_outstanding, qty),
         )
-        new_processed = float(po["qty_processed"]) + qty
-        status = "completed" if new_processed >= float(po["qty_order"]) else "partial"
-        cur.execute(
-            "UPDATE tbl_master_po SET qty_processed=%s, status=%s WHERE id=%s",
-            (new_processed, status, po_id),
-        )
+        _recompute_master_po_qty_processed(cur, po_id)
 
 
-def _ensure_customer_id(cur, nama):
-    if not nama:
-        cur.execute("SELECT id FROM master_customer ORDER BY id LIMIT 1")
-        row = cur.fetchone()
-        return row["id"] if row else 1
-    cur.execute("SELECT id FROM master_customer WHERE nama_customer = %s", (nama,))
-    row = cur.fetchone()
-    if row:
-        return row["id"]
-    kode = f"CUST-{nama[:20].upper().replace(' ', '-')}"
+def _replace_item_po_selections(cur, item_id, po_data):
+    """Ganti alokasi PO item: release + recompute dulu, lalu tulis ulang."""
+    _release_item_po_selections(cur, item_id)
+    _save_item_po_selections(cur, item_id, po_data)
+
+
+def _consume_yl_stock(cur, kode_palet: str, kode_yl: str, qty: float, tanggal=None) -> float:
+    """Kurangi stok YL + catat movement OUT. Kembalikan qty yang di-consume."""
+    kode_palet = (kode_palet or "").strip()
+    kode_yl = (kode_yl or "").strip()
+    qty_out = float(qty or 0)
+    if not kode_palet or not kode_yl:
+        raise ValueError("kode_palet dan kode_yl wajib untuk consume stok")
+    if qty_out <= 0:
+        return 0.0
     cur.execute(
-        "INSERT INTO master_customer (kode_customer, nama_customer) VALUES (%s, %s)",
-        (kode, nama),
+        "SELECT id, qty, thickness, warna FROM tbl_yl WHERE kode_palet=%s AND kode_yl=%s LIMIT 1",
+        (kode_palet, kode_yl),
     )
-    return cur.lastrowid
+    row = cur.fetchone()
+    if not row:
+        raise ValueError(f"YL {kode_yl} tidak ada di stok palet {kode_palet}")
+    stock = float(row.get("qty") or 0)
+    if qty_out > stock + 1e-9:
+        raise ValueError(
+            f"Qty ukur {qty_out} melebihi stok YL {kode_yl} ({stock}) di palet {kode_palet}"
+        )
+    when = tanggal or date.today().isoformat()
+    cur.execute(
+        "INSERT INTO tbl_yl_movement (kode_yl, kode_palet, direction, thickness, warna, qty, tanggal) "
+        "VALUES (%s,%s,'OUT',%s,%s,%s,%s)",
+        (
+            kode_yl,
+            kode_palet,
+            row.get("thickness") or "",
+            row.get("warna") or "",
+            qty_out,
+            when,
+        ),
+    )
+    sisa = stock - qty_out
+    if sisa <= 1e-9:
+        cur.execute("DELETE FROM tbl_yl WHERE id=%s", (row["id"],))
+    else:
+        cur.execute("UPDATE tbl_yl SET qty=%s WHERE id=%s", (sisa, row["id"]))
+    return qty_out
+
+
+def _consume_yl_for_ky_session(cur, ky) -> float:
+    """Consume stok YL sesuai actual_qty sesi KY (idempotent via yl_consumed)."""
+    if not ky:
+        raise ValueError("KY tidak ditemukan")
+    if int(ky.get("yl_consumed") or 0) == 1:
+        return float(ky.get("qty_consumed") or 0)
+    actual = float(ky.get("actual_qty") or 0)
+    if actual <= 0:
+        raise ValueError("KY belum punya ukur (actual_qty=0); tambah ukur sebelum selesai")
+    kode_yl = (ky.get("kode_yl") or "").strip()
+    if not kode_yl:
+        raise ValueError("KY tanpa kode YL tidak dapat mengurangi stok")
+    consumed = _consume_yl_stock(cur, ky.get("kode_palet"), kode_yl, actual)
+    cur.execute(
+        "UPDATE tbl_persiapan_ky SET yl_consumed=1, qty_consumed=%s WHERE id=%s",
+        (consumed, ky["id"]),
+    )
+    return consumed
+
+
+def _ensure_customer_id(cur, nama, erp_customer_id=None):
+    """Return ERP customers.id; display name di _ensure_customer_id.last_name."""
+    from erp_customers import ensure_customer_id
+
+    cid, display = ensure_customer_id(nama, erp_customer_id=erp_customer_id)
+    _ensure_customer_id.last_name = display
+    return cid
 
 
 @app.route("/api/erp/combination")
 def api_erp_combination():
+    from erp_master_items import combination_payload
+
     material_name = request.args.get("material_name", "").strip()
     color = request.args.get("color", "").strip()
     emboss = request.args.get("emboss", "").strip()
     thickness = request.args.get("thickness", "").strip()
     if not material_name or not color or not emboss:
         return jsonify({"error": "Material Name, Color, Emboss wajib"}), 400
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
-    ensure_extended_tables(cur)
-    conn.commit()
-    sql = (
-        "SELECT thickness, material_name, color, emboss, customer, color_swatch, backer "
-        "FROM master_erp WHERE material_name=%s AND color=%s AND emboss=%s"
+    rows = combination_payload(
+        material_name=material_name,
+        color=color,
+        emboss=emboss,
+        thickness=thickness,
     )
-    params = [material_name, color, emboss]
-    if thickness:
-        sql += " AND thickness=%s"
-        params.append(thickness)
-    sql += " ORDER BY color_swatch"
-    cur.execute(sql, params)
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
     if not rows:
-        return jsonify({"error": "Kombinasi tidak ditemukan di master ERP"}), 404
-    return jsonify({"options": rows})
+        return jsonify({"error": "Kombinasi tidak ditemukan di Master Item ERP"}), 404
+    return jsonify({"options": rows, "source": "master_items"})
 
 
 @app.route("/api/erp/fields")
 def api_erp_fields():
-    thickness = request.args.get("thickness", "").strip()
-    material_name = request.args.get("material_name", "").strip()
-    color = request.args.get("color", "").strip()
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
-    ensure_extended_tables(cur)
-    conn.commit()
-    def distinct(col, where="", params=None):
-        q = f"SELECT DISTINCT {col} AS v FROM master_erp WHERE {col} IS NOT NULL AND {col} != ''"
-        if where:
-            q += f" AND {where}"
-        q += f" ORDER BY {col}"
-        cur.execute(q, params or ())
-        return [r["v"] for r in cur.fetchall()]
+    from erp_master_items import fields_payload
 
-    where_parts, params = [], []
-    if thickness:
-        where_parts.append("thickness=%s")
-        params.append(thickness)
-    if material_name:
-        where_parts.append("material_name=%s")
-        params.append(material_name)
-    if color:
-        where_parts.append("color=%s")
-        params.append(color)
-    where = " AND ".join(where_parts) if where_parts else "1=1"
-
-    result = {
-        "thicknesses": distinct("thickness"),
-        "material_names": distinct("material_name", where, params),
-        "colors": distinct("color", where, params),
-        "embosses": distinct("emboss", where, params),
-        "customers": distinct("customer", where, params),
-    }
-    cur.close()
-    conn.close()
-    return jsonify(result)
+    return jsonify(
+        fields_payload(
+            thickness=request.args.get("thickness", "").strip(),
+            material_name=request.args.get("material_name", "").strip(),
+            color=request.args.get("color", "").strip(),
+        )
+    )
 
 
 @app.route("/api/erp/options")
 def api_erp_options():
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
-    ensure_extended_tables(cur)
-    conn.commit()
-    cur.execute("SELECT DISTINCT thickness FROM master_erp ORDER BY thickness")
-    thicknesses = [r["thickness"] for r in cur.fetchall()]
-    cur.execute("SELECT DISTINCT color FROM master_erp ORDER BY color")
-    colors = [r["color"] for r in cur.fetchall()]
-    cur.execute("SELECT DISTINCT emboss FROM master_erp ORDER BY emboss")
-    embosses = [r["emboss"] for r in cur.fetchall()]
-    cur.close()
-    conn.close()
-    return jsonify({"thicknesses": thicknesses, "colors": colors, "embosses": embosses})
+    from erp_master_items import options_payload
+
+    opts = options_payload()
+    return jsonify(
+        {
+            "thicknesses": opts.get("thickness") or [],
+            "colors": opts.get("colors") or [],
+            "embosses": opts.get("emboss") or [],
+            "source": "master_items",
+        }
+    )
 
 
 @app.route("/api/rencana/po/by-combination")
@@ -878,24 +871,25 @@ def rencana_produksi_tambah():
                     color_swatch = (item.get("color_swatch") or "").strip()
                     if not all([thickness, material_name, color, emboss, customer_name, color_swatch]):
                         continue
-                    cur.execute(
-                        "SELECT backer FROM master_erp "
-                        "WHERE thickness=%s AND material_name=%s AND color=%s AND emboss=%s AND color_swatch=%s "
-                        "LIMIT 1",
-                        (thickness, material_name, color, emboss, color_swatch),
+                    from erp_master_items import lookup_backer
+
+                    backer = item.get("backer") or lookup_backer(
+                        material_name=material_name,
+                        thickness=thickness,
+                        color=color,
+                        emboss=emboss,
                     )
-                    erp = cur.fetchone()
-                    backer = (item.get("backer") or (erp["backer"] if erp else None))
                     customer_id = _ensure_customer_id(cur, customer_name)
+                    customer_nama = getattr(_ensure_customer_id, "last_name", None) or customer_name
                     kode_item = generate_code("RPI")
                     kode_wip = generate_code("WIP")
                     cur.execute(
                         "INSERT INTO tbl_rencana_item "
-                        "(rencana_id, kode_rencana_item, kode_lot_wip, customer_id, "
+                        "(rencana_id, kode_rencana_item, kode_lot_wip, customer_id, nama_customer, "
                         "material_name, thickness, color, emboss, color_swatch, backer, keterangan, urutan) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (
-                            rencana_id, kode_item, kode_wip, customer_id,
+                            rencana_id, kode_item, kode_wip, customer_id, customer_nama,
                             material_name, thickness, color, emboss, color_swatch, backer,
                             (item.get("keterangan") or "").strip() or None, idx,
                         ),
@@ -917,25 +911,18 @@ def rencana_produksi_tambah():
                     flash(f"Rencana Produksi '{nama}' berhasil dibuat.", "success")
                     return redirect(url_for("rencana_produksi_detail", rencana_id=rencana_id))
 
-    cur.execute("SELECT DISTINCT thickness FROM master_erp ORDER BY thickness")
-    erp_thickness = [r["thickness"] for r in cur.fetchall()]
-    cur.execute("SELECT DISTINCT material_name FROM master_erp WHERE material_name IS NOT NULL ORDER BY material_name")
-    erp_materials = [r["material_name"] for r in cur.fetchall()]
-    cur.execute("SELECT DISTINCT color FROM master_erp ORDER BY color")
-    erp_colors = [r["color"] for r in cur.fetchall()]
-    cur.execute("SELECT DISTINCT emboss FROM master_erp ORDER BY emboss")
-    erp_emboss = [r["emboss"] for r in cur.fetchall()]
-    cur.execute("SELECT DISTINCT customer FROM master_erp WHERE customer IS NOT NULL ORDER BY customer")
-    erp_customers = [r["customer"] for r in cur.fetchall()]
+    from erp_master_items import options_payload
+
+    opts = options_payload()
     cur.close()
     conn.close()
     return render_template(
         "rencana_produksi_tambah.html",
-        erp_thickness=erp_thickness,
-        erp_materials=erp_materials,
-        erp_colors=erp_colors,
-        erp_emboss=erp_emboss,
-        erp_customers=erp_customers,
+        erp_thickness=opts.get("thickness") or [],
+        erp_materials=opts.get("materials") or [],
+        erp_colors=opts.get("colors") or [],
+        erp_emboss=opts.get("emboss") or [],
+        erp_customers=opts.get("customers") or [],
         today=date.today().isoformat(),
     )
 
@@ -957,13 +944,13 @@ def rencana_produksi_detail(rencana_id):
         flash("Rencana produksi tidak ditemukan.", "danger")
         return redirect(url_for("rencana_produksi"))
     cur.execute(
-        "SELECT i.*, c.nama_customer, "
+        "SELECT i.*, i.nama_customer, "
         "(SELECT COUNT(*) FROM tbl_rencana_item_po p WHERE p.item_id = i.id) AS jml_po, "
         "(SELECT COALESCE(SUM(p.qty_proses),0) FROM tbl_rencana_item_po p WHERE p.item_id = i.id) AS total_qty_so, "
         "(SELECT GROUP_CONCAT(DISTINCT COALESCE(NULLIF(po.no_so,''), po.no_po) ORDER BY po.no_po SEPARATOR ' / ') "
         " FROM tbl_rencana_item_po p JOIN tbl_master_po po ON po.id = p.po_id WHERE p.item_id = i.id) AS schedule_text "
         "FROM tbl_rencana_item i "
-        "LEFT JOIN master_customer c ON c.id = i.customer_id "
+        ""
         "WHERE i.rencana_id = %s ORDER BY i.urutan, i.id",
         (rencana_id,),
     )
@@ -986,12 +973,12 @@ def rencana_produksi_print(rencana_id):
         flash("Rencana produksi tidak ditemukan.", "danger")
         return redirect(url_for("rencana_produksi"))
     cur.execute(
-        "SELECT i.*, c.nama_customer, "
+        "SELECT i.*, i.nama_customer, "
         "(SELECT COALESCE(SUM(p.qty_proses),0) FROM tbl_rencana_item_po p WHERE p.item_id = i.id) AS total_qty_so, "
         "(SELECT GROUP_CONCAT(DISTINCT COALESCE(NULLIF(po.no_so,''), po.no_po) ORDER BY po.no_po SEPARATOR ' / ') "
         " FROM tbl_rencana_item_po p JOIN tbl_master_po po ON po.id = p.po_id WHERE p.item_id = i.id) AS schedule_text "
         "FROM tbl_rencana_item i "
-        "LEFT JOIN master_customer c ON c.id = i.customer_id "
+        ""
         "WHERE i.rencana_id = %s ORDER BY i.urutan, i.id",
         (rencana_id,),
     )
@@ -1008,9 +995,9 @@ def rencana_item_detail(item_id):
     ensure_extended_tables(cur)
     conn.commit()
     cur.execute(
-        "SELECT i.*, c.nama_customer, r.nama_rencana, r.tanggal_rencana, r.kode_rencana "
+        "SELECT i.*, i.nama_customer, r.nama_rencana, r.tanggal_rencana, r.kode_rencana "
         "FROM tbl_rencana_item i "
-        "LEFT JOIN master_customer c ON c.id = i.customer_id "
+        ""
         "JOIN tbl_rencana_produksi r ON r.id = i.rencana_id "
         "WHERE i.id = %s",
         (item_id,),
@@ -1045,9 +1032,9 @@ def rencana_item_barcode(item_id):
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
     cur.execute(
-        "SELECT i.*, c.nama_customer, r.nama_rencana "
+        "SELECT i.*, i.nama_customer, r.nama_rencana "
         "FROM tbl_rencana_item i "
-        "LEFT JOIN master_customer c ON c.id = i.customer_id "
+        ""
         "JOIN tbl_rencana_produksi r ON r.id = i.rencana_id "
         "WHERE i.id = %s",
         (item_id,),
@@ -1069,9 +1056,9 @@ def rencana_item_list_po(item_id):
     conn.commit()
 
     cur.execute(
-        "SELECT i.*, c.nama_customer, r.nama_rencana, r.tanggal_rencana "
+        "SELECT i.*, i.nama_customer, r.nama_rencana, r.tanggal_rencana "
         "FROM tbl_rencana_item i "
-        "JOIN master_customer c ON c.id = i.customer_id "
+        ""
         "JOIN tbl_rencana_produksi r ON r.id = i.rencana_id "
         "WHERE i.id = %s",
         (item_id,),
@@ -1086,8 +1073,12 @@ def rencana_item_list_po(item_id):
         qty_list = request.form.getlist("qty[]")
         po_data = [{"po_id": pid, "qty": qty} for pid, qty in zip(po_ids, qty_list) if pid]
         if po_data:
-            cur.execute("DELETE FROM tbl_rencana_item_po WHERE item_id = %s", (item_id,))
-            _save_item_po_selections(cur, item_id, po_data)
+            try:
+                _replace_item_po_selections(cur, item_id, po_data)
+            except ValueError as exc:
+                conn.rollback()
+                flash(str(exc), "danger")
+                return redirect(url_for("rencana_item_list_po", item_id=item_id))
             cur.execute(
                 "UPDATE tbl_rencana_produksi SET status = 'active' WHERE id = %s",
                 (item["rencana_id"],),
@@ -1135,10 +1126,10 @@ def api_proses_rencana_scan():
     cur.execute(
         "SELECT i.id, i.kode_rencana_item, i.kode_lot_wip, i.kode_kulit, i.thickness, i.color, "
         "i.emboss, i.color_swatch, r.nama_rencana, r.tanggal_rencana, "
-        "c.kode_customer, c.nama_customer "
+        "i.nama_customer "
         "FROM tbl_rencana_item i "
         "JOIN tbl_rencana_produksi r ON r.id = i.rencana_id "
-        "JOIN master_customer c ON c.id = i.customer_id "
+        ""
         "WHERE i.kode_rencana_item = %s AND r.status IN ('draft','active')",
         (kode,),
     )
@@ -1247,10 +1238,10 @@ def proses():
             conn.commit()
 
     cur.execute(
-        "SELECT i.id, i.kode_rencana_item, i.kode_lot_wip, r.nama_rencana, c.nama_customer "
+        "SELECT i.id, i.kode_rencana_item, i.kode_lot_wip, r.nama_rencana, i.nama_customer "
         "FROM tbl_rencana_item i "
         "JOIN tbl_rencana_produksi r ON r.id = i.rencana_id "
-        "JOIN master_customer c ON c.id = i.customer_id "
+        ""
         "WHERE r.status IN ('draft','active') AND i.kode_lot_wip IS NOT NULL "
         "ORDER BY r.date_created DESC"
     )
@@ -1281,128 +1272,224 @@ def proses_detail(persiapan_id):
 
     if request.method == "POST":
         action = request.form.get("action")
+        status = (persiapan.get("status") or "").strip()
 
-        if action == "start":
-            cur.execute("UPDATE tbl_persiapan_kulit SET status='started' WHERE id=%s", (persiapan_id,))
-
-        elif action == "scan_ky":
-            kode_palet = request.form.get("kode_palet", "").strip()
-            kode_yl = request.form.get("kode_yl", "").strip()
-            target_qty = float(request.form.get("target_qty") or 0)
-            cur.execute(
-                "SELECT id FROM tbl_persiapan_ky WHERE persiapan_id=%s AND status='active'",
-                (persiapan_id,),
-            )
-            if cur.fetchone():
-                flash("Selesaikan KY aktif terlebih dahulu.", "warning")
-            elif not kode_palet:
-                flash("Kode KY wajib diisi.", "danger")
-            else:
-                cur.execute(
-                    "INSERT INTO tbl_persiapan_ky (persiapan_id, kode_palet, kode_yl, target_qty, status) "
-                    "VALUES (%s,%s,%s,%s,'active')",
-                    (persiapan_id, kode_palet, kode_yl or None, target_qty),
-                )
-                cur.execute(
-                    "INSERT INTO tbl_persiapan_scan (persiapan_id, kode_palet, kode_yl) VALUES (%s,%s,%s)",
-                    (persiapan_id, kode_palet, kode_yl or None),
-                )
-                flash(f"KY {kode_palet} aktif.", "success")
-
-        elif action == "add_ukur":
-            ky_id = request.form.get("ky_id")
-            size_val = float(request.form.get("size_val") or 0)
-            if ky_id and size_val:
-                cur.execute(
-                    "INSERT INTO tbl_persiapan_ukur (persiapan_id, ky_id, size_val) VALUES (%s,%s,%s)",
-                    (persiapan_id, ky_id, size_val),
-                )
-                cur.execute(
-                    "UPDATE tbl_persiapan_kulit SET total_size = total_size + %s WHERE id=%s",
-                    (size_val, persiapan_id),
-                )
-                cur.execute(
-                    "UPDATE tbl_persiapan_ky SET actual_qty = actual_qty + %s WHERE id=%s",
-                    (size_val, ky_id),
-                )
-
-        elif action == "selesai_ky":
-            ky_id = request.form.get("ky_id")
-            cur.execute("SELECT * FROM tbl_persiapan_ky WHERE id=%s AND persiapan_id=%s", (ky_id, persiapan_id))
-            ky = cur.fetchone()
-            if ky:
-                target = float(ky["target_qty"] or 0)
-                actual = float(ky["actual_qty"] or 0)
-                selisih = actual - target
-                cur.execute(
-                    "UPDATE tbl_persiapan_ky SET status='selesai' WHERE id=%s",
-                    (ky_id,),
-                )
-                if persiapan.get("rencana_item_id") and selisih != 0:
+        try:
+            if action == "start":
+                if status not in ("draft", "started"):
+                    flash(f"Tidak dapat Start dari status {status or '-'}", "danger")
+                else:
                     cur.execute(
-                        "INSERT INTO tbl_kulit_lebih "
-                        "(rencana_item_id, persiapan_id, ky_id, kode_palet, kode_yl, "
-                        "target_qty, actual_qty, selisih, keterangan) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-                        (
-                            persiapan["rencana_item_id"], persiapan_id, ky_id,
-                            ky["kode_palet"], ky["kode_yl"],
-                            target, actual, selisih,
-                            "Kurang" if selisih < 0 else "Lebih",
-                        ),
+                        "UPDATE tbl_persiapan_kulit SET status='started' WHERE id=%s",
+                        (persiapan_id,),
                     )
-                flash(f"KY selesai. Target: {target}, Aktual: {actual}", "info")
+                    flash("Proses dimulai.", "success")
 
-        elif action == "scan":
-            kode_palet = request.form.get("kode_palet", "").strip()
-            kode_yl = request.form.get("kode_yl", "").strip()
-            size_val = request.form.get("size_val")
-            cur.execute(
-                "INSERT INTO tbl_persiapan_scan (persiapan_id, kode_palet, kode_yl) VALUES (%s,%s,%s)",
-                (persiapan_id, kode_palet, kode_yl),
-            )
-            if size_val:
-                cur.execute(
-                    "INSERT INTO tbl_persiapan_ukur (persiapan_id, size_val) VALUES (%s,%s)",
-                    (persiapan_id, size_val),
-                )
-                cur.execute(
-                    "UPDATE tbl_persiapan_kulit SET total_size = total_size + %s WHERE id=%s",
-                    (float(size_val), persiapan_id),
-                )
-
-        elif action == "delete_ukur":
-            ukur_id = request.form.get("ukur_id")
-            cur.execute("SELECT size_val, ky_id FROM tbl_persiapan_ukur WHERE id=%s AND persiapan_id=%s", (ukur_id, persiapan_id))
-            row = cur.fetchone()
-            if row:
-                cur.execute("DELETE FROM tbl_persiapan_ukur WHERE id=%s", (ukur_id,))
-                cur.execute(
-                    "UPDATE tbl_persiapan_kulit SET total_size = GREATEST(total_size - %s, 0) WHERE id=%s",
-                    (row["size_val"], persiapan_id),
-                )
-                if row.get("ky_id"):
+            elif action == "scan_ky":
+                if status != "started":
+                    flash("Mulai proses (Start) dulu sebelum KY/ukur.", "warning")
+                else:
+                    kode_palet = request.form.get("kode_palet", "").strip()
+                    kode_yl = request.form.get("kode_yl", "").strip()
+                    target_qty = float(request.form.get("target_qty") or 0)
                     cur.execute(
-                        "UPDATE tbl_persiapan_ky SET actual_qty = GREATEST(actual_qty - %s, 0) WHERE id=%s",
-                        (row["size_val"], row["ky_id"]),
+                        "SELECT id FROM tbl_persiapan_ky WHERE persiapan_id=%s AND status='active'",
+                        (persiapan_id,),
                     )
+                    if cur.fetchone():
+                        flash("Selesaikan KY aktif terlebih dahulu.", "warning")
+                    elif not kode_palet:
+                        flash("Kode KY wajib diisi.", "danger")
+                    elif not kode_yl:
+                        flash("Kode YL wajib diisi.", "danger")
+                    else:
+                        cur.execute(
+                            "SELECT id, qty FROM tbl_yl WHERE kode_palet=%s AND kode_yl=%s LIMIT 1",
+                            (kode_palet, kode_yl),
+                        )
+                        yl_row = cur.fetchone()
+                        if not yl_row or float(yl_row.get("qty") or 0) <= 0:
+                            flash("KY/YL tidak ada / stok kosong. Palet IN dulu.", "danger")
+                        else:
+                            cur.execute(
+                                "INSERT INTO tbl_persiapan_ky "
+                                "(persiapan_id, kode_palet, kode_yl, target_qty, status) "
+                                "VALUES (%s,%s,%s,%s,'active')",
+                                (persiapan_id, kode_palet, kode_yl, target_qty),
+                            )
+                            cur.execute(
+                                "INSERT INTO tbl_persiapan_scan "
+                                "(persiapan_id, kode_palet, kode_yl) VALUES (%s,%s,%s)",
+                                (persiapan_id, kode_palet, kode_yl),
+                            )
+                            flash(f"KY {kode_palet} / YL {kode_yl} aktif.", "success")
 
-        elif action == "save":
-            cur.execute(
-                "UPDATE tbl_persiapan_kulit SET status='saved', date_saved=NOW() WHERE id=%s",
-                (persiapan_id,),
-            )
-            flash("Data tersimpan. Label siap dicetak.", "success")
+            elif action == "add_ukur":
+                if status != "started":
+                    flash("Mulai proses (Start) dulu sebelum KY/ukur.", "warning")
+                else:
+                    ky_id = request.form.get("ky_id")
+                    size_val = float(request.form.get("size_val") or 0)
+                    if ky_id and size_val > 0:
+                        cur.execute(
+                            "INSERT INTO tbl_persiapan_ukur "
+                            "(persiapan_id, ky_id, size_val) VALUES (%s,%s,%s)",
+                            (persiapan_id, ky_id, size_val),
+                        )
+                        cur.execute(
+                            "UPDATE tbl_persiapan_kulit SET total_size = total_size + %s WHERE id=%s",
+                            (size_val, persiapan_id),
+                        )
+                        cur.execute(
+                            "UPDATE tbl_persiapan_ky SET actual_qty = actual_qty + %s WHERE id=%s",
+                            (size_val, ky_id),
+                        )
 
-        elif action == "reprint":
-            cur.execute("SELECT COALESCE(MAX(reprint_ke),0)+1 AS nxt FROM tbl_persiapan_reprint WHERE persiapan_id=%s", (persiapan_id,))
-            reprint_ke = cur.fetchone()["nxt"]
-            cur.execute("INSERT INTO tbl_persiapan_reprint (persiapan_id, reprint_ke) VALUES (%s,%s)", (persiapan_id, reprint_ke))
-            flash(f"Reprint ke-{reprint_ke} dicatat.", "info")
+            elif action == "selesai_ky":
+                if status != "started":
+                    flash("Mulai proses (Start) dulu sebelum KY/ukur.", "warning")
+                else:
+                    ky_id = request.form.get("ky_id")
+                    cur.execute(
+                        "SELECT * FROM tbl_persiapan_ky WHERE id=%s AND persiapan_id=%s",
+                        (ky_id, persiapan_id),
+                    )
+                    ky = cur.fetchone()
+                    if not ky or ky.get("status") != "active":
+                        flash("KY aktif tidak ditemukan.", "danger")
+                    else:
+                        target = float(ky["target_qty"] or 0)
+                        actual = float(ky["actual_qty"] or 0)
+                        consumed = _consume_yl_for_ky_session(cur, ky)
+                        selisih = actual - target
+                        cur.execute(
+                            "UPDATE tbl_persiapan_ky SET status='selesai' WHERE id=%s",
+                            (ky_id,),
+                        )
+                        if persiapan.get("rencana_item_id") and selisih != 0:
+                            cur.execute(
+                                "INSERT INTO tbl_kulit_lebih "
+                                "(rencana_item_id, persiapan_id, ky_id, kode_palet, kode_yl, "
+                                "target_qty, actual_qty, selisih, keterangan) "
+                                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                                (
+                                    persiapan["rencana_item_id"],
+                                    persiapan_id,
+                                    ky_id,
+                                    ky["kode_palet"],
+                                    ky["kode_yl"],
+                                    target,
+                                    actual,
+                                    selisih,
+                                    "Kurang" if selisih < 0 else "Lebih",
+                                ),
+                            )
+                        flash(
+                            f"KY selesai. Target: {target}, Aktual: {actual}, OUT: {consumed}",
+                            "info",
+                        )
+
+            elif action == "scan":
+                if status != "started":
+                    flash("Mulai proses (Start) dulu sebelum KY/ukur.", "warning")
+                else:
+                    kode_palet = request.form.get("kode_palet", "").strip()
+                    kode_yl = request.form.get("kode_yl", "").strip()
+                    size_val = request.form.get("size_val")
+                    cur.execute(
+                        "INSERT INTO tbl_persiapan_scan "
+                        "(persiapan_id, kode_palet, kode_yl) VALUES (%s,%s,%s)",
+                        (persiapan_id, kode_palet, kode_yl),
+                    )
+                    if size_val:
+                        cur.execute(
+                            "INSERT INTO tbl_persiapan_ukur (persiapan_id, size_val) VALUES (%s,%s)",
+                            (persiapan_id, size_val),
+                        )
+                        cur.execute(
+                            "UPDATE tbl_persiapan_kulit SET total_size = total_size + %s WHERE id=%s",
+                            (float(size_val), persiapan_id),
+                        )
+
+            elif action == "delete_ukur":
+                if status != "started":
+                    flash("Mulai proses (Start) dulu sebelum KY/ukur.", "warning")
+                else:
+                    ukur_id = request.form.get("ukur_id")
+                    cur.execute(
+                        "SELECT u.size_val, u.ky_id, k.status AS ky_status, k.yl_consumed "
+                        "FROM tbl_persiapan_ukur u "
+                        "LEFT JOIN tbl_persiapan_ky k ON k.id = u.ky_id "
+                        "WHERE u.id=%s AND u.persiapan_id=%s",
+                        (ukur_id, persiapan_id),
+                    )
+                    row = cur.fetchone()
+                    if row and (
+                        row.get("ky_status") == "selesai"
+                        or int(row.get("yl_consumed") or 0) == 1
+                    ):
+                        flash("Tidak dapat hapus ukur KY yang sudah selesai.", "danger")
+                    elif row:
+                        cur.execute("DELETE FROM tbl_persiapan_ukur WHERE id=%s", (ukur_id,))
+                        cur.execute(
+                            "UPDATE tbl_persiapan_kulit "
+                            "SET total_size = GREATEST(total_size - %s, 0) WHERE id=%s",
+                            (row["size_val"], persiapan_id),
+                        )
+                        if row.get("ky_id"):
+                            cur.execute(
+                                "UPDATE tbl_persiapan_ky "
+                                "SET actual_qty = GREATEST(actual_qty - %s, 0) WHERE id=%s",
+                                (row["size_val"], row["ky_id"]),
+                            )
+
+            elif action == "save":
+                if status in ("saved", "completed"):
+                    flash("Persiapan sudah selesai / tersimpan.", "warning")
+                elif status != "started":
+                    flash("Start proses dulu sebelum Simpan.", "warning")
+                else:
+                    cur.execute(
+                        "SELECT id FROM tbl_persiapan_ky "
+                        "WHERE persiapan_id=%s AND status='active' LIMIT 1",
+                        (persiapan_id,),
+                    )
+                    if cur.fetchone():
+                        flash("Selesaikan KY aktif dulu sebelum Simpan.", "warning")
+                    elif float(persiapan.get("total_size") or 0) <= 0:
+                        flash("Belum ada ukur (total size=0).", "danger")
+                    else:
+                        cur.execute(
+                            "UPDATE tbl_persiapan_kulit "
+                            "SET status='completed', date_saved=NOW() WHERE id=%s",
+                            (persiapan_id,),
+                        )
+                        flash("Persiapan selesai (completed). Label siap dicetak.", "success")
+
+            elif action == "reprint":
+                if status not in ("saved", "completed"):
+                    flash("Reprint hanya setelah persiapan tersimpan/selesai.", "warning")
+                else:
+                    cur.execute(
+                        "SELECT COALESCE(MAX(reprint_ke),0)+1 AS nxt "
+                        "FROM tbl_persiapan_reprint WHERE persiapan_id=%s",
+                        (persiapan_id,),
+                    )
+                    reprint_ke = cur.fetchone()["nxt"]
+                    cur.execute(
+                        "INSERT INTO tbl_persiapan_reprint (persiapan_id, reprint_ke) VALUES (%s,%s)",
+                        (persiapan_id, reprint_ke),
+                    )
+                    flash(f"Reprint ke-{reprint_ke} dicatat.", "info")
+        except ValueError as exc:
+            conn.rollback()
+            flash(str(exc), "danger")
+            cur.close()
+            conn.close()
+            return redirect(url_for("proses_detail", persiapan_id=persiapan_id))
 
         conn.commit()
         return redirect(url_for("proses_detail", persiapan_id=persiapan_id))
-
     cur.execute("SELECT * FROM tbl_persiapan_kulit WHERE id = %s", (persiapan_id,))
     persiapan = cur.fetchone()
     cur.execute("SELECT * FROM tbl_persiapan_scan WHERE persiapan_id = %s ORDER BY created_at", (persiapan_id,))
@@ -1485,12 +1572,9 @@ def lab():
                     (kode_lot_warna, nama_lot_warna, rencana_item_id),
                 )
                 for kode_kimia, resep, satuan, qty, remarks in rows:
-                    cur.execute(
-                        "SELECT COALESCE(nama_kimia, nama_barang) AS nama_kimia "
-                        "FROM master_kimia WHERE COALESCE(kode_kimia, kode_barang) = %s",
-                        (kode_kimia.strip(),),
-                    )
-                    kimia = cur.fetchone()
+                    from erp_raw_materials import fetch_material_by_code
+
+                    mat = fetch_material_by_code(kode_kimia.strip(), material_type="kimia")
                     cur.execute(
                         "INSERT INTO tbl_lab_lot_detail "
                         "(kode_lot_warna, kode_kimia, nama_kimia, resep, satuan, qty, remarks) "
@@ -1498,9 +1582,9 @@ def lab():
                         (
                             kode_lot_warna,
                             kode_kimia.strip(),
-                            kimia["nama_kimia"] if kimia else kode_kimia.strip(),
+                            (mat["name"] if mat else kode_kimia.strip()),
                             resep.strip() or None,
-                            satuan.strip() or "kg",
+                            satuan.strip() or (mat.get("unit") if mat else "kg") or "kg",
                             qty or 0,
                             remarks.strip() or None,
                         ),
@@ -1511,30 +1595,34 @@ def lab():
     cur.execute(
         "SELECT l.kode_lot_warna, l.nama_lot_warna, l.status, l.date_created, l.rencana_item_id, "
         "d.kode_kimia, d.nama_kimia, d.resep, d.satuan, d.qty, d.remarks, "
-        "ri.kode_rencana_item, rp.nama_rencana, rp.tanggal_rencana, c.nama_customer "
+        "ri.kode_rencana_item, rp.nama_rencana, rp.tanggal_rencana, ri.nama_customer "
         "FROM tbl_lab_lot l "
         "JOIN tbl_lab_lot_detail d ON d.kode_lot_warna = l.kode_lot_warna "
         "LEFT JOIN tbl_rencana_item ri ON ri.id = l.rencana_item_id "
         "LEFT JOIN tbl_rencana_produksi rp ON rp.id = ri.rencana_id "
-        "LEFT JOIN master_customer c ON c.id = ri.customer_id "
+        ""
         "ORDER BY COALESCE(rp.tanggal_rencana, l.date_created) DESC, l.kode_lot_warna, d.id DESC LIMIT 200"
     )
     lab_list = cur.fetchall()
     cur.execute(
         "SELECT ri.id, ri.kode_rencana_item, ri.kode_kulit, ri.color, ri.thickness, "
-        "rp.nama_rencana, rp.tanggal_rencana, c.nama_customer "
+        "rp.nama_rencana, rp.tanggal_rencana, ri.nama_customer "
         "FROM tbl_rencana_item ri "
         "JOIN tbl_rencana_produksi rp ON rp.id = ri.rencana_id "
-        "JOIN master_customer c ON c.id = ri.customer_id "
+        ""
         "ORDER BY rp.tanggal_rencana DESC, ri.urutan"
     )
     rencana_items = cur.fetchall()
-    cur.execute(
-        "SELECT COALESCE(kode_kimia, kode_barang) AS kode_kimia, "
-        "COALESCE(nama_kimia, nama_barang) AS nama_kimia, satuan "
-        "FROM master_kimia ORDER BY kode_kimia"
-    )
-    kimia_list = cur.fetchall()
+    from erp_raw_materials import list_materials
+
+    kimia_list = [
+        {
+            "kode_kimia": r["code"],
+            "nama_kimia": r["name"],
+            "satuan": r.get("unit") or "kg",
+        }
+        for r in list_materials("kimia")
+    ]
     cur.execute("SELECT nama_resep FROM master_resep ORDER BY nama_resep")
     reseps = [r["nama_resep"] for r in cur.fetchall()]
     cur.close()
@@ -1611,45 +1699,45 @@ def usage_color():
 # ==================== 7. USAGE RP (Laminating) ====================
 @app.route("/api/usage-rp/rp-scan")
 def api_usage_rp_rp_scan():
+    from erp_raw_materials import fetch_material_by_code
+
     kode = request.args.get("q", "").strip()
     if not kode:
         return jsonify({"error": "Kode kosong"}), 400
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
-    cur.execute(
-        "SELECT kode_rp, COALESCE(nama_rp, nama_jenis) AS nama_jenis, satuan "
-        "FROM master_rp WHERE kode_rp = %s OR nama_rp = %s OR nama_jenis = %s LIMIT 1",
-        (kode, kode, kode),
-    )
-    rp = cur.fetchone()
-    cur.close()
-    conn.close()
-    if not rp:
+    mat = fetch_material_by_code(kode, material_type="rp")
+    if not mat:
         return jsonify({"error": "Jenis RP tidak ditemukan"}), 404
-    return jsonify(rp)
+    return jsonify(
+        {
+            "kode_rp": mat["code"],
+            "nama_jenis": mat["name"],
+            "satuan": mat.get("unit") or "meter",
+        }
+    )
 
 
 @app.route("/usage-rp", methods=["GET", "POST"])
 def usage_rp():
+    from erp_raw_materials import fetch_material_by_code
+
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
 
     if request.method == "POST":
         kode_wip = request.form.get("kode_wip", "").strip()
         jenis_scan = request.form.get("jenis_rp", "").strip()
-        cur.execute(
-            "SELECT COALESCE(nama_rp, nama_jenis) AS nama_jenis, satuan "
-            "FROM master_rp WHERE kode_rp = %s OR nama_rp = %s OR nama_jenis = %s LIMIT 1",
-            (jenis_scan, jenis_scan, jenis_scan),
-        )
-        rp = cur.fetchone()
-        if not rp:
+        mat = fetch_material_by_code(jenis_scan, material_type="rp")
+        if not mat:
             flash("Jenis RP tidak ditemukan.", "danger")
         else:
             cur.execute(
                 "INSERT INTO tbl_usage_rp (kode_wip, jenis_rp, qty_used, satuan) VALUES (%s,%s,%s,%s)",
-                (kode_wip, rp["nama_jenis"], request.form.get("qty_used") or 0,
-                 request.form.get("satuan") or rp.get("satuan") or "meter"),
+                (
+                    kode_wip,
+                    mat["name"],
+                    request.form.get("qty_used") or 0,
+                    request.form.get("satuan") or mat.get("unit") or "meter",
+                ),
             )
             conn.commit()
             flash("Usage RP berhasil disimpan.", "success")
@@ -1876,8 +1964,13 @@ def packing_history():
 # ==================== 9. STOK KIMIA ====================
 @app.route("/stok-kimia", methods=["GET", "POST"])
 def stok_kimia():
+    from erp_raw_materials import list_materials, resolve_material
+    from lot_erp_columns import ensure_lot_erp_columns
+
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
+    ensure_lot_erp_columns(cur)
+    conn.commit()
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -1888,15 +1981,31 @@ def stok_kimia():
             jumlah_kemasan = int(request.form.get("jumlah_kemasan") or 0) or None
             tanggal = request.form.get("tanggal") or date.today().isoformat()
             kode_internal = generate_code("BC-K")
-            cur.execute("SELECT expired_days FROM master_kimia WHERE id=%s", (kimia_id,))
-            kimia = cur.fetchone()
-            expired = date.today() + timedelta(days=kimia["expired_days"] if kimia else 365)
-            cur.execute(
-                "INSERT INTO tbl_stok_kimia_in (kode_internal, kimia_id, qty, qty_sisa, jumlah_kemasan, tanggal_in, expired_date, gudang) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,'kimia')",
-                (kode_internal, kimia_id, qty, qty, jumlah_kemasan, tanggal, expired),
-            )
-            flash(f"Stok Kimia IN: {kode_internal}", "success")
+            mat = resolve_material(erp_material_id=int(kimia_id), material_type="kimia")
+            if not mat:
+                flash("Material kimia ERP tidak ditemukan.", "danger")
+            else:
+                expired = date.today() + timedelta(days=365)
+                cur.execute(
+                    "INSERT INTO tbl_stok_kimia_in "
+                    "(kode_internal, kimia_id, erp_material_id, kode_material, nama_material, "
+                    "qty, qty_sisa, jumlah_kemasan, tanggal_in, expired_date, gudang, satuan) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'kimia',%s)",
+                    (
+                        kode_internal,
+                        mat["id"],
+                        mat["id"],
+                        mat["code"],
+                        mat["name"],
+                        qty,
+                        qty,
+                        jumlah_kemasan,
+                        tanggal,
+                        expired,
+                        mat.get("unit") or "kg",
+                    ),
+                )
+                flash(f"Stok Kimia IN: {kode_internal}", "success")
 
         elif action == "out":
             stok_in_id = request.form.get("stok_in_id")
@@ -1908,11 +2017,28 @@ def stok_kimia():
 
             cur.execute("SELECT * FROM tbl_stok_kimia_in WHERE id=%s", (stok_in_id,))
             stok = cur.fetchone()
-            if stok and stok["qty_sisa"] >= qty:
+            if not stok or float(stok["qty_sisa"]) < qty:
+                flash("Stok tidak cukup.", "danger")
+            elif not stok.get("erp_material_id"):
+                flash("Lot belum ter-map erp_material_id.", "danger")
+            else:
                 cur.execute(
-                    "INSERT INTO tbl_stok_kimia_out (stok_in_id, kimia_id, qty, jumlah_kemasan, tujuan, kode_wip, tanggal) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s)",
-                    (stok_in_id, stok["kimia_id"], qty, jumlah_kemasan, tujuan, kode_wip, tanggal),
+                    "INSERT INTO tbl_stok_kimia_out "
+                    "(stok_in_id, kimia_id, erp_material_id, kode_material, nama_material, "
+                    "qty, jumlah_kemasan, tujuan, kode_wip, tanggal) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (
+                        stok_in_id,
+                        stok.get("kimia_id") or stok["erp_material_id"],
+                        stok["erp_material_id"],
+                        stok.get("kode_material"),
+                        stok.get("nama_material"),
+                        qty,
+                        jumlah_kemasan,
+                        tujuan,
+                        kode_wip,
+                        tanggal,
+                    ),
                 )
                 new_sisa = float(stok["qty_sisa"]) - qty
                 new_gudang = "mixing" if tujuan == "mixing" else stok["gudang"]
@@ -1921,38 +2047,50 @@ def stok_kimia():
                     (new_sisa, new_gudang, stok_in_id),
                 )
                 flash("Stok Kimia OUT berhasil.", "success")
-            else:
-                flash("Stok tidak cukup.", "danger")
 
         conn.commit()
 
     cur.execute(
-        "SELECT si.*, COALESCE(mk.nama_kimia, mk.nama_barang) AS nama_barang, "
-        "COALESCE(mk.kode_kimia, mk.kode_barang) AS kode_barang FROM tbl_stok_kimia_in si "
-        "JOIN master_kimia mk ON mk.id = si.kimia_id WHERE si.qty_sisa > 0 ORDER BY si.tanggal_in"
+        "SELECT si.*, COALESCE(si.nama_material, '') AS nama_barang, "
+        "COALESCE(si.kode_material, '') AS kode_barang "
+        "FROM tbl_stok_kimia_in si WHERE si.qty_sisa > 0 ORDER BY si.tanggal_in"
     )
     stok_in = cur.fetchall()
     cur.execute(
-        "SELECT so.*, COALESCE(mk.nama_kimia, mk.nama_barang) AS nama_barang FROM tbl_stok_kimia_out so "
-        "JOIN master_kimia mk ON mk.id = so.kimia_id ORDER BY so.created_at DESC LIMIT 50"
+        "SELECT so.*, COALESCE(so.nama_material, '') AS nama_barang "
+        "FROM tbl_stok_kimia_out so ORDER BY so.created_at DESC LIMIT 50"
     )
     stok_out = cur.fetchall()
-    cur.execute(
-        "SELECT id, COALESCE(kode_kimia, kode_barang) AS kode_barang, "
-        "COALESCE(nama_kimia, nama_barang) AS nama_barang, satuan "
-        "FROM master_kimia ORDER BY COALESCE(nama_kimia, nama_barang)"
-    )
-    kimia_list = cur.fetchall()
+    kimia_list = [
+        {
+            "id": r["id"],
+            "kode_barang": r["code"],
+            "nama_barang": r["name"],
+            "satuan": r.get("unit") or "kg",
+        }
+        for r in list_materials("kimia")
+    ]
     cur.close()
     conn.close()
-    return render_template("stok_kimia.html", stok_in=stok_in, stok_out=stok_out, kimia_list=kimia_list, today=date.today().isoformat())
+    return render_template(
+        "stok_kimia.html",
+        stok_in=stok_in,
+        stok_out=stok_out,
+        kimia_list=kimia_list,
+        today=date.today().isoformat(),
+    )
 
 
 # ==================== 10. STOK RP ====================
 @app.route("/stok-rp", methods=["GET", "POST"])
 def stok_rp():
+    from erp_raw_materials import list_materials, resolve_material
+    from lot_erp_columns import ensure_lot_erp_columns
+
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
+    ensure_lot_erp_columns(cur)
+    conn.commit()
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -1962,11 +2100,26 @@ def stok_rp():
             meter_roll = float(request.form.get("meter_roll") or 0)
             tanggal = request.form.get("tanggal") or date.today().isoformat()
             kode_internal = generate_code("BC-R")
-            cur.execute(
-                "INSERT INTO tbl_stok_rp_in (kode_internal, rp_id, meter_roll, qty_sisa, tanggal_in) VALUES (%s,%s,%s,%s,%s)",
-                (kode_internal, rp_id, meter_roll, meter_roll, tanggal),
-            )
-            flash(f"Stok RP IN: {kode_internal}", "success")
+            mat = resolve_material(erp_material_id=int(rp_id), material_type="rp")
+            if not mat:
+                flash("Material RP ERP tidak ditemukan.", "danger")
+            else:
+                cur.execute(
+                    "INSERT INTO tbl_stok_rp_in "
+                    "(kode_internal, rp_id, erp_material_id, kode_material, nama_material, "
+                    "meter_roll, qty_sisa, tanggal_in) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (
+                        kode_internal,
+                        mat["id"],
+                        mat["id"],
+                        mat["code"],
+                        mat["name"],
+                        meter_roll,
+                        meter_roll,
+                        tanggal,
+                    ),
+                )
+                flash(f"Stok RP IN: {kode_internal}", "success")
 
         elif action == "out":
             stok_in_id = request.form.get("stok_in_id")
@@ -1976,36 +2129,54 @@ def stok_rp():
 
             cur.execute("SELECT * FROM tbl_stok_rp_in WHERE id=%s", (stok_in_id,))
             stok = cur.fetchone()
-            if stok and float(stok["qty_sisa"]) >= meter_roll:
+            if not stok or float(stok["qty_sisa"]) < meter_roll:
+                flash("Stok RP tidak cukup.", "danger")
+            elif not stok.get("erp_material_id"):
+                flash("Lot RP belum ter-map erp_material_id.", "danger")
+            else:
                 cur.execute(
-                    "INSERT INTO tbl_stok_rp_out (stok_in_id, rp_id, meter_roll, kode_wip, tanggal) VALUES (%s,%s,%s,%s,%s)",
-                    (stok_in_id, stok["rp_id"], meter_roll, kode_wip, tanggal),
+                    "INSERT INTO tbl_stok_rp_out "
+                    "(stok_in_id, rp_id, erp_material_id, kode_material, nama_material, "
+                    "meter_roll, kode_wip, tanggal) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (
+                        stok_in_id,
+                        stok.get("rp_id") or stok["erp_material_id"],
+                        stok["erp_material_id"],
+                        stok.get("kode_material"),
+                        stok.get("nama_material"),
+                        meter_roll,
+                        kode_wip,
+                        tanggal,
+                    ),
                 )
                 cur.execute(
                     "UPDATE tbl_stok_rp_in SET qty_sisa = qty_sisa - %s WHERE id=%s",
                     (meter_roll, stok_in_id),
                 )
                 flash("Stok RP OUT berhasil (FIFO).", "success")
-            else:
-                flash("Stok RP tidak cukup.", "danger")
 
         conn.commit()
 
     cur.execute(
-        "SELECT si.*, COALESCE(mr.nama_rp, mr.nama_jenis) AS nama_jenis FROM tbl_stok_rp_in si "
-        "JOIN master_rp mr ON mr.id = si.rp_id WHERE si.qty_sisa > 0 ORDER BY si.tanggal_in"
+        "SELECT si.*, COALESCE(si.nama_material, '') AS nama_jenis "
+        "FROM tbl_stok_rp_in si WHERE si.qty_sisa > 0 ORDER BY si.tanggal_in"
     )
     stok_in = cur.fetchall()
     cur.execute(
-        "SELECT so.*, COALESCE(mr.nama_rp, mr.nama_jenis) AS nama_jenis FROM tbl_stok_rp_out so "
-        "JOIN master_rp mr ON mr.id = so.rp_id ORDER BY so.created_at DESC LIMIT 50"
+        "SELECT so.*, COALESCE(so.nama_material, '') AS nama_jenis "
+        "FROM tbl_stok_rp_out so ORDER BY so.created_at DESC LIMIT 50"
     )
     stok_out = cur.fetchall()
-    cur.execute(
-        "SELECT id, kode_rp, COALESCE(nama_rp, nama_jenis) AS nama_rp, deskripsi, satuan "
-        "FROM master_rp ORDER BY kode_rp"
-    )
-    rp_list = cur.fetchall()
+    rp_list = [
+        {
+            "id": r["id"],
+            "kode_rp": r["code"],
+            "nama_rp": r["name"],
+            "deskripsi": None,
+            "satuan": r.get("unit") or "meter",
+        }
+        for r in list_materials("rp")
+    ]
     cur.close()
     conn.close()
     return render_template(
@@ -2102,190 +2273,65 @@ def lot():
     return redirect(url_for("palet"))
 
 
-# ==================== MASTER KULIT ====================
+# ==================== MASTER KULIT / RP / KIMIA (read-only ERP) ====================
 @app.route("/master/kulit", methods=["GET", "POST"])
 def master_kulit():
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
+    from erp_raw_materials import list_materials
 
     if request.method == "POST":
-        action = request.form.get("action")
-
-        if action == "create":
-            kode_kulit = request.form.get("kode_kulit", "").strip()
-            nama_kulit = request.form.get("nama_kulit", "").strip()
-            thickness = request.form.get("thickness", "").strip() or None
-            warna = request.form.get("warna", "").strip() or None
-            if not kode_kulit or not nama_kulit:
-                flash("Kode kulit dan nama kulit wajib diisi.", "danger")
-            else:
-                try:
-                    cur.execute(
-                        "INSERT INTO master_kulit (kode_kulit, nama_kulit, thickness, warna) VALUES (%s, %s, %s, %s)",
-                        (kode_kulit, nama_kulit, thickness, warna),
-                    )
-                    conn.commit()
-                    flash(f"Master kulit {kode_kulit} berhasil ditambahkan.", "success")
-                except mysql.connector.IntegrityError:
-                    flash(f"Kode kulit {kode_kulit} sudah ada.", "danger")
-
-        elif action == "update":
-            kulit_id = request.form.get("id")
-            kode_kulit = request.form.get("kode_kulit", "").strip()
-            nama_kulit = request.form.get("nama_kulit", "").strip()
-            thickness = request.form.get("thickness", "").strip() or None
-            warna = request.form.get("warna", "").strip() or None
-            if not kode_kulit or not nama_kulit:
-                flash("Kode kulit dan nama kulit wajib diisi.", "danger")
-            else:
-                try:
-                    cur.execute(
-                        "UPDATE master_kulit SET kode_kulit=%s, nama_kulit=%s, thickness=%s, warna=%s WHERE id=%s",
-                        (kode_kulit, nama_kulit, thickness, warna, kulit_id),
-                    )
-                    conn.commit()
-                    flash("Master kulit berhasil diperbarui.", "success")
-                except mysql.connector.IntegrityError:
-                    flash(f"Kode kulit {kode_kulit} sudah digunakan.", "danger")
-
-        elif action == "delete":
-            kulit_id = request.form.get("id")
-            cur.execute("DELETE FROM master_kulit WHERE id=%s", (kulit_id,))
-            conn.commit()
-            flash("Master kulit berhasil dihapus.", "success")
-
-    cur.execute("SELECT * FROM master_kulit ORDER BY kode_kulit")
-    kulit_list = cur.fetchall()
-    cur.close()
-    conn.close()
+        flash("Katalog kulit dikelola di ERP Inventory (raw_materials).", "warning")
+        return redirect(url_for("master_kulit"))
+    kulit_list = [
+        {
+            "id": r["id"],
+            "kode_kulit": r["code"],
+            "nama_kulit": r["name"],
+            "thickness": None,
+            "warna": None,
+        }
+        for r in list_materials("kulit")
+    ]
     return render_template("master_kulit.html", kulit_list=kulit_list)
 
 
 @app.route("/master/rp", methods=["GET", "POST"])
 def master_rp():
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
+    from erp_raw_materials import list_materials
 
     if request.method == "POST":
-        action = request.form.get("action")
-
-        if action == "create":
-            kode_rp = request.form.get("kode_rp", "").strip()
-            nama_rp = request.form.get("nama_rp", "").strip()
-            deskripsi = request.form.get("deskripsi", "").strip() or None
-            if not kode_rp or not nama_rp:
-                flash("Kode RP dan Nama RP wajib diisi.", "danger")
-            else:
-                try:
-                    cur.execute(
-                        "INSERT INTO master_rp (kode_rp, nama_rp, deskripsi) VALUES (%s, %s, %s)",
-                        (kode_rp, nama_rp, deskripsi),
-                    )
-                    conn.commit()
-                    flash(f"Master RP {kode_rp} berhasil ditambahkan.", "success")
-                except mysql.connector.IntegrityError:
-                    flash(f"Kode RP {kode_rp} sudah ada.", "danger")
-
-        elif action == "update":
-            rp_id = request.form.get("id")
-            kode_rp = request.form.get("kode_rp", "").strip()
-            nama_rp = request.form.get("nama_rp", "").strip()
-            deskripsi = request.form.get("deskripsi", "").strip() or None
-            if not kode_rp or not nama_rp:
-                flash("Kode RP dan Nama RP wajib diisi.", "danger")
-            else:
-                try:
-                    cur.execute(
-                        "UPDATE master_rp SET kode_rp=%s, nama_rp=%s, deskripsi=%s WHERE id=%s",
-                        (kode_rp, nama_rp, deskripsi, rp_id),
-                    )
-                    conn.commit()
-                    flash("Master RP berhasil diperbarui.", "success")
-                except mysql.connector.IntegrityError:
-                    flash(f"Kode RP {kode_rp} sudah digunakan.", "danger")
-
-        elif action == "delete":
-            rp_id = request.form.get("id")
-            try:
-                cur.execute("DELETE FROM master_rp WHERE id=%s", (rp_id,))
-                conn.commit()
-                flash("Master RP berhasil dihapus.", "success")
-            except mysql.connector.Error:
-                flash("Master RP tidak dapat dihapus karena masih digunakan di stok/usage.", "danger")
-
-    cur.execute(
-        "SELECT id, kode_rp, COALESCE(nama_rp, nama_jenis) AS nama_rp, deskripsi, created_at "
-        "FROM master_rp ORDER BY kode_rp"
-    )
-    rp_list = cur.fetchall()
-    cur.close()
-    conn.close()
+        flash("Katalog RP dikelola di ERP Inventory (raw_materials).", "warning")
+        return redirect(url_for("master_rp"))
+    rp_list = [
+        {
+            "id": r["id"],
+            "kode_rp": r["code"],
+            "nama_rp": r["name"],
+            "deskripsi": None,
+            "created_at": None,
+        }
+        for r in list_materials("rp")
+    ]
     return render_template("master_rp.html", rp_list=rp_list)
 
 
 @app.route("/master/kimia", methods=["GET", "POST"])
 def master_kimia():
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
+    from erp_raw_materials import list_materials
 
     if request.method == "POST":
-        action = request.form.get("action")
-
-        if action == "create":
-            kode_kimia = request.form.get("kode_kimia", "").strip()
-            nama_kimia = request.form.get("nama_kimia", "").strip()
-            deskripsi = request.form.get("deskripsi", "").strip() or None
-            satuan = request.form.get("satuan", "kg").strip() or "kg"
-            if not kode_kimia or not nama_kimia:
-                flash("Kode kimia dan nama kimia wajib diisi.", "danger")
-            else:
-                try:
-                    cur.execute(
-                        "INSERT INTO master_kimia (kode_kimia, nama_kimia, deskripsi, satuan) "
-                        "VALUES (%s, %s, %s, %s)",
-                        (kode_kimia, nama_kimia, deskripsi, satuan),
-                    )
-                    conn.commit()
-                    flash(f"Master kimia {kode_kimia} berhasil ditambahkan.", "success")
-                except mysql.connector.IntegrityError:
-                    flash(f"Kode kimia {kode_kimia} sudah ada.", "danger")
-
-        elif action == "update":
-            kimia_id = request.form.get("id")
-            kode_kimia = request.form.get("kode_kimia", "").strip()
-            nama_kimia = request.form.get("nama_kimia", "").strip()
-            deskripsi = request.form.get("deskripsi", "").strip() or None
-            satuan = request.form.get("satuan", "kg").strip() or "kg"
-            if not kode_kimia or not nama_kimia:
-                flash("Kode kimia dan nama kimia wajib diisi.", "danger")
-            else:
-                try:
-                    cur.execute(
-                        "UPDATE master_kimia SET kode_kimia=%s, nama_kimia=%s, deskripsi=%s, satuan=%s WHERE id=%s",
-                        (kode_kimia, nama_kimia, deskripsi, satuan, kimia_id),
-                    )
-                    conn.commit()
-                    flash("Master kimia berhasil diperbarui.", "success")
-                except mysql.connector.IntegrityError:
-                    flash(f"Kode kimia {kode_kimia} sudah digunakan.", "danger")
-
-        elif action == "delete":
-            kimia_id = request.form.get("id")
-            try:
-                cur.execute("DELETE FROM master_kimia WHERE id=%s", (kimia_id,))
-                conn.commit()
-                flash("Master kimia berhasil dihapus.", "success")
-            except mysql.connector.Error:
-                flash("Master kimia tidak dapat dihapus karena masih digunakan di stok.", "danger")
-
-    cur.execute(
-        "SELECT id, COALESCE(kode_kimia, kode_barang) AS kode_kimia, "
-        "COALESCE(nama_kimia, nama_barang) AS nama_kimia, deskripsi, satuan, created_at "
-        "FROM master_kimia ORDER BY kode_kimia"
-    )
-    kimia_list = cur.fetchall()
-    cur.close()
-    conn.close()
+        flash("Katalog kimia dikelola di ERP Inventory (raw_materials).", "warning")
+        return redirect(url_for("master_kimia"))
+    kimia_list = [
+        {
+            "id": r["id"],
+            "kode_kimia": r["code"],
+            "nama_kimia": r["name"],
+            "deskripsi": None,
+            "satuan": r.get("unit") or "kg",
+            "created_at": None,
+        }
+        for r in list_materials("kimia")
+    ]
     return render_template("master_kimia.html", kimia_list=kimia_list)
 
 
@@ -2345,64 +2391,46 @@ def master_treatment():
     return render_template("master_treatment.html", treatment_list=treatment_list)
 
 
-# ==================== MASTER ERP (dummy) ====================
+# ==================== MASTER ERP (= Master Item Tonghong) ====================
 @app.route("/master/erp")
 def master_erp():
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
-    ensure_extended_tables(cur)
-    conn.commit()
-    cur.execute("SELECT * FROM master_erp ORDER BY thickness, color, emboss")
-    erp_list = cur.fetchall()
-    cur.close()
-    conn.close()
+    from erp_master_items import fetch_master_items, item_to_erp_shape
+
+    erp_list = [item_to_erp_shape(r) for r in fetch_master_items(limit=2000)]
     return render_template("master_erp.html", erp_list=erp_list)
 
 
-# ==================== MASTER MATERIAL LAIN ====================
+# ==================== MASTER MATERIAL LAIN (read-only ERP) ====================
 @app.route("/master/material-lain", methods=["GET", "POST"])
 def master_material_lain():
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
-    ensure_extended_tables(cur)
-    conn.commit()
+    from erp_raw_materials import list_materials
 
     if request.method == "POST":
-        action = request.form.get("action")
-        if action == "create":
-            kode = request.form.get("kode_material", "").strip()
-            nama = request.form.get("nama_material", "").strip()
-            deskripsi = request.form.get("deskripsi", "").strip() or None
-            satuan = request.form.get("satuan", "pcs").strip() or "pcs"
-            if kode and nama:
-                try:
-                    cur.execute(
-                        "INSERT INTO master_material_lain (kode_material, nama_material, deskripsi, satuan) "
-                        "VALUES (%s,%s,%s,%s)",
-                        (kode, nama, deskripsi, satuan),
-                    )
-                    conn.commit()
-                    flash(f"Material {kode} ditambahkan.", "success")
-                except mysql.connector.IntegrityError:
-                    flash("Kode material sudah ada.", "danger")
-        elif action == "delete":
-            cur.execute("DELETE FROM master_material_lain WHERE id=%s", (request.form.get("id"),))
-            conn.commit()
-            flash("Material dihapus.", "success")
-
-    cur.execute("SELECT * FROM master_material_lain ORDER BY kode_material")
-    material_list = cur.fetchall()
-    cur.close()
-    conn.close()
+        flash("Katalog material lain dikelola di ERP Inventory (raw_materials).", "warning")
+        return redirect(url_for("master_material_lain"))
+    material_list = [
+        {
+            "id": r["id"],
+            "kode_material": r["code"],
+            "nama_material": r["name"],
+            "deskripsi": None,
+            "satuan": r.get("unit") or "pcs",
+        }
+        for r in list_materials("material_lain")
+    ]
     return render_template("master_material_lain.html", material_list=material_list)
 
 
 # ==================== STOK MATERIAL LAIN ====================
 @app.route("/stok-material-lain", methods=["GET", "POST"])
 def stok_material_lain():
+    from erp_raw_materials import list_materials, resolve_material
+    from lot_erp_columns import ensure_lot_erp_columns
+
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
     ensure_extended_tables(cur)
+    ensure_lot_erp_columns(cur)
     conn.commit()
 
     if request.method == "POST":
@@ -2412,14 +2440,28 @@ def stok_material_lain():
             qty = float(request.form.get("qty") or 0)
             tanggal = request.form.get("tanggal") or date.today().isoformat()
             kode_internal = generate_code("BC-M")
-            cur.execute("SELECT satuan FROM master_material_lain WHERE id=%s", (material_id,))
-            mat = cur.fetchone()
-            cur.execute(
-                "INSERT INTO tbl_stok_material_lain_in (kode_internal, material_id, qty, qty_sisa, satuan, tanggal_in) "
-                "VALUES (%s,%s,%s,%s,%s,%s)",
-                (kode_internal, material_id, qty, qty, mat["satuan"] if mat else "pcs", tanggal),
-            )
-            flash(f"Stok Material IN: {kode_internal}", "success")
+            mat = resolve_material(erp_material_id=int(material_id), material_type="material_lain")
+            if not mat:
+                flash("Material ERP tidak ditemukan.", "danger")
+            else:
+                cur.execute(
+                    "INSERT INTO tbl_stok_material_lain_in "
+                    "(kode_internal, material_id, erp_material_id, kode_material, nama_material, "
+                    "qty, qty_sisa, satuan, tanggal_in) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (
+                        kode_internal,
+                        mat["id"],
+                        mat["id"],
+                        mat["code"],
+                        mat["name"],
+                        qty,
+                        qty,
+                        mat.get("unit") or "pcs",
+                        tanggal,
+                    ),
+                )
+                flash(f"Stok Material IN: {kode_internal}", "success")
         elif action == "out":
             stok_in_id = request.form.get("stok_in_id")
             qty = float(request.form.get("qty") or 0)
@@ -2427,34 +2469,54 @@ def stok_material_lain():
             kode_wip = request.form.get("kode_wip") or None
             cur.execute("SELECT * FROM tbl_stok_material_lain_in WHERE id=%s", (stok_in_id,))
             stok = cur.fetchone()
-            if stok and stok["qty_sisa"] >= qty:
+            if not stok or float(stok["qty_sisa"]) < qty:
+                flash("Stok tidak cukup.", "danger")
+            elif not stok.get("erp_material_id"):
+                flash("Lot material belum ter-map erp_material_id.", "danger")
+            else:
                 cur.execute(
-                    "INSERT INTO tbl_stok_material_lain_out (stok_in_id, material_id, qty, kode_wip, tanggal) "
-                    "VALUES (%s,%s,%s,%s,%s)",
-                    (stok_in_id, stok["material_id"], qty, kode_wip, tanggal),
+                    "INSERT INTO tbl_stok_material_lain_out "
+                    "(stok_in_id, material_id, erp_material_id, kode_material, nama_material, "
+                    "qty, kode_wip, tanggal) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (
+                        stok_in_id,
+                        stok.get("material_id") or stok["erp_material_id"],
+                        stok["erp_material_id"],
+                        stok.get("kode_material"),
+                        stok.get("nama_material"),
+                        qty,
+                        kode_wip,
+                        tanggal,
+                    ),
                 )
                 cur.execute(
                     "UPDATE tbl_stok_material_lain_in SET qty_sisa=%s WHERE id=%s",
                     (float(stok["qty_sisa"]) - qty, stok_in_id),
                 )
                 flash("Stok Material OUT berhasil.", "success")
-            else:
-                flash("Stok tidak cukup.", "danger")
         conn.commit()
 
     cur.execute(
-        "SELECT si.*, m.kode_material, m.nama_material FROM tbl_stok_material_lain_in si "
-        "JOIN master_material_lain m ON m.id = si.material_id "
-        "WHERE si.qty_sisa > 0 ORDER BY si.tanggal_in"
+        "SELECT si.*, COALESCE(si.kode_material, '') AS kode_material, "
+        "COALESCE(si.nama_material, '') AS nama_material "
+        "FROM tbl_stok_material_lain_in si WHERE si.qty_sisa > 0 ORDER BY si.tanggal_in"
     )
     stok_in = cur.fetchall()
     cur.execute(
-        "SELECT so.*, m.nama_material FROM tbl_stok_material_lain_out so "
-        "JOIN master_material_lain m ON m.id = so.material_id ORDER BY so.created_at DESC LIMIT 50"
+        "SELECT so.*, COALESCE(so.nama_material, '') AS nama_material "
+        "FROM tbl_stok_material_lain_out so ORDER BY so.created_at DESC LIMIT 50"
     )
     stok_out = cur.fetchall()
-    cur.execute("SELECT id, kode_material, nama_material, satuan FROM master_material_lain ORDER BY kode_material")
-    material_list = cur.fetchall()
+    material_list = [
+        {
+            "id": r["id"],
+            "kode_material": r["code"],
+            "nama_material": r["name"],
+            "satuan": r.get("unit") or "pcs",
+        }
+        for r in list_materials("material_lain")
+    ]
     cur.close()
     conn.close()
     return render_template(
@@ -2469,23 +2531,25 @@ def stok_material_lain():
 # ==================== USAGE MATERIAL LAIN ====================
 @app.route("/api/usage-material/scan")
 def api_usage_material_scan():
+    from erp_raw_materials import fetch_material_by_code
+
     kode = request.args.get("q", "").strip()
-    conn = get_db_connection()
-    cur = conn.cursor(dictionary=True)
-    cur.execute(
-        "SELECT kode_material, nama_material, satuan FROM master_material_lain WHERE kode_material=%s",
-        (kode,),
-    )
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    if not row:
+    mat = fetch_material_by_code(kode, material_type="material_lain")
+    if not mat:
         return jsonify({"error": "Material tidak ditemukan"}), 404
-    return jsonify(row)
+    return jsonify(
+        {
+            "kode_material": mat["code"],
+            "nama_material": mat["name"],
+            "satuan": mat.get("unit") or "pcs",
+        }
+    )
 
 
 @app.route("/usage-material-lain", methods=["GET", "POST"])
 def usage_material_lain():
+    from erp_raw_materials import fetch_material_by_code
+
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
     ensure_extended_tables(cur)
@@ -2496,12 +2560,11 @@ def usage_material_lain():
         kode_material = request.form.get("kode_material", "").strip()
         qty_used = float(request.form.get("qty_used") or 0)
         satuan = request.form.get("satuan", "pcs")
-        cur.execute("SELECT nama_material FROM master_material_lain WHERE kode_material=%s", (kode_material,))
-        mat = cur.fetchone()
+        mat = fetch_material_by_code(kode_material, material_type="material_lain")
         cur.execute(
             "INSERT INTO tbl_usage_material_lain (kode_wip, kode_material, nama_material, qty_used, satuan) "
             "VALUES (%s,%s,%s,%s,%s)",
-            (kode_wip, kode_material, mat["nama_material"] if mat else None, qty_used, satuan),
+            (kode_wip, kode_material, mat["name"] if mat else None, qty_used, satuan),
         )
         conn.commit()
         flash("Usage material lain tersimpan.", "success")

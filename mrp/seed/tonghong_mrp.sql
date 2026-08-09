@@ -1,3 +1,8 @@
+-- LEGACY DUMP — jangan recreate mirror catalog MRP.
+-- ERP-only: customers / master_items / raw_materials di DB tonghong.
+-- Mirror master_customer|erp|kulit|kimia|rp|material_lain|chemical dinonaktifkan di bawah.
+-- Lihat mrp/seed/README.md dan dokumentasi/adr-erp-only-masters.md
+
 -- MariaDB dump 10.19-11.7.2-MariaDB, for Win64 (AMD64)
 --
 -- Host: 202.10.48.75    Database: tonghong_mrp
@@ -19,25 +24,19 @@
 -- Table structure for table `master_chemical`
 --
 
-DROP TABLE IF EXISTS `master_chemical`;
+-- DROP TABLE IF EXISTS `master_chemical`; -- ERP-only
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `master_chemical` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `nama_chemical` varchar(150) NOT NULL,
-  `satuan` varchar(20) DEFAULT 'kg',
-  `expired_days` int(11) DEFAULT 365,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+-- CREATE TABLE `master_chemical` omitted (ERP-only)
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Dumping data for table `master_chemical`
 --
 
-LOCK TABLES `master_chemical` WRITE;
+-- LOCK TABLES `master_chemical` skipped
 /*!40000 ALTER TABLE `master_chemical` DISABLE KEYS */;
-INSERT INTO `master_chemical` VALUES
+-- INSERT INTO `master_chemical` VALUES
 (1,'Pigment Red','kg',365),
 (2,'Pigment Blue','kg',365),
 (3,'Pigment Black','kg',365),
@@ -49,26 +48,19 @@ UNLOCK TABLES;
 -- Table structure for table `master_customer`
 --
 
-DROP TABLE IF EXISTS `master_customer`;
+-- DROP TABLE IF EXISTS `master_customer`; -- ERP-only
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `master_customer` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `kode_customer` varchar(50) DEFAULT NULL,
-  `nama_customer` varchar(150) NOT NULL,
-  `created_at` datetime DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  KEY `idx_nama_customer` (`nama_customer`)
-) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+-- CREATE TABLE `master_customer` omitted (ERP-only)
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Dumping data for table `master_customer`
 --
 
-LOCK TABLES `master_customer` WRITE;
+-- LOCK TABLES `master_customer` skipped
 /*!40000 ALTER TABLE `master_customer` DISABLE KEYS */;
-INSERT INTO `master_customer` VALUES
+-- INSERT INTO `master_customer` VALUES
 (1,'CUST-CUSTOMER-A','Customer A','2026-07-02 09:41:02'),
 (2,'CUST-CUSTOMER-B','Customer B','2026-07-02 09:41:02');
 /*!40000 ALTER TABLE `master_customer` ENABLE KEYS */;
@@ -78,30 +70,19 @@ UNLOCK TABLES;
 -- Table structure for table `master_erp`
 --
 
-DROP TABLE IF EXISTS `master_erp`;
+-- DROP TABLE IF EXISTS `master_erp`; -- ERP-only
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `master_erp` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `thickness` varchar(30) NOT NULL,
-  `color` varchar(100) NOT NULL,
-  `emboss` varchar(100) NOT NULL,
-  `color_swatch` varchar(100) DEFAULT NULL,
-  `backer` varchar(100) DEFAULT NULL,
-  `created_at` datetime DEFAULT current_timestamp(),
-  `material_name` varchar(150) DEFAULT NULL,
-  `customer` varchar(150) DEFAULT NULL,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=252 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+-- CREATE TABLE `master_erp` omitted (ERP-only)
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Dumping data for table `master_erp`
 --
 
-LOCK TABLES `master_erp` WRITE;
+-- LOCK TABLES `master_erp` skipped
 /*!40000 ALTER TABLE `master_erp` DISABLE KEYS */;
-INSERT INTO `master_erp` VALUES
+-- INSERT INTO `master_erp` VALUES
 (1,'1.0mm','Brown','Plain','SW-BRN-01','BK-PU-A','2026-07-16 09:55:16','Standard Leather',NULL),
 (2,'1.0mm','Black','Emboss A','SW-BLK-02','BK-PU-B','2026-07-16 09:55:16','Standard Leather','Customer A'),
 (3,'1.2mm','Brown','Plain','SW-BRN-03','BK-PU-A','2026-07-16 09:55:16','Standard Leather','Customer A'),
@@ -120,31 +101,19 @@ UNLOCK TABLES;
 -- Table structure for table `master_kimia`
 --
 
-DROP TABLE IF EXISTS `master_kimia`;
+-- DROP TABLE IF EXISTS `master_kimia`; -- ERP-only
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `master_kimia` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `kode_barang` varchar(50) NOT NULL,
-  `nama_barang` varchar(150) NOT NULL,
-  `satuan` varchar(20) DEFAULT 'kg',
-  `expired_days` int(11) DEFAULT 365,
-  `kode_kimia` varchar(50) DEFAULT NULL,
-  `nama_kimia` varchar(150) DEFAULT NULL,
-  `deskripsi` text DEFAULT NULL,
-  `created_at` datetime DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `kode_barang` (`kode_barang`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+-- CREATE TABLE `master_kimia` omitted (ERP-only)
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Dumping data for table `master_kimia`
 --
 
-LOCK TABLES `master_kimia` WRITE;
+-- LOCK TABLES `master_kimia` skipped
 /*!40000 ALTER TABLE `master_kimia` DISABLE KEYS */;
-INSERT INTO `master_kimia` VALUES
+-- INSERT INTO `master_kimia` VALUES
 (1,'KIM-001','Chemical Base A','kg',365,'KIM-001','Chemical Base A',NULL,'2026-07-02 08:52:05'),
 (2,'KIM-002','Chemical Base B','kg',365,'KIM-002','Chemical Base B',NULL,'2026-07-02 08:52:05'),
 (3,'KIM-003','Hardener','kg',365,'KIM-003','Hardener',NULL,'2026-07-02 08:52:05');
@@ -155,29 +124,19 @@ UNLOCK TABLES;
 -- Table structure for table `master_kulit`
 --
 
-DROP TABLE IF EXISTS `master_kulit`;
+-- DROP TABLE IF EXISTS `master_kulit`; -- ERP-only
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `master_kulit` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `kode_kulit` varchar(50) NOT NULL,
-  `nama_kulit` varchar(150) DEFAULT NULL,
-  `thickness` varchar(30) DEFAULT NULL,
-  `warna` varchar(100) DEFAULT NULL,
-  `created_at` datetime DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `kode_kulit` (`kode_kulit`),
-  KEY `idx_kode_kulit` (`kode_kulit`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+-- CREATE TABLE `master_kulit` omitted (ERP-only)
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Dumping data for table `master_kulit`
 --
 
-LOCK TABLES `master_kulit` WRITE;
+-- LOCK TABLES `master_kulit` skipped
 /*!40000 ALTER TABLE `master_kulit` DISABLE KEYS */;
-INSERT INTO `master_kulit` VALUES
+-- INSERT INTO `master_kulit` VALUES
 (1,'KLT-001',NULL,'1.2mm','Brown','2026-07-02 08:36:21'),
 (2,'KLT-002','RED 03','1.2','Brown','2026-07-02 09:00:11'),
 (3,'KLT-004','Dark Brown','2','Brown','2026-07-03 10:13:21'),
@@ -189,28 +148,19 @@ UNLOCK TABLES;
 -- Table structure for table `master_material_lain`
 --
 
-DROP TABLE IF EXISTS `master_material_lain`;
+-- DROP TABLE IF EXISTS `master_material_lain`; -- ERP-only
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `master_material_lain` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `kode_material` varchar(50) NOT NULL,
-  `nama_material` varchar(150) NOT NULL,
-  `deskripsi` text DEFAULT NULL,
-  `satuan` varchar(20) DEFAULT 'pcs',
-  `created_at` datetime DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `kode_material` (`kode_material`)
-) ENGINE=InnoDB AUTO_INCREMENT=214 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+-- CREATE TABLE `master_material_lain` omitted (ERP-only)
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Dumping data for table `master_material_lain`
 --
 
-LOCK TABLES `master_material_lain` WRITE;
+-- LOCK TABLES `master_material_lain` skipped
 /*!40000 ALTER TABLE `master_material_lain` DISABLE KEYS */;
-INSERT INTO `master_material_lain` VALUES
+-- INSERT INTO `master_material_lain` VALUES
 (1,'MAT-001','Thread Nylon','Benang jahit nylon','roll','2026-07-16 09:55:17'),
 (2,'MAT-002','Label Tag','Label produk','pcs','2026-07-16 09:55:17'),
 (3,'MAT-003','Plastic Wrap','Plastik pembungkus','roll','2026-07-16 09:55:17');
@@ -251,28 +201,19 @@ UNLOCK TABLES;
 -- Table structure for table `master_rp`
 --
 
-DROP TABLE IF EXISTS `master_rp`;
+-- DROP TABLE IF EXISTS `master_rp`; -- ERP-only
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `master_rp` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `nama_jenis` varchar(150) NOT NULL,
-  `satuan` varchar(20) DEFAULT 'meter',
-  `kode_rp` varchar(50) DEFAULT NULL,
-  `nama_rp` varchar(150) DEFAULT NULL,
-  `deskripsi` text DEFAULT NULL,
-  `created_at` datetime DEFAULT current_timestamp(),
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
+-- CREATE TABLE `master_rp` omitted (ERP-only)
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Dumping data for table `master_rp`
 --
 
-LOCK TABLES `master_rp` WRITE;
+-- LOCK TABLES `master_rp` skipped
 /*!40000 ALTER TABLE `master_rp` DISABLE KEYS */;
-INSERT INTO `master_rp` VALUES
+-- INSERT INTO `master_rp` VALUES
 (1,'RP Gloss','meter','RP-001','RP Gloss',NULL,'2026-07-02 08:47:18'),
 (2,'RP Matte','meter','RP-002','RP Matte',NULL,'2026-07-02 08:47:18'),
 (3,'RP Texture','meter','RP-003','RP Texture',NULL,'2026-07-02 08:47:18');
@@ -1017,11 +958,14 @@ CREATE TABLE `tbl_stok_kimia_in` (
   `gudang` enum('kimia','mixing') DEFAULT 'kimia',
   `created_at` datetime DEFAULT current_timestamp(),
   `jumlah_kemasan` int(11) DEFAULT NULL,
+  `erp_material_id` bigint(20) DEFAULT NULL,
+  `kode_material` varchar(50) DEFAULT NULL,
+  `nama_material` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `kode_internal` (`kode_internal`),
   KEY `kimia_id` (`kimia_id`),
   KEY `idx_gudang` (`gudang`),
-  CONSTRAINT `tbl_stok_kimia_in_ibfk_1` FOREIGN KEY (`kimia_id`) REFERENCES `master_kimia` (`id`)
+  KEY `idx_erp_material_id` (`erp_material_id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -1059,8 +1003,7 @@ CREATE TABLE `tbl_stok_kimia_out` (
   PRIMARY KEY (`id`),
   KEY `stok_in_id` (`stok_in_id`),
   KEY `kimia_id` (`kimia_id`),
-  CONSTRAINT `tbl_stok_kimia_out_ibfk_1` FOREIGN KEY (`stok_in_id`) REFERENCES `tbl_stok_kimia_in` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `tbl_stok_kimia_out_ibfk_2` FOREIGN KEY (`kimia_id`) REFERENCES `master_kimia` (`id`)
+  CONSTRAINT `tbl_stok_kimia_out_ibfk_1` FOREIGN KEY (`stok_in_id`) REFERENCES `tbl_stok_kimia_in` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=latin1 COLLATE=latin1_swedish_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

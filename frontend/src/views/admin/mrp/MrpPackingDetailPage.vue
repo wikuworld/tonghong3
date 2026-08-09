@@ -16,28 +16,102 @@
 
     <div v-loading="loading" class="space-y-4">
       <div v-if="packing" class="admin-inner-card">
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-          <div><strong>{{ t('pages.mrpPacking.kodePacking') }}</strong><div>{{ packing.kode_packing }}</div></div>
-          <div><strong>WIP / WO</strong><div>{{ packing.work_order || packing.kode_wip }}</div></div>
-          <div><strong>PO</strong><div>{{ packing.no_po }}</div></div>
-          <div><strong>{{ t('common.status') }}</strong><div>{{ packing.status }}</div></div>
-          <div><strong>{{ t('common.customer') }}</strong><div>{{ packing.customer }}</div></div>
-          <div><strong>{{ t('pages.mrpPacking.description') }}</strong><div>{{ packing.description || '-' }}</div></div>
-          <div><strong>{{ t('pages.mrpPacking.thickness') }}</strong><div>{{ packing.thickness || '-' }}</div></div>
-          <div><strong>{{ t('common.color') }}</strong><div>{{ packing.color || '-' }}</div></div>
-          <div><strong>{{ t('pages.mrpPacking.colorSwatch') }}</strong><div>{{ packing.color_swatch || '-' }}</div></div>
-          <div><strong>{{ t('pages.mrpPacking.softness') }}</strong><div>{{ packing.softness || '-' }}</div></div>
-          <div><strong>{{ t('pages.mrpPacking.grossWeight') }}</strong><div>{{ packing.gross_weight ?? '-' }}</div></div>
-          <div><strong>{{ t('pages.mrpPacking.netWeight') }}</strong><div>{{ packing.net_weight ?? '-' }}</div></div>
-          <div><strong>{{ t('pages.mrpPacking.totalRolls') }}</strong><div>{{ packing.total_rolls ?? rolls.length }}</div></div>
-          <div><strong>{{ t('pages.mrpPacking.totalPieces') }}</strong><div>{{ packing.total_pieces ?? packing.total_lembar }}</div></div>
-          <div><strong>{{ t('pages.mrpPacking.totalQty') }}</strong><div>{{ packing.total_quantity ?? packing.total_ukuran }} {{ packing.qty_unit || 'SF' }}</div></div>
+        <div class="mrp-pack-flow mb-3">
+          <span
+            class="mrp-pack-flow__step"
+            :class="{ 'is-current': packing.status === 'in_progress', 'is-done': packing.status === 'finished' }"
+          >
+            {{ t('pages.mrpPacking.statusInProgress') }}
+          </span>
+          <span
+            class="mrp-pack-flow__step"
+            :class="{ 'is-current': packing.status === 'finished', 'is-done': packing.status === 'finished' }"
+          >
+            {{ t('pages.mrpPacking.statusFinished') }}
+          </span>
         </div>
+
+        <div class="mrp-pack-stats">
+          <div class="mrp-pack-stat">
+            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.kodePacking') }}</span>
+            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.kode_packing) }}</span>
+          </div>
+          <div class="mrp-pack-stat">
+            <span class="mrp-pack-stat__label">WIP / WO</span>
+            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">
+              {{ dash(packing.work_order || packing.kode_wip) }}
+            </span>
+          </div>
+          <div class="mrp-pack-stat">
+            <span class="mrp-pack-stat__label">PO</span>
+            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.no_po) }}</span>
+          </div>
+          <div class="mrp-pack-stat">
+            <span class="mrp-pack-stat__label">{{ t('common.status') }}</span>
+            <span class="mrp-pack-stat__value">
+              <el-tag :type="packing.status === 'finished' ? 'success' : 'warning'" size="small" effect="plain">
+                {{ packing.status === 'finished' ? t('pages.mrpPacking.statusFinished') : t('pages.mrpPacking.statusInProgress') }}
+              </el-tag>
+            </span>
+          </div>
+          <div class="mrp-pack-stat">
+            <span class="mrp-pack-stat__label">{{ t('common.customer') }}</span>
+            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.customer) }}</span>
+          </div>
+          <div class="mrp-pack-stat mrp-pack-stat--wide">
+            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.description') }}</span>
+            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.description) }}</span>
+          </div>
+          <div class="mrp-pack-stat">
+            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.thickness') }}</span>
+            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.thickness) }}</span>
+          </div>
+          <div class="mrp-pack-stat">
+            <span class="mrp-pack-stat__label">{{ t('common.color') }}</span>
+            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.color) }}</span>
+          </div>
+          <div class="mrp-pack-stat">
+            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.colorSwatch') }}</span>
+            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.color_swatch) }}</span>
+          </div>
+          <div class="mrp-pack-stat">
+            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.totalRolls') }}</span>
+            <span class="mrp-pack-stat__value">{{ packing.total_rolls ?? rolls.length }}</span>
+          </div>
+          <div class="mrp-pack-stat">
+            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.totalPieces') }}</span>
+            <span class="mrp-pack-stat__value">{{ formatQty(packing.total_pieces ?? packing.total_lembar) }}</span>
+          </div>
+          <div class="mrp-pack-stat">
+            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.totalQty') }}</span>
+            <span class="mrp-pack-stat__value">
+              {{ formatQty(packing.total_quantity ?? packing.total_ukuran) }}
+              {{ packing.qty_unit || 'SF' }}
+            </span>
+          </div>
+        </div>
+
+        <el-alert
+          v-if="packing.status === 'in_progress' && !rolls.length"
+          class="mt-3"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="t('pages.mrpPacking.needRollHint')"
+        />
+        <el-alert
+          v-else-if="packing.status === 'finished'"
+          class="mt-3"
+          type="success"
+          :closable="false"
+          show-icon
+          :title="t('pages.mrpPacking.finishedHint')"
+        />
       </div>
 
       <div v-if="canUpdate && packing?.status === 'in_progress'" class="admin-inner-card">
         <h3 class="admin-inner-card__title mb-2">{{ t('pages.mrpPacking.editHeader') }}</h3>
-        <div class="flex gap-2 flex-wrap items-end">
+        <div class="mrp-pack-form-row">
           <el-form-item :label="t('pages.mrpPacking.softness')" class="mb-0">
             <el-input v-model="headerForm.softness" class="w-36" placeholder="SOFT" />
           </el-form-item>
@@ -53,23 +127,40 @@
 
       <div v-if="canUpdate && packing?.status === 'in_progress'" class="admin-inner-card">
         <h3 class="admin-inner-card__title mb-2">{{ t('pages.mrpPacking.addRoll') }}</h3>
-        <div class="flex gap-2 flex-wrap">
-          <el-input v-model="rollForm.lembar" type="number" :placeholder="t('pages.mrpPacking.pieces')" class="w-28" />
-          <el-input v-model="rollForm.ukuran" type="number" :placeholder="t('pages.mrpPacking.quantity')" class="w-28" />
-          <el-input v-model="rollForm.remark" :placeholder="t('pages.mrpPacking.remark')" class="w-48" />
+        <div class="mrp-pack-form-row">
+          <el-form-item :label="t('pages.mrpPacking.pieces')" class="mb-0">
+            <el-input v-model="rollForm.lembar" type="number" class="w-28" />
+          </el-form-item>
+          <el-form-item :label="t('pages.mrpPacking.quantity')" class="mb-0">
+            <el-input v-model="rollForm.ukuran" type="number" class="w-28" @keyup.enter="addRoll" />
+          </el-form-item>
+          <el-form-item :label="t('pages.mrpPacking.remark')" class="mb-0">
+            <el-input v-model="rollForm.remark" class="w-48" />
+          </el-form-item>
           <el-button type="primary" :loading="acting" @click="addRoll">{{ t('common.add') }}</el-button>
         </div>
       </div>
 
       <div class="admin-inner-card">
         <h3 class="admin-inner-card__title mb-2">{{ t('pages.mrpPacking.rolls') }}</h3>
-        <el-table :data="rolls" border size="small">
-          <el-table-column prop="roll_no" :label="t('pages.mrpPacking.artNo')" width="80" />
-          <el-table-column prop="lembar" :label="t('pages.mrpPacking.pieces')" width="100" />
-          <el-table-column prop="ukuran" :label="t('pages.mrpPacking.quantity')" width="110" />
-          <el-table-column prop="remark" :label="t('pages.mrpPacking.remark')" min-width="140" />
-          <el-table-column prop="created_at" :label="t('common.date')" />
-          <el-table-column v-if="canUpdate && packing?.status === 'in_progress'" :label="t('common.actions')" width="90">
+        <el-table :data="rolls" border size="small" empty-text="—">
+          <el-table-column prop="roll_no" :label="t('pages.mrpPacking.artNo')" width="80" align="center" />
+          <el-table-column :label="t('pages.mrpPacking.pieces')" width="100" align="right">
+            <template #default="{ row }">{{ formatQty(row.lembar) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('pages.mrpPacking.quantity')" width="110" align="right">
+            <template #default="{ row }">{{ formatQty(row.ukuran) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('pages.mrpPacking.remark')" min-width="140" show-overflow-tooltip>
+            <template #default="{ row }">{{ dash(row.remark) }}</template>
+          </el-table-column>
+          <el-table-column prop="created_at" :label="t('common.date')" min-width="140" />
+          <el-table-column
+            v-if="canUpdate && packing?.status === 'in_progress'"
+            :label="t('common.actions')"
+            width="90"
+            fixed="right"
+          >
             <template #default="{ row }">
               <el-button link type="danger" @click="deleteRoll(row.id)">{{ t('common.delete') }}</el-button>
             </template>
@@ -78,33 +169,39 @@
       </div>
 
       <div class="admin-inner-card">
-        <div class="mb-2 flex items-center justify-between">
-          <h3 class="admin-inner-card__title">PO</h3>
+        <div class="mb-2 flex items-center justify-between gap-2 flex-wrap">
+          <h3 class="admin-inner-card__title mb-0">{{ t('pages.mrpPacking.poSection') }}</h3>
           <el-button
             v-if="canUpdate && packing?.status === 'in_progress' && availablePos.length"
             size="small"
             @click="showAddPo = !showAddPo"
           >
-            {{ t('common.add') }}
+            {{ showAddPo ? t('common.close') : t('common.add') }}
           </el-button>
         </div>
         <div v-if="showAddPo" class="mb-3">
-          <el-table :data="availablePos" border size="small">
-            <el-table-column prop="no_po" label="PO" />
-            <el-table-column prop="no_so" label="SO" />
-            <el-table-column prop="qty_sq" label="Qty" width="90" />
+          <el-table :data="availablePos" border size="small" empty-text="—">
+            <el-table-column prop="no_po" label="PO" min-width="110" />
+            <el-table-column prop="no_so" label="SO" min-width="100" />
+            <el-table-column prop="item_name" :label="t('pages.mrpPacking.poItem')" min-width="130" show-overflow-tooltip />
+            <el-table-column :label="t('pages.mrpPacking.qtyPlan')" width="90" align="right">
+              <template #default="{ row }">{{ formatQty(row.qty_sq) }}</template>
+            </el-table-column>
             <el-table-column width="90">
               <template #default="{ row }">
-                <el-button link type="primary" @click="addPo(row)">Add</el-button>
+                <el-button link type="primary" @click="addPo(row)">{{ t('common.add') }}</el-button>
               </template>
             </el-table-column>
           </el-table>
         </div>
-        <el-table :data="packingPos" border size="small">
-          <el-table-column prop="no_po" label="PO" />
-          <el-table-column prop="no_so" label="SO" />
-          <el-table-column prop="qty_sq" label="Qty" width="90" />
-          <el-table-column v-if="canUpdate && packing?.status === 'in_progress'" width="90">
+        <el-table :data="packingPos" border size="small" empty-text="—">
+          <el-table-column prop="no_po" label="PO" min-width="110" />
+          <el-table-column prop="no_so" label="SO" min-width="100" />
+          <el-table-column prop="item_name" :label="t('pages.mrpPacking.poItem')" min-width="130" show-overflow-tooltip />
+          <el-table-column :label="t('pages.mrpPacking.qtyPlan')" width="90" align="right">
+            <template #default="{ row }">{{ formatQty(row.qty_sq) }}</template>
+          </el-table-column>
+          <el-table-column v-if="canUpdate && packing?.status === 'in_progress'" width="90" fixed="right">
             <template #default="{ row }">
               <el-button link type="danger" @click="deletePo(row.id)">{{ t('common.delete') }}</el-button>
             </template>
@@ -136,8 +233,19 @@ const packingPos = ref([])
 const availablePos = ref([])
 const canUpdate = computed(() => can('mrpShopfloor', 'update'))
 const title = computed(() => packing.value?.kode_packing || t('pages.mrpPacking.title'))
-const rollForm = reactive({ lembar: 1, ukuran: 0, remark: '' })
+const rollForm = reactive({ lembar: 1, ukuran: '', remark: '' })
 const headerForm = reactive({ softness: '', gross_weight: '', net_weight: '' })
+
+function dash(v) {
+  const s = (v == null ? '' : String(v)).trim()
+  return s || '—'
+}
+
+function formatQty(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return '—'
+  return Number.isInteger(n) ? String(n) : n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
 
 function esc(v) {
   return String(v ?? '')
@@ -190,13 +298,26 @@ function saveHeader() {
 }
 
 async function addRoll() {
+  const lembar = Number(rollForm.lembar)
+  const ukuran = Number(rollForm.ukuran)
+  if (!(lembar > 0)) {
+    ElMessage.warning(t('pages.mrpPacking.piecesInvalid'))
+    return
+  }
+  if (!(ukuran > 0)) {
+    ElMessage.warning(t('pages.mrpPacking.qtyInvalid'))
+    return
+  }
   const res = await act({
     action: 'add_roll',
-    lembar: Number(rollForm.lembar) || 1,
-    ukuran: Number(rollForm.ukuran) || 0,
+    lembar,
+    ukuran,
     remark: rollForm.remark || '',
   })
-  if (res) rollForm.remark = ''
+  if (res) {
+    rollForm.ukuran = ''
+    rollForm.remark = ''
+  }
 }
 
 function deleteRoll(rollId) {
@@ -209,6 +330,7 @@ function addPo(row) {
     no_po: row.no_po,
     no_so: row.no_so || '',
     qty_sq: row.qty_sq || 0,
+    po_id: row.po_id || null,
   })
 }
 
@@ -217,6 +339,10 @@ function deletePo(poRowId) {
 }
 
 async function finish() {
+  if (!rolls.value.length) {
+    ElMessage.warning(t('pages.mrpPacking.needRollHint'))
+    return
+  }
   try {
     await ElMessageBox.confirm(t('pages.mrpPacking.finishConfirm'), { type: 'warning' })
     await act({ action: 'finish' })
@@ -238,7 +364,7 @@ async function printLabel() {
       )
       .join('')
     const w = window.open('', '_blank')
-    if (!w) throw new Error('Pop-up diblokir browser')
+    if (!w) throw new Error(t('pages.mrpPacking.popupBlocked'))
     w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Packing List - ${esc(p.kode_packing)}</title>
 <style>
 @page{size:A4;margin:12mm}
@@ -304,3 +430,75 @@ table.rolls td.qty{text-align:right}
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.mrp-pack-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.mrp-pack-flow__step {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--el-border-color);
+  color: var(--el-text-color-secondary);
+  background: var(--el-fill-color-blank);
+}
+.mrp-pack-flow__step.is-done {
+  border-color: var(--el-color-success-light-5);
+  color: var(--el-color-success);
+  background: var(--el-color-success-light-9);
+}
+.mrp-pack-flow__step.is-current {
+  border-color: var(--el-color-primary-light-5);
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  font-weight: 600;
+}
+.mrp-pack-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.mrp-pack-stat {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  min-height: 3.4rem;
+}
+.mrp-pack-stat--wide {
+  grid-column: span 2;
+}
+.mrp-pack-stat__label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 0.2rem;
+}
+.mrp-pack-stat__value {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.mrp-pack-stat__value--text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  word-break: break-word;
+}
+.mrp-pack-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+@media (max-width: 900px) {
+  .mrp-pack-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mrp-pack-stat--wide {
+    grid-column: span 2;
+  }
+}
+</style>

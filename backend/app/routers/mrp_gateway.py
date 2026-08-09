@@ -8,14 +8,22 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm import Session
 
 
 from app.config import settings
 from app.db import get_db
-from app.models import PoDetail, PoHeader, QcDetail, QcHeader
+from app.models import QcDetail, QcHeader
 from app.routers.auth import get_current_user
 from app.services.mrp_fg_delivery_bridge import bridge_fg_out_to_delivery
+from app.services.mrp_master_item_bridge import (
+    combination_from_items,
+    fields_from_items,
+    list_erp_rows,
+    load_master_items,
+    options_from_items,
+)
+from app.services.mrp_po_sync import sync_po_details_to_mrp, try_sync_po_details_to_mrp
 from app.services.mrp_production_bridge import upsert_production_mirror
 from app.services.mrp_stock_bridge import issue_stock_from_mrp
 
@@ -45,47 +53,6 @@ def _num(v: Any) -> float:
         return float(v)
     except (TypeError, ValueError):
         return 0.0
-
-
-def _thickness_text(d: PoDetail) -> str:
-    if d.thickness_text:
-        return str(d.thickness_text).strip()
-    if d.thickness_min is not None and d.thickness_max is not None:
-        return f"{d.thickness_min}-{d.thickness_max}"
-    if d.thickness_min is not None:
-        return str(d.thickness_min)
-    return ""
-
-
-def _map_po_detail(d: PoDetail) -> Optional[dict]:
-    po: Optional[PoHeader] = d.po
-    if not po:
-        return None
-    no_po = (po.po_number or po.po_customer_ref or "").strip()
-    if not no_po:
-        return None
-    item_name = (d.material_name or d.style_article or f"LINE-{d.id}").strip()
-    swatch = ""
-    if d.color_swatch_recipe is not None:
-        swatch = (d.color_swatch_recipe.color_code or d.color_swatch_recipe.color_name or "").strip()
-    if not swatch:
-        swatch = (d.color_reference or d.color_standard or "").strip()
-    qty_order = _num(d.quantity_order)
-    qty_balance = _num(d.balance_qty) if d.balance_qty is not None else qty_order
-    return {
-        "source_detail_id": d.id,
-        "no_po": no_po,
-        "no_so": (po.po_customer_ref or po.po_number or "").strip() or None,
-        "customer": (po.customer_name_snapshot or po.customer_code or "").strip() or None,
-        "item_name": item_name,
-        "warna": (d.color or "").strip(),
-        "tebal": _thickness_text(d),
-        "emboss": (d.emboss or "").strip(),
-        "color_swatch": swatch or None,
-        "sq_ft": qty_order,
-        "qty_order": qty_order,
-        "qty_balance_erp": qty_balance,
-    }
 
 
 class MrpBridgeFgOutIn(BaseModel):
@@ -150,11 +117,19 @@ async def _mrp_json(
     target = f"{_UPSTREAM}/api/mrp/{path.lstrip('/')}"
     upstream = await client.request(method, target, json=json_body)
     if upstream.status_code >= 400:
-        detail: Any
         try:
-            detail = upstream.json()
+            payload = upstream.json()
         except Exception:
-            detail = upstream.text
+            raise HTTPException(status_code=upstream.status_code, detail=upstream.text)
+        if isinstance(payload, dict):
+            if payload.get("detail") is not None:
+                detail = payload["detail"]
+            elif payload.get("message") is not None:
+                detail = payload["message"]
+            else:
+                detail = payload
+        else:
+            detail = payload
         raise HTTPException(status_code=upstream.status_code, detail=detail)
     if not upstream.content:
         return None
@@ -162,47 +137,15 @@ async def _mrp_json(
 
 
 @router.post("/sync/po")
-async def sync_po_from_tonghong(
+def sync_po_from_tonghong(
     _user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Pull PO details from Tonghong DB and upsert into MRP tbl_master_po."""
-    details = (
-        db.query(PoDetail)
-        .options(
-            selectinload(PoDetail.po),
-            selectinload(PoDetail.color_swatch_recipe),
-        )
-        .join(PoHeader, PoDetail.po_id == PoHeader.id)
-        .filter(PoHeader.status.notin_(["cancelled", "void"]))
-        .order_by(PoDetail.id.desc())
-        .limit(2000)
-        .all()
-    )
-    items = []
-    for d in details:
-        mapped = _map_po_detail(d)
-        if mapped:
-            items.append(mapped)
-    if not items:
-        return {"ok": True, "inserted": 0, "updated": 0, "total": 0, "detail": "no PO lines"}
-
-    target = f"{_UPSTREAM}/api/mrp/masters/po/sync"
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            upstream = await client.post(target, json={"items": items})
-    except httpx.RequestError as e:
+        data = sync_po_details_to_mrp(db, full=True, raise_on_error=True)
+    except Exception as e:
         raise HTTPException(status_code=502, detail=f"MRP upstream unavailable: {e}") from e
-
-    if upstream.status_code >= 400:
-        raise HTTPException(
-            status_code=upstream.status_code,
-            detail=upstream.json()
-            if upstream.headers.get("content-type", "").startswith("application/json")
-            else upstream.text,
-        )
-    data = upstream.json()
-    data["pulled"] = len(items)
     return data
 
 
@@ -244,6 +187,8 @@ def bridge_fg_out(
         keterangan=body.keterangan,
     )
     db.commit()
+    if result.po_detail_ids:
+        try_sync_po_details_to_mrp(db, detail_ids=result.po_detail_ids)
     return {
         "ok": True,
         "created": result.created,
@@ -289,6 +234,8 @@ def bridge_stock_issue(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    from app.services.mrp_bridge_metrics import snapshot
+
     result = issue_stock_from_mrp(
         db,
         erp_material_id=body.erp_material_id,
@@ -308,6 +255,7 @@ def bridge_stock_issue(
         "warehouse_id": result.warehouse_id,
         "qty": float(result.qty),
         "stock_after": float(result.stock_after),
+        "metrics": snapshot(),
     }
 
 
@@ -427,6 +375,8 @@ async def gudang_fg_out_with_bridge(
                     keterangan=keterangan,
                 )
                 db.commit()
+                if result.po_detail_ids:
+                    try_sync_po_details_to_mrp(db, detail_ids=result.po_detail_ids)
             except Exception as bridge_exc:
                 db.rollback()
                 reason = str(getattr(bridge_exc, "detail", None) or bridge_exc)[:255]
@@ -574,6 +524,13 @@ async def stok_rp_bridged(
     return await _proxy_stock_action_with_bridge("stok-rp", request, db, user)
 
 
+@router.post("/stok-material-lain")
+async def stok_material_lain_bridged(
+    request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)
+):
+    return await _proxy_stock_action_with_bridge("stok-material-lain", request, db, user)
+
+
 @router.post("/usage-color")
 async def usage_color_bridged(
     request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)
@@ -660,6 +617,63 @@ async def checkpoint_create_bridged(
     if qc_detail_id:
         out["erp_qc_detail_id"] = qc_detail_id
     return out
+
+
+@router.get("/masters/erp")
+def masters_erp_from_master_items(
+    keyword: Optional[str] = None,
+    limit: int = 500,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    """Sumber tunggal: master_items ERP (bukan salinan master_erp MRP)."""
+    lim = max(1, min(int(limit or 500), 2000))
+    return list_erp_rows(db, limit=lim, keyword=keyword)
+
+
+@router.get("/masters/erp/options")
+def masters_erp_options_from_master_items(
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    return options_from_items(load_master_items(db))
+
+
+@router.get("/erp/fields")
+def erp_fields_from_master_items(
+    thickness: Optional[str] = None,
+    material_name: Optional[str] = None,
+    color: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    return fields_from_items(
+        load_master_items(db),
+        thickness=thickness or "",
+        material_name=material_name or "",
+        color=color or "",
+    )
+
+
+@router.get("/erp/combination")
+def erp_combination_from_master_items(
+    material_name: str,
+    color: str,
+    emboss: str,
+    thickness: Optional[str] = None,
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    hits = combination_from_items(
+        load_master_items(db),
+        material_name=material_name,
+        color=color,
+        emboss=emboss,
+        thickness=thickness or "",
+    )
+    if not hits:
+        raise HTTPException(status_code=404, detail="Kombinasi tidak ditemukan di Master Item ERP")
+    return {"options": hits, "source": "master_items"}
 
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])

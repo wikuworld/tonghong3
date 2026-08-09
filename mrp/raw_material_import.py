@@ -146,20 +146,12 @@ def _count() -> dict[str, int]:
     return {"inserted": 0, "updated": 0}
 
 
-def import_raw_material_masters(conn, path: str | None = None) -> dict[str, Any]:
-    """Upsert katalog ke master_*; tidak menghapus baris yang tidak ada di file."""
-    from app import ensure_extended_tables, init_db_tables
+def import_raw_material_masters(conn, path: str | None = None) -> dict:
+    """Upsert katalog HANYA ke ERP raw_materials (tanpa mirror MRP)."""
+    from erp_raw_materials import ensure_erp_material
 
     xls_path = path or DEFAULT_XLS_PATH
     catalogs = read_catalog_sheets(xls_path)
-
-    # Pastikan kolom master kulit/kimia/rp lengkap (seed vs schema baru).
-    init_db_tables()
-
-    cur = conn.cursor(dictionary=True)
-    ensure_extended_tables(cur)
-    conn.commit()
-
     stats = {
         "kulit": _count(),
         "kimia": _count(),
@@ -167,28 +159,17 @@ def import_raw_material_masters(conn, path: str | None = None) -> dict[str, Any]
         "material": _count(),
     }
     skipped: list[str] = []
+    erp_map = {"kulit": 0, "kimia": 0, "rp": 0, "material": 0}
 
     for row in catalogs["kulit"]:
         kode, nama = row["kode"], row["nama"]
         if not nama:
             skipped.append(f"kulit:{kode}:nama kosong")
             continue
-        thickness, warna = parse_kulit_thickness_warna(kode, nama)
-        cur.execute("SELECT id FROM master_kulit WHERE kode_kulit=%s", (kode,))
-        existing = cur.fetchone()
-        if existing:
-            cur.execute(
-                "UPDATE master_kulit SET nama_kulit=%s, thickness=%s, warna=%s WHERE id=%s",
-                (nama, thickness, warna, existing["id"]),
-            )
-            stats["kulit"]["updated"] += 1
-        else:
-            cur.execute(
-                "INSERT INTO master_kulit (kode_kulit, nama_kulit, thickness, warna) "
-                "VALUES (%s,%s,%s,%s)",
-                (kode, nama, thickness, warna),
-            )
+        eid = ensure_erp_material(code=kode, name=nama, material_type="kulit", unit="sqft")
+        if eid:
             stats["kulit"]["inserted"] += 1
+            erp_map["kulit"] += 1
 
     for row in catalogs["kimia"]:
         kode, nama = row["kode"], row["nama"]
@@ -196,22 +177,10 @@ def import_raw_material_masters(conn, path: str | None = None) -> dict[str, Any]
             skipped.append(f"kimia:{kode}:nama kosong")
             continue
         satuan = normalize_satuan(row["sat"], "kg")
-        cur.execute("SELECT id FROM master_kimia WHERE kode_barang=%s OR kode_kimia=%s", (kode, kode))
-        existing = cur.fetchone()
-        if existing:
-            cur.execute(
-                "UPDATE master_kimia SET nama_barang=%s, nama_kimia=%s, satuan=%s, "
-                "kode_kimia=%s, kode_barang=%s WHERE id=%s",
-                (nama, nama, satuan, kode, kode, existing["id"]),
-            )
-            stats["kimia"]["updated"] += 1
-        else:
-            cur.execute(
-                "INSERT INTO master_kimia (kode_barang, nama_barang, satuan, expired_days, "
-                "kode_kimia, nama_kimia) VALUES (%s,%s,%s,365,%s,%s)",
-                (kode, nama, satuan, kode, nama),
-            )
+        eid = ensure_erp_material(code=kode, name=nama, material_type="kimia", unit=satuan)
+        if eid:
             stats["kimia"]["inserted"] += 1
+            erp_map["kimia"] += 1
 
     for row in catalogs["rp"]:
         kode, nama = row["kode"], row["nama"]
@@ -219,20 +188,10 @@ def import_raw_material_masters(conn, path: str | None = None) -> dict[str, Any]
             skipped.append(f"rp:{kode}:nama kosong")
             continue
         satuan = normalize_satuan(row["sat"], "meter")
-        cur.execute("SELECT id FROM master_rp WHERE kode_rp=%s", (kode,))
-        existing = cur.fetchone()
-        if existing:
-            cur.execute(
-                "UPDATE master_rp SET nama_jenis=%s, nama_rp=%s, satuan=%s WHERE id=%s",
-                (nama, nama, satuan, existing["id"]),
-            )
-            stats["rp"]["updated"] += 1
-        else:
-            cur.execute(
-                "INSERT INTO master_rp (nama_jenis, satuan, kode_rp, nama_rp) VALUES (%s,%s,%s,%s)",
-                (nama, satuan, kode, nama),
-            )
+        eid = ensure_erp_material(code=kode, name=nama, material_type="rp", unit=satuan)
+        if eid:
             stats["rp"]["inserted"] += 1
+            erp_map["rp"] += 1
 
     for row in catalogs["material"]:
         kode, nama = row["kode"], row["nama"]
@@ -240,24 +199,12 @@ def import_raw_material_masters(conn, path: str | None = None) -> dict[str, Any]
             skipped.append(f"material:{kode}:nama kosong")
             continue
         satuan = normalize_satuan(row["sat"], "pcs")
-        cur.execute("SELECT id FROM master_material_lain WHERE kode_material=%s", (kode,))
-        existing = cur.fetchone()
-        if existing:
-            cur.execute(
-                "UPDATE master_material_lain SET nama_material=%s, satuan=%s WHERE id=%s",
-                (nama, satuan, existing["id"]),
-            )
-            stats["material"]["updated"] += 1
-        else:
-            cur.execute(
-                "INSERT INTO master_material_lain (kode_material, nama_material, satuan) "
-                "VALUES (%s,%s,%s)",
-                (kode, nama, satuan),
-            )
+        eid = ensure_erp_material(
+            code=kode, name=nama, material_type="material_lain", unit=satuan
+        )
+        if eid:
             stats["material"]["inserted"] += 1
-
-    conn.commit()
-    cur.close()
+            erp_map["material"] += 1
 
     return {
         "ok": True,
@@ -266,6 +213,7 @@ def import_raw_material_masters(conn, path: str | None = None) -> dict[str, Any]
         "kimia": stats["kimia"],
         "rp": stats["rp"],
         "material": stats["material"],
+        "erp_mapped": erp_map,
         "skipped": skipped,
         "totals": {
             "kulit": len(catalogs["kulit"]),
@@ -273,7 +221,9 @@ def import_raw_material_masters(conn, path: str | None = None) -> dict[str, Any]
             "rp": len(catalogs["rp"]),
             "material": len(catalogs["material"]),
         },
+        "note": "ERP-only: tidak menulis mirror master_* MRP",
     }
+
 
 
 def _find_page1_sheet(book):
@@ -355,57 +305,65 @@ def import_page1_stock_ledger(conn, path: str | None = None) -> dict[str, Any]:
         jenis = _cell_str(sh.cell_value(r, i_jenis)).upper() if i_jenis is not None else ""
         nama = _cell_str(sh.cell_value(r, i_nama)) if i_nama is not None else ""
 
-        # Prefer explicit type; else match kode against masters
+        from erp_raw_materials import fetch_material_by_code
+
+        # Prefer explicit type; else match kode against ERP raw_materials
         target = None
+        mat = None
         if "RP" in jenis or "RELEASE" in jenis:
             target = "rp"
+            mat = fetch_material_by_code(kode, material_type="rp")
         elif "KIMIA" in jenis or "CHEM" in jenis:
             target = "kimia"
+            mat = fetch_material_by_code(kode, material_type="kimia")
         else:
-            cur.execute(
-                "SELECT id FROM master_kimia WHERE kode_kimia=%s OR kode_barang=%s LIMIT 1",
-                (kode, kode),
-            )
-            if cur.fetchone():
+            mat = fetch_material_by_code(kode, material_type="kimia")
+            if mat:
                 target = "kimia"
             else:
-                cur.execute("SELECT id FROM master_rp WHERE kode_rp=%s LIMIT 1", (kode,))
-                if cur.fetchone():
+                mat = fetch_material_by_code(kode, material_type="rp")
+                if mat:
                     target = "rp"
 
-        if target == "kimia":
-            cur.execute(
-                "SELECT id FROM master_kimia WHERE kode_kimia=%s OR kode_barang=%s LIMIT 1",
-                (kode, kode),
-            )
-            mk = cur.fetchone()
-            if not mk:
-                skipped.append(f"{kode}:kimia master tidak ada")
-                continue
+        if target == "kimia" and mat:
             kode_internal = generate_code("BC-K")
             cur.execute(
                 "INSERT INTO tbl_stok_kimia_in "
-                "(kode_internal, kimia_id, qty, qty_sisa, tanggal_in, gudang) "
-                "VALUES (%s,%s,%s,%s,%s,'kimia')",
-                (kode_internal, mk["id"], qty, qty, today),
+                "(kode_internal, kimia_id, erp_material_id, kode_material, nama_material, "
+                "qty, qty_sisa, satuan, tanggal_in, gudang) "
+                "VALUES (%s,NULL,%s,%s,%s,%s,%s,%s,%s,'kimia')",
+                (
+                    kode_internal,
+                    mat["id"],
+                    mat.get("code"),
+                    mat.get("name") or nama,
+                    qty,
+                    qty,
+                    mat.get("unit") or "kg",
+                    today,
+                ),
             )
             inserted += 1
-        elif target == "rp":
-            cur.execute("SELECT id FROM master_rp WHERE kode_rp=%s LIMIT 1", (kode,))
-            mr = cur.fetchone()
-            if not mr:
-                skipped.append(f"{kode}:rp master tidak ada")
-                continue
+        elif target == "rp" and mat:
             kode_internal = generate_code("BC-R")
             cur.execute(
                 "INSERT INTO tbl_stok_rp_in "
-                "(kode_internal, rp_id, meter_roll, qty_sisa, tanggal_in) "
-                "VALUES (%s,%s,%s,%s,%s)",
-                (kode_internal, mr["id"], qty, qty, today),
+                "(kode_internal, rp_id, erp_material_id, kode_material, nama_material, "
+                "meter_roll, qty_sisa, tanggal_in) "
+                "VALUES (%s,NULL,%s,%s,%s,%s,%s,%s)",
+                (
+                    kode_internal,
+                    mat["id"],
+                    mat.get("code"),
+                    mat.get("name") or nama,
+                    qty,
+                    qty,
+                    today,
+                ),
             )
             inserted += 1
         else:
-            skipped.append(f"{kode}:tidak match kimia/rp ({nama or jenis or '-'})")
+            skipped.append(f"{kode}:tidak match kimia/rp ERP ({nama or jenis or '-'})")
 
     conn.commit()
     cur.close()

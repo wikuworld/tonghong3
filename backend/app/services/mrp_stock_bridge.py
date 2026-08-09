@@ -90,13 +90,18 @@ def issue_stock_from_mrp(
     mrp_ref: str | None = None,
     actor: str | None = None,
 ) -> StockIssueResult:
+    from app.services.mrp_bridge_metrics import incr
+
     qty_d = _dec(qty)
     if qty_d <= 0:
+        incr("bridge_fail")
         raise HTTPException(status_code=400, detail="qty issue harus > 0")
 
     if erp_material_id:
         mat = db.get(RawMaterial, int(erp_material_id))
         if not mat:
+            incr("unmatched_material")
+            incr("bridge_fail")
             raise HTTPException(status_code=400, detail=f"raw_materials #{erp_material_id} tidak ada")
     else:
         mat = ensure_raw_material(
@@ -128,6 +133,7 @@ def issue_stock_from_mrp(
 
     after = _dec(stock.current_stock) - qty_d
     if after < 0 and not allow_negative:
+        incr("bridge_fail")
         raise HTTPException(
             status_code=400,
             detail=f"Stok ERP tidak cukup ({stock.current_stock}) untuk issue {qty_d}",
@@ -150,6 +156,7 @@ def issue_stock_from_mrp(
         actor=actor or "system",
     )
     db.flush()
+    incr("bridge_ok")
     return StockIssueResult(
         material_id=int(mat.id),
         warehouse_id=int(wh.id),

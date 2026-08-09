@@ -6,17 +6,39 @@
     </template>
 
     <div class="admin-inner-card">
-      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table">
+      <el-table
+        :data="rows"
+        v-loading="loading"
+        border
+        stripe
+        size="small"
+        class="admin-table"
+        empty-text="—"
+      >
         <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
-        <el-table-column prop="kode_proses" :label="t('pages.mrpProses.kodeProses')" min-width="130" />
-        <el-table-column prop="kode_rencana" :label="t('pages.mrpProses.kodeRpi')" min-width="130" />
-        <el-table-column prop="kode_wip" label="WIP" min-width="120" />
-        <el-table-column prop="no_po" label="PO" width="120" />
-        <el-table-column prop="warna" :label="t('common.color')" width="100" />
-        <el-table-column prop="tebal" label="Thickness" width="90" />
-        <el-table-column prop="treatment_jenis" label="Jenis" width="80" />
-        <el-table-column prop="status" :label="t('common.status')" width="100" />
-        <el-table-column prop="total_size" label="Total" width="90" />
+        <el-table-column prop="kode_proses" :label="t('pages.mrpProses.kodeProses')" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="kode_rencana" :label="t('pages.mrpProses.kodeRpi')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="kode_wip" label="WIP" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="no_po" label="PO" width="110" show-overflow-tooltip />
+        <el-table-column :label="t('common.color')" width="110" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.warna) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpProses.thickness')" width="90">
+          <template #default="{ row }">{{ dash(row.tebal) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpProses.treatmentJenis')" width="90">
+          <template #default="{ row }">{{ dash(row.treatment_jenis) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('common.status')" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="statusType(row.status)" size="small" effect="plain">
+              {{ statusLabel(row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpProses.totalSize')" width="100" align="right">
+          <template #default="{ row }">{{ formatQty(row.total_size) }}</template>
+        </el-table-column>
         <el-table-column :label="t('common.actions')" width="100" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="goDetail(row.id)">{{ t('common.detail') }}</el-button>
@@ -25,12 +47,24 @@
       </el-table>
     </div>
 
-    <el-dialog v-model="createOpen" :title="t('pages.mrpProses.createTitle')" width="560px" destroy-on-close>
+    <el-dialog
+      v-model="createOpen"
+      :title="t('pages.mrpProses.createTitle')"
+      width="640px"
+      destroy-on-close
+      append-to-body
+    >
+      <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpProses.createHint') }}</p>
       <el-form label-position="top">
         <el-form-item :label="t('pages.mrpProses.scanRpi')">
-          <div class="flex gap-2">
-            <el-input v-model="form.kode_scan" :placeholder="'RPI-...'" @keyup.enter="doScan" />
-            <el-button @click="doScan">Scan</el-button>
+          <div class="flex gap-2 w-full">
+            <el-input
+              v-model="form.kode_scan"
+              :placeholder="t('pages.mrpProses.scanPlaceholder')"
+              class="flex-1"
+              @keyup.enter="doScan"
+            />
+            <el-button @click="doScan">{{ t('pages.mrpProses.scan') }}</el-button>
           </div>
         </el-form-item>
         <el-form-item :label="t('pages.mrpProses.pilihItem')">
@@ -38,28 +72,36 @@
             <el-option
               v-for="it in rencanaItems"
               :key="it.id"
-              :label="`${it.kode_rencana_item} · ${it.nama_customer} · ${it.color || ''}`"
+              :label="`${it.kode_rencana_item} · ${it.nama_customer || ''} · ${it.color || ''}`"
               :value="it.id"
             />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="scanned" :label="t('common.detail')">
-          <div class="text-sm text-slate-600">
-            {{ scanned.kode_rencana_item }} — {{ scanned.nama_customer }} / {{ scanned.color }} / {{ scanned.thickness }}
-          </div>
-        </el-form-item>
+        <div v-if="scanned" class="mrp-proses-scan-card mb-3">
+          <span class="mrp-proses-scan-card__label">{{ t('common.detail') }}</span>
+          <span class="mrp-proses-scan-card__value">
+            {{ scanned.kode_rencana_item }} — {{ dash(scanned.nama_customer) }} /
+            {{ dash(scanned.color) }} / {{ dash(scanned.thickness) }}
+          </span>
+        </div>
         <el-form-item :label="t('pages.mrpProses.treatmentJenis')" required>
-          <el-radio-group v-model="form.treatment_jenis">
-            <el-radio value="PU">PU</el-radio>
-            <el-radio value="Suede">Suede</el-radio>
+          <el-radio-group v-model="form.treatment_jenis" @change="form.treatment_list = []">
+            <el-radio-button value="PU">PU</el-radio-button>
+            <el-radio-button value="Suede">Suede</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item :label="t('pages.mrpProses.treatmentList')">
-          <el-select v-model="form.treatment_list" multiple filterable class="w-full">
+        <el-form-item :label="t('pages.mrpProses.treatmentList')" required>
+          <el-select
+            v-model="form.treatment_list"
+            multiple
+            filterable
+            class="w-full"
+            :placeholder="t('pages.mrpProses.treatmentRequired')"
+          >
             <el-option
               v-for="tr in treatmentsFiltered"
               :key="tr.nama_treatment"
-              :label="`${tr.jenis}: ${tr.nama_treatment}`"
+              :label="tr.nama_treatment"
               :value="tr.nama_treatment"
             />
           </el-select>
@@ -104,6 +146,36 @@ const treatmentsFiltered = computed(() =>
   treatments.value.filter((tr) => tr.jenis === form.treatment_jenis),
 )
 
+function dash(v) {
+  const s = (v == null ? '' : String(v)).trim()
+  return s || '—'
+}
+
+function formatQty(v) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return '—'
+  return Number.isInteger(n) ? String(n) : n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
+
+function statusType(status) {
+  const s = String(status || '')
+  if (s === 'completed' || s === 'saved') return 'success'
+  if (s === 'started') return 'warning'
+  if (s === 'draft') return 'info'
+  return ''
+}
+
+function statusLabel(status) {
+  const s = String(status || '')
+  const map = {
+    draft: t('pages.mrpProses.statusDraft'),
+    started: t('pages.mrpProses.statusStarted'),
+    saved: t('pages.mrpProses.statusSaved'),
+    completed: t('pages.mrpProses.statusCompleted'),
+  }
+  return map[s] || s || '—'
+}
+
 async function reload() {
   loading.value = true
   try {
@@ -139,6 +211,14 @@ async function doScan() {
 }
 
 async function submit() {
+  if (!form.rencana_item_id && !form.kode_scan?.trim()) {
+    ElMessage.warning(t('pages.mrpProses.scanRpi'))
+    return
+  }
+  if (!form.treatment_list?.length) {
+    ElMessage.warning(t('pages.mrpProses.treatmentRequired'))
+    return
+  }
   saving.value = true
   try {
     const res = await mrpCreateProses({
@@ -163,3 +243,25 @@ function goDetail(id) {
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.mrp-proses-scan-card {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 0.65rem 0.85rem;
+  background: var(--el-fill-color-blank);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.mrp-proses-scan-card__label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--el-text-color-secondary);
+}
+.mrp-proses-scan-card__value {
+  font-size: 0.875rem;
+  color: var(--el-text-color-primary);
+}
+</style>

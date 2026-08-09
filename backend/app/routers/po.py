@@ -44,6 +44,7 @@ from app.services.mkt_workflow import (
     validate_mkt_advance,
     validate_mkt_rollback,
 )
+from app.services.mrp_po_sync import try_sync_po_details_to_mrp
 from app.services.po_delete_guards import validate_po_deletable
 from app.services.po_query import po_list_count, po_list_select, po_list_stage_counts
 from app.services.po_header_snapshots import apply_header_snapshots
@@ -607,6 +608,7 @@ def create_po(
         )
         db.commit()
         db.refresh(row)
+        try_sync_po_details_to_mrp(db, po_id=row.id)
         return row
     except HTTPException:
         db.rollback()
@@ -754,6 +756,7 @@ def duplicate_po(
         )
         db.commit()
         db.refresh(new_po)
+        try_sync_po_details_to_mrp(db, po_id=new_po.id)
     except HTTPException:
         db.rollback()
         raise
@@ -881,6 +884,7 @@ def update_po(
     sync_mkt_workflow_auto_advance(db, po_id, actor=user.username)
     db.commit()
     db.refresh(row)
+    try_sync_po_details_to_mrp(db, po_id=po_id)
     return row
 
 
@@ -996,6 +1000,7 @@ def marketing_revise_po(
         log.exception("marketing_revise_po failed po_id=%s", po_id)
         raise HTTPException(status_code=500, detail="Simpan revisi marketing gagal (database).") from e
     db.refresh(row)
+    try_sync_po_details_to_mrp(db, po_id=po_id)
     return row
 
 
@@ -1011,6 +1016,9 @@ def delete_po(
 
     validate_po_deletable(db, po_id)
 
+    detail_ids = list(
+        db.scalars(select(PoDetail.id).where(PoDetail.po_id == po_id)).all()
+    )
     log_change(
         db,
         entity_type="sales_order",
@@ -1021,6 +1029,8 @@ def delete_po(
     )
     db.delete(row)
     db.commit()
+    if detail_ids:
+        try_sync_po_details_to_mrp(db, cancelled_detail_ids=[int(x) for x in detail_ids])
     return StatusDeletedOut(status="deleted")
 
 
@@ -1076,6 +1086,7 @@ def add_po_detail(
         actor=user.username,
     )
     db.commit()
+    try_sync_po_details_to_mrp(db, detail_ids=[int(row.id)])
     out = _detail_loaded(db, row.id)
     return out or row
 
@@ -1118,6 +1129,7 @@ def update_po_detail(
     )
     mark_po_item_revised(db, row.po_id, kind="update")
     db.commit()
+    try_sync_po_details_to_mrp(db, detail_ids=[int(detail_id)])
     out = _detail_loaded(db, detail_id)
     return out or row
 
@@ -1201,8 +1213,10 @@ def delete_po_detail(
         actor=user.username,
     )
     mark_po_item_revised(db, row.po_id, kind="delete")
+    deleted_id = int(row.id)
     db.delete(row)
     db.commit()
+    try_sync_po_details_to_mrp(db, cancelled_detail_ids=[deleted_id])
     return StatusDeletedOut(status="deleted")
 
 
