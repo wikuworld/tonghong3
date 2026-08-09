@@ -2,6 +2,16 @@
   <AdminSection :title="pageTitle" :subtitle="pageSubtitle">
     <template #actions>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
+      <el-button v-if="canCreate" :loading="importing" @click="triggerImport">
+        {{ t('pages.mrpMasterImport.importRaw') }}
+      </el-button>
+      <input
+        ref="fileInput"
+        type="file"
+        accept=".xls,.xlsx,application/vnd.ms-excel"
+        class="hidden"
+        @change="onFilePicked"
+      />
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
     <div class="admin-inner-card">
@@ -56,6 +66,7 @@ import {
   mrpDeleteMasterKulit,
   mrpDeleteMasterMaterialLain,
   mrpDeleteMasterRp,
+  mrpImportRawMaterial,
   mrpListMasterKimia,
   mrpListMasterKulit,
   mrpListMasterMaterialLain,
@@ -70,6 +81,8 @@ const route = useRoute()
 const kind = computed(() => route.meta.mrpMaster || 'kulit')
 const loading = ref(false)
 const saving = ref(false)
+const importing = ref(false)
+const fileInput = ref(null)
 const rows = ref([])
 const dialogOpen = ref(false)
 const editingId = ref(null)
@@ -168,6 +181,49 @@ async function reload() {
     ElMessage.error(e.message || String(e))
   } finally {
     loading.value = false
+  }
+}
+
+function triggerImport() {
+  ElMessageBox.confirm(t('pages.mrpMasterImport.confirmDefault'), {
+    type: 'info',
+    distinguishCancelAndClose: true,
+    confirmButtonText: t('pages.mrpMasterImport.useDefault'),
+    cancelButtonText: t('pages.mrpMasterImport.pickFile'),
+  })
+    .then(() => runImport(null))
+    .catch((action) => {
+      if (action === 'cancel') fileInput.value?.click()
+    })
+}
+
+async function onFilePicked(ev) {
+  const file = ev.target?.files?.[0]
+  ev.target.value = ''
+  if (file) await runImport(file)
+}
+
+async function runImport(file) {
+  importing.value = true
+  try {
+    const res = await mrpImportRawMaterial(file)
+    const k = res?.kulit || {}
+    const c = res?.kimia || {}
+    const r = res?.rp || {}
+    const m = res?.material || {}
+    ElMessage.success(
+      t('pages.mrpMasterImport.done', {
+        kulit: `${k.inserted || 0}/${k.updated || 0}`,
+        kimia: `${c.inserted || 0}/${c.updated || 0}`,
+        rp: `${r.inserted || 0}/${r.updated || 0}`,
+        material: `${m.inserted || 0}/${m.updated || 0}`,
+      }),
+    )
+    await reload()
+  } catch (e) {
+    ElMessage.error(e.message || String(e))
+  } finally {
+    importing.value = false
   }
 }
 

@@ -1393,6 +1393,19 @@ export function mrpCreateMasterKulit(body) {
   return apiFetch('/mrp/masters/kulit', { method: 'POST', body: JSON.stringify(body) })
 }
 
+/** Import katalog Master Item Raw Material.xls → master kulit/kimia/RP/material. */
+export function mrpImportRawMaterial(file) {
+  if (file) {
+    const fd = new FormData()
+    fd.append('file', file)
+    return apiFetch('/mrp/masters/import/raw-material', { method: 'POST', body: fd })
+  }
+  return apiFetch('/mrp/masters/import/raw-material', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
 export function mrpListMasterKimia() {
   return apiFetch('/mrp/masters/kimia')
 }

@@ -37,3 +37,6 @@ frontend.log
 # MRP local archives / venv (seed SQL remains tracked)
 mrp/archives/
 mrp/venv/
+# Local raw-material workbooks (import via UI / default path in container)
+mrp/data/*.xls
+mrp/data/*.xlsx

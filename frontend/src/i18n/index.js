@@ -1448,6 +1448,13 @@ const messages = {
         title: 'Master ERP MRP',
         subtitle: 'Kombinasi thickness / material / color / emboss',
       },
+      mrpMasterImport: {
+        importRaw: 'Import Raw Material',
+        confirmDefault: 'Impor dari file default di server (mrp/data), atau pilih file .xls lokal?',
+        useDefault: 'Pakai file server',
+        pickFile: 'Pilih file…',
+        done: 'Import selesai — kulit {kulit}, kimia {kimia}, RP {rp}, material {material} (baru/update)',
+      },
       mrpMasterKulit: {
         title: 'Master Kulit MRP',
         subtitle: 'Master kulit shopfloor',
@@ -3616,6 +3623,13 @@ const messages = {
         title: 'MRP ERP Master',
         subtitle: 'Thickness / material / color / emboss combinations',
       },
+      mrpMasterImport: {
+        importRaw: 'Import Raw Material',
+        confirmDefault: 'Import from the server default file (mrp/data), or pick a local .xls?',
+        useDefault: 'Use server file',
+        pickFile: 'Choose file…',
+        done: 'Import done — leather {kulit}, chemical {kimia}, RP {rp}, other {material} (new/updated)',
+      },
       mrpMasterKulit: {
         title: 'MRP Leather Master',
         subtitle: 'Shopfloor leather master',
@@ -5741,6 +5755,13 @@ const messages = {
       mrpMasterErp: {
         title: 'MRP ERP 主数据',
         subtitle: '厚度 / 材料 / 颜色 / 压纹组合',
+      },
+      mrpMasterImport: {
+        importRaw: '导入原材料主数据',
+        confirmDefault: '使用服务器默认文件 (mrp/data)，或选择本地 .xls？',
+        useDefault: '使用服务器文件',
+        pickFile: '选择文件…',
+        done: '导入完成 — 皮革 {kulit}，化工 {kimia}，RP {rp}，其他 {material}（新增/更新）',
       },
       mrpMasterKulit: {
         title: 'MRP 皮革主数据',

@@ -262,6 +262,47 @@ def master_erp_options():
     )
 
 
+@api.post("/masters/import/raw-material")
+def masters_import_raw_material():
+    """Upsert katalog dari Master Item Raw Material.xls (KULIT/KIMIA/RP/LAINNYA)."""
+    import os
+    import tempfile
+
+    from raw_material_import import DEFAULT_XLS_PATH, import_raw_material_masters
+
+    tmp_path = None
+    path = None
+    upload = request.files.get("file")
+    if upload and upload.filename:
+        suffix = os.path.splitext(upload.filename)[1] or ".xls"
+        fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+        os.close(fd)
+        upload.save(tmp_path)
+        path = tmp_path
+    else:
+        body = request.get_json(silent=True) or {}
+        path = (body.get("path") or "").strip() or DEFAULT_XLS_PATH
+
+    conn = get_db_connection()
+    try:
+        try:
+            result = import_raw_material_masters(conn, path=path)
+        except FileNotFoundError as e:
+            return _err(str(e), 404)
+        except Exception as e:
+            conn.rollback()
+            return _err(f"Import gagal: {e}", 400)
+        return jsonify(result)
+    finally:
+        conn.close()
+        if tmp_path and os.path.isfile(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+
 @api.get("/masters/kulit")
 def master_kulit_list():
     conn = get_db_connection()
