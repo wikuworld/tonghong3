@@ -222,6 +222,58 @@ def ensure_extended_tables(cur):
             )
         except mysql.connector.Error:
             pass
+    if "qty_balance_erp" not in po_cols_ext:
+        cur.execute(
+            "ALTER TABLE tbl_master_po ADD COLUMN qty_balance_erp DECIMAL(12,2) DEFAULT NULL"
+        )
+    packing_cols2 = _col_names(cur, "tbl_packing")
+    if packing_cols2:
+        if "erp_production_id" not in packing_cols2:
+            cur.execute(
+                "ALTER TABLE tbl_packing ADD COLUMN erp_production_id BIGINT DEFAULT NULL"
+            )
+        if "erp_production_detail_id" not in packing_cols2:
+            cur.execute(
+                "ALTER TABLE tbl_packing ADD COLUMN erp_production_detail_id BIGINT DEFAULT NULL"
+            )
+    item_cols2 = _col_names(cur, "tbl_rencana_item")
+    if item_cols2:
+        if "erp_production_id" not in item_cols2:
+            cur.execute(
+                "ALTER TABLE tbl_rencana_item ADD COLUMN erp_production_id BIGINT DEFAULT NULL"
+            )
+        if "erp_production_detail_id" not in item_cols2:
+            cur.execute(
+                "ALTER TABLE tbl_rencana_item ADD COLUMN erp_production_detail_id BIGINT DEFAULT NULL"
+            )
+    for master_tbl in ("master_kimia", "master_rp", "master_material_lain"):
+        mcols = _col_names(cur, master_tbl)
+        if mcols and "erp_material_id" not in mcols:
+            cur.execute(
+                f"ALTER TABLE {master_tbl} ADD COLUMN erp_material_id BIGINT DEFAULT NULL"
+            )
+    erp_map_cols = _col_names(cur, "master_erp")
+    if erp_map_cols and "erp_master_item_id" not in erp_map_cols:
+        cur.execute(
+            "ALTER TABLE master_erp ADD COLUMN erp_master_item_id BIGINT DEFAULT NULL"
+        )
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_checkpoint ("
+        "id INT AUTO_INCREMENT PRIMARY KEY, "
+        "kode_wip VARCHAR(30) NOT NULL, "
+        "kode_packing VARCHAR(30) DEFAULT NULL, "
+        "checkpoint_type VARCHAR(50) DEFAULT 'inline', "
+        "thickness_actual DECIMAL(10,3) DEFAULT NULL, "
+        "softness_actual VARCHAR(100) DEFAULT NULL, "
+        "result VARCHAR(16) DEFAULT NULL, "
+        "is_ok TINYINT(1) DEFAULT NULL, "
+        "remark VARCHAR(255) DEFAULT NULL, "
+        "erp_production_detail_id BIGINT DEFAULT NULL, "
+        "erp_qc_detail_id BIGINT DEFAULT NULL, "
+        "measured_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "INDEX idx_checkpoint_wip (kode_wip))"
+    )
     fg_cols = _col_names(cur, "tbl_gudang_fg")
     if fg_cols:
         if "erp_delivery_id" not in fg_cols:

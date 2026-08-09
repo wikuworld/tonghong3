@@ -11,7 +11,14 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import DeliveryDetail, DeliveryHeader, PackingHeader, PoDetail, PoHeader
+from app.models import (
+    DeliveryDetail,
+    DeliveryHeader,
+    PackingHeader,
+    PoDetail,
+    PoHeader,
+    ProductionDetail,
+)
 from app.services.audit import log_change
 from app.services.numbering import next_number
 from app.services.po_delivery_balance import (
@@ -218,10 +225,16 @@ def bridge_fg_out_to_delivery(
 
     touched_pods: list[int] = []
     for pod, ln in resolved:
+        pd_mirror = db.scalars(
+            select(ProductionDetail)
+            .where(ProductionDetail.po_detail_id == int(pod.id))
+            .order_by(ProductionDetail.id.desc())
+            .limit(1)
+        ).first()
         db.add(
             DeliveryDetail(
                 delivery_id=hdr.id,
-                production_detail_id=None,
+                production_detail_id=int(pd_mirror.id) if pd_mirror else None,
                 packing_detail_id=None,
                 po_detail_id=int(pod.id),
                 qty=ln.qty_out,

@@ -491,6 +491,10 @@ def master_po_sync():
             source_detail_id = None
         qty_order = float(item.get("qty_order") or item.get("sq_ft") or 0)
         sq_ft = float(item.get("sq_ft") or qty_order or 0)
+        if item.get("qty_balance_erp") is not None:
+            qty_balance_erp = float(item.get("qty_balance_erp") or 0)
+        else:
+            qty_balance_erp = qty_order
 
         existing = None
         if source_detail_id is not None:
@@ -519,7 +523,8 @@ def master_po_sync():
                 status = "outstanding"
             cur.execute(
                 "UPDATE tbl_master_po SET no_so=%s, customer=%s, warna=%s, tebal=%s, emboss=%s, "
-                "color_swatch=%s, source_detail_id=%s, sq_ft=%s, qty_order=%s, status=%s WHERE id=%s",
+                "color_swatch=%s, source_detail_id=%s, sq_ft=%s, qty_order=%s, "
+                "qty_balance_erp=%s, status=%s WHERE id=%s",
                 (
                     no_so,
                     customer,
@@ -530,6 +535,7 @@ def master_po_sync():
                     source_detail_id,
                     sq_ft,
                     qty_order,
+                    qty_balance_erp,
                     status,
                     existing["id"],
                 ),
@@ -539,8 +545,8 @@ def master_po_sync():
             cur.execute(
                 "INSERT INTO tbl_master_po "
                 "(no_po, no_so, customer, item_name, warna, tebal, emboss, color_swatch, "
-                "source_detail_id, sq_ft, qty_order, qty_processed, status) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,'outstanding')",
+                "source_detail_id, sq_ft, qty_order, qty_balance_erp, qty_processed, status) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,'outstanding')",
                 (
                     no_po,
                     no_so,
@@ -553,6 +559,7 @@ def master_po_sync():
                     source_detail_id,
                     sq_ft,
                     qty_order,
+                    qty_balance_erp,
                 ),
             )
             inserted += 1
@@ -2066,10 +2073,32 @@ def stok_kimia_action():
             "UPDATE tbl_stok_kimia_in SET qty_sisa=%s, gudang=%s WHERE id=%s",
             (new_sisa, new_gudang, stok_in_id),
         )
+        cur.execute(
+            "SELECT id, COALESCE(kode_kimia, kode_barang) AS kode, "
+            "COALESCE(nama_kimia, nama_barang) AS nama, satuan, erp_material_id "
+            "FROM master_kimia WHERE id=%s",
+            (stok["kimia_id"],),
+        )
+        mk = cur.fetchone() or {}
+        out_id = cur.lastrowid
         conn.commit()
         cur.close()
         conn.close()
-        return jsonify({"ok": True})
+        return jsonify(
+            {
+                "ok": True,
+                "out_id": out_id,
+                "bridge": {
+                    "material_type": "kimia",
+                    "erp_material_id": mk.get("erp_material_id"),
+                    "material_code": mk.get("kode"),
+                    "material_name": mk.get("nama"),
+                    "unit": mk.get("satuan") or "kg",
+                    "qty": qty,
+                    "mrp_ref": f"stok-kimia-out:{out_id}",
+                },
+            }
+        )
 
     cur.close()
     conn.close()
@@ -2150,10 +2179,31 @@ def stok_rp_action():
             "UPDATE tbl_stok_rp_in SET qty_sisa = qty_sisa - %s WHERE id=%s",
             (meter_roll, stok_in_id),
         )
+        cur.execute(
+            "SELECT id, kode_rp AS kode, COALESCE(nama_rp, nama_jenis) AS nama, "
+            "satuan, erp_material_id FROM master_rp WHERE id=%s",
+            (stok["rp_id"],),
+        )
+        mr = cur.fetchone() or {}
+        out_id = cur.lastrowid
         conn.commit()
         cur.close()
         conn.close()
-        return jsonify({"ok": True})
+        return jsonify(
+            {
+                "ok": True,
+                "out_id": out_id,
+                "bridge": {
+                    "material_type": "rp",
+                    "erp_material_id": mr.get("erp_material_id"),
+                    "material_code": mr.get("kode"),
+                    "material_name": mr.get("nama"),
+                    "unit": mr.get("satuan") or "meter",
+                    "qty": meter_roll,
+                    "mrp_ref": f"stok-rp-out:{out_id}",
+                },
+            }
+        )
 
     cur.close()
     conn.close()
@@ -2233,6 +2283,7 @@ def usage_color_create():
     )
     total = cur.fetchone()
     qty_pembuatan = float(total["total_qty"] or 0)
+    bridge = None
     if stok_in_id:
         cur.execute("SELECT * FROM tbl_stok_kimia_in WHERE id=%s", (stok_in_id,))
         stok = cur.fetchone()
@@ -2249,6 +2300,22 @@ def usage_color_create():
             "UPDATE tbl_stok_kimia_in SET qty_sisa=%s WHERE id=%s",
             (float(stok["qty_sisa"]) - qty_digunakan, stok_in_id),
         )
+        cur.execute(
+            "SELECT COALESCE(kode_kimia, kode_barang) AS kode, "
+            "COALESCE(nama_kimia, nama_barang) AS nama, satuan, erp_material_id "
+            "FROM master_kimia WHERE id=%s",
+            (stok["kimia_id"],),
+        )
+        mk = cur.fetchone() or {}
+        bridge = {
+            "material_type": "kimia",
+            "erp_material_id": mk.get("erp_material_id"),
+            "material_code": mk.get("kode"),
+            "material_name": mk.get("nama"),
+            "unit": mk.get("satuan") or "kg",
+            "qty": qty_digunakan,
+            "mrp_ref": f"usage-color:{kode_lot_warna}",
+        }
     cur.execute(
         "INSERT INTO tbl_usage_color (kode_wip, kode_lot_warna, nama_warna, qty_pembuatan, qty_digunakan) "
         "VALUES (%s,%s,%s,%s,%s)",
@@ -2268,7 +2335,9 @@ def usage_color_create():
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({"ok": True, "id": new_id, "stok_deducted": bool(stok_in_id)}), 201
+    return jsonify(
+        {"ok": True, "id": new_id, "stok_deducted": bool(stok_in_id), "bridge": bridge}
+    ), 201
 
 
 @api.get("/usage-rp/scan-rp")
@@ -2329,6 +2398,7 @@ def usage_rp_create():
         cur.close()
         conn.close()
         return _err("Jenis RP tidak ditemukan", 404)
+    bridge = None
     if stok_in_id:
         cur.execute("SELECT * FROM tbl_stok_rp_in WHERE id=%s", (stok_in_id,))
         stok = cur.fetchone()
@@ -2344,6 +2414,21 @@ def usage_rp_create():
             "UPDATE tbl_stok_rp_in SET qty_sisa = qty_sisa - %s WHERE id=%s",
             (qty_used, stok_in_id),
         )
+        cur.execute(
+            "SELECT kode_rp AS kode, COALESCE(nama_rp, nama_jenis) AS nama, satuan, erp_material_id "
+            "FROM master_rp WHERE id=%s",
+            (stok["rp_id"],),
+        )
+        mr = cur.fetchone() or {}
+        bridge = {
+            "material_type": "rp",
+            "erp_material_id": mr.get("erp_material_id"),
+            "material_code": mr.get("kode"),
+            "material_name": mr.get("nama"),
+            "unit": mr.get("satuan") or "meter",
+            "qty": qty_used,
+            "mrp_ref": f"usage-rp:{jenis_scan}",
+        }
     cur.execute(
         "INSERT INTO tbl_usage_rp (kode_wip, jenis_rp, qty_used, satuan) VALUES (%s,%s,%s,%s)",
         (
@@ -2353,11 +2438,13 @@ def usage_rp_create():
             body.get("satuan") or rp.get("satuan") or "meter",
         ),
     )
-    conn.commit()
     new_id = cur.lastrowid
+    conn.commit()
     cur.close()
     conn.close()
-    return jsonify({"ok": True, "id": new_id, "stok_deducted": bool(stok_in_id)}), 201
+    return jsonify(
+        {"ok": True, "id": new_id, "stok_deducted": bool(stok_in_id), "bridge": bridge}
+    ), 201
 
 
 # ---- P5: material lain ----
@@ -2826,7 +2913,7 @@ def rencana_po_by_combination():
     cur = conn.cursor(dictionary=True)
     cur.execute(
         "SELECT id, no_po, no_so, customer, item_name, sq_ft, qty_order, qty_processed, "
-        "(qty_order - qty_processed) AS qty_outstanding "
+        "qty_balance_erp, (qty_order - qty_processed) AS qty_outstanding "
         "FROM tbl_master_po "
         "WHERE warna = %s AND emboss = %s AND color_swatch = %s "
         "AND status IN ('outstanding','partial') "
@@ -3069,6 +3156,297 @@ def report_persiapan_api():
             "total_all_lembar": sum(r.get("total_lembar") or 0 for r in report_data),
             "total_all_ukuran": sum(
                 (r.get("total_ukuran") or 0) for r in report_data if r.get("total_ukuran")
+            ),
+        }
+    )
+
+
+# ---- Integration: packing production mirror result ----
+@api.post("/packing/<int:packing_id>/production-result")
+def packing_production_result(packing_id: int):
+    from app import ensure_extended_tables
+
+    body = request.get_json(silent=True) or {}
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.execute("SELECT id, kode_wip FROM tbl_packing WHERE id=%s", (packing_id,))
+    pkg = cur.fetchone()
+    if not pkg:
+        cur.close()
+        conn.close()
+        return _err("Packing tidak ditemukan", 404)
+    prod_id = body.get("erp_production_id")
+    detail_id = body.get("erp_production_detail_id")
+    try:
+        prod_id = int(prod_id) if prod_id is not None else None
+        detail_id = int(detail_id) if detail_id is not None else None
+    except (TypeError, ValueError):
+        prod_id = detail_id = None
+    cur.execute(
+        "UPDATE tbl_packing SET erp_production_id=%s, erp_production_detail_id=%s WHERE id=%s",
+        (prod_id, detail_id, packing_id),
+    )
+    if pkg.get("kode_wip"):
+        cur.execute(
+            "UPDATE tbl_rencana_item SET erp_production_id=%s, erp_production_detail_id=%s "
+            "WHERE kode_lot_wip=%s",
+            (prod_id, detail_id, pkg["kode_wip"]),
+        )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify(
+        {
+            "ok": True,
+            "packing_id": packing_id,
+            "erp_production_id": prod_id,
+            "erp_production_detail_id": detail_id,
+        }
+    )
+
+
+@api.get("/packing/<int:packing_id>/bridge-context")
+def packing_bridge_context(packing_id: int):
+    """Konteks source_detail_id + qty untuk production mirror."""
+    from app import ensure_extended_tables
+
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.execute("SELECT * FROM tbl_packing WHERE id=%s", (packing_id,))
+    packing = cur.fetchone()
+    if not packing:
+        cur.close()
+        conn.close()
+        return _err("Packing tidak ditemukan", 404)
+    cur.execute(
+        "SELECT po.source_detail_id, po.no_po, p.qty_proses AS qty_sq, po.id AS master_po_id "
+        "FROM tbl_rencana_item i "
+        "JOIN tbl_rencana_item_po p ON p.item_id = i.id "
+        "JOIN tbl_master_po po ON po.id = p.po_id "
+        "WHERE i.kode_lot_wip = %s AND po.source_detail_id IS NOT NULL "
+        "ORDER BY p.id ASC LIMIT 1",
+        (packing.get("kode_wip"),),
+    )
+    line = cur.fetchone()
+    if not line:
+        cur.execute(
+            "SELECT COALESCE(mp1.source_detail_id, mp2.source_detail_id) AS source_detail_id, "
+            "pp.no_po, pp.qty_sq, COALESCE(mp1.id, mp2.id) AS master_po_id "
+            "FROM tbl_packing_po pp "
+            "LEFT JOIN tbl_master_po mp1 ON mp1.id = pp.po_id "
+            "LEFT JOIN tbl_master_po mp2 ON pp.po_id IS NULL AND mp2.id = ("
+            "  SELECT id FROM tbl_master_po WHERE no_po = pp.no_po ORDER BY id DESC LIMIT 1"
+            ") WHERE pp.packing_id=%s LIMIT 1",
+            (packing_id,),
+        )
+        line = cur.fetchone()
+    cur.close()
+    conn.close()
+    return jsonify(
+        {
+            "packing": _row(packing),
+            "line": _row(line) if line else None,
+        }
+    )
+
+
+# ---- Checkpoint QC ----
+@api.get("/checkpoint")
+def checkpoint_list():
+    from app import ensure_extended_tables
+
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.execute("SELECT * FROM tbl_checkpoint ORDER BY measured_at DESC, id DESC LIMIT 200")
+    rows = _rows(cur.fetchall())
+    cur.close()
+    conn.close()
+    return jsonify(rows)
+
+
+@api.post("/checkpoint")
+def checkpoint_create():
+    from app import ensure_extended_tables
+
+    body = request.get_json(silent=True) or {}
+    kode_wip = (body.get("kode_wip") or "").strip()
+    if not kode_wip:
+        return _err("kode_wip wajib")
+    result = (body.get("result") or "").strip() or None
+    is_ok = body.get("is_ok")
+    if is_ok is None and result:
+        is_ok = 1 if str(result).upper() in {"OK", "PASS", "LULUS"} else 0
+    thickness = body.get("thickness_actual")
+    softness = (body.get("softness_actual") or "").strip() or None
+    remark = (body.get("remark") or "").strip() or None
+    kode_packing = (body.get("kode_packing") or "").strip() or None
+    erp_pd = body.get("erp_production_detail_id")
+    try:
+        erp_pd = int(erp_pd) if erp_pd is not None else None
+    except (TypeError, ValueError):
+        erp_pd = None
+
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    if erp_pd is None:
+        cur.execute(
+            "SELECT erp_production_detail_id FROM tbl_rencana_item "
+            "WHERE kode_lot_wip=%s AND erp_production_detail_id IS NOT NULL LIMIT 1",
+            (kode_wip,),
+        )
+        row = cur.fetchone()
+        if row:
+            erp_pd = row.get("erp_production_detail_id")
+    cur.execute(
+        "INSERT INTO tbl_checkpoint "
+        "(kode_wip, kode_packing, checkpoint_type, thickness_actual, softness_actual, "
+        "result, is_ok, remark, erp_production_detail_id) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        (
+            kode_wip,
+            kode_packing,
+            (body.get("checkpoint_type") or "inline")[:50],
+            thickness,
+            softness,
+            result,
+            is_ok,
+            remark,
+            erp_pd,
+        ),
+    )
+    new_id = cur.lastrowid
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify(
+        {
+            "ok": True,
+            "id": new_id,
+            "kode_wip": kode_wip,
+            "erp_production_detail_id": erp_pd,
+            "is_ok": is_ok,
+        }
+    ), 201
+
+
+@api.post("/checkpoint/<int:cp_id>/qc-result")
+def checkpoint_qc_result(cp_id: int):
+    body = request.get_json(silent=True) or {}
+    qc_detail_id = body.get("erp_qc_detail_id")
+    try:
+        qc_detail_id = int(qc_detail_id) if qc_detail_id is not None else None
+    except (TypeError, ValueError):
+        return _err("erp_qc_detail_id wajib")
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    cur.execute(
+        "UPDATE tbl_checkpoint SET erp_qc_detail_id=%s WHERE id=%s",
+        (qc_detail_id, cp_id),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "id": cp_id, "erp_qc_detail_id": qc_detail_id})
+
+
+# ---- Master map ERP material ----
+@api.post("/masters/<master_type>/map-erp-material")
+def master_map_erp_material(master_type: str):
+    from app import ensure_extended_tables
+
+    table = {
+        "kimia": "master_kimia",
+        "rp": "master_rp",
+        "material-lain": "master_material_lain",
+    }.get(master_type)
+    if not table:
+        return _err("master_type harus kimia|rp|material-lain")
+    body = request.get_json(silent=True) or {}
+    row_id = body.get("id")
+    erp_material_id = body.get("erp_material_id")
+    try:
+        row_id = int(row_id)
+        erp_material_id = int(erp_material_id) if erp_material_id is not None else None
+    except (TypeError, ValueError):
+        return _err("id dan erp_material_id wajib angka")
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.execute(f"UPDATE {table} SET erp_material_id=%s WHERE id=%s", (erp_material_id, row_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "id": row_id, "erp_material_id": erp_material_id})
+
+
+@api.post("/masters/erp/map-master-item")
+def master_erp_map_item():
+    from app import ensure_extended_tables
+
+    body = request.get_json(silent=True) or {}
+    try:
+        row_id = int(body.get("id"))
+        erp_master_item_id = (
+            int(body["erp_master_item_id"]) if body.get("erp_master_item_id") is not None else None
+        )
+    except (TypeError, ValueError, KeyError):
+        return _err("id wajib; erp_master_item_id opsional angka")
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.execute(
+        "UPDATE master_erp SET erp_master_item_id=%s WHERE id=%s",
+        (erp_master_item_id, row_id),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "id": row_id, "erp_master_item_id": erp_master_item_id})
+
+
+# ---- Page1 ledger import (Fase 4) ----
+@api.post("/masters/import/page1-stock")
+def masters_import_page1_stock():
+    from app import ensure_extended_tables
+    from raw_material_import import import_page1_stock_ledger
+
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.close()
+    try:
+        result = import_page1_stock_ledger(conn)
+    except FileNotFoundError as e:
+        conn.close()
+        return _err(str(e), 404)
+    except Exception as e:
+        conn.close()
+        return _err(f"Import Page1 gagal: {e}", 400)
+    conn.close()
+    return jsonify(result)
+
+
+# ---- Palet/YL: operasional-only acknowledgement (Fase 4) ----
+@api.get("/palet/integration-status")
+def palet_integration_status():
+    return jsonify(
+        {
+            "ok": True,
+            "mode": "operational_only",
+            "detail": (
+                "Palet/YL tetap SoR operasional di MRP; tidak diposting ke material_stocks ERP "
+                "pada fase 2C (hanya kimia/RP + FG)."
             ),
         }
     )

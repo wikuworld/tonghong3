@@ -41,6 +41,7 @@ import MrpMasterTreatmentPage from '../views/admin/mrp/MrpMasterTreatmentPage.vu
 import MrpPackingPage from '../views/admin/mrp/MrpPackingPage.vue'
 import MrpPackingDetailPage from '../views/admin/mrp/MrpPackingDetailPage.vue'
 import MrpGudangFgPage from '../views/admin/mrp/MrpGudangFgPage.vue'
+import MrpCheckpointPage from '../views/admin/mrp/MrpCheckpointPage.vue'
 import MrpStokKimiaPage from '../views/admin/mrp/MrpStokKimiaPage.vue'
 import MrpStokRpPage from '../views/admin/mrp/MrpStokRpPage.vue'
 import MrpStokMaterialLainPage from '../views/admin/mrp/MrpStokMaterialLainPage.vue'
@@ -203,6 +204,11 @@ const router = createRouter({
           path: 'mrp/gudang-fg',
           component: MrpGudangFgPage,
           meta: { titleKey: 'menu.mrpGudangFg', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/checkpoint',
+          component: MrpCheckpointPage,
+          meta: { titleKey: 'menu.mrpCheckpoint', module: 'mrpShopfloor' },
         },
         {
           path: 'mrp/stok-kimia',

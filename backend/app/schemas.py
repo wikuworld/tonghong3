@@ -742,6 +742,7 @@ class MarketingDeliveryLineOut(BaseModel):
     packing_status: Optional[str] = None
     invpl_printed: Optional[bool] = None
     delivery_zone: Optional[str] = None
+    source_mrp: Optional[bool] = None
 
 
 class MarketingDeliveryLinesPageOut(BaseModel):

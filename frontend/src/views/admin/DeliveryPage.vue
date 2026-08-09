@@ -171,6 +171,12 @@
             :empty-text="t('pages.delivery.tableEmpty')"
           >
       <el-table-column type="index" :label="t('common.noLabel')" width="50" align="center" fixed="left" />
+      <el-table-column :label="t('pages.delivery.columns.source')" width="88" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.source_mrp" size="small" type="warning">MRP</el-tag>
+          <span v-else class="text-gray-400">ERP</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="surat_jalan_no" :label="t('pages.delivery.columns.noSj')" min-width="130" show-overflow-tooltip />
       <el-table-column :label="t('pages.delivery.columns.shipDate')" width="100">
         <template #default="{ row }">{{ formatDate(row.delivery_date) }}</template>

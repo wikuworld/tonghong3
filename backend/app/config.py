@@ -24,6 +24,8 @@ class Settings(BaseSettings):
 
     # MRP Flask upstream (Docker service hostname)
     mrp_upstream_url: str = "http://mrp:5010"
+    # Warehouse ERP untuk buku stok shopfloor (kimia/RP issue)
+    mrp_shopfloor_warehouse_code: str = "SHOPFLOOR"
 
     # Email (invoice reminders)
     smtp_host: str = ""

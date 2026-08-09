@@ -7,13 +7,17 @@ from typing import Any, Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
+
 
 from app.config import settings
 from app.db import get_db
-from app.models import PoDetail, PoHeader
+from app.models import PoDetail, PoHeader, QcDetail, QcHeader
 from app.routers.auth import get_current_user
 from app.services.mrp_fg_delivery_bridge import bridge_fg_out_to_delivery
+from app.services.mrp_production_bridge import upsert_production_mirror
+from app.services.mrp_stock_bridge import issue_stock_from_mrp
 
 router = APIRouter(prefix="/mrp", tags=["mrp"])
 
@@ -66,7 +70,8 @@ def _map_po_detail(d: PoDetail) -> Optional[dict]:
         swatch = (d.color_swatch_recipe.color_code or d.color_swatch_recipe.color_name or "").strip()
     if not swatch:
         swatch = (d.color_reference or d.color_standard or "").strip()
-    qty = _num(d.balance_qty) if d.balance_qty is not None else _num(d.quantity_order)
+    qty_order = _num(d.quantity_order)
+    qty_balance = _num(d.balance_qty) if d.balance_qty is not None else qty_order
     return {
         "source_detail_id": d.id,
         "no_po": no_po,
@@ -77,8 +82,9 @@ def _map_po_detail(d: PoDetail) -> Optional[dict]:
         "tebal": _thickness_text(d),
         "emboss": (d.emboss or "").strip(),
         "color_swatch": swatch or None,
-        "sq_ft": qty,
-        "qty_order": qty,
+        "sq_ft": qty_order,
+        "qty_order": qty_order,
+        "qty_balance_erp": qty_balance,
     }
 
 
@@ -200,6 +206,26 @@ async def sync_po_from_tonghong(
     return data
 
 
+class MrpBridgeProductionIn(BaseModel):
+    source_detail_id: int
+    kode_wip: str
+    mrp_packing_id: Optional[int] = None
+    qty_planned: Optional[float] = None
+    qty_actual: Optional[float] = None
+    finish: bool = False
+
+
+class MrpBridgeStockIssueIn(BaseModel):
+    erp_material_id: Optional[int] = None
+    material_code: Optional[str] = None
+    material_name: Optional[str] = None
+    material_type: str = "kimia"
+    unit: str = "kg"
+    qty: float
+    mrp_ref: Optional[str] = None
+    warehouse_id: Optional[int] = None
+
+
 @router.post("/bridge/fg-out")
 def bridge_fg_out(
     body: MrpBridgeFgOutIn,
@@ -226,6 +252,134 @@ def bridge_fg_out(
         "packing_id": result.packing_id,
         "packing_number": result.packing_number,
         "line_count": result.line_count,
+    }
+
+
+@router.post("/bridge/production-upsert")
+def bridge_production_upsert(
+    body: MrpBridgeProductionIn,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    result = upsert_production_mirror(
+        db,
+        source_detail_id=body.source_detail_id,
+        kode_wip=body.kode_wip,
+        mrp_packing_id=body.mrp_packing_id,
+        qty_planned=body.qty_planned,
+        qty_actual=body.qty_actual,
+        finish=body.finish,
+        actor=getattr(user, "username", None),
+    )
+    db.commit()
+    return {
+        "ok": True,
+        "created": result.created,
+        "finished": result.finished,
+        "production_id": result.production_id,
+        "production_detail_id": result.production_detail_id,
+        "production_number": result.production_number,
+        "qc_header_id": result.qc_header_id,
+    }
+
+
+@router.post("/bridge/stock-issue")
+def bridge_stock_issue(
+    body: MrpBridgeStockIssueIn,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    result = issue_stock_from_mrp(
+        db,
+        erp_material_id=body.erp_material_id,
+        material_code=body.material_code,
+        material_name=body.material_name,
+        material_type=body.material_type,
+        unit=body.unit,
+        qty=body.qty,
+        warehouse_id=body.warehouse_id,
+        mrp_ref=body.mrp_ref,
+        actor=getattr(user, "username", None),
+    )
+    db.commit()
+    return {
+        "ok": True,
+        "material_id": result.material_id,
+        "warehouse_id": result.warehouse_id,
+        "qty": float(result.qty),
+        "stock_after": float(result.stock_after),
+    }
+
+
+async def _bridge_stock_from_mrp_response(
+    db: Session,
+    data: dict,
+    user,
+) -> dict | None:
+    bridge = (data or {}).get("bridge")
+    if not bridge or not bridge.get("qty"):
+        return None
+    result = issue_stock_from_mrp(
+        db,
+        erp_material_id=bridge.get("erp_material_id"),
+        material_code=bridge.get("material_code"),
+        material_name=bridge.get("material_name"),
+        material_type=bridge.get("material_type") or "kimia",
+        unit=bridge.get("unit") or "kg",
+        qty=bridge.get("qty"),
+        mrp_ref=bridge.get("mrp_ref"),
+        actor=getattr(user, "username", None),
+    )
+    db.commit()
+    return {
+        "material_id": result.material_id,
+        "warehouse_id": result.warehouse_id,
+        "stock_after": float(result.stock_after),
+    }
+
+
+async def _run_production_bridge_for_packing(
+    client: httpx.AsyncClient,
+    db: Session,
+    packing_id: int,
+    *,
+    finish: bool,
+    qty_actual: float | None,
+    user,
+) -> dict | None:
+    ctx = await _mrp_json(client, "GET", f"packing/{packing_id}/bridge-context")
+    packing = ctx.get("packing") or {}
+    line = ctx.get("line") or {}
+    sid = line.get("source_detail_id")
+    kode_wip = (packing.get("kode_wip") or "").strip()
+    if not sid or not kode_wip:
+        return None
+    qty = line.get("qty_sq") or packing.get("total_ukuran")
+    result = upsert_production_mirror(
+        db,
+        source_detail_id=int(sid),
+        kode_wip=kode_wip,
+        mrp_packing_id=packing_id,
+        qty_planned=qty,
+        qty_actual=qty_actual if qty_actual is not None else (qty if finish else None),
+        finish=finish,
+        actor=getattr(user, "username", None),
+    )
+    db.commit()
+    await _mrp_json(
+        client,
+        "POST",
+        f"packing/{packing_id}/production-result",
+        json_body={
+            "erp_production_id": result.production_id,
+            "erp_production_detail_id": result.production_detail_id,
+        },
+    )
+    return {
+        "production_id": result.production_id,
+        "production_detail_id": result.production_detail_id,
+        "production_number": result.production_number,
+        "finished": result.finished,
     }
 
 
@@ -314,6 +468,198 @@ async def gudang_fg_out_with_bridge(
         "bridge_created": result.created,
         "bridge_status": "ok",
     }
+
+
+@router.post("/packing")
+async def packing_create_with_production(
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    body = await request.json()
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        data = await _mrp_json(client, "POST", "packing", json_body=body)
+        packing_id = data.get("id")
+        prod = None
+        if packing_id:
+            try:
+                prod = await _run_production_bridge_for_packing(
+                    client, db, int(packing_id), finish=False, qty_actual=None, user=user
+                )
+            except Exception:
+                db.rollback()
+                prod = None
+    out = dict(data or {})
+    if prod:
+        out["erp_production"] = prod
+    return out
+
+
+@router.post("/packing/{packing_id}/actions")
+async def packing_actions_with_production(
+    packing_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    body = await request.json()
+    action = (body.get("action") or "").strip()
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        data = await _mrp_json(
+            client, "POST", f"packing/{packing_id}/actions", json_body=body
+        )
+        prod = None
+        if action in {"finish", "add_po"}:
+            finish = action == "finish"
+            qty_actual = None
+            if finish:
+                detail = await _mrp_json(client, "GET", f"packing/{packing_id}")
+                qty_actual = (detail.get("packing") or {}).get("total_ukuran")
+            try:
+                prod = await _run_production_bridge_for_packing(
+                    client,
+                    db,
+                    packing_id,
+                    finish=finish,
+                    qty_actual=float(qty_actual) if qty_actual is not None else None,
+                    user=user,
+                )
+            except Exception:
+                db.rollback()
+                prod = None
+    out = dict(data or {})
+    if prod:
+        out["erp_production"] = prod
+    return out
+
+
+async def _proxy_stock_action_with_bridge(
+    path: str,
+    request: Request,
+    db: Session,
+    user,
+):
+    body = await request.json()
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        data = await _mrp_json(client, "POST", path, json_body=body)
+        stock_info = None
+        if (body.get("action") == "out") or path.startswith("usage-"):
+            if path.startswith("usage-") and not data.get("stok_deducted") and not data.get("bridge"):
+                return data
+            try:
+                stock_info = await _bridge_stock_from_mrp_response(db, data, user)
+            except Exception as exc:
+                db.rollback()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Bridge stok ERP gagal: {getattr(exc, 'detail', exc)}",
+                ) from exc
+    out = dict(data or {})
+    if stock_info:
+        out["erp_stock"] = stock_info
+    return out
+
+
+@router.post("/stok-kimia")
+async def stok_kimia_bridged(
+    request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)
+):
+    return await _proxy_stock_action_with_bridge("stok-kimia", request, db, user)
+
+
+@router.post("/stok-rp")
+async def stok_rp_bridged(
+    request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)
+):
+    return await _proxy_stock_action_with_bridge("stok-rp", request, db, user)
+
+
+@router.post("/usage-color")
+async def usage_color_bridged(
+    request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)
+):
+    return await _proxy_stock_action_with_bridge("usage-color", request, db, user)
+
+
+@router.post("/usage-rp")
+async def usage_rp_bridged(
+    request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)
+):
+    return await _proxy_stock_action_with_bridge("usage-rp", request, db, user)
+
+
+@router.post("/checkpoint")
+async def checkpoint_create_bridged(
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    """Simpan checkpoint MRP + mirror QcDetail ERP bila production_detail ada."""
+    body = await request.json()
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        data = await _mrp_json(client, "POST", "checkpoint", json_body=body)
+        erp_pd = data.get("erp_production_detail_id") or body.get("erp_production_detail_id")
+        qc_detail_id = None
+        if erp_pd:
+            try:
+                pd_id = int(erp_pd)
+                qc = db.scalars(
+                    select(QcHeader)
+                    .join(QcDetail, QcDetail.qc_id == QcHeader.id)
+                    .where(QcDetail.production_detail_id == pd_id)
+                    .limit(1)
+                ).first()
+                if not qc:
+                    # attach to any QC for this production detail's production
+                    from app.models import ProductionDetail
+
+                    pd = db.get(ProductionDetail, pd_id)
+                    if pd and pd.production_id:
+                        qc = db.scalars(
+                            select(QcHeader)
+                            .where(QcHeader.production_id == pd.production_id)
+                            .limit(1)
+                        ).first()
+                        if not qc:
+                            from app.services.numbering import next_number
+                            from datetime import date as _date
+
+                            qc = QcHeader(
+                                qc_number=next_number(db, "QC", "QC"),
+                                production_id=pd.production_id,
+                                qc_date=_date.today(),
+                                operator_name=getattr(user, "username", None) or "mrp",
+                            )
+                            db.add(qc)
+                            db.flush()
+                if qc:
+                    qd = QcDetail(
+                        qc_id=qc.id,
+                        production_detail_id=pd_id,
+                        thickness_actual=body.get("thickness_actual"),
+                        softness_actual=body.get("softness_actual"),
+                        result=body.get("result") or ("OK" if data.get("is_ok") else "NG"),
+                        is_ok=bool(data.get("is_ok")),
+                        remark=body.get("remark") or "Checkpoint MRP",
+                        batch_number=body.get("kode_wip"),
+                    )
+                    db.add(qd)
+                    db.flush()
+                    qc_detail_id = int(qd.id)
+                    db.commit()
+                    await _mrp_json(
+                        client,
+                        "POST",
+                        f"checkpoint/{data.get('id')}/qc-result",
+                        json_body={"erp_qc_detail_id": qc_detail_id},
+                    )
+            except Exception:
+                db.rollback()
+                qc_detail_id = None
+    out = dict(data or {})
+    if qc_detail_id:
+        out["erp_qc_detail_id"] = qc_detail_id
+    return out
 
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])

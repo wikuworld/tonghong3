@@ -51,7 +51,8 @@
         <el-table-column type="selection" width="40" />
         <el-table-column prop="no_po" label="PO" min-width="120" />
         <el-table-column prop="item_name" label="Item" min-width="140" />
-        <el-table-column prop="qty_outstanding" label="Outstanding" width="110" />
+        <el-table-column prop="qty_outstanding" :label="t('pages.mrpRencana.qtyAllocatable')" width="110" />
+        <el-table-column prop="qty_balance_erp" :label="t('pages.mrpRencana.qtyBalanceErp')" width="110" />
         <el-table-column :label="'Qty'" width="120">
           <template #default="{ row }">
             <el-input v-model.number="poQty[row.id]" type="number" size="small" />

@@ -1406,6 +1406,14 @@ export function mrpImportRawMaterial(file) {
   })
 }
 
+/** Import ledger stok sheet Page1 → tbl_stok_kimia_in / tbl_stok_rp_in. */
+export function mrpImportPage1Stock() {
+  return apiFetch('/mrp/masters/import/page1-stock', {
+    method: 'POST',
+    body: JSON.stringify({}),
+  })
+}
+
 export function mrpListMasterKimia() {
   return apiFetch('/mrp/masters/kimia')
 }

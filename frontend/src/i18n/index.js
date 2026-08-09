@@ -208,6 +208,7 @@ const messages = {
       masterItems: 'Master Item',
       fluorescentColors: 'Master Fluorescent',
       mrpRencana: 'Rencana Produksi (MRP)',
+      mrpCheckpoint: 'Checkpoint QC (MRP)',
       mrpPalet: 'Palet / YL (MRP)',
       mrpMasterErp: 'Master ERP (MRP)',
       mrpMasterKulit: 'Master Kulit (MRP)',
@@ -1272,6 +1273,7 @@ const messages = {
         overallRoll: 'Total roll',
         printSjDotmatrix: 'Print SJ (Dot Matrix)',
         columns: {
+          source: 'SUMBER',
           noSj: 'NO SJ',
           shipDate: 'TGL KIRIM',
           factory: 'FACTORY NAME',
@@ -1433,6 +1435,16 @@ const messages = {
         print: 'Cetak',
         listPo: 'Alokasi PO',
         syncPo: 'Sync PO Tonghong',
+        qtyAllocatable: 'Sisa alokasi',
+        qtyBalanceErp: 'Saldo kirim ERP',
+      },
+      mrpCheckpoint: {
+        title: 'Checkpoint QC (MRP)',
+        subtitle: 'Pengukuran inline per WIP/lot shopfloor',
+        wip: 'Kode WIP',
+        result: 'Hasil',
+        thickness: 'Tebal aktual',
+        softness: 'Softness',
       },
       mrpPalet: {
         title: 'Palet / YL',
@@ -1450,10 +1462,12 @@ const messages = {
       },
       mrpMasterImport: {
         importRaw: 'Import Raw Material',
+        importPage1: 'Import Page1 Stok',
         confirmDefault: 'Impor dari file default di server (mrp/data), atau pilih file .xls lokal?',
         useDefault: 'Pakai file server',
         pickFile: 'Pilih file…',
         done: 'Import selesai — kulit {kulit}, kimia {kimia}, RP {rp}, material {material} (baru/update)',
+        page1Done: 'Page1 stok: {inserted} baris masuk, {skipped} dilewati',
       },
       mrpMasterKulit: {
         title: 'Master Kulit MRP',
@@ -2422,6 +2436,7 @@ const messages = {
       masterItems: 'Master items',
       fluorescentColors: 'Fluorescent master',
       mrpRencana: 'Production Plan (MRP)',
+      mrpCheckpoint: 'Checkpoint QC (MRP)',
       mrpPalet: 'Pallet / YL (MRP)',
       mrpMasterErp: 'ERP Master (MRP)',
       mrpMasterKulit: 'Leather Master (MRP)',
@@ -3466,6 +3481,7 @@ const messages = {
         overallRoll: 'Total rolls',
         printSjDotmatrix: 'Print SJ (dot matrix)',
         columns: {
+          source: 'SOURCE',
           noSj: 'SJ NO.',
           shipDate: 'SHIP DATE',
           factory: 'FACTORY NAME',
@@ -3627,6 +3643,16 @@ const messages = {
         print: 'Print',
         listPo: 'Allocate PO',
         syncPo: 'Sync Tonghong PO',
+        qtyAllocatable: 'Allocatable',
+        qtyBalanceErp: 'ERP ship balance',
+      },
+      mrpCheckpoint: {
+        title: 'Checkpoint QC (MRP)',
+        subtitle: 'Inline measurements per WIP/lot',
+        wip: 'WIP code',
+        result: 'Result',
+        thickness: 'Actual thickness',
+        softness: 'Softness',
       },
       mrpPalet: {
         title: 'Pallet / YL',
@@ -3644,10 +3670,12 @@ const messages = {
       },
       mrpMasterImport: {
         importRaw: 'Import Raw Material',
+        importPage1: 'Import Page1 stock',
         confirmDefault: 'Import from the server default file (mrp/data), or pick a local .xls?',
         useDefault: 'Use server file',
         pickFile: 'Choose file…',
         done: 'Import done — leather {kulit}, chemical {kimia}, RP {rp}, other {material} (new/updated)',
+        page1Done: 'Page1 stock: {inserted} rows inserted, {skipped} skipped',
       },
       mrpMasterKulit: {
         title: 'MRP Leather Master',
@@ -4594,6 +4622,7 @@ const messages = {
       masterItems: '主数据物料',
       fluorescentColors: '荧光色主数据',
       mrpRencana: '生产计划 (MRP)',
+      mrpCheckpoint: '检查点 QC (MRP)',
       mrpPalet: '托盘 / YL (MRP)',
       mrpMasterErp: 'ERP 主数据 (MRP)',
       mrpMasterKulit: '皮革主数据 (MRP)',
@@ -5619,6 +5648,7 @@ const messages = {
         overallRoll: '卷数合计',
         printSjDotmatrix: '打印送货单 (点阵)',
         columns: {
+          source: '来源',
           noSj: '送货单号',
           shipDate: '发货日期',
           factory: '工厂名称',
@@ -5779,6 +5809,16 @@ const messages = {
         print: '打印',
         listPo: '分配 PO',
         syncPo: '同步 Tonghong PO',
+        qtyAllocatable: '可分配余量',
+        qtyBalanceErp: 'ERP 发货余额',
+      },
+      mrpCheckpoint: {
+        title: '检查点 QC (MRP)',
+        subtitle: '按 WIP/批次的在线测量',
+        wip: 'WIP 编码',
+        result: '结果',
+        thickness: '实际厚度',
+        softness: '柔软度',
       },
       mrpPalet: {
         title: '托盘 / YL',
@@ -5796,10 +5836,12 @@ const messages = {
       },
       mrpMasterImport: {
         importRaw: '导入原材料主数据',
+        importPage1: '导入 Page1 库存',
         confirmDefault: '使用服务器默认文件 (mrp/data)，或选择本地 .xls？',
         useDefault: '使用服务器文件',
         pickFile: '选择文件…',
         done: '导入完成 — 皮革 {kulit}，化工 {kimia}，RP {rp}，其他 {material}（新增/更新）',
+        page1Done: 'Page1 库存：写入 {inserted}，跳过 {skipped}',
       },
       mrpMasterKulit: {
         title: 'MRP 皮革主数据',

@@ -843,6 +843,7 @@ def _delivery_detail_to_row(
         "packing_status": (pkh.status or "").strip() if pkh else "",
         "invpl_printed": bool(pkh and pkh.invpl_printed_at is not None),
         "delivery_zone": (dh.delivery_zone or "").strip() if dh.delivery_zone else "",
+        "source_mrp": bool(getattr(dh, "mrp_fg_id", None) or (pkh and (pkh.source or "") == "mrp")),
     }
 
 
@@ -942,6 +943,11 @@ def _query_delivery_lines_rows(
     line_index: dict[int, int] = defaultdict(int)
     out: list[dict[str, Any]] = []
     for dd, dh, pd, pod, ph, cust, pkh in raw:
+        # Jalur MRP: DeliveryDetail.po_detail_id langsung (tanpa ProductionDetail)
+        if pod is None and getattr(dd, "po_detail_id", None):
+            pod = db.get(PoDetail, int(dd.po_detail_id))
+            if pod and ph is None and pod.po_id:
+                ph = db.get(PoHeader, pod.po_id)
         inv = inv_by_delivery.get(dh.id)
         invd: InvoiceDetail | None = None
         if inv:

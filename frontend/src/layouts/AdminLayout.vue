@@ -377,6 +377,7 @@ const mrpFlowMenus = [
   { path: '/admin/mrp/lab', labelKey: 'menu.mrpLab', icon: CollectionTag },
   { path: '/admin/mrp/packing', labelKey: 'menu.mrpPacking', icon: Box },
   { path: '/admin/mrp/gudang-fg', labelKey: 'menu.mrpGudangFg', icon: Goods },
+  { path: '/admin/mrp/checkpoint', labelKey: 'menu.mrpCheckpoint', icon: CollectionTag },
 ]
 
 const mrpMaterialMenus = [

@@ -5,6 +5,13 @@
       <el-button v-if="canCreate" :loading="importing" @click="triggerImport">
         {{ t('pages.mrpMasterImport.importRaw') }}
       </el-button>
+      <el-button
+        v-if="canCreate && (kind === 'kimia' || kind === 'rp')"
+        :loading="importingPage1"
+        @click="importPage1"
+      >
+        {{ t('pages.mrpMasterImport.importPage1') }}
+      </el-button>
       <input
         ref="fileInput"
         type="file"
@@ -67,6 +74,7 @@ import {
   mrpDeleteMasterMaterialLain,
   mrpDeleteMasterRp,
   mrpImportRawMaterial,
+  mrpImportPage1Stock,
   mrpListMasterKimia,
   mrpListMasterKulit,
   mrpListMasterMaterialLain,
@@ -82,6 +90,7 @@ const kind = computed(() => route.meta.mrpMaster || 'kulit')
 const loading = ref(false)
 const saving = ref(false)
 const importing = ref(false)
+const importingPage1 = ref(false)
 const fileInput = ref(null)
 const rows = ref([])
 const dialogOpen = ref(false)
@@ -112,6 +121,7 @@ const columns = computed(() => {
       { prop: 'kode_barang', label: 'Kode Barang', minWidth: 120 },
       { prop: 'nama_barang', label: 'Nama Barang', minWidth: 160 },
       { prop: 'satuan', label: 'Satuan', minWidth: 80 },
+      { prop: 'erp_material_id', label: 'ERP Mat ID', minWidth: 100 },
     ]
   }
   if (kind.value === 'rp') {
@@ -121,6 +131,7 @@ const columns = computed(() => {
       { prop: 'nama_jenis', label: 'Jenis', minWidth: 140 },
       { prop: 'satuan', label: 'Satuan', minWidth: 80 },
       { prop: 'deskripsi', label: 'Deskripsi', minWidth: 160 },
+      { prop: 'erp_material_id', label: 'ERP Mat ID', minWidth: 100 },
     ]
   }
   if (kind.value === 'material') {
@@ -129,6 +140,7 @@ const columns = computed(() => {
       { prop: 'nama_material', label: 'Nama', minWidth: 160 },
       { prop: 'satuan', label: 'Satuan', minWidth: 80 },
       { prop: 'deskripsi', label: 'Deskripsi', minWidth: 160 },
+      { prop: 'erp_material_id', label: 'ERP Mat ID', minWidth: 100 },
     ]
   }
   return [
@@ -224,6 +236,23 @@ async function runImport(file) {
     ElMessage.error(e.message || String(e))
   } finally {
     importing.value = false
+  }
+}
+
+async function importPage1() {
+  importingPage1.value = true
+  try {
+    const res = await mrpImportPage1Stock()
+    ElMessage.success(
+      t('pages.mrpMasterImport.page1Done', {
+        inserted: res?.inserted || 0,
+        skipped: res?.skipped_count || (res?.skipped || []).length || 0,
+      }),
+    )
+  } catch (e) {
+    ElMessage.error(e.message || String(e))
+  } finally {
+    importingPage1.value = false
   }
 }
 

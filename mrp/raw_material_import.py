@@ -1,7 +1,7 @@
 """Import katalog Master Item Raw Material (.xls) ke master MRP.
 
-Sheet yang diimpor: KULIT, KIMIA, RELEASE PAPER, LAINNYA.
-Sheet Page1 (ledger stok) diabaikan.
+Sheet katalog: KULIT, KIMIA, RELEASE PAPER, LAINNYA.
+Sheet Page1 (ledger stok) diimpor lewat import_page1_stock_ledger().
 """
 from __future__ import annotations
 
@@ -273,4 +273,147 @@ def import_raw_material_masters(conn, path: str | None = None) -> dict[str, Any]
             "rp": len(catalogs["rp"]),
             "material": len(catalogs["material"]),
         },
+    }
+
+
+def _find_page1_sheet(book):
+    for name in book.sheet_names():
+        key = name.strip().upper().replace(" ", "")
+        if key in {"PAGE1", "PAGE01", "PAG1"} or name.strip().upper().startswith("PAGE1"):
+            return name
+    for name in book.sheet_names():
+        if "PAGE" in name.upper() and "1" in name:
+            return name
+    return None
+
+
+def import_page1_stock_ledger(conn, path: str | None = None) -> dict[str, Any]:
+    """Import opening stock dari sheet Page1 ke tbl_stok_kimia_in / tbl_stok_rp_in.
+
+    Heuristik kolom: KODE/CODE + QTY/STOCK/QTY_SISA (+ optional JENIS/TYPE).
+    """
+    import xlrd
+    from datetime import date as _date
+    from app import ensure_extended_tables, generate_code, init_db_tables
+
+    xls_path = path or DEFAULT_XLS_PATH
+    if not os.path.isfile(xls_path):
+        raise FileNotFoundError(f"File tidak ditemukan: {xls_path}")
+
+    init_db_tables()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+
+    book = xlrd.open_workbook(xls_path)
+    sheet_name = _find_page1_sheet(book)
+    if not sheet_name:
+        cur.close()
+        return {
+            "ok": False,
+            "detail": "Sheet Page1 tidak ditemukan",
+            "sheets": list(book.sheet_names()),
+        }
+
+    sh = book.sheet_by_name(sheet_name)
+    if sh.nrows < 2:
+        cur.close()
+        return {"ok": True, "sheet": sheet_name, "inserted": 0, "skipped": ["sheet kosong"]}
+
+    headers = [_cell_str(sh.cell_value(0, c)).upper() for c in range(sh.ncols)]
+
+    def _idx(*names):
+        for n in names:
+            if n in headers:
+                return headers.index(n)
+        return None
+
+    i_kode = _idx("KODE", "CODE", "ITEM CODE", "KODE BARANG")
+    i_qty = _idx("QTY", "STOCK", "QTY_SISA", "QTY SISA", "ON HAND", "BALANCE")
+    i_jenis = _idx("JENIS", "TYPE", "CATEGORY", "TIPE")
+    i_nama = _idx("NAMA", "NAME", "DESKRIPSI", "DESCRIPTION")
+    if i_kode is None or i_qty is None:
+        cur.close()
+        raise ValueError(f"Sheet {sheet_name}: butuh kolom KODE dan QTY/STOCK (ada: {headers})")
+
+    inserted = 0
+    skipped: list[str] = []
+    today = _date.today().isoformat()
+
+    for r in range(1, sh.nrows):
+        kode = _cell_str(sh.cell_value(r, i_kode))
+        if not kode:
+            continue
+        try:
+            qty = float(sh.cell_value(r, i_qty) or 0)
+        except (TypeError, ValueError):
+            skipped.append(f"{kode}:qty invalid")
+            continue
+        if qty <= 0:
+            skipped.append(f"{kode}:qty<=0")
+            continue
+        jenis = _cell_str(sh.cell_value(r, i_jenis)).upper() if i_jenis is not None else ""
+        nama = _cell_str(sh.cell_value(r, i_nama)) if i_nama is not None else ""
+
+        # Prefer explicit type; else match kode against masters
+        target = None
+        if "RP" in jenis or "RELEASE" in jenis:
+            target = "rp"
+        elif "KIMIA" in jenis or "CHEM" in jenis:
+            target = "kimia"
+        else:
+            cur.execute(
+                "SELECT id FROM master_kimia WHERE kode_kimia=%s OR kode_barang=%s LIMIT 1",
+                (kode, kode),
+            )
+            if cur.fetchone():
+                target = "kimia"
+            else:
+                cur.execute("SELECT id FROM master_rp WHERE kode_rp=%s LIMIT 1", (kode,))
+                if cur.fetchone():
+                    target = "rp"
+
+        if target == "kimia":
+            cur.execute(
+                "SELECT id FROM master_kimia WHERE kode_kimia=%s OR kode_barang=%s LIMIT 1",
+                (kode, kode),
+            )
+            mk = cur.fetchone()
+            if not mk:
+                skipped.append(f"{kode}:kimia master tidak ada")
+                continue
+            kode_internal = generate_code("BC-K")
+            cur.execute(
+                "INSERT INTO tbl_stok_kimia_in "
+                "(kode_internal, kimia_id, qty, qty_sisa, tanggal_in, gudang) "
+                "VALUES (%s,%s,%s,%s,%s,'kimia')",
+                (kode_internal, mk["id"], qty, qty, today),
+            )
+            inserted += 1
+        elif target == "rp":
+            cur.execute("SELECT id FROM master_rp WHERE kode_rp=%s LIMIT 1", (kode,))
+            mr = cur.fetchone()
+            if not mr:
+                skipped.append(f"{kode}:rp master tidak ada")
+                continue
+            kode_internal = generate_code("BC-R")
+            cur.execute(
+                "INSERT INTO tbl_stok_rp_in "
+                "(kode_internal, rp_id, meter_roll, qty_sisa, tanggal_in) "
+                "VALUES (%s,%s,%s,%s,%s)",
+                (kode_internal, mr["id"], qty, qty, today),
+            )
+            inserted += 1
+        else:
+            skipped.append(f"{kode}:tidak match kimia/rp ({nama or jenis or '-'})")
+
+    conn.commit()
+    cur.close()
+    return {
+        "ok": True,
+        "source": xls_path,
+        "sheet": sheet_name,
+        "inserted": inserted,
+        "skipped": skipped[:100],
+        "skipped_count": len(skipped),
     }
