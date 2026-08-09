@@ -1,0 +1,307 @@
+{% extends 'base.html' %}
+{% block title %}Tambah Rencana Produksi{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>Tambah Rencana Produksi</h3>
+    <a href="/rencana-produksi" class="btn btn-secondary btn-sm">Kembali</a>
+</div>
+
+<form method="POST" id="formTambahRencana">
+    <input type="hidden" name="items_json" id="items_json">
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Nama Rencana Produksi <span class="text-danger">*</span></label>
+                    <input type="text" name="nama_rencana" class="form-control" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Tanggal Rencana Produksi <span class="text-danger">*</span></label>
+                    <input type="date" name="tanggal_rencana" class="form-control" value="{{ today }}" required>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white fw-bold">Item Rencana Produksi</div>
+        <div class="card-body">
+            <div class="row g-2 mb-2 small text-muted fw-semibold">
+                <div class="col-md-2">Thickness</div>
+                <div class="col-md-2">Material Name</div>
+                <div class="col-md-2">Color</div>
+                <div class="col-md-2">Emboss</div>
+                <div class="col-md-2">Customer</div>
+                <div class="col-md-2">SO / Detail</div>
+            </div>
+            <div id="itemRows">
+                <div class="item-block mb-3 border-bottom pb-3">
+                    <div class="row g-2 mb-2 item-row align-items-center">
+                        <div class="col-md-2">
+                            <select class="form-select form-select-sm thickness-sel" required>
+                                <option value="">-- Thickness --</option>
+                                {% for t in erp_thickness %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <select class="form-select form-select-sm material-sel" required>
+                                <option value="">-- Material --</option>
+                                {% for m in erp_materials %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <select class="form-select form-select-sm color-sel" required>
+                                <option value="">-- Color --</option>
+                                {% for c in erp_colors %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <select class="form-select form-select-sm emboss-sel" required>
+                                <option value="">-- Emboss --</option>
+                                {% for e in erp_emboss %}<option value="{{ e }}">{{ e }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <select class="form-select form-select-sm customer-sel" required>
+                                <option value="">-- Customer --</option>
+                                {% for c in erp_customers %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2 d-flex gap-1 align-items-center">
+                            <span class="badge bg-secondary so-badge">SO: 0</span>
+                            <button type="button" class="btn btn-sm btn-outline-primary btn-detail" disabled>[...]</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeItemBlock(this)">DEL</button>
+                        </div>
+                    </div>
+                    <input type="hidden" class="swatch-val">
+                    <input type="hidden" class="backer-val">
+                    <input type="hidden" class="ket-val">
+                    <input type="hidden" class="pos-json" value="[]">
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addItemBlock()">+ ADD Item</button>
+        </div>
+    </div>
+
+    <div class="text-end">
+        <button type="submit" class="btn btn-primary px-4">Simpan Rencana</button>
+    </div>
+</form>
+
+<div class="modal fade" id="itemDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Detail Item — Color Swatch, Backer & SO</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Color Swatch <span class="text-danger">*</span></label>
+                        <select class="form-select form-select-sm" id="modalSwatch">
+                            <option value="">-- Pilih Color Swatch --</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Backer</label>
+                        <input type="text" class="form-control form-control-sm bg-light" id="modalBacker" readonly>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Keterangan</label>
+                        <input type="text" class="form-control form-control-sm" id="modalKet" placeholder="Contoh: PO FULL, SAMPLE">
+                    </div>
+                </div>
+                <h6 class="fw-bold">SO / PO Outstanding (Color + Emboss + Color Swatch)</h6>
+                <p class="small text-muted">Customer item tidak memfilter daftar SO di bawah.</p>
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr><th></th><th>PO</th><th>SO</th><th>Customer PO</th><th>Item</th><th>Outstanding</th><th>Qty Proses</th></tr>
+                    </thead>
+                    <tbody id="modalPoBody"></tbody>
+                </table>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary btn-sm" id="btnSaveDetail">Simpan Detail</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let activeBlock = null;
+const detailModal = new bootstrap.Modal(document.getElementById('itemDetailModal'));
+
+function getBlock(el) { return el.closest('.item-block'); }
+
+function updateSoBadge(block) {
+    let pos = [];
+    try { pos = JSON.parse(block.querySelector('.pos-json').value || '[]'); } catch (e) {}
+    const totalQty = pos.reduce((s, p) => s + parseFloat(p.qty || 0), 0);
+    block.querySelector('.so-badge').textContent = `SO: ${pos.length} (${totalQty || 0})`;
+    const ready = block.querySelector('.thickness-sel').value && block.querySelector('.material-sel').value &&
+        block.querySelector('.color-sel').value && block.querySelector('.emboss-sel').value &&
+        block.querySelector('.customer-sel').value;
+    block.querySelector('.btn-detail').disabled = !ready;
+}
+
+async function loadSwatchOptions(block) {
+    const th = block.querySelector('.thickness-sel').value;
+    const mat = block.querySelector('.material-sel').value;
+    const co = block.querySelector('.color-sel').value;
+    const em = block.querySelector('.emboss-sel').value;
+    if (!mat || !co || !em) return [];
+    const q = new URLSearchParams({ material_name: mat, color: co, emboss: em });
+    if (th) q.set('thickness', th);
+    const res = await fetch('/api/erp/combination?' + q);
+    const data = await res.json();
+    return res.ok ? (data.options || []) : [];
+}
+
+async function loadPoModal() {
+    const co = activeBlock.querySelector('.color-sel').value;
+    const em = activeBlock.querySelector('.emboss-sel').value;
+    const sw = document.getElementById('modalSwatch').value;
+    const tbody = document.getElementById('modalPoBody');
+    tbody.innerHTML = '';
+    if (!co || !em || !sw) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center">Pilih Color Swatch terlebih dahulu</td></tr>';
+        return;
+    }
+    const res = await fetch(`/api/rencana/po/by-combination?color=${encodeURIComponent(co)}&emboss=${encodeURIComponent(em)}&color_swatch=${encodeURIComponent(sw)}`);
+    const pos = await res.json();
+    let selected = [];
+    try { selected = JSON.parse(activeBlock.querySelector('.pos-json').value || '[]'); } catch (e) {}
+    if (!pos.length) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center">Tidak ada SO outstanding</td></tr>';
+        return;
+    }
+    pos.forEach(p => {
+        const sel = selected.find(x => String(x.po_id) === String(p.id));
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td><input type="checkbox" class="po-check" value="${p.id}" ${sel ? 'checked' : ''}></td>
+            <td>${p.no_po}</td><td>${p.no_so||'-'}</td><td>${p.customer||'-'}</td><td>${p.item_name||'-'}</td>
+            <td>${p.qty_outstanding}</td>
+            <td><input type="number" step="0.01" class="form-control form-control-sm qty-input" ${sel ? '' : 'disabled'} value="${sel ? sel.qty : ''}" min="0.01"></td>`;
+        tr.querySelector('.po-check').addEventListener('change', function() {
+            const inp = tr.querySelector('.qty-input');
+            inp.disabled = !this.checked;
+            inp.value = this.checked ? p.qty_outstanding : '';
+        });
+        tbody.appendChild(tr);
+    });
+}
+
+async function openDetailModal(btn) {
+    activeBlock = getBlock(btn);
+    const options = await loadSwatchOptions(activeBlock);
+    const swSel = document.getElementById('modalSwatch');
+    swSel.innerHTML = '<option value="">-- Pilih Color Swatch --</option>';
+    options.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.color_swatch;
+        opt.textContent = o.color_swatch + (o.backer ? ' · ' + o.backer : '');
+        opt.dataset.backer = o.backer || '';
+        swSel.appendChild(opt);
+    });
+    const curSw = activeBlock.querySelector('.swatch-val').value;
+    if (curSw) swSel.value = curSw;
+    document.getElementById('modalBacker').value = activeBlock.querySelector('.backer-val').value;
+    document.getElementById('modalKet').value = activeBlock.querySelector('.ket-val').value;
+    swSel.onchange = function() {
+        const opt = swSel.selectedOptions[0];
+        document.getElementById('modalBacker').value = opt ? (opt.dataset.backer || '') : '';
+        loadPoModal();
+    };
+    await loadPoModal();
+    detailModal.show();
+}
+
+document.getElementById('btnSaveDetail').addEventListener('click', function() {
+    const sw = document.getElementById('modalSwatch').value;
+    if (!sw) { alert('Pilih Color Swatch.'); return; }
+    activeBlock.querySelector('.swatch-val').value = sw;
+    activeBlock.querySelector('.backer-val').value = document.getElementById('modalBacker').value;
+    activeBlock.querySelector('.ket-val').value = document.getElementById('modalKet').value;
+    const pos = [];
+    document.querySelectorAll('#modalPoBody .po-check:checked').forEach(cb => {
+        pos.push({ po_id: cb.value, qty: cb.closest('tr').querySelector('.qty-input').value });
+    });
+    activeBlock.querySelector('.pos-json').value = JSON.stringify(pos);
+    updateSoBadge(activeBlock);
+    detailModal.hide();
+});
+
+function clearBlock(block) {
+    block.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+    block.querySelector('.swatch-val').value = '';
+    block.querySelector('.backer-val').value = '';
+    block.querySelector('.ket-val').value = '';
+    block.querySelector('.pos-json').value = '[]';
+    updateSoBadge(block);
+}
+
+function addItemBlock() {
+    const tpl = document.querySelector('.item-block').cloneNode(true);
+    clearBlock(tpl);
+    document.getElementById('itemRows').appendChild(tpl);
+}
+
+function removeItemBlock(btn) {
+    const blocks = document.querySelectorAll('.item-block');
+    if (blocks.length <= 1) { alert('Minimal satu item.'); return; }
+    getBlock(btn).remove();
+}
+
+document.getElementById('itemRows').addEventListener('change', function(e) {
+    if (e.target.matches('.thickness-sel, .material-sel, .color-sel, .emboss-sel, .customer-sel')) {
+        const block = getBlock(e.target);
+        block.querySelector('.swatch-val').value = '';
+        block.querySelector('.backer-val').value = '';
+        block.querySelector('.pos-json').value = '[]';
+        updateSoBadge(block);
+    }
+});
+
+document.getElementById('itemRows').addEventListener('click', function(e) {
+    if (e.target.matches('.btn-detail')) openDetailModal(e.target);
+});
+
+document.getElementById('formTambahRencana').addEventListener('submit', function(e) {
+    const items = [];
+    let valid = true;
+    document.querySelectorAll('.item-block').forEach(block => {
+        const item = {
+            thickness: block.querySelector('.thickness-sel').value,
+            material_name: block.querySelector('.material-sel').value,
+            color: block.querySelector('.color-sel').value,
+            emboss: block.querySelector('.emboss-sel').value,
+            customer: block.querySelector('.customer-sel').value,
+            color_swatch: block.querySelector('.swatch-val').value,
+            backer: block.querySelector('.backer-val').value,
+            keterangan: block.querySelector('.ket-val').value,
+            pos: JSON.parse(block.querySelector('.pos-json').value || '[]')
+        };
+        if (item.thickness && item.material_name && item.color && item.emboss && item.customer) {
+            if (!item.color_swatch) valid = false;
+            items.push(item);
+        }
+    });
+    if (!items.length) {
+        e.preventDefault();
+        alert('Isi minimal satu item lengkap.');
+        return;
+    }
+    if (!valid) {
+        e.preventDefault();
+        alert('Buka [...] dan pilih Color Swatch + SO untuk setiap item.');
+        return;
+    }
+    document.getElementById('items_json').value = JSON.stringify(items);
+});
+
+document.querySelectorAll('.item-block').forEach(updateSoBadge);
+</script>
+{% endblock %}

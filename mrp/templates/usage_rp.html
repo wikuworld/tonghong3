@@ -1,0 +1,126 @@
+{% extends 'base.html' %}
+{% block title %}Usage RP (Laminating){% endblock %}
+{% block content %}
+<h3 class="mb-3">Usage RP (Laminating)</h3>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Input Usage RP</div>
+    <div class="card-body">
+        <form method="POST" class="row g-3" id="formUsageRp">
+            <div class="col-md-3">
+                <label class="form-label">Kode WIP</label>
+                <input type="text" name="kode_wip" class="form-control" list="wipList" required>
+                <datalist id="wipList">{% for w in wip_list %}<option value="{{ w }}">{% endfor %}</datalist>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Scan / Input Jenis RP</label>
+                <input type="text" name="jenis_rp" id="jenisRp" class="form-control"
+                       placeholder="Scan / ketik kode atau nama RP..." autocomplete="off" required>
+                <p class="small text-muted mb-0 mt-1">Contoh: <strong>RP-001</strong> atau nama RP</p>
+                <div id="rpResult" class="alert alert-success d-none py-2 mt-2 mb-0 small"></div>
+                <div id="rpError" class="alert alert-danger d-none py-2 mt-2 mb-0 small"></div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Qty Used</label>
+                <input type="number" step="0.01" name="qty_used" class="form-control" required>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Satuan</label>
+                <input type="text" name="satuan" id="satuanRp" class="form-control" value="meter">
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">Submit</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-bordered mb-0">
+            <thead class="table-light">
+                <tr><th>No</th><th>Kode WIP</th><th>Jenis RP</th><th>Qty Used</th><th>Satuan</th><th>Tanggal</th></tr>
+            </thead>
+            <tbody>
+                {% for u in usage_list %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ u.kode_wip }}</td>
+                    <td>{{ u.jenis_rp }}</td>
+                    <td>{{ u.qty_used }}</td>
+                    <td>{{ u.satuan }}</td>
+                    <td>{{ u.date_created.strftime('%Y-%m-%d') if u.date_created else '-' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-muted">Belum ada data</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const rpInput = document.getElementById('jenisRp');
+const satuanInput = document.getElementById('satuanRp');
+const rpResult = document.getElementById('rpResult');
+const rpError = document.getElementById('rpError');
+let rpValid = false;
+
+function clearRpState() {
+    rpValid = false;
+    rpResult.classList.add('d-none');
+    rpError.classList.add('d-none');
+}
+
+async function lookupRp(kode) {
+    const q = kode.trim();
+    if (!q) { clearRpState(); return false; }
+    try {
+        const res = await fetch('/api/usage-rp/rp-scan?q=' + encodeURIComponent(q));
+        const data = await res.json();
+        if (!res.ok) {
+            rpValid = false;
+            rpResult.classList.add('d-none');
+            rpError.textContent = data.error || 'Jenis RP tidak ditemukan';
+            rpError.classList.remove('d-none');
+            return false;
+        }
+        rpInput.value = data.kode_rp;
+        if (data.satuan) satuanInput.value = data.satuan;
+        rpValid = true;
+        rpError.classList.add('d-none');
+        rpResult.innerHTML =
+            '<strong>' + data.nama_jenis + '</strong><br>' +
+            '<span class="text-muted">Kode: ' + data.kode_rp + '</span>';
+        rpResult.classList.remove('d-none');
+        return true;
+    } catch (e) {
+        rpValid = false;
+        rpError.textContent = 'Gagal memvalidasi jenis RP';
+        rpError.classList.remove('d-none');
+        return false;
+    }
+}
+
+rpInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        lookupRp(rpInput.value);
+    }
+});
+rpInput.addEventListener('change', function() {
+    lookupRp(rpInput.value);
+});
+
+document.getElementById('formUsageRp').addEventListener('submit', async function(e) {
+    if (!rpValid) {
+        e.preventDefault();
+        const ok = await lookupRp(rpInput.value);
+        if (ok) this.submit();
+        else alert('Scan / input jenis RP yang valid terlebih dahulu.');
+    }
+});
+</script>
+{% endblock %}

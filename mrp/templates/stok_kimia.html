@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% block title %}Stok Kimia{% endblock %}
+{% block content %}
+<h3 class="mb-3">Stok Kimia</h3>
+
+<div class="mb-3 d-flex gap-2">
+    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalIn">IN (Gudang Kimia)</button>
+    <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalOut">OUT (ke Mixing / Produksi)</button>
+</div>
+
+<div class="row">
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white fw-bold">Stok Tersedia (FIFO)</div>
+            <div class="card-body p-0">
+                <table class="table table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr><th>Kode BC</th><th>Kode Barang</th><th>Nama</th><th>Qty Sisa</th><th>Jml Kemasan</th><th>Gudang</th><th>Expired</th><th>Tgl Masuk</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for s in stok_in %}
+                        <tr>
+                            <td>{{ s.kode_internal }}</td>
+                            <td>{{ s.kode_barang }}</td>
+                            <td>{{ s.nama_barang }}</td>
+                            <td>{{ s.qty_sisa }} {{ s.satuan }}</td>
+                            <td>{{ s.jumlah_kemasan or '-' }}</td>
+                            <td><span class="badge bg-secondary">{{ s.gudang }}</span></td>
+                            <td>{{ s.expired_date or '-' }}</td>
+                            <td>{{ s.tanggal_in }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="7" class="text-center text-muted">Stok kosong</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold">Riwayat OUT</div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light"><tr><th>Tgl</th><th>Barang</th><th>Qty</th><th>Kemasan</th><th>Tujuan</th><th>WIP</th></tr></thead>
+                    <tbody>
+                        {% for o in stok_out %}
+                        <tr>
+                            <td>{{ o.tanggal }}</td>
+                            <td>{{ o.nama_barang }}</td>
+                            <td>{{ o.qty }}</td>
+                            <td>{{ o.jumlah_kemasan or '-' }}</td>
+                            <td>{{ o.tujuan }}</td>
+                            <td>{{ o.kode_wip or '-' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="text-center text-muted">-</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalIn" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="in">
+            <div class="modal-header bg-success text-white"><h5>IN Stok Kimia</h5></div>
+            <div class="modal-body">
+                <label class="form-label">Barang Kimia</label>
+                <select name="kimia_id" class="form-select mb-2" required>
+                    {% for k in kimia_list %}<option value="{{ k.id }}">{{ k.kode_barang }} - {{ k.nama_barang }}</option>{% endfor %}
+                </select>
+                <label class="form-label">Qty</label>
+                <input type="number" step="0.01" name="qty" class="form-control mb-2" required>
+                <label class="form-label">Jumlah Kemasan</label>
+                <input type="number" name="jumlah_kemasan" class="form-control mb-2" min="1">
+                <label class="form-label">Tanggal</label>
+                <input type="date" name="tanggal" class="form-control" value="{{ today }}">
+                <p class="small text-muted mt-2">Kode internal BC akan digenerate otomatis.</p>
+            </div>
+            <div class="modal-footer"><button type="submit" class="btn btn-success">SUBMIT IN</button></div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalOut" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="out">
+            <div class="modal-header bg-danger text-white"><h5>OUT Stok Kimia</h5></div>
+            <div class="modal-body">
+                <label class="form-label">Pilih Stok (FIFO - tanggal awal masuk)</label>
+                <select name="stok_in_id" class="form-select mb-2" required>
+                    {% for s in stok_in %}
+                    <option value="{{ s.id }}">{{ s.kode_internal }} - {{ s.nama_barang }} (sisa: {{ s.qty_sisa }}) - {{ s.tanggal_in }}</option>
+                    {% endfor %}
+                </select>
+                <label class="form-label">Qty Keluar</label>
+                <input type="number" step="0.01" name="qty" class="form-control mb-2" required>
+                <label class="form-label">Jumlah Kemasan</label>
+                <input type="number" name="jumlah_kemasan" class="form-control mb-2" min="1">
+                <label class="form-label">Tujuan</label>
+                <select name="tujuan" class="form-select mb-2">
+                    <option value="mixing">Gudang Mixing</option>
+                    <option value="produksi">Produksi (WIP)</option>
+                    <option value="return">Return ke Gudang Kimia</option>
+                </select>
+                <label class="form-label">Kode WIP (jika produksi)</label>
+                <input type="text" name="kode_wip" class="form-control mb-2">
+                <label class="form-label">Tanggal</label>
+                <input type="date" name="tanggal" class="form-control" value="{{ today }}">
+            </div>
+            <div class="modal-footer"><button type="submit" class="btn btn-danger">SUBMIT OUT</button></div>
+        </form>
+    </div>
+</div>
+{% endblock %}

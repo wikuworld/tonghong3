@@ -1,0 +1,44 @@
+{% extends 'base.html' %}
+{% block title %}Daftar Kode WIP{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>Daftar Kode WIP</h3>
+    <a href="/rencana-produksi" class="btn btn-primary btn-sm">+ Buat Rencana Baru</a>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Kode WIP</th>
+                    <th>Kode Rencana</th>
+                    <th>Nama Produksi</th>
+                    <th>Jml Item</th>
+                    <th>Status</th>
+                    <th>Tanggal</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rencana_list %}
+                <tr>
+                    <td><strong class="text-primary">{{ r.kode_lot_wip }}</strong></td>
+                    <td>{{ r.kode_rencana }}</td>
+                    <td>{{ r.nama_rencana }}</td>
+                    <td>{{ r.jml_item }}</td>
+                    <td><span class="badge bg-secondary">{{ r.status }}</span></td>
+                    <td>{{ r.date_created.strftime('%Y-%m-%d %H:%M') if r.date_created else '-' }}</td>
+                    <td>
+                        <a href="/rencana-produksi/{{ r.id }}" class="btn btn-sm btn-outline-primary">Detail</a>
+                        <a href="/proses" class="btn btn-sm btn-outline-success">Persiapan Kulit</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted py-4">Belum ada kode WIP. <a href="/rencana-produksi">Buat rencana</a></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

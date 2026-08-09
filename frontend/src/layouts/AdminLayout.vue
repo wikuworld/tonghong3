@@ -94,11 +94,50 @@
         <div v-show="!isSidebarCollapsed" class="px-3 py-2 mt-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
           {{ t('common.nav.mrp') }}
         </div>
-        
-        <el-menu-item v-for="item in filteredMrpMenus" :key="item.path" :index="item.path">
-          <el-icon><component :is="item.icon" /></el-icon>
-          <span>{{ t(item.labelKey) }}</span>
-        </el-menu-item>
+
+        <el-sub-menu v-if="filteredMrpFlowMenus.length" index="mrp-flow">
+          <template #title>
+            <el-icon><Operation /></el-icon>
+            <span>{{ t('common.nav.flow') }}</span>
+          </template>
+          <el-menu-item v-for="item in filteredMrpFlowMenus" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ t(item.labelKey) }}</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <el-sub-menu v-if="filteredMrpMaterialMenus.length" index="mrp-material">
+          <template #title>
+            <el-icon><Goods /></el-icon>
+            <span>{{ t('common.nav.materialStock') }}</span>
+          </template>
+          <el-menu-item v-for="item in filteredMrpMaterialMenus" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ t(item.labelKey) }}</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <el-sub-menu v-if="filteredMrpMasterMenus.length" index="mrp-master">
+          <template #title>
+            <el-icon><Files /></el-icon>
+            <span>{{ t('common.nav.masterData') }}</span>
+          </template>
+          <el-menu-item v-for="item in filteredMrpMasterMenus" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ t(item.labelKey) }}</span>
+          </el-menu-item>
+        </el-sub-menu>
+
+        <el-sub-menu v-if="filteredMrpReportMenus.length" index="mrp-reports">
+          <template #title>
+            <el-icon><Document /></el-icon>
+            <span>{{ t('common.nav.reports') }}</span>
+          </template>
+          <el-menu-item v-for="item in filteredMrpReportMenus" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ t(item.labelKey) }}</span>
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
 
@@ -297,6 +336,9 @@ const erpFlowMenus = [
   },
   { path: '/admin/ppic-dashboard', labelKey: 'menu.ppicDashboard', icon: Operation },
   { path: '/admin/outstanding-materials', labelKey: 'menu.outstandingMaterials', icon: Document },
+  { path: '/admin/production', labelKey: 'menu.production', icon: Operation },
+  { path: '/admin/qc', labelKey: 'menu.qc', icon: CircleCheck },
+  { path: '/admin/packing', labelKey: 'menu.packing', icon: Box },
   { path: '/admin/delivery', labelKey: 'menu.delivery', icon: Van },
   { path: '/admin/invoice', labelKey: 'menu.invoice', icon: Tickets },
   { path: '/admin/reports', labelKey: 'menu.reports', icon: Document },
@@ -329,10 +371,34 @@ const erpSystemMenus = [
   { path: '/admin/user-access', labelKey: 'menu.userAccess', icon: User },
 ]
 
-const mrpMenus = [
-  { path: '/admin/production', labelKey: 'menu.production', icon: Operation },
-  { path: '/admin/qc', labelKey: 'menu.qc', icon: CircleCheck },
-  { path: '/admin/packing', labelKey: 'menu.packing', icon: Box },
+const mrpFlowMenus = [
+  { path: '/admin/mrp/rencana-produksi', labelKey: 'menu.mrpRencana', icon: Document },
+  { path: '/admin/mrp/proses', labelKey: 'menu.mrpProses', icon: Operation },
+  { path: '/admin/mrp/lab', labelKey: 'menu.mrpLab', icon: CollectionTag },
+  { path: '/admin/mrp/packing', labelKey: 'menu.mrpPacking', icon: Box },
+  { path: '/admin/mrp/gudang-fg', labelKey: 'menu.mrpGudangFg', icon: Goods },
+]
+
+const mrpMaterialMenus = [
+  { path: '/admin/mrp/palet', labelKey: 'menu.mrpPalet', icon: Box },
+  { path: '/admin/mrp/stok-kimia', labelKey: 'menu.mrpStokKimia', icon: Goods },
+  { path: '/admin/mrp/stok-rp', labelKey: 'menu.mrpStokRp', icon: Goods },
+  { path: '/admin/mrp/stok-material-lain', labelKey: 'menu.mrpStokMaterialLain', icon: Goods },
+  { path: '/admin/mrp/usage', labelKey: 'menu.mrpUsage', icon: Operation },
+]
+
+const mrpMasterMenus = [
+  { path: '/admin/mrp/masters/erp', labelKey: 'menu.mrpMasterErp', icon: Files },
+  { path: '/admin/mrp/masters/kulit', labelKey: 'menu.mrpMasterKulit', icon: Files },
+  { path: '/admin/mrp/masters/kimia', labelKey: 'menu.mrpMasterKimia', icon: Files },
+  { path: '/admin/mrp/masters/rp', labelKey: 'menu.mrpMasterRp', icon: Files },
+  { path: '/admin/mrp/masters/treatment', labelKey: 'menu.mrpMasterTreatment', icon: Files },
+  { path: '/admin/mrp/masters/material-lain', labelKey: 'menu.mrpMasterMaterialLain', icon: Files },
+]
+
+const mrpReportMenus = [
+  { path: '/admin/mrp/reports/packing', labelKey: 'menu.mrpReportPacking', icon: Document },
+  { path: '/admin/mrp/reports/persiapan', labelKey: 'menu.mrpReportPersiapan', icon: Document },
 ]
 
 const filteredErpFlowMenus = computed(() => {
@@ -357,10 +423,14 @@ const filteredErpSystemMenus = computed(() => {
   permissionMatrixVersion.value
   return erpSystemMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
 })
-const filteredMrpMenus = computed(() => {
+function filterMrpMenuList(menus) {
   permissionMatrixVersion.value
-  return mrpMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
-})
+  return menus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
+}
+const filteredMrpFlowMenus = computed(() => filterMrpMenuList(mrpFlowMenus))
+const filteredMrpMaterialMenus = computed(() => filterMrpMenuList(mrpMaterialMenus))
+const filteredMrpMasterMenus = computed(() => filterMrpMenuList(mrpMasterMenus))
+const filteredMrpReportMenus = computed(() => filterMrpMenuList(mrpReportMenus))
 
 const goTo = (path) => {
   if (path !== route.path) router.push(path)

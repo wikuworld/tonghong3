@@ -165,6 +165,11 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "update": ["warehouse"],
     },
     "userAccess": {"view": [], "create": [], "update": []},
+    "mrpShopfloor": {
+        "view": ["production", "ppic", "warehouse"],
+        "create": ["production", "ppic"],
+        "update": ["production", "ppic"],
+    },
 }
 
 

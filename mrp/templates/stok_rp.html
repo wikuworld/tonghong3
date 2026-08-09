@@ -1,0 +1,301 @@
+{% extends 'base.html' %}
+{% block title %}Stok RP{% endblock %}
+{% block content %}
+<h3 class="mb-3">Stok RP (Laminating)</h3>
+
+<div class="mb-3 d-flex gap-2">
+    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalIn">IN Roll RP</button>
+    <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalOut">OUT Roll RP</button>
+</div>
+
+<div class="row">
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white fw-bold">Stok RP Tersedia (FIFO)</div>
+            <div class="card-body p-0">
+                <table class="table table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr><th>Kode BC</th><th>Jenis RP</th><th>Meter/Roll Sisa</th><th>Tgl Masuk</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for s in stok_in %}
+                        <tr>
+                            <td>{{ s.kode_internal }}</td>
+                            <td>{{ s.nama_jenis }}</td>
+                            <td>{{ s.qty_sisa }} meter</td>
+                            <td>{{ s.tanggal_in }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-center text-muted">Stok kosong</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold">Riwayat OUT</div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light"><tr><th>Tgl</th><th>Jenis RP</th><th>Meter</th><th>WIP</th></tr></thead>
+                    <tbody>
+                        {% for o in stok_out %}
+                        <tr>
+                            <td>{{ o.tanggal }}</td>
+                            <td>{{ o.nama_jenis }}</td>
+                            <td>{{ o.meter_roll }}</td>
+                            <td>{{ o.kode_wip or '-' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-center text-muted">-</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalIn" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST" id="formInRp">
+            <input type="hidden" name="action" value="in">
+            <div class="modal-header bg-success text-white"><h5>IN Stok RP</h5></div>
+            <div class="modal-body">
+                <label class="form-label">Jenis RP (Master RP) <span class="text-danger">*</span></label>
+                <div class="rp-picker position-relative mb-2">
+                    <input type="hidden" name="rp_id" class="rp-id" required>
+                    <input type="text" class="form-control rp-search" placeholder="Cari kode / nama RP..." autocomplete="off">
+                    <div class="rp-menu dropdown-menu w-100 shadow-sm" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
+                <label class="form-label">Meter/Roll Masuk</label>
+                <input type="number" step="0.01" name="meter_roll" class="form-control mb-2" required>
+                <label class="form-label">Tanggal Input</label>
+                <input type="date" name="tanggal" class="form-control" value="{{ today }}">
+                {% if not rp_list %}
+                <p class="small text-danger mt-2 mb-0">Belum ada data Master RP. Tambahkan dulu di menu Master → Master RP.</p>
+                {% endif %}
+            </div>
+            <div class="modal-footer"><button type="submit" class="btn btn-success">SUBMIT IN</button></div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalOut" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST" id="formOutRp">
+            <input type="hidden" name="action" value="out">
+            <div class="modal-header bg-danger text-white"><h5>OUT Stok RP</h5></div>
+            <div class="modal-body">
+                <label class="form-label">Jenis RP (Master RP) <span class="text-danger">*</span></label>
+                <div class="rp-picker position-relative mb-3">
+                    <input type="hidden" class="rp-id-out">
+                    <input type="text" class="form-control rp-search-out" placeholder="Cari kode / nama RP..." autocomplete="off">
+                    <div class="rp-menu-out dropdown-menu w-100 shadow-sm" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
+                <label class="form-label">Pilih Material (FIFO)</label>
+                <div class="stok-picker position-relative mb-2">
+                    <input type="hidden" name="stok_in_id" class="stok-id" required>
+                    <input type="text" class="form-control stok-search bg-light" placeholder="Pilih jenis RP terlebih dahulu..." autocomplete="off" disabled>
+                    <div class="stok-menu dropdown-menu w-100 shadow-sm" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
+                <label class="form-label">Meter/Roll Keluar</label>
+                <input type="number" step="0.01" name="meter_roll" class="form-control mb-2" required>
+                <label class="form-label">Kode WIP (opsional)</label>
+                <input type="text" name="kode_wip" class="form-control mb-2">
+                <label class="form-label">Tanggal</label>
+                <input type="date" name="tanggal" class="form-control" value="{{ today }}">
+            </div>
+            <div class="modal-footer"><button type="submit" class="btn btn-danger">SUBMIT OUT</button></div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const rpMaster = {{ rp_list | tojson }};
+const stokInData = {{ stok_in | tojson }};
+
+function rpLabel(item) {
+    const parts = [item.kode_rp, item.nama_rp].filter(Boolean);
+    if (item.deskripsi) parts.push('(' + item.deskripsi + ')');
+    return parts.join(' - ');
+}
+
+function filterRp(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) return rpMaster.slice(0, 20);
+    return rpMaster.filter(function(item) {
+        return [item.kode_rp, item.nama_rp, item.deskripsi]
+            .filter(Boolean)
+            .some(function(val) { return String(val).toLowerCase().includes(q); });
+    }).slice(0, 20);
+}
+
+function renderRpMenu(menuEl, query, onSelect) {
+    menuEl.innerHTML = '';
+    const items = filterRp(query);
+    if (!items.length) {
+        menuEl.innerHTML = '<span class="dropdown-item-text text-muted small">Tidak ditemukan</span>';
+    } else {
+        items.forEach(function(item) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'dropdown-item small py-2';
+            btn.textContent = rpLabel(item);
+            btn.addEventListener('click', function() { onSelect(item); });
+            menuEl.appendChild(btn);
+        });
+    }
+    menuEl.classList.add('show');
+}
+
+function stokLabel(item) {
+    return item.kode_internal + ' - ' + item.nama_jenis + ' (sisa: ' + item.qty_sisa + 'm) - ' + item.tanggal_in;
+}
+
+function filterStok(rpId, query) {
+    const q = query.trim().toLowerCase();
+    let items = stokInData.filter(function(s) { return String(s.rp_id) === String(rpId); });
+    if (q) {
+        items = items.filter(function(item) {
+            return [item.kode_internal, item.nama_jenis, item.tanggal_in]
+                .filter(Boolean)
+                .some(function(val) { return String(val).toLowerCase().includes(q); });
+        });
+    }
+    return items;
+}
+
+function renderStokMenu(picker, rpId, query) {
+    const menu = picker.querySelector('.stok-menu');
+    const items = filterStok(rpId, query);
+    menu.innerHTML = '';
+    if (!items.length) {
+        menu.innerHTML = '<span class="dropdown-item-text text-muted small">Stok tidak tersedia untuk jenis RP ini</span>';
+    } else {
+        items.forEach(function(item) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'dropdown-item small py-2';
+            btn.textContent = stokLabel(item);
+            btn.addEventListener('click', function() {
+                picker.querySelector('.stok-id').value = item.id;
+                picker.querySelector('.stok-search').value = stokLabel(item);
+                menu.classList.remove('show');
+            });
+            menu.appendChild(btn);
+        });
+    }
+    menu.classList.add('show');
+}
+
+function clearStokPicker(picker) {
+    picker.querySelector('.stok-id').value = '';
+    picker.querySelector('.stok-search').value = '';
+    picker.querySelector('.stok-search').disabled = true;
+    picker.querySelector('.stok-search').placeholder = 'Pilih jenis RP terlebih dahulu...';
+    picker.querySelector('.stok-menu').classList.remove('show');
+}
+
+// IN modal - master RP picker
+document.querySelector('#modalIn .rp-search').addEventListener('focusin', function(e) {
+    const picker = e.target.closest('.rp-picker');
+    renderRpMenu(picker.querySelector('.rp-menu'), e.target.value, function(item) {
+        picker.querySelector('.rp-id').value = item.id;
+        picker.querySelector('.rp-search').value = rpLabel(item);
+        picker.querySelector('.rp-menu').classList.remove('show');
+    });
+});
+
+document.querySelector('#modalIn .rp-search').addEventListener('input', function(e) {
+    const picker = e.target.closest('.rp-picker');
+    picker.querySelector('.rp-id').value = '';
+    renderRpMenu(picker.querySelector('.rp-menu'), e.target.value, function(item) {
+        picker.querySelector('.rp-id').value = item.id;
+        picker.querySelector('.rp-search').value = rpLabel(item);
+        picker.querySelector('.rp-menu').classList.remove('show');
+    });
+});
+
+// OUT modal - master RP picker then FIFO stok picker
+const outStokPicker = document.querySelector('#modalOut .stok-picker');
+
+document.querySelector('#modalOut .rp-search-out').addEventListener('focusin', function(e) {
+    renderRpMenu(document.querySelector('.rp-menu-out'), e.target.value, function(item) {
+        document.querySelector('.rp-id-out').value = item.id;
+        document.querySelector('.rp-search-out').value = rpLabel(item);
+        document.querySelector('.rp-menu-out').classList.remove('show');
+        const stokSearch = outStokPicker.querySelector('.stok-search');
+        stokSearch.disabled = false;
+        stokSearch.placeholder = 'Cari kode BC / tanggal masuk...';
+        clearStokPicker(outStokPicker);
+        stokSearch.disabled = false;
+        renderStokMenu(outStokPicker, item.id, '');
+    });
+});
+
+document.querySelector('#modalOut .rp-search-out').addEventListener('input', function(e) {
+    document.querySelector('.rp-id-out').value = '';
+    clearStokPicker(outStokPicker);
+    renderRpMenu(document.querySelector('.rp-menu-out'), e.target.value, function(item) {
+        document.querySelector('.rp-id-out').value = item.id;
+        document.querySelector('.rp-search-out').value = rpLabel(item);
+        document.querySelector('.rp-menu-out').classList.remove('show');
+        const stokSearch = outStokPicker.querySelector('.stok-search');
+        stokSearch.disabled = false;
+        stokSearch.placeholder = 'Cari kode BC / tanggal masuk...';
+        renderStokMenu(outStokPicker, item.id, '');
+    });
+});
+
+outStokPicker.querySelector('.stok-search').addEventListener('focusin', function(e) {
+    const rpId = document.querySelector('.rp-id-out').value;
+    if (!rpId) return;
+    renderStokMenu(outStokPicker, rpId, e.target.value);
+});
+
+outStokPicker.querySelector('.stok-search').addEventListener('input', function(e) {
+    const rpId = document.querySelector('.rp-id-out').value;
+    if (!rpId) return;
+    outStokPicker.querySelector('.stok-id').value = '';
+    renderStokMenu(outStokPicker, rpId, e.target.value);
+});
+
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.rp-picker') && !e.target.closest('.rp-menu-out') && !e.target.closest('#modalOut .rp-search-out')?.closest('.modal-body')) {
+        document.querySelectorAll('.rp-menu, .rp-menu-out').forEach(function(m) { m.classList.remove('show'); });
+    }
+    if (!e.target.closest('.stok-picker')) {
+        document.querySelectorAll('.stok-menu').forEach(function(m) { m.classList.remove('show'); });
+    }
+});
+
+document.getElementById('formInRp').addEventListener('submit', function(e) {
+    if (!document.querySelector('#modalIn .rp-id').value) {
+        e.preventDefault();
+        alert('Pilih Jenis RP dari Master RP terlebih dahulu.');
+    }
+});
+
+document.getElementById('formOutRp').addEventListener('submit', function(e) {
+    if (!document.querySelector('.rp-id-out').value) {
+        e.preventDefault();
+        alert('Pilih Jenis RP dari Master RP terlebih dahulu.');
+        return;
+    }
+    if (!outStokPicker.querySelector('.stok-id').value) {
+        e.preventDefault();
+        alert('Pilih material stok (FIFO) terlebih dahulu.');
+    }
+});
+
+document.getElementById('modalOut').addEventListener('hidden.bs.modal', function() {
+    document.querySelector('.rp-id-out').value = '';
+    document.querySelector('.rp-search-out').value = '';
+    clearStokPicker(outStokPicker);
+});
+</script>
+{% endblock %}

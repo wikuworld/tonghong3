@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>Daftar Monitoring Lot</h3>
+
+<div class="mb-3">
+    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalIn">IN</button>
+    <button class="btn btn-danger">OUT</button>
+</div>
+
+<table class="table table-bordered bg-white">
+    <thead class="table-light">
+        <tr>
+            <th>Tanggal</th>
+            <th>Kode Lot</th>
+            <th>Kode Palet</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for lot in lots %}
+        <tr>
+            <td>{{ lot.tgl }}</td>
+            <td>{{ lot.kode_lot }}</td>
+            <td>{{ lot.kode_palet }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<div class="modal fade" id="modalIn" tabindex="-1">
+  <div class="modal-dialog">
+    <form class="modal-content" method="POST">
+      <div class="modal-header"><h5>INPUT DATA MASUK</h5></div>
+      <div class="modal-body">
+        <label>Kode Lot:</label>
+        <input type="text" name="kode_lot" class="form-control mb-2">
+        <label>Kode Palet:</label>
+        <input type="text" name="kode_palet" class="form-control">
+      </div>
+      <div class="modal-footer">
+        <button type="submit" class="btn btn-success">SUBMIT</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

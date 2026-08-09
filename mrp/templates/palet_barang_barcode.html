@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Barcode {{ barang.kode_yl }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+        .label { border: 2px solid #333; padding: 16px; display: inline-block; min-width: 260px; }
+        .detail { text-align: left; font-size: 13px; margin-top: 10px; }
+        @media print { .no-print { display: none; } }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+    <div class="label">
+        <div id="qrcode"></div>
+        <div class="detail">
+            <div><strong>{{ barang.kode_yl }}</strong></div>
+            <div>KY: {{ kode_palet }}</div>
+            <div>Thickness: {{ barang.thickness or '-' }}</div>
+            <div>Warna: {{ barang.warna or '-' }}</div>
+            <div>Qty: {{ barang.qty }}</div>
+        </div>
+    </div>
+    <p class="no-print mt-3"><button onclick="window.print()">Cetak Barcode</button></p>
+    <script>
+    new QRCode(document.getElementById('qrcode'), {
+        text: '{{ kode_palet }}|{{ barang.kode_yl }}',
+        width: 128, height: 128
+    });
+    </script>
+</body>
+</html>

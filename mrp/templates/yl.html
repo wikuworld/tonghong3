@@ -1,0 +1,104 @@
+{% extends 'base.html' %}
+{% block title %}IN/OUT YL (Gudang Palet){% endblock %}
+{% block content %}
+<h3 class="mb-3">Monitoring YL - Gudang Palet</h3>
+
+<div class="mb-3 d-flex gap-2">
+    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalIn">IN YL</button>
+    <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalOut">OUT YL</button>
+</div>
+
+<div class="row">
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white fw-bold">Riwayat Pergerakan</div>
+            <div class="card-body p-0">
+                <table class="table table-bordered table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>Tanggal</th><th>Kode YL</th><th>KY</th><th>Thickness</th><th>Warna</th><th>Qty</th><th>Arah</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for m in movements %}
+                        <tr>
+                            <td>{{ m.tanggal }}</td>
+                            <td>{{ m.kode_yl }}</td>
+                            <td>{{ m.kode_palet }}</td>
+                            <td>{{ m.thickness or '-' }}</td>
+                            <td>{{ m.warna or '-' }}</td>
+                            <td>{{ m.qty }}</td>
+                            <td><span class="badge {{ 'bg-success' if m.direction == 'IN' else 'bg-danger' }}">{{ m.direction }}</span></td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="7" class="text-center text-muted">Belum ada data</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold">Master YL</div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light"><tr><th>YL</th><th>KY</th><th>Warna</th><th>Qty</th></tr></thead>
+                    <tbody>
+                        {% for y in yl_master %}
+                        <tr><td>{{ y.kode_yl }}</td><td>{{ y.kode_palet }}</td><td>{{ y.warna or '-' }}</td><td>{{ y.qty }}</td></tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-center text-muted">-</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalIn" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="in">
+            <div class="modal-header bg-success text-white"><h5>IN YL</h5></div>
+            <div class="modal-body">
+                <label class="form-label">Kode Palet (KY)</label>
+                <select name="kode_palet" id="selPalet" class="form-select mb-2" onchange="loadYl()">
+                    <option value="">-- Pilih KY --</option>
+                    {% for p in palets %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+                </select>
+                <label class="form-label">Kode YL</label>
+                <input type="text" name="kode_yl" id="kodeYl" class="form-control mb-2" required>
+                <div class="row">
+                    <div class="col-4"><label class="form-label">Thickness</label><input type="text" name="thickness" id="thickness" class="form-control"></div>
+                    <div class="col-4"><label class="form-label">Warna</label><input type="text" name="warna" id="warna" class="form-control"></div>
+                    <div class="col-4"><label class="form-label">Qty</label><input type="number" step="0.01" name="qty" class="form-control"></div>
+                </div>
+                <label class="form-label mt-2">Tanggal</label>
+                <input type="date" name="tanggal" class="form-control" value="{{ today }}">
+            </div>
+            <div class="modal-footer"><button type="submit" class="btn btn-success">SUBMIT</button></div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalOut" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="out">
+            <div class="modal-header bg-danger text-white"><h5>OUT YL</h5></div>
+            <div class="modal-body">
+                <label class="form-label">Kode YL</label>
+                <input type="text" name="kode_yl" class="form-control mb-2" list="ylList" required>
+                <datalist id="ylList">{% for y in yl_master %}<option value="{{ y.kode_yl }}">{{ y.kode_palet }}</option>{% endfor %}</datalist>
+                <label class="form-label">Kode Palet (KY)</label>
+                <input type="text" name="kode_palet" class="form-control mb-2" required>
+                <label class="form-label">Qty Keluar</label>
+                <input type="number" step="0.01" name="qty" class="form-control mb-2">
+                <label class="form-label">Tanggal</label>
+                <input type="date" name="tanggal" class="form-control" value="{{ today }}">
+            </div>
+            <div class="modal-footer"><button type="submit" class="btn btn-danger">SUBMIT</button></div>
+        </form>
+    </div>
+</div>
+{% endblock %}

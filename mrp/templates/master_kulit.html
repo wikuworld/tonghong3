@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+{% block title %}Master Kulit{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>Master Kulit</h3>
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalAdd">Tambah +</button>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Kode Kulit</th>
+                    <th>Nama Kulit</th>
+                    <th>Thickness</th>
+                    <th>Warna</th>
+                    <th>Tanggal Dibuat</th>
+                    <th width="120">Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for k in kulit_list %}
+                <tr>
+                    <td><strong>{{ k.kode_kulit }}</strong></td>
+                    <td>{{ k.nama_kulit or '-' }}</td>
+                    <td>{{ k.thickness or '-' }}</td>
+                    <td>{{ k.warna or '-' }}</td>
+                    <td>{{ k.created_at.strftime('%Y-%m-%d %H:%M') if k.created_at else '-' }}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary btn-edit"
+                                data-id="{{ k.id }}"
+                                data-kode="{{ k.kode_kulit }}"
+                                data-nama="{{ k.nama_kulit or '' }}"
+                                data-thickness="{{ k.thickness or '' }}"
+                                data-warna="{{ k.warna or '' }}"
+                                data-bs-toggle="modal" data-bs-target="#modalEdit">Edit</button>
+                        <button class="btn btn-sm btn-outline-danger btn-delete"
+                                data-id="{{ k.id }}"
+                                data-kode="{{ k.kode_kulit }}"
+                                data-bs-toggle="modal" data-bs-target="#modalDelete">Hapus</button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-center text-muted">Belum ada data master kulit</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="modalAdd" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="create">
+            <div class="modal-header"><h5>Tambah Master Kulit</h5></div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label">Kode Kulit <span class="text-danger">*</span></label>
+                    <input type="text" name="kode_kulit" class="form-control" required>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Nama Kulit <span class="text-danger">*</span></label>
+                    <input type="text" name="nama_kulit" class="form-control" required placeholder="contoh: Kulit Sapi Premium">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Thickness</label>
+                    <input type="text" name="thickness" class="form-control" placeholder="contoh: 1.2mm">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Warna</label>
+                    <input type="text" name="warna" class="form-control" placeholder="contoh: Brown">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-primary">Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalEdit" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="update">
+            <input type="hidden" name="id" id="editId">
+            <div class="modal-header"><h5>Edit Master Kulit</h5></div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label">Kode Kulit <span class="text-danger">*</span></label>
+                    <input type="text" name="kode_kulit" id="editKode" class="form-control" required>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Nama Kulit <span class="text-danger">*</span></label>
+                    <input type="text" name="nama_kulit" id="editNama" class="form-control" required>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Thickness</label>
+                    <input type="text" name="thickness" id="editThickness" class="form-control">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Warna</label>
+                    <input type="text" name="warna" id="editWarna" class="form-control">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-primary">Update</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalDelete" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="id" id="deleteId">
+            <div class="modal-header bg-danger text-white"><h5>Hapus Master Kulit</h5></div>
+            <div class="modal-body">
+                <p>Yakin hapus master kulit <strong id="deleteKode"></strong>?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-danger">Hapus</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('.btn-edit').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        document.getElementById('editId').value = btn.dataset.id;
+        document.getElementById('editKode').value = btn.dataset.kode;
+        document.getElementById('editNama').value = btn.dataset.nama;
+        document.getElementById('editThickness').value = btn.dataset.thickness;
+        document.getElementById('editWarna').value = btn.dataset.warna;
+    });
+});
+document.querySelectorAll('.btn-delete').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        document.getElementById('deleteId').value = btn.dataset.id;
+        document.getElementById('deleteKode').textContent = btn.dataset.kode;
+    });
+});
+</script>
+{% endblock %}

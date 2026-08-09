@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="h4 fw-bold text-uppercase">Report Packing</h2>
+        <button class="btn btn-dark btn-sm d-print-none" onclick="window.print()">
+            <i class="bi bi-printer"></i> Cetak Laporan
+        </button>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4 d-print-none">
+        <div class="card-body">
+            <form method="GET" class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">Dari Tanggal</label>
+                    <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small fw-bold">Sampai Tanggal</label>
+                    <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">Filter Data</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light text-secondary">
+                        <tr>
+                            <th class="ps-4">TANGGAL</th>
+                            <th class="ps-4">PO</th>
+                            <th class="ps-4">KODE PROSES</th>
+                           
+                            <th>PACK</th>
+                            <th class="text-center">TOTAL LEMBAR</th>
+                            <th class="text-end">TOTAL UKURAN</th>
+                    
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data %}
+                        <tr>
+                            <td class="ps-4 fw-bold">{{ row.tanggal }}</td>
+                            <td class="ps-4 fw-bold">{{ row.no_po }}</td>
+                            <td class="ps-4 fw-bold">{{ row.kode_process }}</td>
+                        
+                            <td>{{ row.pack }}</td>
+                            <td class="text-center">{{ row.qty }}</td>
+                            <td class="text-end fw-semibold text-primary">
+                                {{ "{:,.2f}".format(row.size or 0) }}
+                            </td>
+                       
+                            
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="text-center py-5 text-muted">Tidak ada data untuk periode ini.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if data %}
+                    <tfoot class="table-light">
+                        <tr class="fw-bold">
+                            <td colspan="3" class="text-end">GRAND TOTAL:</td>
+                            <td>{{ total_all_pack }}</td>
+                            <td class="text-center">{{ total_all_lembar }}</td>
+                            <td class="text-end text-primary">{{ "{:,.2f}".format(total_all_ukuran) }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    @media print {
+        .d-print-none { display: none !important; }
+        .card { border: none !important; box-shadow: none !important; }
+        body { background: white !important; }
+    }
+    .table thead th { font-size: 0.75rem; letter-spacing: 0.05em; }
+</style>
+{% endblock %}

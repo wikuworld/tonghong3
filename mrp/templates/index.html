@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Manajemen Palet</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .container { max-width: 800px; margin-top: 50px; }
+    </style>
+</head>
+<body>
+
+<div class="container bg-white p-4 shadow-sm rounded">
+    <h3 class="mb-4">Sistem Manajemen Palet</h3>
+
+    <div class="d-flex gap-2 mb-4">
+        <button class="btn btn-primary px-4" data-bs-toggle="modal" data-bs-target="#modalIn">IN</button>
+        <button class="btn btn-danger px-4" data-bs-toggle="modal" data-bs-target="#modalOut">OUT</button>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-hover border">
+            <thead class="table-light">
+                <tr>
+                    <th>Tanggal/No</th>
+                    <th>Kode</th>
+                    <th>Status/Simbol</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.no }}</td>
+                    <td>{{ log.kode }}</td>
+                    <td>
+                        <span class="badge {{ 'bg-success' if log.status == 'IN' else 'bg-danger' }}">
+                            {{ log.status }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="modalIn" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="/add" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title">Input Palet (IN)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label">Kode Palet:</label>
+                    <input type="text" name="kode" class="form-control" required autofocus>
+                    <input type="hidden" name="status" value="IN">
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-secondary">Submit</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalOut" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="/add" method="POST">
+                <div class="modal-header text-danger">
+                    <h5 class="modal-title">Input Palet (OUT)</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <label class="form-label">Kode Palet:</label>
+                    <input type="text" name="kode" class="form-control" required autofocus>
+                    <input type="hidden" name="status" value="OUT">
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-secondary">Submit</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

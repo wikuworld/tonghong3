@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+{% block title %}List PO - {{ item.kode_rencana_item }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h3 class="mb-1">List PO Outstanding</h3>
+        <p class="text-muted mb-0">
+            {{ item.nama_rencana }} · {{ item.nama_customer }} · {{ item.kode_rencana_item }}
+        </p>
+    </div>
+    <a href="/rencana-produksi/{{ item.rencana_id }}" class="btn btn-secondary btn-sm">Kembali</a>
+</div>
+
+{% if selected_po %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-bold">PO Terpilih</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="table-light">
+                <tr><th>No PO</th><th>Item</th><th>Qty Outstanding</th><th>Qty Proses</th></tr>
+            </thead>
+            <tbody>
+                {% for s in selected_po %}
+                <tr>
+                    <td>{{ s.no_po }}</td>
+                    <td>{{ s.item_name }}</td>
+                    <td>{{ s.qty_outstanding }}</td>
+                    <td>{{ s.qty_proses }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<form method="POST">
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white fw-bold">Outstanding PO — Kombinasi: {{ item.thickness }} / {{ item.color }} / {{ item.emboss }}</div>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width:40px"></th>
+                        <th>No PO</th>
+                        <th>SO</th>
+                        <th>Item</th>
+                        <th>Qty Outstanding</th>
+                        <th style="width:140px">Qty Proses</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in po_list %}
+                    <tr>
+                        <td>
+                            <input type="checkbox" name="po_id[]" value="{{ p.id }}" class="po-check"
+                                   data-qty="{{ p.qty_outstanding }}"
+                                   onchange="togglePoQty(this)">
+                        </td>
+                        <td>{{ p.no_po }}</td>
+                        <td>{{ p.no_so or '-' }}</td>
+                        <td>{{ p.item_name }}</td>
+                        <td>{{ p.qty_outstanding }}</td>
+                        <td>
+                            <input type="number" step="0.01" name="qty[]" class="form-control form-control-sm qty-input"
+                                   data-po-id="{{ p.id }}" disabled min="0.01">
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="text-center text-muted py-4">Tidak ada PO outstanding untuk customer ini</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer text-end">
+            <button type="submit" class="btn btn-primary">Simpan PO Terpilih</button>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function togglePoQty(checkbox) {
+    const row = checkbox.closest('tr');
+    const qtyInput = row.querySelector('.qty-input');
+    if (checkbox.checked) {
+        qtyInput.disabled = false;
+        qtyInput.value = checkbox.dataset.qty;
+        qtyInput.required = true;
+    } else {
+        qtyInput.disabled = true;
+        qtyInput.value = '';
+        qtyInput.required = false;
+    }
+}
+
+document.querySelector('form').addEventListener('submit', function(e) {
+    document.querySelectorAll('.po-check:not(:checked)').forEach(function(cb) {
+        cb.closest('tr').querySelector('.qty-input').disabled = true;
+    });
+    const checked = document.querySelectorAll('.po-check:checked').length;
+    if (!checked) {
+        e.preventDefault();
+        alert('Pilih minimal satu PO outstanding.');
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container" style="max-width: 800px;">
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">Checkpoint</h5>
+        </div>
+        <div class="card-body">
+            <form class="row g-3 align-items-center">
+                <div class="col-auto">
+                    <label class="col-form-label">Kode Proses:</label>
+                </div>
+<div class="col-auto">
+                    <select class="form-select" id="new_kat">
+                        <option value="lab">Treatment A</option>
+                        <option value="laminating">Treatment B</option>
+                       <option value="laminating">Treatment C</option>
+<option value="laminating">Treatment D</option>
+<option value="laminating">QC</option>
+                    </select>
+
+                </div>
+                <div class="col-auto">
+                    <input type="text" id="kode_proses_input" class="form-control" placeholder="Masukkan Kode...">
+                </div>
+                <div class="col-auto">
+                    <button type="button" class="btn btn-primary" onclick="showTable()">Submit</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+ </div>
+{% endblock %}

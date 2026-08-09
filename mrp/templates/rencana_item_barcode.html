@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Barcode {{ item.kode_rencana_item }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; text-align: center; }
+        .label { border: 2px solid #333; padding: 16px; display: inline-block; min-width: 280px; }
+        .detail { text-align: left; font-size: 13px; margin-top: 10px; }
+        @media print { .no-print { display: none; } }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+    <div class="label">
+        <div id="qrcode"></div>
+        <div class="detail">
+            <div><strong>{{ item.kode_rencana_item }}</strong></div>
+            <div>Barcode: {{ item.kode_barcode or item.kode_rencana_item }}</div>
+            <div>Thickness: {{ item.thickness }}</div>
+            <div>Color: {{ item.color }}</div>
+            <div>Emboss: {{ item.emboss }}</div>
+            <div>Swatch: {{ item.color_swatch or '-' }}</div>
+            <div>Backer: {{ item.backer or '-' }}</div>
+            <div>WIP: {{ item.kode_lot_wip }}</div>
+        </div>
+    </div>
+    <p class="no-print mt-3"><button onclick="window.print()">Cetak Barcode</button></p>
+    <script>
+    new QRCode(document.getElementById('qrcode'), {
+        text: '{{ item.kode_barcode or item.kode_rencana_item }}',
+        width: 128, height: 128
+    });
+    </script>
+</body>
+</html>

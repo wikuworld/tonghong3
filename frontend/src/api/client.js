@@ -1348,3 +1348,329 @@ export function getTrialBalance(params = {}) {
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/journal/entries/trial-balance${suffix}`)
 }
+
+/* ---- MRP shopfloor (Flask via FastAPI gateway /api/v1/mrp) ---- */
+export function mrpListRencana() {
+  return apiFetch('/mrp/rencana-produksi')
+}
+
+export function mrpGetRencana(id) {
+  return apiFetch(`/mrp/rencana-produksi/${id}`)
+}
+
+export function mrpCreateRencana(body) {
+  return apiFetch('/mrp/rencana-produksi', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpSyncPo() {
+  return apiFetch('/mrp/sync/po', { method: 'POST', body: JSON.stringify({}) })
+}
+
+export function mrpListMasterPo(params = {}) {
+  const q = new URLSearchParams()
+  if (params.status) q.set('status', params.status)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/mrp/masters/po${suffix}`)
+}
+
+export function mrpPaletOut(body) {
+  return apiFetch('/mrp/palet/out', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpErpOptions() {
+  return apiFetch('/mrp/masters/erp/options')
+}
+
+export function mrpListMasterErp() {
+  return apiFetch('/mrp/masters/erp')
+}
+
+export function mrpListMasterKulit() {
+  return apiFetch('/mrp/masters/kulit')
+}
+
+export function mrpCreateMasterKulit(body) {
+  return apiFetch('/mrp/masters/kulit', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpListMasterKimia() {
+  return apiFetch('/mrp/masters/kimia')
+}
+
+export function mrpCreateMasterKimia(body) {
+  return apiFetch('/mrp/masters/kimia', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpListMasterRp() {
+  return apiFetch('/mrp/masters/rp')
+}
+
+export function mrpCreateMasterRp(body) {
+  return apiFetch('/mrp/masters/rp', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpListPaletMovements() {
+  return apiFetch('/mrp/palet/movements')
+}
+
+export function mrpPaletIn(body) {
+  return apiFetch('/mrp/palet/in', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpPaletYl(kodePalet) {
+  return apiFetch(`/mrp/palet/${encodeURIComponent(kodePalet)}/yl`)
+}
+
+export function mrpListYl() {
+  return apiFetch('/mrp/yl')
+}
+
+export function mrpListProses() {
+  return apiFetch('/mrp/proses')
+}
+
+export function mrpCreateProses(body) {
+  return apiFetch('/mrp/proses', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpGetProses(id) {
+  return apiFetch(`/mrp/proses/${id}`)
+}
+
+export function mrpProsesAction(id, body) {
+  return apiFetch(`/mrp/proses/${id}/actions`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpProsesScanRencana(q) {
+  const suffix = q ? `?q=${encodeURIComponent(q)}` : ''
+  return apiFetch(`/mrp/proses/scan-rencana${suffix}`)
+}
+
+export function mrpProsesLabel(id) {
+  return apiFetch(`/mrp/proses/${id}/label`)
+}
+
+export function mrpListTreatment() {
+  return apiFetch('/mrp/masters/treatment')
+}
+
+export function mrpCreateTreatment(body) {
+  return apiFetch('/mrp/masters/treatment', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpUpdateTreatment(id, body) {
+  return apiFetch(`/mrp/masters/treatment/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function mrpDeleteTreatment(id) {
+  return apiFetch(`/mrp/masters/treatment/${id}`, { method: 'DELETE' })
+}
+
+export function mrpListLab() {
+  return apiFetch('/mrp/lab')
+}
+
+export function mrpLabOptions() {
+  return apiFetch('/mrp/lab/options')
+}
+
+export function mrpCreateLab(body) {
+  return apiFetch('/mrp/lab', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpListPacking(params = {}) {
+  const q = new URLSearchParams()
+  if (params.all) q.set('all', '1')
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/mrp/packing${suffix}`)
+}
+
+export function mrpPackingScanWip(q) {
+  return apiFetch(`/mrp/packing/scan-wip?q=${encodeURIComponent(q || '')}`)
+}
+
+export function mrpStartPacking(body) {
+  return apiFetch('/mrp/packing', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpGetPacking(id) {
+  return apiFetch(`/mrp/packing/${id}`)
+}
+
+export function mrpPackingAction(id, body) {
+  return apiFetch(`/mrp/packing/${id}/actions`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpPackingPrint(id) {
+  return apiFetch(`/mrp/packing/${id}/print`)
+}
+
+export function mrpListGudangFg() {
+  return apiFetch('/mrp/gudang-fg')
+}
+
+export function mrpGetGudangFg(id) {
+  return apiFetch(`/mrp/gudang-fg/${id}`)
+}
+
+export function mrpGudangFgOut(body) {
+  return apiFetch('/mrp/gudang-fg/out', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpStokKimia() {
+  return apiFetch('/mrp/stok-kimia')
+}
+
+export function mrpStokKimiaAction(body) {
+  return apiFetch('/mrp/stok-kimia', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpStokRp() {
+  return apiFetch('/mrp/stok-rp')
+}
+
+export function mrpStokRpAction(body) {
+  return apiFetch('/mrp/stok-rp', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpUsageColor() {
+  return apiFetch('/mrp/usage-color')
+}
+
+export function mrpUsageColorScanLot(q) {
+  return apiFetch(`/mrp/usage-color/scan-lot?q=${encodeURIComponent(q || '')}`)
+}
+
+export function mrpUsageColorCreate(body) {
+  return apiFetch('/mrp/usage-color', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpUsageRp() {
+  return apiFetch('/mrp/usage-rp')
+}
+
+export function mrpUsageRpScan(q) {
+  return apiFetch(`/mrp/usage-rp/scan-rp?q=${encodeURIComponent(q || '')}`)
+}
+
+export function mrpUsageRpCreate(body) {
+  return apiFetch('/mrp/usage-rp', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpListMasterMaterialLain() {
+  return apiFetch('/mrp/masters/material-lain')
+}
+
+export function mrpCreateMasterMaterialLain(body) {
+  return apiFetch('/mrp/masters/material-lain', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpDeleteMasterMaterialLain(id) {
+  return apiFetch(`/mrp/masters/material-lain/${id}`, { method: 'DELETE' })
+}
+
+export function mrpStokMaterialLain() {
+  return apiFetch('/mrp/stok-material-lain')
+}
+
+export function mrpStokMaterialLainAction(body) {
+  return apiFetch('/mrp/stok-material-lain', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpUsageMaterial() {
+  return apiFetch('/mrp/usage-material-lain')
+}
+
+export function mrpUsageMaterialScan(q) {
+  return apiFetch(`/mrp/usage-material-lain/scan?q=${encodeURIComponent(q || '')}`)
+}
+
+export function mrpUsageMaterialCreate(body) {
+  return apiFetch('/mrp/usage-material-lain', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpUpdateMasterKulit(id, body) {
+  return apiFetch(`/mrp/masters/kulit/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function mrpDeleteMasterKulit(id) {
+  return apiFetch(`/mrp/masters/kulit/${id}`, { method: 'DELETE' })
+}
+
+export function mrpUpdateMasterKimia(id, body) {
+  return apiFetch(`/mrp/masters/kimia/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function mrpDeleteMasterKimia(id) {
+  return apiFetch(`/mrp/masters/kimia/${id}`, { method: 'DELETE' })
+}
+
+export function mrpUpdateMasterRp(id, body) {
+  return apiFetch(`/mrp/masters/rp/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function mrpDeleteMasterRp(id) {
+  return apiFetch(`/mrp/masters/rp/${id}`, { method: 'DELETE' })
+}
+
+export function mrpYlMovement(body) {
+  return apiFetch('/mrp/yl/movement', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpErpFields(params = {}) {
+  const q = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v) q.set(k, v)
+  })
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/mrp/erp/fields${suffix}`)
+}
+
+export function mrpErpCombination(params = {}) {
+  const q = new URLSearchParams(params)
+  return apiFetch(`/mrp/erp/combination?${q}`)
+}
+
+export function mrpRencanaPoByCombination(params = {}) {
+  const q = new URLSearchParams(params)
+  return apiFetch(`/mrp/rencana/po/by-combination?${q}`)
+}
+
+export function mrpRencanaPrint(id) {
+  return apiFetch(`/mrp/rencana-produksi/${id}/print`)
+}
+
+export function mrpGetRencanaItem(itemId) {
+  return apiFetch(`/mrp/rencana-produksi/item/${itemId}`)
+}
+
+export function mrpRencanaItemBarcode(itemId) {
+  return apiFetch(`/mrp/rencana-produksi/item/${itemId}/barcode`)
+}
+
+export function mrpRencanaItemListPo(itemId) {
+  return apiFetch(`/mrp/rencana-produksi/item/${itemId}/list-po`)
+}
+
+export function mrpRencanaItemSavePo(itemId, body) {
+  return apiFetch(`/mrp/rencana-produksi/item/${itemId}/list-po`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function mrpReportPacking(params = {}) {
+  const q = new URLSearchParams()
+  if (params.start_date) q.set('start_date', params.start_date)
+  if (params.end_date) q.set('end_date', params.end_date)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/mrp/reports/packing${suffix}`)
+}
+
+export function mrpReportPersiapan(params = {}) {
+  const q = new URLSearchParams()
+  if (params.start_date) q.set('start_date', params.start_date)
+  if (params.end_date) q.set('end_date', params.end_date)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/mrp/reports/persiapan${suffix}`)
+}

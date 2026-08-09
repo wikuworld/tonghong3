@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}Finish Good - {{ packing.kode_packing }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+    <h3>Finish Good: <span class="text-primary">{{ packing.kode_packing }}</span></h3>
+    <div>
+        <a href="/packing/{{ packing.id }}/print" target="_blank" class="btn btn-outline-dark btn-sm">Print Packing List</a>
+        <a href="/packing" class="btn btn-secondary btn-sm">Kembali</a>
+    </div>
+</div>
+
+<div class="row mb-3 small">
+    <div class="col-md-3"><strong>WIP:</strong> {{ packing.kode_wip }}</div>
+    <div class="col-md-3"><strong>PO Utama:</strong> {{ packing.no_po }}</div>
+    <div class="col-md-3"><strong>Customer:</strong> {{ packing.customer or '-' }}</div>
+    <div class="col-md-3"><strong>Status:</strong> {{ packing.status }}</div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white">PO dalam Packing (add / delete)</div>
+    <div class="card-body">
+        <table class="table table-sm table-bordered mb-3">
+            <thead class="table-light"><tr><th>PO</th><th>SO</th><th>Qty Sq</th><th></th></tr></thead>
+            <tbody>
+                {% for po in packing_pos %}
+                <tr>
+                    <td>{{ po.no_po }}</td>
+                    <td>{{ po.no_so or '-' }}</td>
+                    <td>{{ po.qty_sq }}</td>
+                    <td>
+                        {% if packing.status != 'finished' %}
+                        <form method="POST" class="d-inline">
+                            <input type="hidden" name="action" value="delete_po">
+                            <input type="hidden" name="po_row_id" value="{{ po.id }}">
+                            <button class="btn btn-sm btn-outline-danger">Hapus</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-muted text-center">Belum ada PO tambahan</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if packing.status != 'finished' and available_pos %}
+        <form method="POST" class="row g-2">
+            <input type="hidden" name="action" value="add_po">
+            <div class="col-md-4">
+                <select name="no_po" class="form-select form-select-sm" required onchange="fillPoAdd(this)">
+                    <option value="">-- Pilih PO --</option>
+                    {% for ap in available_pos %}
+                    <option value="{{ ap.no_po }}" data-so="{{ ap.no_so or '' }}" data-qty="{{ ap.qty_sq }}">{{ ap.no_po }} - {{ ap.item_name }}</option>
+                    {% endfor %}
+                </select>
+                <input type="hidden" name="no_so" id="addNoSo">
+            </div>
+            <div class="col-md-2"><input type="number" step="0.01" name="qty_sq" id="addQtySq" class="form-control form-control-sm" placeholder="Qty sq"></div>
+            <div class="col-md-2"><button type="submit" class="btn btn-sm btn-outline-primary w-100">Tambah PO</button></div>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white">Tambah Roll (160-180 sq per roll)</div>
+    <div class="card-body">
+        {% if packing.status != 'finished' %}
+        <form method="POST" class="row g-3">
+            <input type="hidden" name="action" value="add_roll">
+            <div class="col-md-3"><label class="form-label">Lembar</label><input type="number" name="lembar" class="form-control" value="1"></div>
+            <div class="col-md-3"><label class="form-label">Ukuran (sq)</label><input type="number" step="0.01" name="ukuran" class="form-control" required></div>
+            <div class="col-md-2 d-flex align-items-end"><button type="submit" class="btn btn-primary w-100">Tambah Roll</button></div>
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<table class="table table-bordered bg-white">
+    <thead class="table-light">
+        <tr><th>Roll No</th><th>Lembar</th><th>Ukuran</th>{% if packing.status != 'finished' %}<th></th>{% endif %}</tr>
+    </thead>
+    <tbody>
+        {% for r in rolls %}
+        <tr>
+            <td>{{ r.roll_no }}</td>
+            <td>{{ r.lembar }}</td>
+            <td>{{ r.ukuran }}</td>
+            {% if packing.status != 'finished' %}
+            <td>
+                <form method="POST" class="d-inline">
+                    <input type="hidden" name="action" value="delete_roll">
+                    <input type="hidden" name="roll_id" value="{{ r.id }}">
+                    <button class="btn btn-sm btn-outline-danger">Hapus</button>
+                </form>
+            </td>
+            {% endif %}
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-center text-muted">Belum ada roll</td></tr>
+        {% endfor %}
+    </tbody>
+    <tfoot class="table-light">
+        <tr><th>Total</th><th>{{ packing.total_lembar }}</th><th>{{ packing.total_ukuran }}</th>{% if packing.status != 'finished' %}<th></th>{% endif %}</tr>
+    </tfoot>
+</table>
+
+{% if packing.status != 'finished' %}
+<form method="POST" class="mt-3">
+    <input type="hidden" name="action" value="finish">
+    <button type="submit" class="btn btn-success" onclick="return confirm('Finish? Data masuk Gudang FG.')">Finish & Masuk Gudang FG</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function fillPoAdd(sel) {
+    const opt = sel.options[sel.selectedIndex];
+    document.getElementById('addNoSo').value = opt.dataset.so || '';
+    document.getElementById('addQtySq').value = opt.dataset.qty || '';
+}
+</script>
+{% endblock %}

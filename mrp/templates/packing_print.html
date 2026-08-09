@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Packing List - {{ packing.kode_packing }}</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 30px; }
+        h2 { text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #333; padding: 8px; text-align: left; }
+        th { background: #f0f0f0; }
+        @media print { .no-print { display: none; } }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+    <h2>PACKING LIST</h2>
+    <div style="text-align:center;margin-bottom:16px;"><div id="qrcode" style="display:inline-block;"></div></div>
+    <table style="border:none">
+        <tr style="border:none"><td style="border:none"><strong>Kode Packing:</strong> {{ packing.kode_packing }}</td></tr>
+        <tr style="border:none"><td style="border:none"><strong>Customer:</strong> {{ packing.customer or '-' }}</td></tr>
+        <tr style="border:none"><td style="border:none"><strong>PO Order:</strong> {{ packing.no_po }}</td></tr>
+        <tr style="border:none"><td style="border:none"><strong>Kode WIP:</strong> {{ packing.kode_wip }}</td></tr>
+        <tr style="border:none"><td style="border:none"><strong>Tanggal:</strong> {{ packing.date_created }}</td></tr>
+    </table>
+
+    <h4>Rincian Per Roll</h4>
+    <table>
+        <thead><tr><th>Roll No</th><th>Lembar</th><th>Ukuran (sq)</th></tr></thead>
+        <tbody>
+            {% for r in rolls %}
+            <tr><td>{{ r.roll_no }}</td><td>{{ r.lembar }}</td><td>{{ r.ukuran }}</td></tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr><th>Total</th><th>{{ packing.total_lembar }}</th><th>{{ packing.total_ukuran }}</th></tr>
+        </tfoot>
+    </table>
+    <p class="no-print text-center mt-4"><button onclick="window.print()">Cetak Packing List</button></p>
+    <script>
+    new QRCode(document.getElementById('qrcode'), {
+        text: '{{ packing.kode_packing }}',
+        width: 120, height: 120
+    });
+    </script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% block title %}Usage Color{% endblock %}
+{% block content %}
+<h3 class="mb-3">Usage Color</h3>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">Input Usage</div>
+    <div class="card-body">
+        <form method="POST" class="row g-3" id="formUsageColor">
+            <div class="col-md-3">
+                <label class="form-label">Kode WIP</label>
+                <input type="text" name="kode_wip" class="form-control" list="wipList" required>
+                <datalist id="wipList">{% for w in wip_list %}<option value="{{ w }}">{% endfor %}</datalist>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Scan / Input Kode Lot Warna</label>
+                <input type="text" name="kode_lot_warna" id="kodeLotWarna" class="form-control"
+                       placeholder="Scan / ketik kode lot warna..." autocomplete="off" required>
+                <p class="small text-muted mb-0 mt-1">Contoh: <strong>LW-...</strong></p>
+                <div id="lotResult" class="alert alert-success d-none py-2 mt-2 mb-0 small"></div>
+                <div id="lotError" class="alert alert-danger d-none py-2 mt-2 mb-0 small"></div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Qty Digunakan</label>
+                <input type="number" step="0.01" name="qty_digunakan" class="form-control" required>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">Submit</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white fw-bold">Tabel Data Usage Color</div>
+    <div class="card-body p-0">
+        <table class="table table-bordered mb-0">
+            <thead class="table-light">
+                <tr><th>No</th><th>Kode Lot Warna</th><th>Nama Warna</th><th>Qty Pembuatan</th><th>Qty Digunakan</th><th>Kode WIP</th><th>Tanggal</th></tr>
+            </thead>
+            <tbody>
+                {% for u in usage_list %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ u.kode_lot_warna }}</td>
+                    <td>{{ u.nama_warna }}</td>
+                    <td>{{ u.qty_pembuatan }}</td>
+                    <td>{{ u.qty_digunakan }}</td>
+                    <td>{{ u.kode_wip }}</td>
+                    <td>{{ u.date_created.strftime('%Y-%m-%d') if u.date_created else '-' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted">Belum ada data</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const lotInput = document.getElementById('kodeLotWarna');
+const lotResult = document.getElementById('lotResult');
+const lotError = document.getElementById('lotError');
+let lotValid = false;
+
+function clearLotState() {
+    lotValid = false;
+    lotResult.classList.add('d-none');
+    lotError.classList.add('d-none');
+}
+
+async function lookupLot(kode) {
+    const q = kode.trim();
+    if (!q) { clearLotState(); return false; }
+    try {
+        const res = await fetch('/api/usage-color/lot-scan?q=' + encodeURIComponent(q));
+        const data = await res.json();
+        if (!res.ok) {
+            lotValid = false;
+            lotResult.classList.add('d-none');
+            lotError.textContent = data.error || 'Kode lot warna tidak ditemukan';
+            lotError.classList.remove('d-none');
+            return false;
+        }
+        lotInput.value = data.kode_lot_warna;
+        lotValid = true;
+        lotError.classList.add('d-none');
+        lotResult.innerHTML =
+            '<strong>' + data.nama_lot_warna + '</strong><br>' +
+            '<span class="text-muted">Qty pembuatan: ' + data.qty_pembuatan + ' kg</span>';
+        lotResult.classList.remove('d-none');
+        return true;
+    } catch (e) {
+        lotValid = false;
+        lotError.textContent = 'Gagal memvalidasi kode lot warna';
+        lotError.classList.remove('d-none');
+        return false;
+    }
+}
+
+lotInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        lookupLot(lotInput.value);
+    }
+});
+lotInput.addEventListener('change', function() {
+    lookupLot(lotInput.value);
+});
+
+document.getElementById('formUsageColor').addEventListener('submit', async function(e) {
+    if (!lotValid) {
+        e.preventDefault();
+        const ok = await lookupLot(lotInput.value);
+        if (ok) this.submit();
+        else alert('Scan / input kode lot warna yang valid terlebih dahulu.');
+    }
+});
+</script>
+{% endblock %}

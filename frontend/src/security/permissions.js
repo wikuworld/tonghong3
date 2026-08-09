@@ -162,6 +162,11 @@ export const ACTION_MATRIX = {
     create: ['admin'],
     update: ['admin'],
   },
+  mrpShopfloor: {
+    view: ['admin', 'production', 'ppic', 'warehouse'],
+    create: ['admin', 'production', 'ppic'],
+    update: ['admin', 'production', 'ppic'],
+  },
 }
 
 let runtimeMatrix = null

@@ -1,0 +1,133 @@
+{% extends 'base.html' %}
+{% block title %}Master Treatment{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>Master Treatment</h3>
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalAdd">Tambah +</button>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Nama Treatment</th>
+                    <th>Jenis</th>
+                    <th>Tanggal Dibuat</th>
+                    <th width="120">Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in treatment_list %}
+                <tr>
+                    <td><strong>{{ t.nama_treatment }}</strong></td>
+                    <td><span class="badge bg-secondary">{{ t.jenis }}</span></td>
+                    <td>{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '-' }}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary btn-edit"
+                                data-id="{{ t.id }}"
+                                data-nama="{{ t.nama_treatment }}"
+                                data-jenis="{{ t.jenis }}"
+                                data-bs-toggle="modal" data-bs-target="#modalEdit">Edit</button>
+                        <button class="btn btn-sm btn-outline-danger btn-delete"
+                                data-id="{{ t.id }}"
+                                data-nama="{{ t.nama_treatment }}"
+                                data-bs-toggle="modal" data-bs-target="#modalDelete">Hapus</button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-center text-muted">Belum ada data master treatment</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="modalAdd" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="create">
+            <div class="modal-header"><h5>Tambah Master Treatment</h5></div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label">Nama Treatment <span class="text-danger">*</span></label>
+                    <input type="text" name="nama_treatment" class="form-control" required placeholder="contoh: Treatment A">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Jenis</label>
+                    <select name="jenis" class="form-select">
+                        <option value="PU">PU</option>
+                        <option value="Suede">Suede</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-primary">Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalEdit" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="update">
+            <input type="hidden" name="id" id="editId">
+            <div class="modal-header"><h5>Edit Master Treatment</h5></div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label">Nama Treatment <span class="text-danger">*</span></label>
+                    <input type="text" name="nama_treatment" id="editNama" class="form-control" required>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Jenis</label>
+                    <select name="jenis" id="editJenis" class="form-select">
+                        <option value="PU">PU</option>
+                        <option value="Suede">Suede</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-primary">Update</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalDelete" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="id" id="deleteId">
+            <div class="modal-header bg-danger text-white"><h5>Hapus Master Treatment</h5></div>
+            <div class="modal-body">
+                <p>Yakin hapus treatment <strong id="deleteNama"></strong>?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-danger">Hapus</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('.btn-edit').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        document.getElementById('editId').value = btn.dataset.id;
+        document.getElementById('editNama').value = btn.dataset.nama;
+        document.getElementById('editJenis').value = btn.dataset.jenis;
+    });
+});
+document.querySelectorAll('.btn-delete').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        document.getElementById('deleteId').value = btn.dataset.id;
+        document.getElementById('deleteNama').textContent = btn.dataset.nama;
+    });
+});
+</script>
+{% endblock %}

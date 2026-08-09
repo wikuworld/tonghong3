@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+{% block title %}Stok Kulit{% endblock %}
+{% block content %}
+<h3 class="mb-3">Stok Kulit</h3>
+
+<div class="mb-3">
+    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalIn">IN Palet</button>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-bordered table-hover mb-0 bg-white">
+            <thead class="table-light">
+                <tr>
+                    <th>Tanggal</th>
+                    <th>Kode Palet (KY)</th>
+                    <th>Arah</th>
+                    <th>Keterangan</th>
+                    <th>Detail Barang</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in movements %}
+                <tr>
+                    <td>{{ m.tanggal }}</td>
+                    <td><strong>{{ m.kode_palet }}</strong></td>
+                    <td><span class="badge {{ 'bg-success' if m.direction == 'IN' else 'bg-danger' }}">{{ m.direction }}</span></td>
+                    <td>{{ m.keterangan or '-' }}</td>
+                    <td>
+                        {% if m.direction == 'IN' %}
+                        <a href="/palet/{{ m.kode_palet }}/yl" class="btn btn-sm btn-outline-primary">Lihat Barang ({{ m.jml_yl }})</a>
+                        {% else %}-{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-center text-muted">Belum ada data</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="modalIn" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="in">
+            <div class="modal-header bg-success text-white"><h5 class="modal-title">INPUT PALET MASUK (KY)</h5></div>
+            <div class="modal-body">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Kode Palet (KY)</label>
+                        <input type="text" name="kode_palet" class="form-control" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Tanggal</label>
+                        <input type="date" name="tanggal" class="form-control" value="{{ today }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Keterangan</label>
+                        <input type="text" name="keterangan" class="form-control">
+                    </div>
+                </div>
+                <hr>
+                <h6>Data Barang Dalam Palet</h6>
+                <div class="row g-2 mb-1 small text-muted fw-semibold">
+                    <div class="col-md-4">Kode Barang (Master Kulit)</div>
+                    <div class="col-md-2">Thickness</div>
+                    <div class="col-md-3">Warna</div>
+                    <div class="col-md-2">Qty</div>
+                </div>
+                <div id="ylRows">
+                    <div class="row g-2 mb-2 yl-row align-items-start">
+                        <div class="col-md-4">
+                            <div class="kulit-picker position-relative">
+                                <input type="hidden" name="kode_yl[]" class="kulit-kode">
+                                <input type="text" class="form-control form-control-sm kulit-search" placeholder="Cari kode / nama kulit..." autocomplete="off">
+                                <div class="kulit-menu dropdown-menu w-100 shadow-sm" style="max-height: 200px; overflow-y: auto;"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <input type="text" name="thickness[]" class="form-control form-control-sm thickness-field bg-light" readonly>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="text" name="warna[]" class="form-control form-control-sm warna-field bg-light" readonly>
+                        </div>
+                        <div class="col-md-2">
+                            <input type="number" step="0.01" name="qty[]" class="form-control form-control-sm">
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addYlRow()">+ Tambah Barang</button>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-success">SUBMIT IN</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const kulitMaster = {{ kulit_list | tojson }};
+function kulitLabel(item) {
+    return [item.kode_kulit, item.nama_kulit].filter(Boolean).join(' - ');
+}
+function filterKulit(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) return kulitMaster.slice(0, 20);
+    return kulitMaster.filter(item => [item.kode_kulit, item.nama_kulit, item.thickness, item.warna]
+        .filter(Boolean).some(v => String(v).toLowerCase().includes(q))).slice(0, 20);
+}
+function renderKulitMenu(picker, query) {
+    const menu = picker.querySelector('.kulit-menu');
+    menu.innerHTML = '';
+    filterKulit(query).forEach(item => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'dropdown-item small py-2';
+        btn.textContent = kulitLabel(item);
+        btn.onclick = () => selectKulit(picker, item);
+        menu.appendChild(btn);
+    });
+    if (!menu.children.length) menu.innerHTML = '<span class="dropdown-item-text text-muted small">Tidak ditemukan</span>';
+    menu.classList.add('show');
+}
+function selectKulit(picker, item) {
+    const row = picker.closest('.yl-row');
+    picker.querySelector('.kulit-kode').value = item.kode_kulit;
+    picker.querySelector('.kulit-search').value = kulitLabel(item);
+    row.querySelector('.thickness-field').value = item.thickness || '';
+    row.querySelector('.warna-field').value = item.warna || '';
+    picker.querySelector('.kulit-menu').classList.remove('show');
+}
+function clearKulitRow(row) {
+    row.querySelector('.kulit-kode').value = '';
+    row.querySelector('.kulit-search').value = '';
+    row.querySelector('.thickness-field').value = '';
+    row.querySelector('.warna-field').value = '';
+    row.querySelector('input[name="qty[]"]').value = '';
+}
+function addYlRow() {
+    const tpl = document.querySelector('.yl-row').cloneNode(true);
+    clearKulitRow(tpl);
+    document.getElementById('ylRows').appendChild(tpl);
+}
+document.getElementById('ylRows').addEventListener('focusin', e => {
+    if (e.target.classList.contains('kulit-search')) renderKulitMenu(e.target.closest('.kulit-picker'), e.target.value);
+});
+document.getElementById('ylRows').addEventListener('input', e => {
+    if (e.target.classList.contains('kulit-search')) {
+        const picker = e.target.closest('.kulit-picker');
+        picker.querySelector('.kulit-kode').value = '';
+        const row = picker.closest('.yl-row');
+        row.querySelector('.thickness-field').value = '';
+        row.querySelector('.warna-field').value = '';
+        renderKulitMenu(picker, e.target.value);
+    }
+});
+document.addEventListener('click', e => {
+    if (!e.target.closest('.kulit-picker')) document.querySelectorAll('.kulit-menu.show').forEach(m => m.classList.remove('show'));
+});
+</script>
+{% endblock %}

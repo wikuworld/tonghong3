@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     # User demo per role (dev/staging — lihat ensure_demo_role_users)
     demo_users_password: str = "TonghongDemo2026"
 
+    # MRP Flask upstream (Docker service hostname)
+    mrp_upstream_url: str = "http://mrp:5010"
+
     # Email (invoice reminders)
     smtp_host: str = ""
     smtp_port: int = 587

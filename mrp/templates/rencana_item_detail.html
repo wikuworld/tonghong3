@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block title %}Detail RPI - {{ item.kode_rencana_item }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+    <div>
+        <h3>Detail RPI: <span class="text-primary">{{ item.kode_rencana_item }}</span></h3>
+        <p class="text-muted mb-0">{{ item.nama_rencana }} · RPI: {{ item.kode_rencana_item }}</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/rencana-produksi/{{ item.rencana_id }}" class="btn btn-secondary btn-sm">Kembali</a>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <div class="row g-2 small">
+            <div class="col-md-2">Material: <strong>{{ item.material_name or '-' }}</strong></div>
+            <div class="col-md-2">Thickness: <strong>{{ item.thickness }}</strong></div>
+            <div class="col-md-2">Color: <strong>{{ item.color }}</strong></div>
+            <div class="col-md-2">Emboss: <strong>{{ item.emboss }}</strong></div>
+            <div class="col-md-2">Swatch: <strong>{{ item.color_swatch or '-' }}</strong></div>
+            <div class="col-md-2">Backer: <strong>{{ item.backer or '-' }}</strong></div>
+            <div class="col-md-2">WIP: <strong>{{ item.kode_lot_wip }}</strong></div>
+        </div>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white fw-bold">PO Terpilih</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="table-light"><tr><th>PO</th><th>SO</th><th>Item</th><th>Qty Proses</th></tr></thead>
+            <tbody>
+                {% for s in selected_po %}
+                <tr><td>{{ s.no_po }}</td><td>{{ s.no_so or '-' }}</td><td>{{ s.item_name }}</td><td>{{ s.qty_proses }}</td></tr>
+                {% else %}
+                <tr><td colspan="4" class="text-center text-muted">Belum ada PO</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white fw-bold">Kulit Lebih / Kurang (dari Persiapan)</div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+            <thead class="table-light">
+                <tr><th>KY</th><th>Barang</th><th>Target</th><th>Aktual</th><th>Selisih</th><th>Ket.</th><th>Waktu</th></tr>
+            </thead>
+            <tbody>
+                {% for k in kulit_lebih %}
+                <tr>
+                    <td>{{ k.kode_palet }}</td>
+                    <td>{{ k.kode_yl or '-' }}</td>
+                    <td>{{ k.target_qty }}</td>
+                    <td>{{ k.actual_qty }}</td>
+                    <td class="{{ 'text-danger' if k.selisih < 0 else 'text-success' }}">{{ k.selisih }}</td>
+                    <td>{{ k.keterangan }}</td>
+                    <td>{{ k.created_at }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted">Belum ada data kulit lebih/kurang</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

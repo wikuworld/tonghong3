@@ -1,0 +1,193 @@
+{% extends 'base.html' %}
+{% block title %}Persiapan Kulit{% endblock %}
+{% block content %}
+<h3 class="mb-3">Persiapan Kulit</h3>
+
+<div class="row">
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white fw-bold">Buat Proses Baru</div>
+            <div class="card-body">
+                <form method="POST" id="formProses">
+                    <input type="hidden" name="action" value="create">
+                    <input type="hidden" name="rencana_item_id" id="rencanaItemId">
+                    <label class="form-label">Ketik / Scan Kode RPI</label>
+                    <input type="text" name="kode_scan" id="kodeScan" class="form-control mb-2"
+                           placeholder="Ketik nomor RPI, contoh: RPI-260716000001" autocomplete="off" autofocus>
+                    <p class="small text-muted mb-2">Masukkan kode <strong>RPI-...</strong> dari rencana produksi</p>
+                    <div id="scanResult" class="border border-success rounded bg-light p-2 mb-3 small d-none"></div>
+                    <div id="scanError" class="alert alert-danger d-none py-2 mb-3 small"></div>
+                    <label class="form-label">Jenis</label>
+                    <div class="d-flex gap-4 mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="treatment_jenis" value="PU" id="jenisPU" checked required>
+                            <label class="form-check-label" for="jenisPU">PU</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="treatment_jenis" value="Suede" id="jenisSuede" required>
+                            <label class="form-check-label" for="jenisSuede">SUEDE</label>
+                        </div>
+                    </div>
+                    <label class="form-label">Treatment</label>
+                    <div id="treatmentBox" class="border rounded p-2 mb-3" style="max-height: 180px; overflow-y: auto;">
+                        {% for t in treatments %}
+                        <div class="form-check treatment-item" data-jenis="{{ t.jenis }}">
+                            <input class="form-check-input" type="checkbox" name="treatment_list[]"
+                                   value="{{ t.nama_treatment }}" id="trt{{ loop.index }}">
+                            <label class="form-check-label" for="trt{{ loop.index }}">
+                                {{ t.nama_treatment }}
+                            </label>
+                        </div>
+                        {% else %}
+                        <p class="text-muted small mb-0">Belum ada data Master Treatment.</p>
+                        {% endfor %}
+                        <p id="treatmentEmpty" class="text-muted small mb-0 d-none">Belum ada treatment untuk jenis ini.</p>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Buat Kode Proses</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold">Daftar Persiapan Kulit</div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>Kode Proses</th><th>WIP</th><th>PO</th><th>Warna</th><th>Total Size</th><th>Status</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        {% for p in persiapan_list %}
+                        <tr>
+                            <td><strong>{{ p.kode_proses }}</strong></td>
+                            <td>{{ p.kode_wip }}</td>
+                            <td>{{ p.no_po }}</td>
+                            <td>{{ p.warna or '-' }}</td>
+                            <td>{{ p.total_size }}</td>
+                            <td><span class="badge bg-info">{{ p.status }}</span></td>
+                            <td><a href="/proses/{{ p.id }}" class="btn btn-sm btn-outline-primary">Buka</a></td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="7" class="text-center text-muted">Belum ada proses</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const scanInput = document.getElementById('kodeScan');
+const itemIdInput = document.getElementById('rencanaItemId');
+const scanResult = document.getElementById('scanResult');
+const scanError = document.getElementById('scanError');
+const jenisRadios = document.querySelectorAll('input[name="treatment_jenis"]');
+const treatmentItems = document.querySelectorAll('.treatment-item');
+const treatmentEmpty = document.getElementById('treatmentEmpty');
+
+function filterTreatmentByJenis() {
+    const jenis = document.querySelector('input[name="treatment_jenis"]:checked')?.value || 'PU';
+    let visible = 0;
+    treatmentItems.forEach(function(el) {
+        const match = el.dataset.jenis === jenis;
+        el.classList.toggle('d-none', !match);
+        if (!match) {
+            const cb = el.querySelector('input[type="checkbox"]');
+            if (cb) cb.checked = false;
+        } else {
+            visible++;
+        }
+    });
+    if (treatmentEmpty) {
+        treatmentEmpty.classList.toggle('d-none', visible > 0 || treatmentItems.length === 0);
+    }
+}
+
+jenisRadios.forEach(function(radio) {
+    radio.addEventListener('change', filterTreatmentByJenis);
+});
+filterTreatmentByJenis();
+
+function clearScanState() {
+    itemIdInput.value = '';
+    scanResult.classList.add('d-none');
+    scanError.classList.add('d-none');
+}
+
+async function lookupRencana(kode) {
+    const q = kode.trim();
+    if (!q) { clearScanState(); return; }
+    try {
+        const res = await fetch('/api/proses/rencana-scan?q=' + encodeURIComponent(q));
+        const data = await res.json();
+        if (!res.ok) {
+            itemIdInput.value = '';
+            scanResult.classList.add('d-none');
+            scanError.textContent = data.error || 'Rencana produksi tidak ditemukan';
+            scanError.classList.remove('d-none');
+            return;
+        }
+        itemIdInput.value = data.id;
+        scanError.classList.add('d-none');
+        let html =
+            '<div class="fw-bold mb-1">' + data.kode_rencana_item + '</div>' +
+            '<div class="text-muted mb-2">' + data.nama_rencana + ' · ' + (data.kode_kulit || '-') + '</div>' +
+            '<table class="table table-sm table-bordered mb-2 bg-white">' +
+            '<tbody>' +
+            '<tr><td class="text-muted" style="width:38%">Customer</td><td><strong>' +
+            (data.kode_customer ? data.kode_customer + ' · ' : '') + (data.nama_customer || '-') +
+            '</strong></td></tr>' +
+            '<tr><td class="text-muted">Thickness</td><td>' + (data.thickness || '-') + '</td></tr>' +
+            '<tr><td class="text-muted">Emboss</td><td>' + (data.emboss || '-') + '</td></tr>' +
+            '<tr><td class="text-muted">Color</td><td>' + (data.color || '-') + '</td></tr>' +
+            '<tr><td class="text-muted">Color Swatch</td><td>' + (data.color_swatch || '-') + '</td></tr>' +
+            '</tbody></table>';
+        if (data.po_list && data.po_list.length) {
+            html += '<div class="fw-semibold mb-1">List PO</div>' +
+                '<table class="table table-sm table-bordered mb-0 bg-white">' +
+                '<thead class="table-light"><tr><th>No PO</th><th>Item</th><th class="text-end">Qty</th></tr></thead><tbody>';
+            data.po_list.forEach(function(po) {
+                html += '<tr><td>' + po.no_po + '</td><td>' + (po.item_name || '-') +
+                    '</td><td class="text-end">' + (po.qty_proses ?? '-') + '</td></tr>';
+            });
+            html += '</tbody></table>';
+        } else {
+            html += '<p class="text-muted mb-0">Belum ada PO terpilih untuk item ini.</p>';
+        }
+        scanResult.innerHTML = html;
+        scanResult.classList.remove('d-none');
+    } catch (e) {
+        scanError.textContent = 'Gagal memvalidasi barcode';
+        scanError.classList.remove('d-none');
+    }
+}
+
+scanInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        lookupRencana(scanInput.value);
+    }
+});
+scanInput.addEventListener('change', function() {
+    lookupRencana(scanInput.value);
+});
+
+document.getElementById('formProses').addEventListener('submit', function(e) {
+    if (!itemIdInput.value && scanInput.value.trim()) {
+        e.preventDefault();
+        lookupRencana(scanInput.value).then(function() {
+            if (itemIdInput.value) document.getElementById('formProses').submit();
+            else alert('Barcode rencana produksi tidak valid.');
+        });
+        return;
+    }
+    if (!itemIdInput.value) {
+        e.preventDefault();
+        alert('Ketik / scan kode RPI terlebih dahulu.');
+    }
+});
+</script>
+{% endblock %}

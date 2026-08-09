@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block title %}Stok Material Lain{% endblock %}
+{% block content %}
+<h3 class="mb-3">Stok Material Lain</h3>
+<div class="mb-3 d-flex gap-2">
+    <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalIn">IN</button>
+    <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#modalOut">OUT</button>
+</div>
+<div class="row">
+    <div class="col-md-7">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-white fw-bold">Stok Tersedia (FIFO)</div>
+            <div class="card-body p-0">
+                <table class="table table-bordered mb-0">
+                    <thead class="table-light"><tr><th>Kode BC</th><th>Material</th><th>Qty Sisa</th><th>Tgl Masuk</th></tr></thead>
+                    <tbody>
+                        {% for s in stok_in %}
+                        <tr><td>{{ s.kode_internal }}</td><td>{{ s.nama_material }}</td><td>{{ s.qty_sisa }} {{ s.satuan }}</td><td>{{ s.tanggal_in }}</td></tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-center text-muted">Stok kosong</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white fw-bold">Riwayat OUT</div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light"><tr><th>Tgl</th><th>Material</th><th>Qty</th><th>WIP</th></tr></thead>
+                    <tbody>
+                        {% for o in stok_out %}
+                        <tr><td>{{ o.tanggal }}</td><td>{{ o.nama_material }}</td><td>{{ o.qty }}</td><td>{{ o.kode_wip or '-' }}</td></tr>
+                        {% else %}
+                        <tr><td colspan="4" class="text-center text-muted">-</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="modalIn" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="in">
+            <div class="modal-header bg-success text-white"><h5>IN Stok Material</h5></div>
+            <div class="modal-body">
+                <select name="material_id" class="form-select mb-2" required>
+                    {% for m in material_list %}<option value="{{ m.id }}">{{ m.kode_material }} - {{ m.nama_material }}</option>{% endfor %}
+                </select>
+                <label class="form-label">Qty</label>
+                <input type="number" step="0.01" name="qty" class="form-control mb-2" required>
+                <label class="form-label">Tanggal</label>
+                <input type="date" name="tanggal" class="form-control" value="{{ today }}">
+            </div>
+            <div class="modal-footer"><button type="submit" class="btn btn-success">SUBMIT IN</button></div>
+        </form>
+    </div>
+</div>
+<div class="modal fade" id="modalOut" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="out">
+            <div class="modal-header bg-danger text-white"><h5>OUT Stok Material</h5></div>
+            <div class="modal-body">
+                <select name="stok_in_id" class="form-select mb-2" required>
+                    {% for s in stok_in %}<option value="{{ s.id }}">{{ s.kode_internal }} - {{ s.nama_material }} (sisa: {{ s.qty_sisa }})</option>{% endfor %}
+                </select>
+                <label class="form-label">Qty</label>
+                <input type="number" step="0.01" name="qty" class="form-control mb-2" required>
+                <label class="form-label">Kode WIP</label>
+                <input type="text" name="kode_wip" class="form-control mb-2">
+                <label class="form-label">Tanggal</label>
+                <input type="date" name="tanggal" class="form-control" value="{{ today }}">
+            </div>
+            <div class="modal-footer"><button type="submit" class="btn btn-danger">SUBMIT OUT</button></div>
+        </form>
+    </div>
+</div>
+{% endblock %}

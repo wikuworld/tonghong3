@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}Gudang Finish Good{% endblock %}
+{% block content %}
+<h3 class="mb-3">Gudang Finish Good</h3>
+
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white fw-bold">OUT — Scan QR Kode Packing List</div>
+    <div class="card-body">
+        <form method="POST" class="row g-3">
+            <input type="hidden" name="action" value="out">
+            <div class="col-md-4">
+                <input type="text" name="kode_packing" class="form-control" placeholder="Scan / input kode FG-..." required>
+            </div>
+            <div class="col-md-4">
+                <input type="text" name="keterangan" class="form-control" placeholder="Keterangan OUT">
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-danger w-100">Proses OUT</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white fw-bold">Stok Finish Good (per Packing List)</div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr><th>Kode Packing List</th><th>WIP</th><th>Customer</th><th>Roll</th><th>Ukuran</th><th>Status</th><th>Tgl IN</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for f in fg_list %}
+                <tr>
+                    <td><strong>{{ f.kode_packing }}</strong></td>
+                    <td>{{ f.kode_wip }}</td>
+                    <td>{{ f.customer or '-' }}</td>
+                    <td>{{ f.total_lembar }}</td>
+                    <td>{{ f.total_ukuran }}</td>
+                    <td><span class="badge {{ 'bg-success' if f.status == 'in_stock' else 'bg-secondary' }}">{{ f.status }}</span></td>
+                    <td>{{ f.date_in }}</td>
+                    <td><a href="/gudang-fg/{{ f.id }}" class="btn btn-sm btn-outline-primary">Detail Roll</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="text-center text-muted">Belum ada data</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

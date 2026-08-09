@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% block title %}Master RP{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>Master RP</h3>
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalAdd">Tambah +</button>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Kode RP</th>
+                    <th>Nama RP</th>
+                    <th>Deskripsi</th>
+                    <th>Tanggal Dibuat</th>
+                    <th width="120">Aksi</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rp_list %}
+                <tr>
+                    <td><strong>{{ r.kode_rp }}</strong></td>
+                    <td>{{ r.nama_rp }}</td>
+                    <td>{{ r.deskripsi or '-' }}</td>
+                    <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '-' }}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary btn-edit"
+                                data-id="{{ r.id }}"
+                                data-kode="{{ r.kode_rp }}"
+                                data-nama="{{ r.nama_rp }}"
+                                data-deskripsi="{{ r.deskripsi or '' }}"
+                                data-bs-toggle="modal" data-bs-target="#modalEdit">Edit</button>
+                        <button class="btn btn-sm btn-outline-danger btn-delete"
+                                data-id="{{ r.id }}"
+                                data-kode="{{ r.kode_rp }}"
+                                data-bs-toggle="modal" data-bs-target="#modalDelete">Hapus</button>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-center text-muted">Belum ada data master RP</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="modalAdd" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="create">
+            <div class="modal-header"><h5>Tambah Master RP</h5></div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label">Kode RP <span class="text-danger">*</span></label>
+                    <input type="text" name="kode_rp" class="form-control" required placeholder="contoh: RP-004">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Nama RP <span class="text-danger">*</span></label>
+                    <input type="text" name="nama_rp" class="form-control" required placeholder="contoh: RP Premium">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Deskripsi</label>
+                    <textarea name="deskripsi" class="form-control" rows="3" placeholder="Keterangan jenis RP"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-primary">Simpan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalEdit" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="update">
+            <input type="hidden" name="id" id="editId">
+            <div class="modal-header"><h5>Edit Master RP</h5></div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label">Kode RP <span class="text-danger">*</span></label>
+                    <input type="text" name="kode_rp" id="editKode" class="form-control" required>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Nama RP <span class="text-danger">*</span></label>
+                    <input type="text" name="nama_rp" id="editNama" class="form-control" required>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label">Deskripsi</label>
+                    <textarea name="deskripsi" id="editDeskripsi" class="form-control" rows="3"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-primary">Update</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalDelete" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="id" id="deleteId">
+            <div class="modal-header bg-danger text-white"><h5>Hapus Master RP</h5></div>
+            <div class="modal-body">
+                <p>Yakin hapus master RP <strong id="deleteKode"></strong>?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                <button type="submit" class="btn btn-danger">Hapus</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('.btn-edit').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        document.getElementById('editId').value = btn.dataset.id;
+        document.getElementById('editKode').value = btn.dataset.kode;
+        document.getElementById('editNama').value = btn.dataset.nama;
+        document.getElementById('editDeskripsi').value = btn.dataset.deskripsi;
+    });
+});
+document.querySelectorAll('.btn-delete').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        document.getElementById('deleteId').value = btn.dataset.id;
+        document.getElementById('deleteKode').textContent = btn.dataset.kode;
+    });
+});
+</script>
+{% endblock %}

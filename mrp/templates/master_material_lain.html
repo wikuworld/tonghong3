@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block title %}Master Material Lain{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+    <h3>Master Material Lain</h3>
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalAdd">Tambah +</button>
+</div>
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light"><tr><th>Kode</th><th>Nama</th><th>Deskripsi</th><th>Satuan</th><th></th></tr></thead>
+            <tbody>
+                {% for m in material_list %}
+                <tr>
+                    <td><strong>{{ m.kode_material }}</strong></td>
+                    <td>{{ m.nama_material }}</td>
+                    <td>{{ m.deskripsi or '-' }}</td>
+                    <td>{{ m.satuan }}</td>
+                    <td>
+                        <form method="POST" class="d-inline" onsubmit="return confirm('Hapus?')">
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="id" value="{{ m.id }}">
+                            <button class="btn btn-sm btn-outline-danger">Hapus</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-center text-muted">Belum ada data</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+<div class="modal fade" id="modalAdd" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="POST">
+            <input type="hidden" name="action" value="create">
+            <div class="modal-header"><h5>Tambah Material Lain</h5></div>
+            <div class="modal-body">
+                <div class="mb-2"><label class="form-label">Kode Material</label><input type="text" name="kode_material" class="form-control" required></div>
+                <div class="mb-2"><label class="form-label">Nama Material</label><input type="text" name="nama_material" class="form-control" required></div>
+                <div class="mb-2"><label class="form-label">Deskripsi</label><textarea name="deskripsi" class="form-control" rows="2"></textarea></div>
+                <div class="mb-2"><label class="form-label">Satuan</label><input type="text" name="satuan" class="form-control" value="pcs"></div>
+            </div>
+            <div class="modal-footer"><button type="submit" class="btn btn-primary">Simpan</button></div>
+        </form>
+    </div>
+</div>
+{% endblock %}

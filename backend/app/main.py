@@ -19,6 +19,7 @@ from app.routers import (
     journal,
     marketing,
     masters,
+    mrp_gateway,
     notifications,
     permissions,
     packing,
@@ -63,6 +64,7 @@ app.include_router(invoice.router, prefix=_PREFIX)
 app.include_router(dashboard.router, prefix=_PREFIX)
 app.include_router(exchange_rates.router, prefix=_PREFIX)
 app.include_router(masters.router, prefix=_PREFIX)
+app.include_router(mrp_gateway.router, prefix=_PREFIX)
 app.include_router(color_swatch.router, prefix=_PREFIX)
 app.include_router(notifications.router, prefix=_PREFIX)
 app.include_router(permissions.router, prefix=_PREFIX)

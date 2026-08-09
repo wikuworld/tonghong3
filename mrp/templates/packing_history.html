@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}History Packing{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+    <h3>History Packing</h3>
+    <a href="/packing" class="btn btn-secondary btn-sm">Kembali</a>
+</div>
+<table class="table table-bordered bg-white">
+    <thead class="table-light">
+        <tr><th>Kode Packing</th><th>WIP</th><th>PO</th><th>Customer</th><th>Lembar</th><th>Ukuran</th><th>Status</th><th>Tanggal</th><th>Print</th></tr>
+    </thead>
+    <tbody>
+        {% for p in packing_list %}
+        <tr>
+            <td>{{ p.kode_packing }}</td>
+            <td>{{ p.kode_wip }}</td>
+            <td>{{ p.no_po }}</td>
+            <td>{{ p.customer or '-' }}</td>
+            <td>{{ p.total_lembar }}</td>
+            <td>{{ p.total_ukuran }}</td>
+            <td>{{ p.status }}</td>
+            <td>{{ p.date_created.strftime('%Y-%m-%d') if p.date_created else '-' }}</td>
+            <td><a href="/packing/{{ p.id }}/print" target="_blank" class="btn btn-sm btn-outline-dark">Print</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-center text-muted">Belum ada data</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

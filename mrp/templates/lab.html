@@ -1,0 +1,218 @@
+{% extends 'base.html' %}
+{% block title %}Lab - Mixing Color{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>Lab - Bagian Mixing Color</h3>
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#modalAddLab">Add +</button>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Tanggal Rencana</th>
+                    <th>Item Rencana</th>
+                    <th>Kode Lot Warna</th>
+                    <th>Nama Lot Warna</th>
+                    <th>Kode Kimia</th>
+                    <th>Nama Kimia</th>
+                    <th>Resep</th>
+                    <th>Satuan</th>
+                    <th>Qty</th>
+                    <th>Remarks</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for l in lab_list %}
+                <tr>
+                    <td>
+                        {% if l.tanggal_rencana %}{{ l.tanggal_rencana.strftime('%d %b %Y') }}
+                        {% elif l.date_created %}{{ l.date_created.strftime('%d %b %Y') }}
+                        {% else %}-{% endif %}
+                    </td>
+                    <td>
+                        {% if l.kode_rencana_item %}
+                        <small>{{ l.kode_rencana_item }}</small><br>
+                        <span class="text-muted">{{ l.nama_customer or '' }} · {{ l.nama_rencana or '' }}</span>
+                        {% else %}-{% endif %}
+                    </td>
+                    <td><strong>{{ l.kode_lot_warna }}</strong></td>
+                    <td>{{ l.nama_lot_warna }}</td>
+                    <td>{{ l.kode_kimia }}</td>
+                    <td>{{ l.nama_kimia or '-' }}</td>
+                    <td>{{ l.resep or '-' }}</td>
+                    <td>{{ l.satuan }}</td>
+                    <td>{{ l.qty }}</td>
+                    <td>{{ l.remarks or '-' }}</td>
+                    <td><span class="badge bg-success">{{ l.status }}</span></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="11" class="text-center text-muted">Belum ada data lab</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="modalAddLab" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <form class="modal-content" method="POST" id="formAddLab">
+            <div class="modal-header"><h5>Input Mixing Color</h5></div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Rencana Produksi (Item)</label>
+                    <select name="rencana_item_id" class="form-select">
+                        <option value="">-- Pilih item rencana (opsional) --</option>
+                        {% for ri in rencana_items %}
+                        <option value="{{ ri.id }}">
+                            [{{ ri.tanggal_rencana.strftime('%d %b %Y') if ri.tanggal_rencana else '-' }}]
+                            {{ ri.kode_rencana_item }} — {{ ri.nama_customer }} · {{ ri.kode_kulit or '-' }} ({{ ri.color or '-' }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Nama Lot Warna <span class="text-danger">*</span></label>
+                    <input type="text" name="nama_lot_warna" class="form-control" required placeholder="contoh: Red Premium Mix">
+                </div>
+                <p class="small text-muted mb-2">Kode Lot Warna akan digenerate otomatis saat submit.</p>
+                <hr>
+                <h6 class="mb-2">Daftar Chemical</h6>
+                <div class="row g-2 mb-1 small text-muted fw-semibold">
+                    <div class="col-md-3">Kode Kimia (Master)</div>
+                    <div class="col-md-2">Resep</div>
+                    <div class="col-md-1">Satuan</div>
+                    <div class="col-md-2">Qty</div>
+                    <div class="col-md-3">Remarks</div>
+                </div>
+                <div id="chemRows">
+                    <div class="row g-2 mb-2 chem-row align-items-start">
+                        <div class="col-md-3">
+                            <div class="kimia-picker position-relative">
+                                <input type="hidden" name="kode_kimia[]" class="kimia-kode">
+                                <input type="text" class="form-control form-control-sm kimia-search" placeholder="Cari kode / nama kimia..." autocomplete="off">
+                                <div class="kimia-menu dropdown-menu w-100 shadow-sm" style="max-height: 180px; overflow-y: auto;"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <input type="text" name="resep[]" class="form-control form-control-sm" list="resepList" placeholder="Resep">
+                        </div>
+                        <div class="col-md-1">
+                            <input type="text" name="satuan[]" class="form-control form-control-sm satuan-field" value="kg">
+                        </div>
+                        <div class="col-md-2">
+                            <input type="number" step="0.01" name="qty[]" class="form-control form-control-sm" placeholder="Qty">
+                        </div>
+                        <div class="col-md-3">
+                            <input type="text" name="remarks[]" class="form-control form-control-sm" placeholder="Remarks">
+                        </div>
+                    </div>
+                </div>
+                <datalist id="resepList">{% for r in reseps %}<option value="{{ r }}">{% endfor %}</datalist>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addChemRow()">+ Tambah Chemical</button>
+                {% if not kimia_list %}
+                <p class="small text-danger mt-2 mb-0">Belum ada data Master Kimia. Tambahkan dulu di menu Master → Master Kimia.</p>
+                {% endif %}
+            </div>
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-info text-white">Submit</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const kimiaMaster = {{ kimia_list | tojson }};
+
+function kimiaLabel(item) {
+    return item.kode_kimia + ' - ' + item.nama_kimia + ' (' + (item.satuan || 'kg') + ')';
+}
+
+function filterKimia(query) {
+    const q = query.trim().toLowerCase();
+    if (!q) return kimiaMaster.slice(0, 20);
+    return kimiaMaster.filter(function(item) {
+        return [item.kode_kimia, item.nama_kimia]
+            .filter(Boolean)
+            .some(function(val) { return String(val).toLowerCase().includes(q); });
+    }).slice(0, 20);
+}
+
+function renderKimiaMenu(picker, query) {
+    const menu = picker.querySelector('.kimia-menu');
+    const items = filterKimia(query);
+    menu.innerHTML = '';
+    if (!items.length) {
+        menu.innerHTML = '<span class="dropdown-item-text text-muted small">Tidak ditemukan</span>';
+    } else {
+        items.forEach(function(item) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'dropdown-item small py-2';
+            btn.textContent = kimiaLabel(item);
+            btn.addEventListener('click', function() { selectKimia(picker, item); });
+            menu.appendChild(btn);
+        });
+    }
+    menu.classList.add('show');
+}
+
+function selectKimia(picker, item) {
+    const row = picker.closest('.chem-row');
+    picker.querySelector('.kimia-kode').value = item.kode_kimia;
+    picker.querySelector('.kimia-search').value = kimiaLabel(item);
+    row.querySelector('.satuan-field').value = item.satuan || 'kg';
+    picker.querySelector('.kimia-menu').classList.remove('show');
+}
+
+function clearChemRow(row) {
+    row.querySelector('.kimia-kode').value = '';
+    row.querySelector('.kimia-search').value = '';
+    row.querySelector('.satuan-field').value = 'kg';
+    row.querySelector('input[name="resep[]"]').value = '';
+    row.querySelector('input[name="qty[]"]').value = '';
+    row.querySelector('input[name="remarks[]"]').value = '';
+    row.querySelector('.kimia-menu').classList.remove('show');
+}
+
+function addChemRow() {
+    const tpl = document.querySelector('.chem-row').cloneNode(true);
+    clearChemRow(tpl);
+    document.getElementById('chemRows').appendChild(tpl);
+}
+
+document.getElementById('chemRows').addEventListener('focusin', function(e) {
+    if (e.target.classList.contains('kimia-search')) {
+        renderKimiaMenu(e.target.closest('.kimia-picker'), e.target.value);
+    }
+});
+
+document.getElementById('chemRows').addEventListener('input', function(e) {
+    if (e.target.classList.contains('kimia-search')) {
+        const picker = e.target.closest('.kimia-picker');
+        picker.querySelector('.kimia-kode').value = '';
+        renderKimiaMenu(picker, e.target.value);
+    }
+});
+
+document.addEventListener('click', function(e) {
+    if (!e.target.closest('.kimia-picker')) {
+        document.querySelectorAll('.kimia-menu.show').forEach(function(menu) {
+            menu.classList.remove('show');
+        });
+    }
+});
+
+document.getElementById('formAddLab').addEventListener('submit', function(e) {
+    const hasKimia = Array.from(document.querySelectorAll('.kimia-kode')).some(function(el) { return el.value.trim(); });
+    if (!hasKimia) {
+        e.preventDefault();
+        alert('Minimal satu chemical dari Master Kimia harus dipilih.');
+    }
+});
+</script>
+{% endblock %}

@@ -30,6 +30,23 @@ import OutstandingMaterialsPage from '../views/admin/OutstandingMaterialsPage.vu
 import AccountingMappingsPage from '../views/admin/AccountingMappingsPage.vue'
 import JournalEntriesPage from '../views/admin/JournalEntriesPage.vue'
 import InventoryPage from '../views/admin/InventoryPage.vue'
+import MrpRencanaProduksiPage from '../views/admin/mrp/MrpRencanaProduksiPage.vue'
+import MrpPaletPage from '../views/admin/mrp/MrpPaletPage.vue'
+import MrpMasterErpPage from '../views/admin/mrp/MrpMasterErpPage.vue'
+import MrpMasterSimplePage from '../views/admin/mrp/MrpMasterSimplePage.vue'
+import MrpProsesPage from '../views/admin/mrp/MrpProsesPage.vue'
+import MrpProsesDetailPage from '../views/admin/mrp/MrpProsesDetailPage.vue'
+import MrpLabPage from '../views/admin/mrp/MrpLabPage.vue'
+import MrpMasterTreatmentPage from '../views/admin/mrp/MrpMasterTreatmentPage.vue'
+import MrpPackingPage from '../views/admin/mrp/MrpPackingPage.vue'
+import MrpPackingDetailPage from '../views/admin/mrp/MrpPackingDetailPage.vue'
+import MrpGudangFgPage from '../views/admin/mrp/MrpGudangFgPage.vue'
+import MrpStokKimiaPage from '../views/admin/mrp/MrpStokKimiaPage.vue'
+import MrpStokRpPage from '../views/admin/mrp/MrpStokRpPage.vue'
+import MrpStokMaterialLainPage from '../views/admin/mrp/MrpStokMaterialLainPage.vue'
+import MrpUsagePage from '../views/admin/mrp/MrpUsagePage.vue'
+import MrpReportPackingPage from '../views/admin/mrp/MrpReportPackingPage.vue'
+import MrpReportPersiapanPage from '../views/admin/mrp/MrpReportPersiapanPage.vue'
 import LoginPage from '../views/LoginPage.vue'
 import { can, currentRoleFromToken } from '../security/permissions'
 
@@ -122,6 +139,110 @@ const router = createRouter({
         { path: 'accounting-mappings', component: AccountingMappingsPage, meta: { titleKey: 'menu.accountingMappings', module: 'accountingMappings' } },
         { path: 'journal-entries', component: JournalEntriesPage, meta: { titleKey: 'menu.journalEntries', module: 'journalEntries' } },
         { path: 'inventory', component: InventoryPage, meta: { titleKey: 'menu.inventory', module: 'inventory' } },
+        {
+          path: 'mrp/rencana-produksi',
+          component: MrpRencanaProduksiPage,
+          meta: { titleKey: 'menu.mrpRencana', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/palet',
+          component: MrpPaletPage,
+          meta: { titleKey: 'menu.mrpPalet', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/masters/erp',
+          component: MrpMasterErpPage,
+          meta: { titleKey: 'menu.mrpMasterErp', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/masters/kulit',
+          component: MrpMasterSimplePage,
+          meta: { titleKey: 'menu.mrpMasterKulit', module: 'mrpShopfloor', mrpMaster: 'kulit' },
+        },
+        {
+          path: 'mrp/masters/kimia',
+          component: MrpMasterSimplePage,
+          meta: { titleKey: 'menu.mrpMasterKimia', module: 'mrpShopfloor', mrpMaster: 'kimia' },
+        },
+        {
+          path: 'mrp/masters/rp',
+          component: MrpMasterSimplePage,
+          meta: { titleKey: 'menu.mrpMasterRp', module: 'mrpShopfloor', mrpMaster: 'rp' },
+        },
+        {
+          path: 'mrp/masters/treatment',
+          component: MrpMasterTreatmentPage,
+          meta: { titleKey: 'menu.mrpMasterTreatment', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/proses',
+          component: MrpProsesPage,
+          meta: { titleKey: 'menu.mrpProses', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/proses/:id',
+          component: MrpProsesDetailPage,
+          meta: { titleKey: 'menu.mrpProses', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/lab',
+          component: MrpLabPage,
+          meta: { titleKey: 'menu.mrpLab', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/packing',
+          component: MrpPackingPage,
+          meta: { titleKey: 'menu.mrpPacking', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/packing/:id',
+          component: MrpPackingDetailPage,
+          meta: { titleKey: 'menu.mrpPacking', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/gudang-fg',
+          component: MrpGudangFgPage,
+          meta: { titleKey: 'menu.mrpGudangFg', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/stok-kimia',
+          component: MrpStokKimiaPage,
+          meta: { titleKey: 'menu.mrpStokKimia', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/stok-rp',
+          component: MrpStokRpPage,
+          meta: { titleKey: 'menu.mrpStokRp', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/stok-material-lain',
+          component: MrpStokMaterialLainPage,
+          meta: { titleKey: 'menu.mrpStokMaterialLain', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/usage',
+          component: MrpUsagePage,
+          meta: { titleKey: 'menu.mrpUsage', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/masters/material-lain',
+          component: MrpMasterSimplePage,
+          meta: {
+            titleKey: 'menu.mrpMasterMaterialLain',
+            module: 'mrpShopfloor',
+            mrpMaster: 'material',
+          },
+        },
+        {
+          path: 'mrp/reports/packing',
+          component: MrpReportPackingPage,
+          meta: { titleKey: 'menu.mrpReportPacking', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/reports/persiapan',
+          component: MrpReportPersiapanPage,
+          meta: { titleKey: 'menu.mrpReportPersiapan', module: 'mrpShopfloor' },
+        },
       ],
     },
   ],

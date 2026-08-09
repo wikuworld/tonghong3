@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+{% block title %}Detail Rencana Produksi{% endblock %}
+{% block content %}
+{% set tgl = rencana.tanggal_rencana or rencana.date_created %}
+{% set hari_id = ['Senin','Selasa','Rabu','Kamis','Jumat','Sabtu','Minggu'] %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+        <h3 class="mb-1">{{ rencana.nama_rencana }}</h3>
+        <p class="text-muted mb-0">
+            Kode: {{ rencana.kode_rencana or '-' }} ·
+            Tanggal:
+            {% if rencana.tanggal_rencana %}{{ rencana.tanggal_rencana.strftime('%d %B %Y') }}
+            {% elif rencana.date_created %}{{ rencana.date_created.strftime('%d %B %Y') }}
+            {% else %}-{% endif %}
+            {% if tgl %} · {{ hari_id[tgl.weekday()] }}{% endif %}
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="/rencana-produksi/{{ rencana.id }}/print" target="_blank" class="btn btn-outline-dark btn-sm">Download / Print</a>
+        <a href="/rencana-produksi/tambah" class="btn btn-primary btn-sm">+ Tambah</a>
+        <a href="/rencana-produksi" class="btn btn-secondary btn-sm">Kembali</a>
+    </div>
+</div>
+
+<div class="card border-0 shadow-sm">
+    <div class="card-body p-0">
+        <table class="table table-bordered table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>EMBOSS</th>
+                    <th>CUSTOMER</th>
+                    <th>COLOR</th>
+                    <th>QTY</th>
+                    <th>SCHEDULE</th>
+                    <th>CS</th>
+                    <th>REMARKS</th>
+                    <th>BACKER</th>
+                    <th>RPI</th>
+                    <th width="90">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                {% set thick = (item.thickness or '')|replace('mm','')|replace(' ','') %}
+                {% set schedule = item.schedule_text or ('SUHP ' ~ tgl.strftime('%m%d') if tgl else '-') %}
+                <tr>
+                    <td>{{ item.emboss or '-' }}</td>
+                    <td>{{ item.nama_customer or '-' }}</td>
+                    <td>{{ item.color or '-' }}</td>
+                    <td>{% if item.total_qty_so %}{{ item.total_qty_so|int if item.total_qty_so == item.total_qty_so|int else item.total_qty_so }}{% else %}-{% endif %}</td>
+                    <td>{{ schedule }}</td>
+                    <td>{{ item.color_swatch or '-' }}</td>
+                    <td>
+                        {%- if thick and item.keterangan -%}
+                            {{ thick }} {{ item.keterangan }}
+                        {%- elif thick -%}
+                            {{ thick }}
+                        {%- else -%}
+                            {{ item.keterangan or '-' }}
+                        {%- endif -%}
+                    </td>
+                    <td>{{ item.backer or '-' }}</td>
+                    <td><span class="badge bg-primary">{{ item.kode_rencana_item }}</span></td>
+                    <td>
+                        <a href="/rencana-produksi/item/{{ item.id }}/list-po" class="btn btn-sm btn-outline-primary">
+                            PO{% if item.jml_po %} ({{ item.jml_po }}){% endif %}
+                        </a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="10" class="text-center text-muted py-4">Belum ada item rencana produksi.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

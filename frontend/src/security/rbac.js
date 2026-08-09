@@ -31,6 +31,7 @@ export const MODULE_LABEL_KEYS = {
   journalEntries: 'menu.journalEntries',
   inventory: 'menu.inventory',
   userAccess: 'menu.userAccess',
+  mrpShopfloor: 'menu.mrpRencana',
 }
 
 export const ACTION_LABEL_KEYS = {
@@ -77,6 +78,24 @@ export const MENU_MODULE_MAP = {
   'menu.accountingMappings': 'accountingMappings',
   'menu.journalEntries': 'journalEntries',
   'menu.inventory': 'inventory',
+  'menu.mrpRencana': 'mrpShopfloor',
+  'menu.mrpPalet': 'mrpShopfloor',
+  'menu.mrpMasterErp': 'mrpShopfloor',
+  'menu.mrpMasterKulit': 'mrpShopfloor',
+  'menu.mrpMasterKimia': 'mrpShopfloor',
+  'menu.mrpMasterRp': 'mrpShopfloor',
+  'menu.mrpMasterTreatment': 'mrpShopfloor',
+  'menu.mrpProses': 'mrpShopfloor',
+  'menu.mrpLab': 'mrpShopfloor',
+  'menu.mrpPacking': 'mrpShopfloor',
+  'menu.mrpGudangFg': 'mrpShopfloor',
+  'menu.mrpStokKimia': 'mrpShopfloor',
+  'menu.mrpStokRp': 'mrpShopfloor',
+  'menu.mrpStokMaterialLain': 'mrpShopfloor',
+  'menu.mrpUsage': 'mrpShopfloor',
+  'menu.mrpMasterMaterialLain': 'mrpShopfloor',
+  'menu.mrpReportPacking': 'mrpShopfloor',
+  'menu.mrpReportPersiapan': 'mrpShopfloor',
 }
 
 export function moduleForMenu(labelKey) {

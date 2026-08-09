@@ -1,0 +1,115 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container" style="max-width: 800px;">
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">Input Awal</h5>
+        </div>
+        <div class="card-body">
+            <form class="row g-3 align-items-center">
+                <div class="col-auto">
+                    <label class="col-form-label">Kode Proses:</label>
+                </div>
+                <div class="col-auto">
+                    <input type="text" id="kode_proses_input" class="form-control" placeholder="Masukkan Kode...">
+                </div>
+                <div class="col-auto">
+                    <button type="button" class="btn btn-primary" onclick="showTable()">Submit</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="frame_tabel" class="card shadow-sm d-none">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Daftar Kode</h5>
+            <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modalAddUsage">ADD</button>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small">Detail Kode untuk Proses: <strong id="display_kode"></strong></p>
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 10%;">No.</th>
+                            <th>Kode</th>
+                            <th>Kategori</th>
+                            <th style="width: 15%;">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table_body">
+                                          </tbody>
+                </table>
+            </div>
+            <div class="d-flex justify-content-end mt-3">
+                <button class="btn btn-primary px-4">Submit Final</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalAddUsage" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Data</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Kategori:</label>
+                    <select class="form-select" id="new_kat">
+                        <option value="lab">Lab</option>
+                        <option value="laminating">Laminating</option>
+                       
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Kode:</label>
+                    <input type="text" class="form-control" id="new_kode">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary w-100" onclick="addData()">Add</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Logika untuk menampilkan tabel (buka_tabel di usage.py)
+    function showTable() {
+        const kode = document.getElementById('kode_proses_input').value;
+        if (kode.trim() !== "") {
+            document.getElementById('frame_tabel').classList.remove('d-none');
+            document.getElementById('display_kode').innerText = kode;
+        } else {
+            alert("Isi Kode Proses terlebih dahulu!");
+        }
+    }
+
+    // Logika untuk menambah baris (simpan_ke_tabel di usage.py)
+    function addData() {
+        const kat = document.getElementById('new_kat').value;
+        const kode = document.getElementById('new_kode').value;
+        
+        if (kode) {
+            const table = document.getElementById('table_body');
+            const rowCount = table.rows.length + 1;
+            const row = `<tr>
+                <td>${rowCount}</td>
+                <td>${kode}</td>
+                <td>${kat}</td>
+                <td><button class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove()">Delete</button></td>
+            </tr>`;
+            table.innerHTML += row;
+            
+            // Tutup modal dan reset
+            bootstrap.Modal.getInstance(document.getElementById('modalAddUsage')).hide();
+            document.getElementById('new_kode').value = "";
+        } else {
+            alert("Kode harus diisi!");
+        }
+    }
+</script>
+{% endblock %}
