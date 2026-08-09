@@ -385,6 +385,25 @@ def _query_outstanding_rows(
             if pod_id is None:
                 continue
             delivered_by_po_detail[int(pod_id)] = total or Decimal(0)
+        # Jalur MRP FG OUT: DeliveryDetail.po_detail_id langsung (tanpa ProductionDetail)
+        direct_rows = db.execute(
+            select(DeliveryDetail.po_detail_id, func.sum(DeliveryDetail.qty))
+            .where(
+                DeliveryDetail.po_detail_id.is_not(None),
+                or_(
+                    DeliveryDetail.production_detail_id.is_(None),
+                    DeliveryDetail.production_detail_id == 0,
+                ),
+            )
+            .group_by(DeliveryDetail.po_detail_id)
+        ).all()
+        for pod_id, total in direct_rows:
+            if pod_id is None:
+                continue
+            key = int(pod_id)
+            delivered_by_po_detail[key] = (delivered_by_po_detail.get(key) or Decimal(0)) + (
+                total or Decimal(0)
+            )
 
     po_needle = (po_q or "").strip().lower()
     factory_needle = (factory_code or "").strip().lower()

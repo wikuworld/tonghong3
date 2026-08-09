@@ -1527,6 +1527,9 @@ const messages = {
         subtitle: 'Stok packing list dan proses OUT',
         outTitle: 'OUT — scan kode packing',
         dateIn: 'Tanggal IN',
+        erpDelivery: 'Delivery ERP',
+        bridgeFailed: 'Bridge gagal',
+        outBridged: 'OUT sukses — Delivery draft {delivery}',
       },
       mrpStokKimia: {
         title: 'Stok Kimia (MRP)',
@@ -3718,6 +3721,9 @@ const messages = {
         subtitle: 'Packing-list stock and OUT process',
         outTitle: 'OUT — scan packing code',
         dateIn: 'Date IN',
+        erpDelivery: 'ERP Delivery',
+        bridgeFailed: 'Bridge failed',
+        outBridged: 'OUT success — draft Delivery {delivery}',
       },
       mrpStokKimia: {
         title: 'Chemical Stock (MRP)',
@@ -5867,6 +5873,9 @@ const messages = {
         subtitle: '包装库存与出库',
         outTitle: '出库 — 扫描包装编码',
         dateIn: '入库日期',
+        erpDelivery: 'ERP 送货单',
+        bridgeFailed: '桥接失败',
+        outBridged: '出库成功 — 草稿送货单 {delivery}',
       },
       mrpStokKimia: {
         title: '化学品库存 (MRP)',

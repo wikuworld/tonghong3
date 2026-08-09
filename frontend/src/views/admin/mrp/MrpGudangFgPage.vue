@@ -22,6 +22,22 @@
         <el-table-column prop="total_lembar" label="Lembar" width="90" />
         <el-table-column prop="total_ukuran" label="Ukuran" width="90" />
         <el-table-column prop="status" :label="t('common.status')" width="100" />
+        <el-table-column :label="t('pages.mrpGudangFg.erpDelivery')" min-width="160">
+          <template #default="{ row }">
+            <el-button
+              v-if="row.erp_delivery_id"
+              link
+              type="primary"
+              @click="$router.push({ path: '/admin/delivery', query: { delivery_id: row.erp_delivery_id } })"
+            >
+              {{ row.erp_delivery_number || `#${row.erp_delivery_id}` }}
+            </el-button>
+            <span v-else-if="row.bridge_status === 'failed'" class="text-red-600">
+              {{ t('pages.mrpGudangFg.bridgeFailed') }}
+            </span>
+            <span v-else class="text-gray-400">—</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="date_in" :label="t('pages.mrpGudangFg.dateIn')" min-width="140" />
         <el-table-column :label="t('common.actions')" width="100" fixed="right">
           <template #default="{ row }">
@@ -39,6 +55,19 @@
           <div>{{ t('common.status') }}: {{ detail.fg.status }}</div>
           <div>Lembar / Ukuran: {{ detail.fg.total_lembar }} / {{ detail.fg.total_ukuran }}</div>
           <div v-if="detail.fg.date_out">OUT: {{ detail.fg.date_out }} — {{ detail.fg.keterangan_out }}</div>
+          <div v-if="detail.fg.erp_delivery_id" class="flex items-center gap-1">
+            <span>{{ t('pages.mrpGudangFg.erpDelivery') }}:</span>
+            <el-button
+              link
+              type="primary"
+              @click="$router.push({ path: '/admin/delivery', query: { delivery_id: detail.fg.erp_delivery_id } })"
+            >
+              {{ detail.fg.erp_delivery_number || `#${detail.fg.erp_delivery_id}` }}
+            </el-button>
+          </div>
+          <div v-if="detail.fg.bridge_error" class="text-red-600">
+            {{ detail.fg.bridge_error }}
+          </div>
         </div>
         <h4 class="mb-2 font-semibold">Rolls</h4>
         <el-table :data="detail.rolls || []" border size="small" class="mb-4">
@@ -51,6 +80,7 @@
           <el-table-column prop="no_po" label="PO" />
           <el-table-column prop="no_so" label="SO" />
           <el-table-column prop="qty_sq" label="Qty" />
+          <el-table-column prop="source_detail_id" label="PO Detail" width="100" />
         </el-table>
       </template>
     </el-drawer>
@@ -90,8 +120,13 @@ async function doOut() {
   if (!outForm.kode_packing.trim()) return
   outing.value = true
   try {
-    await mrpGudangFgOut({ ...outForm })
-    ElMessage.success(t('common.saved'))
+    const res = await mrpGudangFgOut({ ...outForm })
+    const dn = res?.erp_delivery_number || (res?.erp_delivery_id ? `#${res.erp_delivery_id}` : '')
+    ElMessage.success(
+      dn
+        ? t('pages.mrpGudangFg.outBridged', { delivery: dn })
+        : t('common.saved'),
+    )
     outForm.kode_packing = ''
     outForm.keterangan = ''
     await reload()

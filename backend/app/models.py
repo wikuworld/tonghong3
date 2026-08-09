@@ -731,6 +731,9 @@ class QcDetail(Base):
 
 class PackingHeader(Base):
     __tablename__ = "packing_headers"
+    __table_args__ = (
+        Index("ix_packing_headers_mrp_fg_id", "mrp_fg_id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     packing_number: Mapped[Optional[str]] = mapped_column(String(100), unique=True)
@@ -741,6 +744,10 @@ class PackingHeader(Base):
         TIMESTAMP, server_default=func.current_timestamp()
     )
     invpl_printed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # erp = alur Production/QC; mrp = stub packing dari Gudang FG OUT
+    source: Mapped[Optional[str]] = mapped_column(String(16), nullable=True, default="erp")
+    mrp_packing_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    mrp_fg_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
 
 class PackingDetail(Base):
@@ -763,6 +770,7 @@ class DeliveryHeader(Base):
     __tablename__ = "delivery_headers"
     __table_args__ = (
         Index("ix_delivery_headers_customer_id", "customer_id"),
+        Index("ix_delivery_headers_mrp_fg_id", "mrp_fg_id", unique=True),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -787,6 +795,7 @@ class DeliveryHeader(Base):
     customs_declaration_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("customs_declarations.id", ondelete="SET NULL")
     )
+    mrp_fg_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
     invoices: Mapped[list["Invoice"]] = relationship("Invoice", back_populates="delivery")
     customer: Mapped[Optional["Customer"]] = relationship("Customer")
@@ -808,6 +817,10 @@ class DeliveryDetail(Base):
     )
     packing_detail_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("packing_details.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Jalur MRP FG OUT: taut langsung ke baris PO tanpa ProductionDetail
+    po_detail_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("po_details.id", ondelete="SET NULL"), nullable=True, index=True
     )
     qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
     qty_roll: Mapped[Optional[int]] = mapped_column(Integer)

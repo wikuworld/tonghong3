@@ -1034,12 +1034,15 @@ class DeliveryHeaderOut(ORMBase):
     delivery_zone: Optional[str] = None
     delivery_type: Optional[str] = None
     customs_declaration_id: Optional[int] = None
+    mrp_fg_id: Optional[int] = None
 
 
 class DeliveryDetailOut(ORMBase):
     id: int
     delivery_id: Optional[int] = None
     production_detail_id: Optional[int] = None
+    packing_detail_id: Optional[int] = None
+    po_detail_id: Optional[int] = None
     qty: Optional[float] = None
     qty_roll: Optional[int] = None
     qty_pcs: Optional[int] = None

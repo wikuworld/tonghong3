@@ -484,16 +484,30 @@ def master_po_sync():
         no_so = (item.get("no_so") or "").strip() or None
         customer = (item.get("customer") or "").strip() or None
         color_swatch = (item.get("color_swatch") or "").strip() or None
+        source_detail_id = item.get("source_detail_id")
+        try:
+            source_detail_id = int(source_detail_id) if source_detail_id is not None else None
+        except (TypeError, ValueError):
+            source_detail_id = None
         qty_order = float(item.get("qty_order") or item.get("sq_ft") or 0)
         sq_ft = float(item.get("sq_ft") or qty_order or 0)
 
-        cur.execute(
-            "SELECT id, qty_processed, status FROM tbl_master_po "
-            "WHERE no_po=%s AND item_name=%s AND COALESCE(warna,'')=%s "
-            "AND COALESCE(tebal,'')=%s AND COALESCE(emboss,'')=%s LIMIT 1",
-            (no_po, item_name, warna, tebal, emboss),
-        )
-        existing = cur.fetchone()
+        existing = None
+        if source_detail_id is not None:
+            cur.execute(
+                "SELECT id, qty_processed, status FROM tbl_master_po "
+                "WHERE source_detail_id=%s LIMIT 1",
+                (source_detail_id,),
+            )
+            existing = cur.fetchone()
+        if not existing:
+            cur.execute(
+                "SELECT id, qty_processed, status FROM tbl_master_po "
+                "WHERE no_po=%s AND item_name=%s AND COALESCE(warna,'')=%s "
+                "AND COALESCE(tebal,'')=%s AND COALESCE(emboss,'')=%s LIMIT 1",
+                (no_po, item_name, warna, tebal, emboss),
+            )
+            existing = cur.fetchone()
 
         if existing:
             qty_processed = float(existing.get("qty_processed") or 0)
@@ -505,7 +519,7 @@ def master_po_sync():
                 status = "outstanding"
             cur.execute(
                 "UPDATE tbl_master_po SET no_so=%s, customer=%s, warna=%s, tebal=%s, emboss=%s, "
-                "color_swatch=%s, sq_ft=%s, qty_order=%s, status=%s WHERE id=%s",
+                "color_swatch=%s, source_detail_id=%s, sq_ft=%s, qty_order=%s, status=%s WHERE id=%s",
                 (
                     no_so,
                     customer,
@@ -513,6 +527,7 @@ def master_po_sync():
                     tebal or None,
                     emboss or None,
                     color_swatch,
+                    source_detail_id,
                     sq_ft,
                     qty_order,
                     status,
@@ -524,8 +539,8 @@ def master_po_sync():
             cur.execute(
                 "INSERT INTO tbl_master_po "
                 "(no_po, no_so, customer, item_name, warna, tebal, emboss, color_swatch, "
-                "sq_ft, qty_order, qty_processed, status) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,'outstanding')",
+                "source_detail_id, sq_ft, qty_order, qty_processed, status) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,'outstanding')",
                 (
                     no_po,
                     no_so,
@@ -535,6 +550,7 @@ def master_po_sync():
                     tebal or None,
                     emboss or None,
                     color_swatch,
+                    source_detail_id,
                     sq_ft,
                     qty_order,
                 ),
@@ -1504,9 +1520,23 @@ def packing_start():
         (kode_packing, kode_wip, no_po, customer),
     )
     packing_id = cur.lastrowid
+    po_id = body.get("po_id")
+    try:
+        po_id = int(po_id) if po_id is not None else None
+    except (TypeError, ValueError):
+        po_id = None
+    if po_id is None and no_po:
+        cur.execute(
+            "SELECT id FROM tbl_master_po WHERE no_po=%s ORDER BY id DESC LIMIT 1",
+            (no_po,),
+        )
+        row_po = cur.fetchone()
+        if row_po:
+            po_id = row_po["id"]
     cur.execute(
-        "INSERT INTO tbl_packing_po (packing_id, no_po, no_so, qty_sq) VALUES (%s,%s,%s,%s)",
-        (packing_id, no_po, no_so, qty_sq),
+        "INSERT INTO tbl_packing_po (packing_id, po_id, no_po, no_so, qty_sq) "
+        "VALUES (%s,%s,%s,%s,%s)",
+        (packing_id, po_id, no_po, no_so, qty_sq),
     )
     conn.commit()
     cur.close()
@@ -1533,11 +1563,24 @@ def packing_detail_api(packing_id: int):
         (packing_id,),
     )
     rolls = _rows(cur.fetchall())
-    cur.execute("SELECT * FROM tbl_packing_po WHERE packing_id = %s", (packing_id,))
+    cur.execute(
+        "SELECT pp.*, "
+        "COALESCE(mp1.source_detail_id, mp2.source_detail_id) AS source_detail_id, "
+        "COALESCE(mp1.item_name, mp2.item_name) AS item_name, "
+        "COALESCE(mp1.warna, mp2.warna) AS warna "
+        "FROM tbl_packing_po pp "
+        "LEFT JOIN tbl_master_po mp1 ON mp1.id = pp.po_id "
+        "LEFT JOIN tbl_master_po mp2 ON pp.po_id IS NULL AND mp2.id = ("
+        "  SELECT id FROM tbl_master_po WHERE no_po = pp.no_po "
+        "  ORDER BY id DESC LIMIT 1"
+        ") "
+        "WHERE pp.packing_id = %s",
+        (packing_id,),
+    )
     packing_pos = _rows(cur.fetchall())
     cur.execute(
-        "SELECT i.id AS item_id, po.no_po, po.no_so, po.item_name, po.customer, "
-        "p.qty_proses AS qty_sq "
+        "SELECT i.id AS item_id, po.id AS po_id, po.source_detail_id, po.no_po, po.no_so, "
+        "po.item_name, po.customer, p.qty_proses AS qty_sq "
         "FROM tbl_rencana_item i "
         "JOIN tbl_rencana_item_po p ON p.item_id = i.id "
         "JOIN tbl_master_po po ON po.id = p.po_id "
@@ -1672,13 +1715,27 @@ def packing_actions(packing_id: int):
         no_po = (body.get("no_po") or "").strip()
         no_so = (body.get("no_so") or "").strip()
         qty_sq = float(body.get("qty_sq") or 0)
+        po_id = body.get("po_id")
+        try:
+            po_id = int(po_id) if po_id is not None else None
+        except (TypeError, ValueError):
+            po_id = None
         if not no_po:
             cur.close()
             conn.close()
             return _err("no_po wajib")
+        if po_id is None:
+            cur.execute(
+                "SELECT id FROM tbl_master_po WHERE no_po=%s ORDER BY id DESC LIMIT 1",
+                (no_po,),
+            )
+            row_po = cur.fetchone()
+            if row_po:
+                po_id = row_po["id"]
         cur.execute(
-            "INSERT INTO tbl_packing_po (packing_id, no_po, no_so, qty_sq) VALUES (%s,%s,%s,%s)",
-            (packing_id, no_po, no_so, qty_sq),
+            "INSERT INTO tbl_packing_po (packing_id, po_id, no_po, no_so, qty_sq) "
+            "VALUES (%s,%s,%s,%s,%s)",
+            (packing_id, po_id, no_po, no_so, qty_sq),
         )
         msg = "PO ditambahkan"
 
@@ -1765,8 +1822,32 @@ def gudang_fg_detail(fg_id: int):
         (fg["packing_id"],),
     )
     rolls = _rows(cur.fetchall())
-    cur.execute("SELECT * FROM tbl_packing_po WHERE packing_id=%s", (fg["packing_id"],))
+    cur.execute(
+        "SELECT pp.*, "
+        "COALESCE(mp1.source_detail_id, mp2.source_detail_id) AS source_detail_id, "
+        "COALESCE(mp1.item_name, mp2.item_name) AS item_name "
+        "FROM tbl_packing_po pp "
+        "LEFT JOIN tbl_master_po mp1 ON mp1.id = pp.po_id "
+        "LEFT JOIN tbl_master_po mp2 ON pp.po_id IS NULL AND mp2.id = ("
+        "  SELECT id FROM tbl_master_po WHERE no_po = pp.no_po "
+        "  ORDER BY id DESC LIMIT 1"
+        ") "
+        "WHERE pp.packing_id=%s",
+        (fg["packing_id"],),
+    )
     packing_pos = _rows(cur.fetchall())
+    bridge_lines = []
+    if packing:
+        cur.execute(
+            "SELECT po.source_detail_id, po.no_po, po.no_so, po.item_name, "
+            "p.qty_proses AS qty_sq "
+            "FROM tbl_rencana_item i "
+            "JOIN tbl_rencana_item_po p ON p.item_id = i.id "
+            "JOIN tbl_master_po po ON po.id = p.po_id "
+            "WHERE i.kode_lot_wip = %s AND po.source_detail_id IS NOT NULL",
+            (packing.get("kode_wip"),),
+        )
+        bridge_lines = _rows(cur.fetchall())
     cur.close()
     conn.close()
     return jsonify(
@@ -1775,6 +1856,7 @@ def gudang_fg_detail(fg_id: int):
             "packing": _row(packing),
             "rolls": rolls,
             "packing_pos": packing_pos,
+            "bridge_lines": bridge_lines,
         }
     )
 
@@ -1803,13 +1885,90 @@ def gudang_fg_out():
         conn.close()
         return _err("Kode Packing List tidak ditemukan atau sudah OUT", 404)
     cur.execute(
-        "UPDATE tbl_gudang_fg SET status='out', date_out=NOW(), keterangan_out=%s WHERE id=%s",
+        "UPDATE tbl_gudang_fg SET status='out', date_out=NOW(), keterangan_out=%s, "
+        "bridge_status=NULL, bridge_error=NULL WHERE id=%s",
         (keterangan, fg["id"]),
     )
     conn.commit()
     cur.close()
     conn.close()
     return jsonify({"ok": True, "id": fg["id"], "kode_packing": kode_packing})
+
+
+@api.post("/gudang-fg/<int:fg_id>/rollback-out")
+def gudang_fg_rollback_out(fg_id: int):
+    """Kembalikan FG ke in_stock jika bridge ERP gagal."""
+    from app import ensure_extended_tables
+
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "bridge failed")[:255]
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.execute("SELECT * FROM tbl_gudang_fg WHERE id=%s", (fg_id,))
+    fg = cur.fetchone()
+    if not fg:
+        cur.close()
+        conn.close()
+        return _err("Data tidak ditemukan", 404)
+    if fg.get("status") != "out":
+        cur.close()
+        conn.close()
+        return jsonify({"ok": True, "id": fg_id, "status": fg.get("status"), "noop": True})
+    cur.execute(
+        "UPDATE tbl_gudang_fg SET status='in_stock', date_out=NULL, keterangan_out=NULL, "
+        "erp_delivery_id=NULL, erp_delivery_number=NULL, "
+        "bridge_status='failed', bridge_error=%s WHERE id=%s",
+        (reason, fg_id),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "id": fg_id, "status": "in_stock"})
+
+
+@api.post("/gudang-fg/<int:fg_id>/bridge-result")
+def gudang_fg_bridge_result(fg_id: int):
+    """Simpan hasil bridge Delivery ERP pada baris Gudang FG."""
+    from app import ensure_extended_tables
+
+    body = request.get_json(silent=True) or {}
+    delivery_id = body.get("delivery_id")
+    delivery_number = (body.get("delivery_number") or "").strip() or None
+    bridge_status = (body.get("bridge_status") or "ok").strip() or "ok"
+    bridge_error = (body.get("bridge_error") or "").strip() or None
+    try:
+        delivery_id = int(delivery_id) if delivery_id is not None else None
+    except (TypeError, ValueError):
+        delivery_id = None
+
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.execute("SELECT id FROM tbl_gudang_fg WHERE id=%s", (fg_id,))
+    if not cur.fetchone():
+        cur.close()
+        conn.close()
+        return _err("Data tidak ditemukan", 404)
+    cur.execute(
+        "UPDATE tbl_gudang_fg SET erp_delivery_id=%s, erp_delivery_number=%s, "
+        "bridge_status=%s, bridge_error=%s WHERE id=%s",
+        (delivery_id, delivery_number, bridge_status, bridge_error, fg_id),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify(
+        {
+            "ok": True,
+            "id": fg_id,
+            "erp_delivery_id": delivery_id,
+            "erp_delivery_number": delivery_number,
+            "bridge_status": bridge_status,
+        }
+    )
 
 
 # ---- P4: stok kimia / stok RP ----

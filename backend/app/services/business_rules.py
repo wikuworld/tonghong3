@@ -78,12 +78,13 @@ def po_numbers_from_delivery(db: "Session", delivery_id: int) -> set[str]:
     ).all()
     seen: set[str] = set()
     for d in details:
-        if not d.production_detail_id:
-            continue
-        pd = db.get(ProductionDetail, d.production_detail_id)
-        if not pd or not pd.po_detail_id:
-            continue
-        pod = db.get(PoDetail, pd.po_detail_id)
+        pod = None
+        if d.po_detail_id:
+            pod = db.get(PoDetail, d.po_detail_id)
+        elif d.production_detail_id:
+            pd = db.get(ProductionDetail, d.production_detail_id)
+            if pd and pd.po_detail_id:
+                pod = db.get(PoDetail, pd.po_detail_id)
         if not pod:
             continue
         ph = db.get(PoHeader, pod.po_id)

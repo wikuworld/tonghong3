@@ -214,6 +214,32 @@ def ensure_extended_tables(cur):
     po_cols_ext = _col_names(cur, "tbl_master_po")
     if "color_swatch" not in po_cols_ext:
         cur.execute("ALTER TABLE tbl_master_po ADD COLUMN color_swatch VARCHAR(100) DEFAULT NULL")
+    if "source_detail_id" not in po_cols_ext:
+        cur.execute("ALTER TABLE tbl_master_po ADD COLUMN source_detail_id INT DEFAULT NULL")
+        try:
+            cur.execute(
+                "CREATE INDEX idx_master_po_source_detail ON tbl_master_po (source_detail_id)"
+            )
+        except mysql.connector.Error:
+            pass
+    fg_cols = _col_names(cur, "tbl_gudang_fg")
+    if fg_cols:
+        if "erp_delivery_id" not in fg_cols:
+            cur.execute(
+                "ALTER TABLE tbl_gudang_fg ADD COLUMN erp_delivery_id BIGINT DEFAULT NULL"
+            )
+        if "erp_delivery_number" not in fg_cols:
+            cur.execute(
+                "ALTER TABLE tbl_gudang_fg ADD COLUMN erp_delivery_number VARCHAR(100) DEFAULT NULL"
+            )
+        if "bridge_status" not in fg_cols:
+            cur.execute(
+                "ALTER TABLE tbl_gudang_fg ADD COLUMN bridge_status VARCHAR(32) DEFAULT NULL"
+            )
+        if "bridge_error" not in fg_cols:
+            cur.execute(
+                "ALTER TABLE tbl_gudang_fg ADD COLUMN bridge_error VARCHAR(255) DEFAULT NULL"
+            )
     cur.execute(
         "UPDATE master_erp SET material_name = 'Standard Leather' "
         "WHERE material_name IS NULL OR material_name = ''"
