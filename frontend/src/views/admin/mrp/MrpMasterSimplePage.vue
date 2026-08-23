@@ -23,6 +23,7 @@
     </template>
 
     <p class="text-sm text-gray-500 mb-2">
+      <el-tag size="small" type="info" effect="plain" class="mr-1 align-middle">{{ t('common.nav.viewOnly') }}</el-tag>
       {{ t('pages.mrpMasterCatalog.sourceHint') }}
       · {{ t('pages.mrpMasterCatalog.crudHint') }}
     </p>
@@ -126,7 +127,7 @@ const columns = computed(() => {
 })
 
 function goInventory() {
-  router.push('/admin/inventory')
+  router.push({ path: '/admin/inventory', query: { tab: 'material' } })
 }
 
 async function reload() {

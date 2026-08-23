@@ -242,6 +242,8 @@ class BuyerPriceResolveIn(BaseModel):
     style_article: Optional[str] = None
     thickness_text: Optional[str] = None
     color_family: Optional[str] = None
+    emboss: Optional[str] = None
+    factory_code: Optional[str] = None
 
     @field_validator("color_family")
     @classmethod
@@ -413,6 +415,7 @@ class PoDetailCreate(BaseModel):
     unit_price: Optional[Decimal] = None
     copied_from_detail_id: Optional[int] = None
     color_swatch_recipe_id: Optional[int] = None
+    delivery_schedules: Optional[list["DeliveryScheduleItem"]] = None
 
     @field_validator("color_family")
     @classmethod
@@ -1327,6 +1330,10 @@ class MasterItemOut(ORMBase):
     material_name: Optional[str] = None
     emboss: Optional[str] = None
     color: Optional[str] = None
+    color_code: Optional[str] = None
+    color_qualifier: Optional[str] = None
+    in_csi: Optional[bool] = None
+    in_swatch: Optional[bool] = None
     softness: Optional[str] = None
     color_reference: Optional[str] = None
     backing: Optional[str] = None
@@ -1357,13 +1364,13 @@ class MasterItemPageOut(BaseModel):
 
 
 class MasterItemDimensionValuesOut(BaseModel):
-    """Nilai unik untuk cascade: material → ketebalan → warna."""
+    """Nilai unik untuk cascade: material → ketebalan → warna → emboss → kode FG."""
 
     values: list[str] = Field(default_factory=list)
 
 
 class MasterItemResolveByDimensionsOut(BaseModel):
-    """Hasil resolve (material + ketebalan + warna) ke baris master_items."""
+    """Hasil resolve (material + ketebalan + warna + emboss) ke baris master_items."""
 
     status: Literal["single", "ambiguous", "none"]
     item: Optional[MasterItemOut] = None

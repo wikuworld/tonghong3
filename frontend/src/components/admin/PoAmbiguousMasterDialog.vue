@@ -15,7 +15,7 @@
     >
       <el-radio v-for="c in candidates" :key="c.id" :value="c.id" class="!items-start !h-auto whitespace-normal">
         <span class="font-mono text-sm">{{ c.item_code }}</span>
-        <span class="text-sm text-slate-700"> — {{ c.material_name || '—' }} / {{ c.thickness_range || c.thickness_mm || '—' }} / {{ c.color || '—' }}</span>
+        <span class="text-sm text-slate-700"> — {{ c.material_name || '—' }} / {{ c.thickness_range || c.thickness_mm || '—' }} / {{ c.color || '—' }} / {{ c.emboss || '—' }}</span>
       </el-radio>
     </el-radio-group>
     <template #footer>

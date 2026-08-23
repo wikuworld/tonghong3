@@ -122,6 +122,13 @@ export function savePermissionMatrix(matrix) {
   return apiFetch('/permissions/matrix', { method: 'PUT', body: JSON.stringify({ matrix }) })
 }
 
+export function listPoAuditLogs(poId, params = {}) {
+  const q = new URLSearchParams()
+  if (params.limit != null) q.set('limit', String(params.limit))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/po/${poId}/audit-logs${suffix}`)
+}
+
 export function listAuditLogs(params = {}) {
   const q = new URLSearchParams()
   if (params.entity_type) q.set('entity_type', params.entity_type)
@@ -142,14 +149,6 @@ export function toIsoDate(val) {
 
 export function dashboardSummary() {
   return apiFetch('/dashboard/summary')
-}
-
-export function listExchangeRates() {
-  return apiFetch('/exchange-rates')
-}
-
-export function createExchangeRate(body) {
-  return apiFetch('/exchange-rates', { method: 'POST', body: JSON.stringify(body) })
 }
 
 // --- Customers ---
@@ -657,22 +656,25 @@ export function listMasterItemsPage({ limit = 50, offset = 0, keyword, category,
   return apiFetch(`/masters/items/page?${p}`)
 }
 
-/** Cascade PO: nilai unik material → ketebalan → warna dari master_items. */
-export function listMasterItemDimensionValues(kind, { material_name, thickness_text, category } = {}) {
+/** Cascade PO: nilai unik material → ketebalan → warna → emboss → kode FG dari master_items. */
+export function listMasterItemDimensionValues(kind, { material_name, thickness_text, color, emboss, category } = {}) {
   const p = new URLSearchParams({ kind })
   if (material_name != null && String(material_name).trim()) p.append('material_name', String(material_name).trim())
   if (thickness_text != null && String(thickness_text).trim()) p.append('thickness_text', String(thickness_text).trim())
+  if (color != null && String(color).trim()) p.append('color', String(color).trim())
+  if (emboss != null && String(emboss).trim()) p.append('emboss', String(emboss).trim())
   if (category != null && String(category).trim()) p.append('category', String(category).trim())
   return apiFetch(`/masters/items/dimension-values?${p}`)
 }
 
-/** Resolve tepat satu master item dari material + ketebalan + warna (status single|ambiguous|none). */
-export function resolveMasterItemByDimensions({ material_name, thickness_text, color, category }) {
+/** Resolve tepat satu master item dari material + ketebalan + warna + emboss (status single|ambiguous|none). */
+export function resolveMasterItemByDimensions({ material_name, thickness_text, color, emboss, category }) {
   const p = new URLSearchParams({
     material_name: String(material_name || '').trim(),
     thickness_text: String(thickness_text || '').trim(),
     color: String(color || '').trim(),
   })
+  if (emboss != null && String(emboss).trim()) p.append('emboss', String(emboss).trim())
   if (category != null && String(category).trim()) p.append('category', String(category).trim())
   return apiFetch(`/masters/items/resolve-by-dimensions?${p}`)
 }
@@ -756,6 +758,54 @@ export function importFluorescentCsv(file) {
   const fd = new FormData()
   fd.append('file', file)
   return apiFetch('/masters/fluorescent-colors/import-csv', { method: 'POST', body: fd })
+}
+
+export function listCsiColorsPage(params = {}) {
+  const q = new URLSearchParams()
+  if (params.buyer_code && String(params.buyer_code).trim()) q.set('buyer_code', String(params.buyer_code).trim())
+  if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.sort_by && String(params.sort_by).trim()) q.set('sort_by', String(params.sort_by).trim())
+  if (params.sort_dir && String(params.sort_dir).trim()) q.set('sort_dir', String(params.sort_dir).trim())
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  const suffix = q.toString() ? `?${q.toString()}` : ''
+  return apiFetch(`/masters/csi-colors/page${suffix}`)
+}
+
+export function listCsiFormOptions() {
+  return apiFetch('/masters/csi-colors/form-options')
+}
+
+export function createCsiColor(body) {
+  return apiFetch('/masters/csi-colors', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateCsiColor(id, body) {
+  return apiFetch(`/masters/csi-colors/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteCsiColor(id) {
+  return apiFetch(`/masters/csi-colors/${id}`, { method: 'DELETE' })
+}
+
+export function importCsiBundled() {
+  return apiFetch('/masters/csi-colors/import-bundled', { method: 'POST' })
+}
+
+export function getColorLinks({ color, color_code } = {}) {
+  const q = new URLSearchParams()
+  if (color && String(color).trim()) q.set('color', String(color).trim())
+  if (color_code && String(color_code).trim()) q.set('color_code', String(color_code).trim())
+  const suffix = q.toString() ? `?${q.toString()}` : ''
+  return apiFetch(`/masters/color-links${suffix}`)
+}
+
+export function listColorLinkOptions() {
+  return apiFetch('/masters/color-links/options')
+}
+
+export function backfillSwatchCsi() {
+  return apiFetch('/masters/color-swatch-recipes/backfill-csi', { method: 'POST' })
 }
 
 /** Master color swatch (resep pabrik × buyer × material × emboss). */
@@ -946,66 +996,8 @@ export function updateInvoice(id, body) {
   return apiFetch(`/invoice/${id}`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
-export async function importMasterZip(file) {
-  const fd = new FormData()
-  fd.append('file', file)
-  return apiFetch('/masters/import-zip', { method: 'POST', body: fd })
-}
-
 export function createInvoice(body) {
   return apiFetch('/invoice', { method: 'POST', body: JSON.stringify(body) })
-}
-
-// --- Customs ---
-export function listCustomsDeclarations() {
-  return apiFetch('/customs/declarations')
-}
-
-export function getCustomsDeclaration(id) {
-  return apiFetch(`/customs/declarations/${id}`)
-}
-
-export function createCustomsDeclaration(body) {
-  return apiFetch('/customs/declarations', { method: 'POST', body: JSON.stringify(body) })
-}
-
-export function updateCustomsDeclaration(id, body) {
-  return apiFetch(`/customs/declarations/${id}`, { method: 'PUT', body: JSON.stringify(body) })
-}
-
-/** Simpan semua sheet (kolom + baris) untuk satu deklarasi AJU. */
-export function saveCustomsSheetsData(id, body) {
-  return apiFetch(`/customs/declarations/${id}/sheets-data`, { method: 'PUT', body: JSON.stringify(body) })
-}
-
-export function deleteCustomsDeclaration(id) {
-  return apiFetch(`/customs/declarations/${id}`, { method: 'DELETE' })
-}
-
-export function importCustomsZip(file, sourceLabel) {
-  const fd = new FormData()
-  fd.append('file', file)
-  if (sourceLabel) fd.append('source_label', sourceLabel)
-  return apiFetch('/customs/declarations/import-zip', { method: 'POST', body: fd })
-}
-
-export function importCustomsCsvFiles(files, sourceLabel) {
-  const fd = new FormData()
-  for (const f of files) fd.append('files', f)
-  if (sourceLabel) fd.append('source_label', sourceLabel)
-  return apiFetch('/customs/declarations/import-upload', { method: 'POST', body: fd })
-}
-
-export function generateCustomsFromDelivery(deliveryId) {
-  return apiFetch(`/customs/generate-from-delivery/${deliveryId}`, { method: 'POST' })
-}
-
-/** Unduh ZIP CSV BC 3.0 untuk unggah ke CEISA / Core Customs. */
-export function exportCustomsZip(declarationId) {
-  return fetchAuthenticatedDocument(`/customs/declarations/${declarationId}/export-zip`, {
-    mode: 'download',
-    downloadFallbackName: `customs-${declarationId}.zip`,
-  })
 }
 
 // --- Buyer prices ---
@@ -1019,7 +1011,7 @@ export function getBuyerPriceList(id) {
 
 /**
  * Resolusi harga satuan dari sheet list harga buyer (logika di server).
- * @param {object} body - buyer_code, material_name?, color?, style_article?, thickness_text?, color_family?
+ * @param {object} body - buyer_code, material_name?, color?, style_article?, thickness_text?, color_family?, emboss?, factory_code?
  */
 export function resolveBuyerUnitPrice(body) {
   return apiFetch('/buyer-prices/resolve-unit-price', { method: 'POST', body: JSON.stringify(body) })

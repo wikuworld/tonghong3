@@ -31,6 +31,7 @@ def test_swatch_emboss_code_strips_description():
 def test_swatch_colors_match_form_vs_master():
     assert swatch_colors_match("WOLF GREY (01V)", "WOLF GREY")
     assert swatch_colors_match("WASHED CORAL (6JE)", "WASHED CORAL")
+    assert swatch_colors_match("PINKSICLE (6FS) FLUORESCENT", "PINK SICLE")
     assert not swatch_colors_match("ANTOMIC VIOLET", "WOLF GREY")
 
 
@@ -74,3 +75,29 @@ def test_filter_swatch_recipes_by_dimensions():
     )
     assert len(out) == 1
     assert out[0].color_standard == "TM001"
+
+
+def test_filter_keeps_color_code_hit_when_emboss_differs():
+    rows = [
+        _FakeRecipe(
+            material_name="VIRGIN HYDRO PU",
+            color_name="PINK SICLE",
+            color_code="6FS",
+            emboss="AR-121",
+            color_standard="TMSL043",
+        ),
+        _FakeRecipe(
+            material_name="VIRGIN HYDRO PU",
+            color_name="FIRE RED",
+            color_code="64D",
+            emboss="R-53",
+            color_standard="OTHER",
+        ),
+    ]
+    out = filter_swatch_recipes_by_dimensions(
+        rows,
+        material_name="VIRGIN HYDRO PU",
+        color_name="PINKSICLE (6FS) FLUORESCENT",
+        emboss="AR-33 M",
+    )
+    assert [r.color_standard for r in out] == ["TMSL043"]

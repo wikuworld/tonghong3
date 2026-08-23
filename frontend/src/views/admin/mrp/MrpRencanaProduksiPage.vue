@@ -268,102 +268,11 @@
       </template>
     </el-dialog>
 
-    <el-dialog
+    <MrpRencanaCreateDialog
       v-model="createOpen"
-      :title="t('pages.mrpRencana.createTitle')"
-      width="920px"
-      destroy-on-close
-      append-to-body
-      :z-index="4200"
-      :close-on-click-modal="!tourOpen"
-      :close-on-press-escape="!tourOpen"
-    >
-      <el-form label-position="top">
-        <el-form-item :label="t('pages.mrpRencana.name')" required>
-          <div id="mrp-rencana-tour-create-name">
-            <el-input v-model="form.nama_rencana" />
-          </div>
-        </el-form-item>
-        <el-form-item :label="t('pages.mrpRencana.date')">
-          <div id="mrp-rencana-tour-create-date">
-            <el-date-picker
-              v-model="form.tanggal_rencana"
-              type="date"
-              value-format="YYYY-MM-DD"
-              class="w-full"
-            />
-          </div>
-        </el-form-item>
-        <p class="text-sm text-slate-500 mb-2">{{ t('pages.mrpRencana.createFromPoHint') }}</p>
-        <div id="mrp-rencana-tour-create-po">
-          <el-table
-            :data="createPoList"
-            v-loading="createPoLoading"
-            border
-            size="small"
-            max-height="360"
-            row-key="id"
-            @selection-change="onCreatePoSelect"
-          >
-            <el-table-column type="selection" width="40" :selectable="createPoSelectable" />
-            <el-table-column prop="no_po" label="PO" min-width="110" />
-            <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="100" show-overflow-tooltip />
-            <el-table-column prop="item_name" label="Item" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="customer" :label="t('common.customer')" min-width="110" show-overflow-tooltip />
-            <el-table-column :label="t('pages.mrpRencana.thickness')" width="90">
-              <template #default="{ row }">{{ spekDisplay(row.tebal) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.mrpRencana.color')" width="100" show-overflow-tooltip>
-              <template #default="{ row }">{{ spekDisplay(row.warna) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.mrpRencana.emboss')" width="90" show-overflow-tooltip>
-              <template #default="{ row }">{{ spekDisplay(row.emboss) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.mrpRencana.swatch')" width="90" show-overflow-tooltip>
-              <template #default="{ row }">{{ spekDisplay(row.color_swatch) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.mrpRencana.qtyOrder')" width="90" align="right">
-              <template #default="{ row }">{{ formatQty(row.qty_order) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.mrpRencana.qtyAllocatable')" width="120" align="right">
-              <template #default="{ row }">{{ formatQty(row.qty_outstanding) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.mrpRencana.qtyBalanceErp')" width="100" align="right">
-              <template #default="{ row }">{{ formatQty(row.qty_balance_erp) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.mrpRencana.qtyPlan')" width="110">
-              <template #default="{ row }">
-                <el-input
-                  v-model.number="createPoQty[row.id]"
-                  type="number"
-                  size="small"
-                  min="0"
-                  :disabled="!createPoSelectable(row)"
-                />
-              </template>
-            </el-table-column>
-          </el-table>
-          <p class="text-sm text-slate-600 mt-2">
-            {{ t('pages.mrpRencana.selectedQtyTotal') }}:
-            <strong>{{ formatQty(createSelectedQtyTotal) }}</strong>
-          </p>
-        </div>
-      </el-form>
-      <template #footer>
-        <el-button @click="createOpen = false">{{ t('common.cancel') }}</el-button>
-        <el-tooltip
-          :content="t('pages.mrpRencana.tour.finishFirst')"
-          :disabled="!tourOpen"
-          placement="top"
-        >
-          <span id="mrp-rencana-tour-create-save" class="inline-block">
-            <el-button type="primary" :loading="saving" :disabled="tourOpen" @click="submitCreate">
-              {{ t('common.save') }}
-            </el-button>
-          </span>
-        </el-tooltip>
-      </template>
-    </el-dialog>
+      :tour-open="tourOpen"
+      @saved="reload"
+    />
   </AdminSection>
 </template>
 
@@ -373,11 +282,10 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
+import MrpRencanaCreateDialog from './MrpRencanaCreateDialog.vue'
 import { can } from '../../../security/permissions'
 import {
-  mrpCreateRencana,
   mrpGetRencana,
-  mrpListMasterPo,
   mrpListRencana,
   mrpRencanaItemBarcode,
   mrpRencanaItemListPo,
@@ -390,9 +298,7 @@ const TOUR_STORAGE_KEY = 'mrp-rencana-tour-v1'
 
 const { t } = useI18n()
 const loading = ref(false)
-const saving = ref(false)
 const savingPo = ref(false)
-const createPoLoading = ref(false)
 const tourOpen = ref(false)
 const tourCurrent = ref(0)
 const tourDriven = ref(false)
@@ -406,22 +312,12 @@ const printOpen = ref(false)
 const poList = ref([])
 const poTableRef = ref(null)
 const selectedPoRows = ref([])
-const createPoList = ref([])
 const poQty = reactive({})
-const createPoQty = reactive({})
 const selectedPos = ref([])
-const selectedCreatePos = ref([])
 const currentItemId = ref(null)
 const barcodeData = ref(null)
 const printData = ref(null)
 const canCreate = computed(() => can('mrpShopfloor', 'create'))
-const createSelectedQtyTotal = computed(() =>
-  selectedCreatePos.value.reduce((sum, p) => sum + Number(createPoQty[p.id] || 0), 0),
-)
-const form = reactive({
-  nama_rencana: '',
-  tanggal_rencana: new Date().toISOString().slice(0, 10),
-})
 
 const tourSteps = computed(() => {
   const steps = [
@@ -469,12 +365,12 @@ const tourSteps = computed(() => {
         description: t('pages.mrpRencana.tour.createDateDesc'),
       },
       {
-        key: 'createPo',
-        target: '#mrp-rencana-tour-create-po',
+        key: 'createItems',
+        target: '#mrp-rencana-tour-create-items',
         placement: 'top',
         panel: 'create',
-        title: t('pages.mrpRencana.tour.createPoTitle'),
-        description: t('pages.mrpRencana.tour.createPoDesc'),
+        title: t('pages.mrpRencana.tour.createItemsTitle'),
+        description: t('pages.mrpRencana.tour.createItemsDesc'),
       },
       {
         key: 'createSave',
@@ -554,18 +450,6 @@ function spekDisplay(v) {
   return s || '—'
 }
 
-function createPoHasSpek(row) {
-  return Boolean(
-    String(row?.item_name || '').trim() &&
-      String(row?.tebal || '').trim() &&
-      String(row?.warna || '').trim(),
-  )
-}
-
-function createPoSelectable(row) {
-  return createPoHasSpek(row) && Number(row?.qty_outstanding || 0) > 0
-}
-
 function markTourSeen() {
   try {
     localStorage.setItem(TOUR_STORAGE_KEY, '1')
@@ -622,16 +506,6 @@ function onTourEnd() {
   closeTourPanels()
   tourDriven.value = false
   tourCurrent.value = 0
-}
-
-function outstandingOf(row) {
-  const order = Number(row.qty_order ?? row.sq_ft ?? 0)
-  const processed = Number(row.qty_processed ?? 0)
-  const computed = order - processed
-  if (row.qty_outstanding != null && row.qty_outstanding !== '') {
-    return Number(row.qty_outstanding)
-  }
-  return computed > 0 ? computed : 0
 }
 
 async function syncPoSilent() {
@@ -724,10 +598,6 @@ function onPoSelect(rowsSel) {
   selectedPos.value = rowsSel
 }
 
-function onCreatePoSelect(rowsSel) {
-  selectedCreatePos.value = rowsSel
-}
-
 async function savePo() {
   if (!selectedPos.value.length) {
     ElMessage.warning(t('pages.mrpRencana.selectPoRequired'))
@@ -750,79 +620,8 @@ async function savePo() {
   }
 }
 
-async function openCreate() {
-  form.nama_rencana = ''
-  form.tanggal_rencana = new Date().toISOString().slice(0, 10)
-  selectedCreatePos.value = []
-  createPoList.value = []
+function openCreate() {
   createOpen.value = true
-  createPoLoading.value = true
-  try {
-    await syncPoSilent()
-    const rowsPo = await mrpListMasterPo()
-    const list = (rowsPo || [])
-      .filter((r) => ['outstanding', 'partial'].includes(String(r.status || '')))
-      .map((r) => ({
-        ...r,
-        qty_outstanding: outstandingOf(r),
-      }))
-      .filter((r) => r.qty_outstanding > 0)
-    createPoList.value = list
-    for (const p of list) {
-      createPoQty[p.id] = p.qty_outstanding
-    }
-  } catch (e) {
-    ElMessage.error(e.message || String(e))
-  } finally {
-    createPoLoading.value = false
-  }
-}
-
-async function submitCreate() {
-  if (tourOpen.value) {
-    ElMessage.info(t('pages.mrpRencana.tour.finishFirst'))
-    return
-  }
-  if (!form.nama_rencana?.trim()) {
-    ElMessage.warning(t('pages.mrpRencana.name'))
-    return
-  }
-  if (!selectedCreatePos.value.length) {
-    ElMessage.warning(t('pages.mrpRencana.selectPoRequired'))
-    return
-  }
-  const po_lines = []
-  for (const p of selectedCreatePos.value) {
-    if (!createPoHasSpek(p)) {
-      ElMessage.warning(`${t('pages.mrpRencana.spekIncomplete')}: ${p.no_po}`)
-      return
-    }
-    const qty = Number(createPoQty[p.id] || 0)
-    if (qty <= 0) {
-      ElMessage.warning(`${t('pages.mrpRencana.qtyPlan')}: ${p.no_po}`)
-      return
-    }
-    if (qty > Number(p.qty_outstanding || 0) + 1e-9) {
-      ElMessage.warning(`${t('pages.mrpRencana.qtyExceeds')}: ${p.no_po}`)
-      return
-    }
-    po_lines.push({ po_id: p.id, qty })
-  }
-  saving.value = true
-  try {
-    await mrpCreateRencana({
-      nama_rencana: form.nama_rencana,
-      tanggal_rencana: form.tanggal_rencana,
-      po_lines,
-    })
-    ElMessage.success(t('common.saved'))
-    createOpen.value = false
-    await reload()
-  } catch (e) {
-    ElMessage.error(e.message || String(e))
-  } finally {
-    saving.value = false
-  }
 }
 
 onMounted(async () => {

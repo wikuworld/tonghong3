@@ -13,7 +13,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ColorSwatchRecipe, Customer, MasterItem
+from app.models import ColorSwatchRecipe, CsiColorMaster, Customer, MasterItem
 from app.routers.auth import get_current_user, require_roles
 from app.services.color_swatch import (
     _VALID_BUYERS,
@@ -42,6 +42,9 @@ class ColorSwatchRecipeOut(BaseModel):
     brand_id: Optional[int] = None
     color_code: str
     color_name: str
+    csi_color_master_id: Optional[int] = None
+    csi_buyer_code: Optional[str] = None
+    csi_color_name: Optional[str] = None
     emboss: str
     color_standard: Optional[str] = None
     backing: Optional[str] = None
@@ -78,8 +81,9 @@ class ColorSwatchRecipeIn(BaseModel):
     customer_id: Optional[int] = None
     buyer_code: str = Field(..., min_length=1, max_length=32)
     brand_id: Optional[int] = None
+    csi_color_master_id: Optional[int] = None
     color_code: str = Field(default="", max_length=64)
-    color_name: str = Field(..., min_length=1, max_length=255)
+    color_name: str = Field(default="", max_length=255)
     emboss: str = Field(default="", max_length=255)
     color_standard: Optional[str] = Field(default=None, max_length=255)
     backing: Optional[str] = Field(default=None, max_length=120)
@@ -99,6 +103,11 @@ class ImportResultOut(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class SwatchCsiBackfillOut(BaseModel):
+    linked: int
+    orphan_remaining: int
+
+
 class ColorSwatchCustomerOptionOut(BaseModel):
     id: int
     code: Optional[str] = None
@@ -114,6 +123,7 @@ class ColorSwatchFormOptionsOut(BaseModel):
     colors_by_material: dict[str, list[str]] = Field(default_factory=dict)
     embosses_by_material: dict[str, list[str]] = Field(default_factory=dict)
     backings: list[str] = Field(default_factory=list)
+    csi_by_buyer: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
 
 
 def _recipe_to_out(db: Session, recipe: ColorSwatchRecipe) -> ColorSwatchRecipeOut:
@@ -121,6 +131,11 @@ def _recipe_to_out(db: Session, recipe: ColorSwatchRecipe) -> ColorSwatchRecipeO
     if recipe.customer_id:
         cust = db.get(Customer, recipe.customer_id)
         out.customer_code = cust.code if cust else None
+    if recipe.csi_color_master_id:
+        csi = db.get(CsiColorMaster, recipe.csi_color_master_id)
+        if csi:
+            out.csi_buyer_code = csi.buyer_code
+            out.csi_color_name = csi.color_name
     return out
 
 
@@ -137,13 +152,27 @@ def _apply_in(data: ColorSwatchRecipeIn, db: Session | None = None) -> dict[str,
         from app.services.buyer_registry import ensure_buyer_code
 
         ensure_buyer_code(db, buyer_code)
+    color_code = (data.color_code or "").strip()
+    color_name = (data.color_name or "").strip()
+    csi_id = data.csi_color_master_id
+    if db is not None:
+        from app.services.csi_color import apply_csi_to_swatch_fields
+
+        csi_id, color_code, color_name = apply_csi_to_swatch_fields(
+            db,
+            csi_id=csi_id,
+            buyer_code=buyer_code,
+            color_code=color_code,
+            color_name=color_name,
+        )
     return {
         "factory_key": factory_key,
         "customer_id": customer_id,
         "buyer_code": buyer_code,
         "brand_id": data.brand_id,
-        "color_code": (data.color_code or "").strip(),
-        "color_name": (data.color_name or "").strip(),
+        "csi_color_master_id": csi_id,
+        "color_code": color_code,
+        "color_name": color_name,
         "emboss": (data.emboss or "").strip(),
         "color_standard": color_standard,
         "backing": (data.backing or "").strip() or None,
@@ -207,6 +236,24 @@ def color_swatch_form_options(
         if recipe.customer_id and recipe.factory_key:
             factory_by_customer.setdefault(int(recipe.customer_id), set()).add(recipe.factory_key)
 
+    csi_rows = list(
+        db.scalars(
+            select(CsiColorMaster)
+            .where(CsiColorMaster.is_active.is_(True))
+            .order_by(CsiColorMaster.buyer_code.asc(), CsiColorMaster.color_code.asc())
+        ).all()
+    )
+    csi_by_buyer: dict[str, list[dict[str, Any]]] = {}
+    for csi in csi_rows:
+        csi_by_buyer.setdefault(csi.buyer_code, []).append(
+            {
+                "id": int(csi.id),
+                "color_code": csi.color_code,
+                "color_name": csi.color_name,
+                "label": f"{csi.color_code} — {csi.color_name}",
+            }
+        )
+
     return ColorSwatchFormOptionsOut(
         customers=[
             ColorSwatchCustomerOptionOut(id=c.id, code=c.code, name=c.name) for c in customers
@@ -220,6 +267,7 @@ def color_swatch_form_options(
         colors_by_material={k: sorted(v) for k, v in sorted(colors_by_material.items())},
         embosses_by_material={k: sorted(v) for k, v in sorted(embosses_by_material.items())},
         backings=sorted(backings),
+        csi_by_buyer=csi_by_buyer,
     )
 
 
@@ -367,6 +415,18 @@ def list_factory_keys(
     return [str(r) for r in rows if r]
 
 
+@router.post("/masters/color-swatch-recipes/backfill-csi", response_model=SwatchCsiBackfillOut)
+def backfill_swatch_csi(
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> SwatchCsiBackfillOut:
+    from app.services.color_links import backfill_swatch_csi_exact
+
+    stats = backfill_swatch_csi_exact(db)
+    db.commit()
+    return SwatchCsiBackfillOut(**stats)
+
+
 @router.get("/masters/color-swatch-recipes/{recipe_id}", response_model=ColorSwatchRecipeOut)
 def get_color_swatch(
     recipe_id: int,
@@ -398,6 +458,8 @@ def create_color_swatch(
     _user=Depends(require_roles("admin", "marketing")),
 ) -> ColorSwatchRecipeOut:
     data = _apply_in(body, db)
+    if not data["color_name"]:
+        raise HTTPException(status_code=400, detail="Nama warna wajib (pilih CSI atau isi manual)")
     row = ColorSwatchRecipe(**data)
     db.add(row)
     try:
@@ -419,7 +481,10 @@ def update_color_swatch(
     row = db.get(ColorSwatchRecipe, recipe_id)
     if not row:
         raise HTTPException(status_code=404, detail="Resep color swatch tidak ditemukan")
-    for k, v in _apply_in(body, db).items():
+    data = _apply_in(body, db)
+    if not data["color_name"]:
+        raise HTTPException(status_code=400, detail="Nama warna wajib (pilih CSI atau isi manual)")
+    for k, v in data.items():
         setattr(row, k, v)
     row.updated_at = datetime.utcnow()
     try:

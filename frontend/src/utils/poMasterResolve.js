@@ -22,10 +22,11 @@ export function resolveMaterialGroupLabel(row, masterItems = []) {
 }
 
 export function inferColorFamilyFromColor(colorValue) {
-  const color = String(colorValue || '').toLowerCase()
+  const color = String(colorValue || '').trim().toLowerCase()
   if (!color) return null
-  if (color.includes('black') || color.includes('hitam')) return 'black'
-  if (color.includes('fluo') || color.includes('fluorescent') || color.includes('neon')) return 'fluorescent'
+  if (/\b(black|hitam)\b/.test(color)) return 'black'
+  if (/\b(fluo|fluorescent|neon)\b/.test(color)) return 'fluorescent'
+  if (/\b(white|putih)\b/.test(color)) return null
   return 'color'
 }
 
@@ -68,14 +69,6 @@ export function applyReferenceDefaults(formModel, masterItems, autoFieldMeta, fo
   if (!best) return
 
   const forceSet = new Set(forceFields)
-  if ((!formModel.color_standard || forceSet.has('color_standard')) && best.color_standard) {
-    formModel.color_standard = best.color_standard
-    autoFieldMeta.color_standard = true
-  }
-  if ((!formModel.color_reference || forceSet.has('color_reference')) && best.color_reference) {
-    formModel.color_reference = best.color_reference
-    autoFieldMeta.color_reference = true
-  }
   if ((!formModel.backing || forceSet.has('backing')) && best.backing) {
     formModel.backing = best.backing
     autoFieldMeta.backing = true
@@ -152,7 +145,7 @@ export function resetMaterialFieldToMaster(field, formModel, masterItems, materi
   if (field === 'emboss') formModel.emboss = item.emboss || ''
   if (field === 'style_article') formModel.style_article = item.style_article || ''
   if (field === 'color_family') {
-    formModel.color_family = inferColorFamilyFromColor(item.color) || 'color'
+    formModel.color_family = inferColorFamilyFromColor(item.color)
     if (colorFamilyAutoMode) colorFamilyAutoMode.value = true
   }
   materialFieldOverride[field] = false
@@ -180,5 +173,6 @@ export function detailMasterSnapshot(formModel) {
   const mn = String(formModel.material_name || '').trim()
   const tt = String(formModel.thickness_text || '').trim()
   const co = String(formModel.color || '').trim()
-  return `${mn}|${tt}|${co}|${formModel.master_item_id ?? ''}`
+  const em = String(formModel.emboss || '').trim()
+  return `${mn}|${tt}|${co}|${em}|${formModel.master_item_id ?? ''}`
 }

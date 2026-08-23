@@ -9,18 +9,16 @@ import QualityControlPage from '../views/admin/QualityControlPage.vue'
 import DeliveryPage from '../views/admin/DeliveryPage.vue'
 import InvoicePage from '../views/admin/InvoicePage.vue'
 import ReportsPage from '../views/admin/ReportsPage.vue'
-import ExchangeRatePage from '../views/admin/ExchangeRatePage.vue'
 import PackingPage from '../views/admin/PackingPage.vue'
-import CustomsPage from '../views/admin/CustomsPage.vue'
 import BuyerPricePage from '../views/admin/BuyerPricePage.vue'
 import BrandMasterPage from '../views/admin/BrandMasterPage.vue'
 import SpecialPricesPage from '../views/admin/SpecialPricesPage.vue'
 import CustomerPricesPage from '../views/admin/CustomerPricesPage.vue'
 import BulkPriceUpdatePage from '../views/admin/BulkPriceUpdatePage.vue'
 import MarketingFlowPage from '../views/admin/MarketingFlowPage.vue'
-import MasterImportPage from '../views/admin/MasterImportPage.vue'
 import MasterItemsPage from '../views/admin/MasterItemsPage.vue'
 import FluorescentColorMasterPage from '../views/admin/FluorescentColorMasterPage.vue'
+import CsiColorMasterPage from '../views/admin/CsiColorMasterPage.vue'
 import ColorSwatchMasterPage from '../views/admin/ColorSwatchMasterPage.vue'
 import UserAccessPage from '../views/admin/UserAccessPage.vue'
 import CustomerBrandMappingPage from '../views/admin/CustomerBrandMappingPage.vue'
@@ -74,11 +72,6 @@ const router = createRouter({
           component: QuotationPage,
           meta: { titleKey: 'menu.quotations', module: 'quotations' },
         },
-        {
-          path: 'exchange-rates',
-          component: ExchangeRatePage,
-          meta: { titleKey: 'menu.exchangeRate', module: 'exchangeRates' },
-        },
         { path: 'po', component: PurchaseOrderPage, meta: { titleKey: 'menu.po', module: 'po' } },
         {
           path: 'marketing-flow',
@@ -127,10 +120,9 @@ const router = createRouter({
         { path: 'special-prices', component: SpecialPricesPage, meta: { titleKey: 'menu.specialPrices', module: 'specialPrices' } },
         { path: 'customer-prices', component: CustomerPricesPage, meta: { titleKey: 'menu.customerPrices', module: 'customerPrices' } },
         { path: 'bulk-price-update', component: BulkPriceUpdatePage, meta: { titleKey: 'menu.bulkPriceUpdate', module: 'bulkPriceUpdate' } },
-        { path: 'customs', component: CustomsPage, meta: { titleKey: 'menu.customs', module: 'customs' } },
-        { path: 'master-import', component: MasterImportPage, meta: { titleKey: 'menu.masterImport', module: 'masterImport' } },
         { path: 'master-items', component: MasterItemsPage, meta: { titleKey: 'menu.masterItems', module: 'masterItems' } },
         { path: 'fluorescent-colors', component: FluorescentColorMasterPage, meta: { titleKey: 'menu.fluorescentColors', module: 'fluorescentColors' } },
+        { path: 'csi-colors', component: CsiColorMasterPage, meta: { titleKey: 'menu.csiColors', module: 'csiColors' } },
         { path: 'color-swatch', component: ColorSwatchMasterPage, meta: { titleKey: 'menu.colorSwatch', module: 'colorSwatch' } },
         { path: 'user-access', component: UserAccessPage, meta: { titleKey: 'menu.userAccess', module: 'userAccess' } },
         { path: 'customer-brand-mapping', component: CustomerBrandMappingPage, meta: { titleKey: 'menu.customerBrandMapping', module: 'customerBrandMapping' } },

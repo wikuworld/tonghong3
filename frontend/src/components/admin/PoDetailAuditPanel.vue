@@ -38,9 +38,9 @@
               </div>
               <div class="col-span-12 lg:col-span-5">
                 <span class="text-slate-400">{{ t('pages.po.audit.before') }}: </span>
-                <span class="text-red-600 line-through">{{ field.before ?? '—' }}</span>
+                <span class="text-red-600" :class="{ 'line-through': a.action !== 'delete' }">{{ field.before ?? '—' }}</span>
               </div>
-              <div class="col-span-12 hidden items-center gap-1 lg:col-span-5 lg:flex">
+              <div class="col-span-12 flex items-center gap-1 lg:col-span-5">
                 <span class="text-slate-400">{{ t('pages.po.audit.after') }}: </span>
                 <span class="text-green-600">{{ field.after ?? '—' }}</span>
                 <span v-if="field.change" class="ml-auto rounded bg-green-100 px-1.5 py-0.5 text-green-700">

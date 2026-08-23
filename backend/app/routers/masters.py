@@ -32,6 +32,8 @@ from app.models import (
     BrandBuyerMap,
     Brand,
     BuyerPriceList,
+    ColorSwatchRecipe,
+    CsiColorMaster,
     Customer,
     CustomerBrandMapping,
     CustomerPic,
@@ -49,9 +51,12 @@ from app.services.fluorescent_color import (
     parse_fluorescent_upload,
     upsert_fluorescent_rows,
 )
+from app.services.color_code import apply_item_color_extract
 from app.services.color_swatch import UnknownBuyerRejectError
 from app.services.master_item_dimensions import (
     distinct_colors,
+    distinct_embosses,
+    distinct_item_codes,
     distinct_material_names,
     distinct_thicknesses,
     filter_by_category,
@@ -707,6 +712,36 @@ def delete_pic(
 
 
 # --- Master Item (FG / sheet Master Item) ---
+def _annotate_item_color_links(db: Session, items: list[MasterItemOut]) -> list[MasterItemOut]:
+    codes = {(i.color_code or "").strip().upper() for i in items if i.color_code}
+    codes.discard("")
+    if not codes:
+        return items
+    csi_codes = {
+        str(c).strip().upper()
+        for c in db.scalars(
+            select(CsiColorMaster.color_code).where(
+                CsiColorMaster.is_active.is_(True),
+                CsiColorMaster.color_code.in_(codes),
+            )
+        ).all()
+    }
+    sw_codes = {
+        str(c).strip().upper()
+        for c in db.scalars(
+            select(ColorSwatchRecipe.color_code).where(
+                ColorSwatchRecipe.is_active.is_(True),
+                ColorSwatchRecipe.color_code.in_(codes),
+            )
+        ).all()
+    }
+    for item in items:
+        code = (item.color_code or "").strip().upper()
+        item.in_csi = bool(code and code in csi_codes)
+        item.in_swatch = bool(code and code in sw_codes)
+    return items
+
+
 def _master_item_stats(db: Session) -> MasterItemStatsOut:
     rows = db.execute(
         select(MasterItem.category, func.count()).group_by(MasterItem.category)
@@ -775,8 +810,11 @@ def list_master_items_page(
             base.order_by(MasterItem.item_code.asc()).limit(limit).offset(offset)
         ).all()
     )
+    out_items = _annotate_item_color_links(
+        db, [MasterItemOut.model_validate(i) for i in items]
+    )
     return MasterItemPageOut(
-        items=[MasterItemOut.model_validate(i) for i in items],
+        items=out_items,
         total=total,
         limit=limit,
         offset=offset,
@@ -793,19 +831,52 @@ def _filter_master_items_by_category(
 
 @router.get("/masters/items/dimension-values", response_model=MasterItemDimensionValuesOut)
 def list_master_item_dimension_values(
-    kind: Literal["materials", "thicknesses", "colors"] = Query(..., description="materials | thicknesses | colors"),
-    material_name: Optional[str] = Query(None, description="Wajib untuk thicknesses & colors"),
-    thickness_text: Optional[str] = Query(None, description="Wajib untuk colors"),
+    kind: Literal["materials", "thicknesses", "colors", "embosses", "item_codes"] = Query(
+        ...,
+        description="materials | thicknesses | colors | embosses | item_codes",
+    ),
+    material_name: Optional[str] = Query(None, description="Wajib untuk thicknesses, colors, embosses, item_codes"),
+    thickness_text: Optional[str] = Query(None, description="Wajib untuk colors, embosses, item_codes"),
+    color: Optional[str] = Query(None, description="Wajib untuk embosses & item_codes"),
+    emboss: Optional[str] = Query(None, description="Opsional untuk item_codes"),
     category: Optional[str] = Query(None, description="Filter kategori master: PU | Suide | SubKon"),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> MasterItemDimensionValuesOut:
+    if kind == "materials" and not category:
+        names = [
+            str(n).strip()
+            for n in db.scalars(
+                select(MasterItem.material_name)
+                .where(
+                    MasterItem.material_name.is_not(None),
+                    MasterItem.material_name != "",
+                )
+                .distinct()
+            ).all()
+            if n
+        ]
+        values = sorted({n for n in names if n}, key=str.lower)
+        return MasterItemDimensionValuesOut(values=values)
+    if kind == "materials":
+        name_rows = list(
+            db.execute(
+                select(MasterItem.material_name, MasterItem.category).where(
+                    MasterItem.material_name.is_not(None),
+                    MasterItem.material_name != "",
+                )
+            ).all()
+        )
+        slim = [
+            type("DimRow", (), {"material_name": n, "category": c})()
+            for n, c in name_rows
+        ]
+        slim = _filter_master_items_by_category(slim, category)
+        return MasterItemDimensionValuesOut(values=distinct_material_names(slim))
     rows = _filter_master_items_by_category(
         list(db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all()),
         category,
     )
-    if kind == "materials":
-        return MasterItemDimensionValuesOut(values=distinct_material_names(rows))
     if kind == "thicknesses":
         if not (material_name and str(material_name).strip()):
             raise HTTPException(status_code=400, detail="material_name wajib untuk kind=thicknesses")
@@ -817,6 +888,30 @@ def list_master_item_dimension_values(
                 detail="material_name dan thickness_text wajib untuk kind=colors",
             )
         return MasterItemDimensionValuesOut(values=distinct_colors(rows, material_name, thickness_text))
+    if kind == "embosses":
+        if (
+            not (material_name and str(material_name).strip())
+            or not (thickness_text and str(thickness_text).strip())
+            or not (color and str(color).strip())
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="material_name, thickness_text, dan color wajib untuk kind=embosses",
+            )
+        return MasterItemDimensionValuesOut(values=distinct_embosses(rows, material_name, thickness_text, color))
+    if kind == "item_codes":
+        if (
+            not (material_name and str(material_name).strip())
+            or not (thickness_text and str(thickness_text).strip())
+            or not (color and str(color).strip())
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="material_name, thickness_text, dan color wajib untuk kind=item_codes",
+            )
+        return MasterItemDimensionValuesOut(
+            values=distinct_item_codes(rows, material_name, thickness_text, color, emboss),
+        )
     raise HTTPException(status_code=400, detail="kind tidak valid")
 
 
@@ -825,6 +920,7 @@ def resolve_master_item_by_dimensions(
     material_name: str = Query(..., min_length=1),
     thickness_text: str = Query(..., min_length=1),
     color: str = Query(..., min_length=1),
+    emboss: Optional[str] = Query(None, description="Filter emboss jika ada beberapa FG"),
     category: Optional[str] = Query(None, description="Filter kategori master: PU | Suide | SubKon"),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
@@ -838,6 +934,7 @@ def resolve_master_item_by_dimensions(
         material_name=material_name,
         thickness_text=thickness_text,
         color=color,
+        emboss=emboss,
     )
     if not hits:
         return MasterItemResolveByDimensionsOut(status="none")
@@ -875,10 +972,11 @@ def create_master_item(
         model_takedown=None,
         exim_material_code=None,
     )
+    apply_item_color_extract(row)
     db.add(row)
     db.commit()
     db.refresh(row)
-    return row
+    return _annotate_item_color_links(db, [MasterItemOut.model_validate(row)])[0]
 
 
 @router.put("/masters/items/{item_id}", response_model=MasterItemOut)
@@ -911,9 +1009,10 @@ def update_master_item(
     row.model = None
     row.model_takedown = None
     row.exim_material_code = None
+    apply_item_color_extract(row)
     db.commit()
     db.refresh(row)
-    return row
+    return _annotate_item_color_links(db, [MasterItemOut.model_validate(row)])[0]
 
 
 @router.delete("/masters/items/{item_id}")
@@ -978,12 +1077,14 @@ async def import_master_items(
                 val = item_data.get(col)
                 if val and hasattr(existing, col):
                     setattr(existing, col, val)
+            apply_item_color_extract(existing)
         else:
             new_item = MasterItem(item_code=item_data.get("item_code"))
             for col in columns:
                 val = item_data.get(col)
                 if val and hasattr(new_item, col):
                     setattr(new_item, col, val)
+            apply_item_color_extract(new_item)
             db.add(new_item)
         imported += 1
     
@@ -1090,6 +1191,7 @@ async def import_master_zip(
                 row.model = None
                 row.model_takedown = None
                 row.exim_material_code = None
+                apply_item_color_extract(row)
                 stats["items_upserted"] += 1
 
         elif base.startswith("02_") or "master_harga" in base.lower() or "master_harga" in base.lower():

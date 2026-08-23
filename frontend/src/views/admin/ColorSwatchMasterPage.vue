@@ -100,6 +100,12 @@
             </template>
           </el-table-column>
           <el-table-column prop="color_code" :label="t('pages.colorSwatch.colCode')" width="100" show-overflow-tooltip />
+          <el-table-column :label="t('pages.colorSwatch.colCsi')" width="72" align="center">
+            <template #default="{ row }">
+              <el-tag v-if="row.csi_color_master_id" size="small" type="success" effect="plain">CSI</el-tag>
+              <span v-else class="color-swatch-cell-empty">—</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="color_name" :label="t('common.color')" min-width="140" show-overflow-tooltip />
           <el-table-column prop="material_name" :label="t('common.material')" min-width="160" show-overflow-tooltip />
           <el-table-column prop="emboss" :label="t('pages.po.emboss')" width="100" show-overflow-tooltip />
@@ -236,9 +242,38 @@
                 </el-col>
                 <el-col :xs="24" :md="12">
                   <el-form-item :label="t('common.buyer')" required>
-                    <el-select v-model="form.buyer_code" filterable class="w-full" :placeholder="t('common.buyer')">
+                    <el-select
+                      v-model="form.buyer_code"
+                      filterable
+                      class="w-full"
+                      :placeholder="t('common.buyer')"
+                      @change="onBuyerChange"
+                    >
                       <el-option v-for="b in formOptions.buyer_codes" :key="b" :label="b" :value="b" />
                     </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :md="12">
+                  <el-form-item :label="t('pages.colorSwatch.formCsi')">
+                    <el-select
+                      v-model="form.csi_color_master_id"
+                      filterable
+                      clearable
+                      class="w-full"
+                      :placeholder="t('pages.colorSwatch.formCsiPlaceholder')"
+                      :disabled="!form.buyer_code"
+                      @change="onCsiChange"
+                    >
+                      <el-option
+                        v-for="c in csiOptions"
+                        :key="c.id"
+                        :label="c.label || `${c.color_code} — ${c.color_name}`"
+                        :value="c.id"
+                      />
+                    </el-select>
+                    <p v-if="csiOptions.length && !form.csi_color_master_id" class="color-swatch-csi-hint">
+                      {{ t('pages.colorSwatch.formCsiRecommended') }}
+                    </p>
                   </el-form-item>
                 </el-col>
               </el-row>
@@ -270,7 +305,7 @@
                 </el-col>
                 <el-col :xs="24" :md="12">
                   <el-form-item :label="t('pages.colorSwatch.colCode')">
-                    <el-input v-model="form.color_code" maxlength="64" clearable />
+                    <el-input v-model="form.color_code" maxlength="64" clearable :disabled="!!form.csi_color_master_id" />
                   </el-form-item>
                 </el-col>
                 <el-col :xs="24" :md="12">
@@ -459,12 +494,14 @@ const formOptions = reactive({
   colors_by_material: {},
   embosses_by_material: {},
   backings: [],
+  csi_by_buyer: {},
 })
 
 const form = reactive({
   customer_id: null,
   factory_key: '',
   buyer_code: '',
+  csi_color_master_id: null,
   color_code: '',
   color_name: '',
   material_name: '',
@@ -488,6 +525,11 @@ const factoryKeyOptions = computed(() => {
     return keys
   }
   return formOptions.factory_keys
+})
+
+const csiOptions = computed(() => {
+  const buyer = String(form.buyer_code || '').trim().toUpperCase()
+  return formOptions.csi_by_buyer[buyer] || []
 })
 
 const colorOptions = computed(() => {
@@ -522,6 +564,20 @@ function onMaterialChange() {
   // keep custom values via allow-create
 }
 
+function onBuyerChange() {
+  const ids = new Set(csiOptions.value.map((c) => c.id))
+  if (form.csi_color_master_id && !ids.has(form.csi_color_master_id)) {
+    form.csi_color_master_id = null
+  }
+}
+
+function onCsiChange(id) {
+  const hit = csiOptions.value.find((c) => c.id === id)
+  if (!hit) return
+  form.color_code = hit.color_code || ''
+  form.color_name = hit.color_name || form.color_name
+}
+
 async function loadFormOptions() {
   try {
     const r = await listColorSwatchFormOptions()
@@ -537,6 +593,7 @@ async function loadFormOptions() {
     formOptions.colors_by_material = r.colors_by_material || {}
     formOptions.embosses_by_material = r.embosses_by_material || {}
     formOptions.backings = r.backings || []
+    formOptions.csi_by_buyer = r.csi_by_buyer || {}
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   }
@@ -598,6 +655,7 @@ function resetForm() {
   form.customer_id = null
   form.factory_key = ''
   form.buyer_code = ''
+  form.csi_color_master_id = null
   form.color_code = ''
   form.color_name = ''
   form.material_name = ''
@@ -627,6 +685,7 @@ function openEdit(row) {
   form.customer_id = row.customer_id || null
   form.factory_key = row.factory_key || ''
   form.buyer_code = row.buyer_code || ''
+  form.csi_color_master_id = row.csi_color_master_id || null
   form.color_code = row.color_code || ''
   form.color_name = row.color_name || ''
   form.material_name = row.material_name || ''
@@ -654,6 +713,7 @@ async function save() {
       customer_id: form.customer_id,
       factory_key: form.factory_key.trim(),
       buyer_code: form.buyer_code.trim(),
+      csi_color_master_id: form.csi_color_master_id || null,
       color_code: form.color_code.trim(),
       color_name: form.color_name.trim(),
       material_name: form.material_name.trim(),
@@ -759,6 +819,12 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.color-swatch-csi-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #b45309;
+}
 .color-swatch-inner-head {
   display: flex;
   align-items: flex-start;

@@ -10,6 +10,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import BuyerPriceList
+from app.services.buyer_price_aliases import (
+    emboss_is_special,
+    extract_emboss_tokens,
+    infer_price_block,
+    is_outside_banten_factory,
+    normalize_material_alias,
+)
 from app.services.buyer_price_import import list_to_api_dict
 
 
@@ -29,10 +36,14 @@ def _norm_alnum(s: str | None) -> str:
 
 
 def _material_variants(material_name: str | None) -> list[str]:
-    base = _norm_alnum(material_name)
+    aliased = normalize_material_alias(material_name)
+    base = _norm_alnum(aliased)
     if not base:
         return []
     out: set[str] = {base}
+    raw = _norm_alnum(material_name)
+    if raw:
+        out.add(raw)
     # Hilangkan istilah umum yang sering membuat mismatch.
     stripped = re.sub(r"\b(map|leather|material|coated)\b", " ", base)
     stripped = re.sub(r"\s+", " ", stripped).strip()
@@ -73,6 +84,7 @@ def _collect_price_keys(column_keys: list[str]) -> list[str]:
     std_price_labels = {
         "COLOR WHITE",
         "COLOR BLACK",
+        "COLOR COLOR",
         "FLOURASENT",
         "METALIC",
         "EMBOSS",
@@ -124,6 +136,27 @@ def _parse_price_cell(val: Any) -> Decimal | None:
         return None
 
 
+def _row_block(row: dict[str, Any]) -> str:
+    return str(row.get("COLOR") or "").strip().upper()
+
+
+def _block_score(row_block: str, wanted: str) -> int:
+    if not row_block:
+        return 8
+    if row_block == wanted:
+        return 24
+    fallbacks = {
+        "OUTSIDE SPECIAL": ("SPECIAL", "OUTSIDE BANTEN", "COMMON"),
+        "OUTSIDE BANTEN": ("COMMON",),
+        "SPECIAL": ("COMMON",),
+        "COMMON": (),
+    }
+    chain = fallbacks.get(wanted, ())
+    if row_block in chain:
+        return 6 if row_block == chain[0] else 2
+    return 0
+
+
 def _score_row(
     row: dict[str, Any],
     keys: list[str],
@@ -133,6 +166,8 @@ def _score_row(
     color: str | None,
     style_article: str | None,
     thickness_text: str | None,
+    emboss: str | None = None,
+    wanted_block: str = "COMMON",
 ) -> int:
     mat_variants = _material_variants(material_name)
     col = _norm_alnum(color)
@@ -151,6 +186,10 @@ def _score_row(
             thick_cells.append(cell)
     blob = " ".join(blob_parts)
     s = 0
+    item_cell = _norm_alnum(row.get("ITEM") or row.get("item"))
+    mat_exact = _norm_alnum(normalize_material_alias(material_name))
+    if mat_exact and item_cell == mat_exact:
+        s += 30
     if mat_variants:
         if any(m in blob for m in mat_variants):
             s += 12
@@ -170,6 +209,14 @@ def _score_row(
         s += 5
     if col and col in blob:
         s += 4
+    emboss_tokens = extract_emboss_tokens(emboss)
+    if emboss_tokens:
+        blob_tokens = extract_emboss_tokens(blob)
+        if emboss_tokens & blob_tokens:
+            s += 16
+        elif emboss_is_special(emboss) and _row_block(row) in {"SPECIAL", "OUTSIDE SPECIAL"}:
+            s += 4
+    s += _block_score(_row_block(row), wanted_block)
     return s
 
 
@@ -182,6 +229,8 @@ def resolve_unit_price_for_buyer(
     style_article: Optional[str] = None,
     thickness_text: Optional[str] = None,
     color_family: Optional[str] = None,
+    emboss: Optional[str] = None,
+    factory_code: Optional[str] = None,
 ) -> dict[str, Any]:
     code = (buyer_code or "").strip().upper()
     if not code:
@@ -222,6 +271,8 @@ def resolve_unit_price_for_buyer(
         }
 
     price_col = _pick_price_column(price_keys, color_family)
+    outside = is_outside_banten_factory(db, factory_code)
+    wanted_block = infer_price_block(emboss=emboss, outside_banten=outside)
     best_row: dict[str, Any] | None = None
     best_score = 0
     for row in rows:
@@ -235,6 +286,8 @@ def resolve_unit_price_for_buyer(
             color=color,
             style_article=style_article,
             thickness_text=thickness_text,
+            emboss=emboss,
+            wanted_block=wanted_block,
         )
         if sc > best_score:
             best_score = sc
@@ -252,6 +305,7 @@ def resolve_unit_price_for_buyer(
     normalized_keys = {str(k).strip().upper(): str(k).strip() for k in keys}
     base_key = normalized_keys.get("COLOR WHITE")
     add_black_key = normalized_keys.get("COLOR BLACK")
+    add_color_key = normalized_keys.get("COLOR COLOR")
     add_fluor_key = normalized_keys.get("FLOURASENT")
     add_metalic_key = normalized_keys.get("METALIC")
     add_emboss_key = normalized_keys.get("EMBOSS")
@@ -269,6 +323,8 @@ def resolve_unit_price_for_buyer(
             cf = (color_family or "").strip().lower()
             if cf == "black" and add_black_key:
                 add_total += _parse_price_cell(best_row.get(add_black_key)) or Decimal("0")
+            if cf == "color" and add_color_key:
+                add_total += _parse_price_cell(best_row.get(add_color_key)) or Decimal("0")
             if cf == "fluorescent" and add_fluor_key:
                 add_total += _parse_price_cell(best_row.get(add_fluor_key)) or Decimal("0")
             if "metalic" in color_text or "metallic" in color_text:

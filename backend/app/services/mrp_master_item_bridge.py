@@ -49,6 +49,7 @@ def item_to_erp_row(row: MasterItem) -> dict[str, Any]:
         "thickness": display_thickness_range(thickness) if thickness else None,
         "material_name": row.material_name,
         "color": row.color,
+        "color_code": getattr(row, "color_code", None),
         "emboss": row.emboss,
         "color_swatch": row.color_reference or row.color_standard,
         "backer": row.backing,

@@ -22,11 +22,6 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "update": ["marketing", "sales"],
         "delete": [],
     },
-    "exchangeRates": {
-        "view": ["marketing", "exim", "finance"],
-        "create": ["marketing", "exim", "finance"],
-        "update": ["marketing", "exim", "finance"],
-    },
     "po": {
         "view": ["marketing", "ppic", "sales", "production", "finance"],
         "create": ["marketing", "ppic", "sales"],
@@ -110,13 +105,6 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "view": ["marketing"],
         "update": ["marketing"],
     },
-    "customs": {
-        "view": ["exim"],
-        "create": ["exim"],
-        "update": ["exim"],
-        "delete": [],
-    },
-    "masterImport": {"view": [], "create": []},
     "masterItems": {
         "view": [],
         "create": [],
@@ -130,6 +118,12 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "delete": [],
     },
     "colorSwatch": {
+        "view": ["marketing", "sales"],
+        "create": ["marketing"],
+        "update": ["marketing"],
+        "delete": [],
+    },
+    "csiColors": {
         "view": ["marketing", "sales"],
         "create": ["marketing"],
         "update": ["marketing"],

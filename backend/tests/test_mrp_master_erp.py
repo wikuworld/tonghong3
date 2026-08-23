@@ -57,11 +57,11 @@ def test_masters_erp_options_from_master_items(auth_headers):
         r = client.get("/mrp/masters/erp/options", headers=auth_headers)
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body.get("source") == "master_items"
+        assert body.get("source") == "color_swatch_recipes"
         assert isinstance(body.get("materials"), list)
         assert isinstance(body.get("thickness"), list)
-        assert isinstance(body.get("colors"), list)
-        assert body["materials"] or body["thickness"] or body["colors"]
+        assert isinstance(body.get("embosses_by_material"), dict)
+        assert body["materials"] or body["thickness"]
 
 
 def test_erp_fields_from_master_items(auth_headers):
@@ -79,5 +79,5 @@ def test_erp_fields_from_master_items(auth_headers):
         )
         assert r.status_code == 200, r.text
         body = r.json()
-        assert body.get("source") == "master_items"
+        assert body.get("source") == "color_swatch_recipes"
         assert isinstance(body.get("material_names"), list)

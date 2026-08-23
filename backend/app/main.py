@@ -8,6 +8,7 @@ from app.routers import (
     auth,
     buyer_prices,
     color_swatch,
+    csi_colors,
     customs,
     customers,
     dashboard,
@@ -66,6 +67,7 @@ app.include_router(exchange_rates.router, prefix=_PREFIX)
 app.include_router(masters.router, prefix=_PREFIX)
 app.include_router(mrp_gateway.router, prefix=_PREFIX)
 app.include_router(color_swatch.router, prefix=_PREFIX)
+app.include_router(csi_colors.router, prefix=_PREFIX)
 app.include_router(notifications.router, prefix=_PREFIX)
 app.include_router(permissions.router, prefix=_PREFIX)
 app.include_router(reports.router, prefix=_PREFIX)

@@ -16,12 +16,15 @@ from app.db import get_db
 from app.models import QcDetail, QcHeader
 from app.routers.auth import get_current_user
 from app.services.mrp_fg_delivery_bridge import bridge_fg_out_to_delivery
+from app.services.mrp_color_swatch_bridge import (
+    combination_from_swatch,
+    fields_from_swatch,
+    load_swatch_recipes,
+    options_for_rencana,
+)
 from app.services.mrp_master_item_bridge import (
-    combination_from_items,
-    fields_from_items,
     list_erp_rows,
     load_master_items,
-    options_from_items,
 )
 from app.services.mrp_po_sync import sync_po_details_to_mrp, try_sync_po_details_to_mrp
 from app.services.mrp_production_bridge import upsert_production_mirror
@@ -632,11 +635,11 @@ def masters_erp_from_master_items(
 
 
 @router.get("/masters/erp/options")
-def masters_erp_options_from_master_items(
+def masters_erp_options_from_swatch_recipes(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    return options_from_items(load_master_items(db))
+    return options_for_rencana(db, load_swatch_recipes(db), load_master_items(db))
 
 
 @router.get("/erp/fields")
@@ -647,7 +650,9 @@ def erp_fields_from_master_items(
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    return fields_from_items(
+    return fields_from_swatch(
+        db,
+        load_swatch_recipes(db),
         load_master_items(db),
         thickness=thickness or "",
         material_name=material_name or "",
@@ -661,19 +666,26 @@ def erp_combination_from_master_items(
     color: str,
     emboss: str,
     thickness: Optional[str] = None,
+    color_code: Optional[str] = None,
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    hits = combination_from_items(
+    hits = combination_from_swatch(
+        db,
+        load_swatch_recipes(db),
         load_master_items(db),
         material_name=material_name,
         color=color,
         emboss=emboss,
         thickness=thickness or "",
+        color_code=color_code or "",
     )
     if not hits:
-        raise HTTPException(status_code=404, detail="Kombinasi tidak ditemukan di Master Item ERP")
-    return {"options": hits, "source": "master_items"}
+        raise HTTPException(
+            status_code=404,
+            detail="Kombinasi tidak ditemukan di color_swatch_recipes",
+        )
+    return {"options": hits, "source": "color_swatch_recipes"}
 
 
 @router.api_route("/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])

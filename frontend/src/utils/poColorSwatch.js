@@ -1,5 +1,7 @@
 /** Lookup & apply master color swatch untuk form PO. */
 
+import { extractColorCodeFromReference } from './poColorStandard.js'
+
 export function factoryCodeFromCustomer(customer) {
   if (!customer) return ''
   return String(customer.code || '').trim()
@@ -25,13 +27,19 @@ export function normalizeSwatchText(value) {
   return String(value || '').trim().toLowerCase()
 }
 
-/** WOLF GREY (01V) → wolf grey */
+/** WOLF GREY (01V) / PINKSICLE (6FS) FLUORESCENT → wolf grey / pinksicle */
 export function normalizeSwatchColorName(value) {
   return String(value || '')
     .trim()
-    .replace(/\s*\([^)]*\)\s*$/u, '')
+    .replace(/\s*\([^)]*\)/gu, ' ')
+    .replace(/\b(fluorescent|pearlized|metallic|mettalic|coloro)\b/giu, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase()
+}
+
+export function compactSwatchColorName(value) {
+  return normalizeSwatchColorName(value).replace(/[^a-z0-9]/g, '')
 }
 
 function extractEmbossCodeToken(token) {
@@ -83,7 +91,10 @@ export function swatchColorsMatch(a, b) {
   const na = normalizeSwatchColorName(a)
   const nb = normalizeSwatchColorName(b)
   if (!na || !nb) return false
-  return na === nb || na.startsWith(nb) || nb.startsWith(na)
+  if (na === nb || na.startsWith(nb) || nb.startsWith(na)) return true
+  const ca = compactSwatchColorName(a)
+  const cb = compactSwatchColorName(b)
+  return Boolean(ca && ca === cb)
 }
 
 export function swatchEmbossMatch(a, b) {
@@ -97,28 +108,46 @@ export function materialNamesLooselyMatch(a, b) {
   return swatchMaterialsMatch(a, b)
 }
 
-/** Filter resep swatch yang cocok material + warna + emboss form PO. */
-export function pickMatchingSwatchRecipes(options, { material, color, emboss } = {}) {
+/** Filter resep swatch yang cocok material + warna (kode CSI). Emboss opsional. */
+export function pickMatchingSwatchRecipes(
+  options,
+  { material, color, emboss, requireEmboss = false, colorCode } = {},
+) {
   const materialKey = normalizeSwatchText(material)
+  const code = String(colorCode || extractColorCodeFromReference(color) || '')
+    .trim()
+    .toUpperCase()
   return (options || []).filter((recipe) => {
-    if (color && !swatchColorsMatch(recipe.color_name, color)) return false
-    if (emboss && !swatchEmbossMatch(recipe.emboss, emboss)) return false
     if (materialKey && !materialNamesLooselyMatch(recipe.material_name, materialKey)) return false
+    if (color) {
+      const nameOk = swatchColorsMatch(recipe.color_name, color)
+      const codeOk = Boolean(code && String(recipe.color_code || '').trim().toUpperCase() === code)
+      if (!nameOk && !codeOk) return false
+    }
+    if (requireEmboss && emboss && !swatchEmbossMatch(recipe.emboss, emboss)) return false
     return true
   })
 }
 
 export function pickBestSwatchRecipe(options, { material, color, emboss } = {}) {
-  const matches = pickMatchingSwatchRecipes(options, { material, color, emboss })
+  const exact = pickMatchingSwatchRecipes(options, { material, color, emboss, requireEmboss: true })
+  const matches = exact.length
+    ? exact
+    : pickMatchingSwatchRecipes(options, { material, color, emboss, requireEmboss: false })
   if (!matches.length) return null
   if (matches.length === 1) return matches[0]
   const embossCode = swatchEmbossCode(emboss)
   const colorNorm = normalizeSwatchColorName(color)
+  const code = extractColorCodeFromReference(color)
   const ranked = matches
     .map((recipe) => {
       let score = 0
-      if (colorNorm && normalizeSwatchColorName(recipe.color_name) === colorNorm) score += 4
+      if (code && String(recipe.color_code || '').trim().toUpperCase() === code) score += 8
+      if (colorNorm && compactSwatchColorName(recipe.color_name) === compactSwatchColorName(color)) {
+        score += 4
+      }
       if (embossCode && swatchEmbossCode(recipe.emboss) === embossCode) score += 4
+      if (recipe.csi_color_master_id) score += 3
       if (recipe.color_standard) score += 1
       return { recipe, score }
     })
@@ -216,7 +245,16 @@ export async function fetchColorSwatchOptionList({
 
   if ((color || emboss) && options.length) {
     const best = pickBestSwatchRecipe(options, { material, color, emboss })
-    options = best ? [best, ...pickMatchingSwatchRecipes(options, { material, color, emboss }).filter((x) => x.id !== best.id)] : []
+    const matched = pickMatchingSwatchRecipes(options, {
+      material,
+      color,
+      emboss,
+      requireEmboss: false,
+    })
+    if (best || matched.length) {
+      const rest = matched.filter((x) => !best || x.id !== best.id)
+      options = best ? [best, ...rest] : matched
+    }
   }
 
   return { options, retriedWithoutMaterial }

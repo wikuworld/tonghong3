@@ -416,11 +416,10 @@ import {
   duplicatePo,
   fetchAuthenticatedDocument,
   getPo,
-  listAuditLogs,
+  listPoAuditLogs,
   listBrands,
   listBuyerPriceLists,
   listCustomers,
-  listMasterItems,
   listMasterItemDimensionValues,
   listPoDetails,
   listPoPage,
@@ -473,17 +472,15 @@ let wizard
 async function load() {
   loading.value = true
   try {
-    const [cust, br, mi, bpl, poPage, dimMat] = await Promise.all([
+    const [cust, br, bpl, poPage, dimMat] = await Promise.all([
       listCustomers(),
       listBrands(),
-      listMasterItems(),
       listBuyerPriceLists().catch(() => []),
       listPoPage(buildPageQuery()),
       listMasterItemDimensionValues('materials').catch(() => ({ values: [] })),
     ])
     customers.value = cust
     brands.value = br
-    masterItems.value = mi
     wizard.materialDimensionOptions.value = dimMat.values || []
     buyerCodes.value = mergeExtraBuyerCodes(buyerCodes.value, bpl)
     let items = poPage.items || []
@@ -617,15 +614,7 @@ const openDetailDialog = async (row) => {
     detailLines.value = []
   }
   try {
-    const logsHeader = await listAuditLogs({ entity_type: 'sales_order', entity_id: row.id, limit: 120 })
-    const lineLogsLists = await Promise.all(
-      detailLines.value.map((d) =>
-        listAuditLogs({ entity_type: 'sales_order_line', entity_id: d.id, limit: 60 }).catch(() => []),
-      ),
-    )
-    const merged = [...logsHeader, ...lineLogsLists.flat()]
-    merged.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
-    detailAudit.value = merged
+    detailAudit.value = await listPoAuditLogs(row.id, { limit: 300 })
   } catch {
     detailAudit.value = []
   }

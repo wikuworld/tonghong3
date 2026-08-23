@@ -12,11 +12,6 @@ export const ACTION_MATRIX = {
     update: ['admin', 'marketing', 'sales'],
     delete: ['admin'],
   },
-  exchangeRates: {
-    view: ['admin', 'marketing', 'exim', 'finance'],
-    create: ['admin', 'marketing', 'exim', 'finance'],
-    update: ['admin', 'marketing', 'exim', 'finance'],
-  },
   po: {
     view: ['admin', 'marketing', 'ppic', 'sales', 'production', 'finance'],
     create: ['admin', 'marketing', 'sales'],
@@ -100,16 +95,6 @@ export const ACTION_MATRIX = {
     view: ['admin', 'marketing'],
     update: ['admin', 'marketing'],
   },
-  customs: {
-    view: ['admin', 'exim'],
-    create: ['admin', 'exim'],
-    update: ['admin', 'exim'],
-    delete: ['admin'],
-  },
-  masterImport: {
-    view: ['admin'],
-    create: ['admin'],
-  },
   masterItems: {
     view: ['admin'],
     create: ['admin'],
@@ -123,6 +108,12 @@ export const ACTION_MATRIX = {
     delete: ['admin'],
   },
   colorSwatch: {
+    view: ['admin', 'marketing', 'sales'],
+    create: ['admin', 'marketing'],
+    update: ['admin', 'marketing'],
+    delete: ['admin'],
+  },
+  csiColors: {
     view: ['admin', 'marketing', 'sales'],
     create: ['admin', 'marketing'],
     update: ['admin', 'marketing'],

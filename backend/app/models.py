@@ -84,6 +84,8 @@ class MasterItem(Base):
     material_name: Mapped[Optional[str]] = mapped_column(String(500))
     emboss: Mapped[Optional[str]] = mapped_column(String(500))
     color: Mapped[Optional[str]] = mapped_column(String(500))
+    color_code: Mapped[Optional[str]] = mapped_column(String(64))
+    color_qualifier: Mapped[Optional[str]] = mapped_column(String(64))
     softness: Mapped[Optional[str]] = mapped_column(String(100))
     color_reference: Mapped[Optional[str]] = mapped_column(String(255))
     color_standard: Mapped[Optional[str]] = mapped_column(String(255))
@@ -301,6 +303,75 @@ class BrandBuyerMap(Base):
     )
 
 
+class CsiColorMaster(Base):
+    """Katalog warna resmi per buyer (CSI ALL BUYER)."""
+
+    __tablename__ = "csi_color_masters"
+    __table_args__ = (
+        UniqueConstraint("buyer_code", "color_code", name="uq_csi_color_master"),
+        Index("ix_csi_color_masters_buyer", "buyer_code"),
+        Index("ix_csi_color_masters_code", "color_code"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    buyer_code: Mapped[str] = mapped_column(
+        String(32), ForeignKey("buyer_codes.code", ondelete="RESTRICT")
+    )
+    color_code: Mapped[str] = mapped_column(String(64))
+    color_name: Mapped[str] = mapped_column(String(255))
+    source_file: Mapped[Optional[str]] = mapped_column(String(255))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    aliases: Mapped[list["ColorCodeAlias"]] = relationship(
+        "ColorCodeAlias", back_populates="csi_color"
+    )
+    swatch_recipes: Mapped[list["ColorSwatchRecipe"]] = relationship(
+        "ColorSwatchRecipe", back_populates="csi_color"
+    )
+
+
+class ColorCodeAlias(Base):
+    """XREF: alias sumber (COLORO/swatch/item) → CSI golden record."""
+
+    __tablename__ = "color_code_aliases"
+    __table_args__ = (
+        UniqueConstraint(
+            "buyer_code",
+            "source_system",
+            "alias_code",
+            name="uq_color_code_alias_source",
+        ),
+        Index("ix_color_code_aliases_csi", "csi_color_master_id"),
+        Index("ix_color_code_aliases_alias", "alias_code"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    buyer_code: Mapped[str] = mapped_column(
+        String(32), ForeignKey("buyer_codes.code", ondelete="RESTRICT")
+    )
+    source_system: Mapped[str] = mapped_column(String(32), default="SWATCH")
+    alias_code: Mapped[str] = mapped_column(String(64))
+    csi_color_master_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("csi_color_masters.id", ondelete="SET NULL")
+    )
+    match_method: Mapped[str] = mapped_column(String(32), default="dual_parse")
+    steward_status: Mapped[str] = mapped_column(String(16), default="pending")
+    source_file: Mapped[Optional[str]] = mapped_column(String(255))
+    deactivated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    csi_color: Mapped[Optional["CsiColorMaster"]] = relationship(
+        "CsiColorMaster", back_populates="aliases"
+    )
+
+
 class ColorSwatchRecipe(Base):
     """Resep warna operasional (pabrik × buyer × material × emboss × kode warna)."""
 
@@ -318,6 +389,7 @@ class ColorSwatchRecipe(Base):
         Index("ix_color_swatch_buyer_code", "buyer_code"),
         Index("ix_color_swatch_material_name", "material_name", mysql_length=191),
         Index("ix_color_swatch_color_code", "color_code"),
+        Index("ix_color_swatch_csi_id", "csi_color_master_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -330,6 +402,9 @@ class ColorSwatchRecipe(Base):
     )
     brand_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("brands.id", ondelete="SET NULL")
+    )
+    csi_color_master_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("csi_color_masters.id", ondelete="SET NULL")
     )
     color_code: Mapped[str] = mapped_column(String(64), default="")
     color_name: Mapped[str] = mapped_column(String(255), default="")
@@ -348,6 +423,9 @@ class ColorSwatchRecipe(Base):
 
     customer: Mapped[Optional["Customer"]] = relationship("Customer")
     brand: Mapped[Optional["Brand"]] = relationship("Brand")
+    csi_color: Mapped[Optional["CsiColorMaster"]] = relationship(
+        "CsiColorMaster", back_populates="swatch_recipes"
+    )
     po_details: Mapped[list["PoDetail"]] = relationship("PoDetail", back_populates="color_swatch_recipe")
 
 

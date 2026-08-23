@@ -64,10 +64,62 @@ def _fmt_num(v: Optional[float]) -> str:
     return f"{v:.6f}".rstrip("0").rstrip(".")
 
 
+STANDARD_COLUMN_KEYS = [
+    "ITEM",
+    "THICKNESS",
+    "COLOR",
+    "COLOR WHITE",
+    "COLOR BLACK",
+    "COLOR COLOR",
+    "FLOURASENT",
+    "METALIC",
+    "EMBOSS",
+    "SPESIAL EMBOSS",
+]
+
+
+def _addon(total: Optional[float], base: Optional[float]) -> str:
+    if total is None or base is None:
+        return "0"
+    return _fmt_num(max(0.0, float(total) - float(base)))
+
+
+def build_price_cells(
+    *,
+    item: str,
+    thickness: str = "",
+    block: str = "",
+    white: Optional[float],
+    black: Optional[float] = None,
+    color: Optional[float] = None,
+    fluo: Optional[float] = None,
+    metallic: Optional[float] = None,
+    metallic_is_addon: bool = False,
+) -> Optional[dict[str, Any]]:
+    name = str(item or "").strip()
+    if not name or white is None:
+        return None
+    metal = _fmt_num(metallic) if metallic_is_addon and metallic is not None else _addon(metallic, white)
+    if metallic_is_addon and metallic is None:
+        metal = "0"
+    return {
+        "ITEM": name,
+        "THICKNESS": str(thickness or "").strip(),
+        "COLOR": str(block or "").strip(),
+        "COLOR WHITE": _fmt_num(white),
+        "COLOR BLACK": _addon(black, white),
+        "COLOR COLOR": _addon(color, white),
+        "FLOURASENT": _addon(fluo, white),
+        "METALIC": metal,
+        "EMBOSS": "0",
+        "SPESIAL EMBOSS": "0",
+    }
+
+
 def normalize_buyer_cells(cells: dict[str, Any]) -> Optional[dict[str, Any]]:
     """
     Normalisasi berbagai format CSV buyer ke shape standar UI:
-    ITEM, THICKNESS, COLOR, COLOR WHITE, COLOR BLACK, FLOURASENT, METALIC, EMBOSS, SPESIAL EMBOSS
+    ITEM, THICKNESS, COLOR, COLOR WHITE, COLOR BLACK, COLOR COLOR, FLOURASENT, METALIC, EMBOSS, SPESIAL EMBOSS
     """
     upper = {str(k or "").strip().upper(): v for k, v in (cells or {}).items()}
 
@@ -88,6 +140,7 @@ def normalize_buyer_cells(cells: dict[str, Any]) -> Optional[dict[str, Any]]:
             "COLOR": "",
             "COLOR WHITE": _fmt_num(base),
             "COLOR BLACK": "0",
+            "COLOR COLOR": "0",
             "FLOURASENT": "0",
             "METALIC": _fmt_num(metallic_addon),
             "EMBOSS": "0",
@@ -102,6 +155,7 @@ def normalize_buyer_cells(cells: dict[str, Any]) -> Optional[dict[str, Any]]:
             "COLOR": str(upper.get("COLOR") or "").strip(),
             "COLOR WHITE": str(upper.get("COLOR WHITE") or "0").strip() or "0",
             "COLOR BLACK": str(upper.get("COLOR BLACK") or "0").strip() or "0",
+            "COLOR COLOR": str(upper.get("COLOR COLOR") or "0").strip() or "0",
             "FLOURASENT": str(upper.get("FLOURASENT") or "0").strip() or "0",
             "METALIC": str(upper.get("METALIC") or "0").strip() or "0",
             "EMBOSS": str(upper.get("EMBOSS") or "0").strip() or "0",
@@ -155,19 +209,17 @@ def parse_nike_block_rows(raw: list[list[str]], header_idx: int) -> list[dict[st
             current = None
             return
 
-        rows.append(
-            {
-                "ITEM": item,
-                "THICKNESS": str(current.get("THICKNESS") or "").strip(),
-                "COLOR": "",
-                "COLOR WHITE": _fmt_num(base),
-                "COLOR BLACK": _fmt_num(max(0.0, (black or base) - base) if black is not None else 0.0),
-                "FLOURASENT": _fmt_num(max(0.0, (fluo or base) - base) if fluo is not None else 0.0),
-                "METALIC": _fmt_num(max(0.0, (metallic or base) - base) if metallic is not None else 0.0),
-                "EMBOSS": "0",
-                "SPESIAL EMBOSS": "0",
-            }
+        built = build_price_cells(
+            item=item,
+            thickness=str(current.get("THICKNESS") or "").strip(),
+            white=base,
+            black=black,
+            color=color,
+            fluo=fluo,
+            metallic=metallic,
         )
+        if built:
+            rows.append(built)
         current = None
 
     for row in raw[header_idx + 1 :]:
@@ -274,19 +326,18 @@ def parse_price_block_rows(raw: list[list[str]], header_idx: int, headers: list[
         if metallic_total is not None:
             metallic_addon = max(0.0, metallic_total - metallic_ref)
 
-        rows.append(
-            {
-                "ITEM": item,
-                "THICKNESS": str(current.get("THICKNESS") or "").strip(),
-                "COLOR": "",
-                "COLOR WHITE": _fmt_num(base),
-                "COLOR BLACK": _fmt_num(max(0.0, (black or base) - base) if black is not None else 0.0),
-                "FLOURASENT": _fmt_num(max(0.0, (fluo or base) - base) if fluo is not None else 0.0),
-                "METALIC": _fmt_num(metallic_addon),
-                "EMBOSS": "0",
-                "SPESIAL EMBOSS": "0",
-            }
+        built = build_price_cells(
+            item=item,
+            thickness=str(current.get("THICKNESS") or "").strip(),
+            white=base,
+            black=black,
+            color=color_price,
+            fluo=fluo,
+            metallic=metallic_addon,
+            metallic_is_addon=True,
         )
+        if built:
+            rows.append(built)
         current = None
 
     for row in raw[header_idx + 1 :]:
@@ -451,6 +502,258 @@ def persist_buyer_folder(
     db.flush()
     for o in out:
         db.refresh(o)
+    return out
+
+
+def _xlsx_num(val: Any) -> Optional[float]:
+    if val is None:
+        return None
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        return float(val)
+    s = str(val).strip().replace(",", "")
+    if not s or s in {"-", "–"}:
+        return None
+    if s.startswith("+"):
+        s = s[1:].strip()
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _xlsx_metallic_addon(val: Any) -> Optional[float]:
+    if val is None:
+        return None
+    s = str(val).strip()
+    if s.startswith("+"):
+        return _xlsx_num(s)
+    return None
+
+
+def _thickness_from_text(*parts: Any) -> str:
+    blob = " ".join(str(p or "") for p in parts)
+    m = re.search(r"(\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?)\s*MM?", blob, re.I)
+    if m:
+        return m.group(1).replace(" ", "")
+    m = re.search(r"(\d+(?:\.\d+)?)\s*MM\b", blob, re.I)
+    if m:
+        return m.group(1)
+    m = re.search(r"\b(\d+\.\d+)\b", blob)
+    if m:
+        return m.group(1)
+    return ""
+
+
+def _is_note_material(name: str) -> bool:
+    up = str(name or "").strip().upper()
+    return up.startswith("SPECIAL DIRECT") or up.startswith("SPECIAL OIA")
+
+
+def parse_adidas_quotation_xlsx(path: Path, sheet_name: str = "ADCI") -> dict[str, Any]:
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path, read_only=True, data_only=True)
+    if sheet_name not in wb.sheetnames:
+        wb.close()
+        raise ValueError(f"Sheet {sheet_name} tidak ada di {path.name}")
+    rows = list(wb[sheet_name].iter_rows(values_only=True))
+    wb.close()
+
+    header_idx = None
+    for i, row in enumerate(rows[:20]):
+        vals = [str(x).strip().upper() if x is not None else "" for x in (row or ())]
+        if "MATERIAL NAME" in vals and "THICKNESS" in vals:
+            header_idx = i
+            break
+    if header_idx is None:
+        raise ValueError("Header Material Name tidak ditemukan")
+
+    data_rows: list[dict[str, Any]] = []
+    notes: list[str] = []
+    for row in rows[header_idx + 1 :]:
+        if not row:
+            continue
+        first = str(row[0] or "").strip()
+        if first.upper().startswith("REMARK"):
+            break
+        no = row[1] if len(row) > 1 else None
+        if not (isinstance(no, (int, float)) or (isinstance(no, str) and str(no).strip().isdigit())):
+            if first.startswith("1.") or "Period of validity" in first:
+                notes.append(first)
+            continue
+        name = str(row[5] or "").strip() if len(row) > 5 else ""
+        if not name:
+            continue
+        name = name.lstrip("'\"")
+        thick = _thickness_from_text(row[6] if len(row) > 6 else "", name)
+        white = _xlsx_num(row[8] if len(row) > 8 else None)
+        built = build_price_cells(
+            item=name,
+            thickness=thick,
+            block="",
+            white=white,
+            black=_xlsx_num(row[9] if len(row) > 9 else None),
+            color=_xlsx_num(row[10] if len(row) > 10 else None),
+            fluo=_xlsx_num(row[11] if len(row) > 11 else None),
+            metallic=_xlsx_metallic_addon(row[12] if len(row) > 12 else None),
+            metallic_is_addon=True,
+        )
+        if built:
+            data_rows.append(built)
+    return {
+        "title": "QUOTATION ADIDAS FW26 (FEB-JUL 2026)",
+        "period_label": "PERIODE 2026/02/01 - 2026/07/31",
+        "period_start": date(2026, 2, 1),
+        "period_end": date(2026, 7, 31),
+        "data_rows": data_rows,
+        "notes": notes,
+        "canonical_sheet": sheet_name,
+    }
+
+
+def parse_nike_tempel_xlsx(path: Path) -> dict[str, Any]:
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path, data_only=True)
+    ws = wb[wb.sheetnames[0]]
+    notes: list[str] = []
+    data_rows: list[dict[str, Any]] = []
+
+    blocks = (
+        (1, 2, "COMMON"),
+        (7, 8, "SPECIAL"),
+        (14, 15, "OUTSIDE BANTEN"),
+        (20, 21, "OUTSIDE SPECIAL"),
+    )
+    for r in range(4, 32):
+        for name_col, price_col, block in blocks:
+            name = ws.cell(r, name_col).value
+            if name is None or not str(name).strip():
+                continue
+            name_s = str(name).strip()
+            if _is_note_material(name_s):
+                notes.append(name_s)
+                continue
+            prices = [_xlsx_num(ws.cell(r, price_col + i).value) for i in range(5)]
+            if all(p is None for p in prices):
+                continue
+            white, black, color, metallic, fluo = prices
+            if white is None:
+                continue
+            built = build_price_cells(
+                item=name_s,
+                thickness=_thickness_from_text(name_s),
+                block=block,
+                white=white,
+                black=black,
+                color=color,
+                fluo=fluo,
+                metallic=metallic,
+            )
+            if built:
+                data_rows.append(built)
+    wb.close()
+    return {
+        "title": "UPDATE PRICE NIKE (JUL-DES 2026)",
+        "period_label": "JUL-DES 2026",
+        "period_start": date(2026, 7, 1),
+        "period_end": date(2026, 12, 31),
+        "data_rows": data_rows,
+        "notes": notes,
+    }
+
+
+def _replace_buyer_list(
+    db: Any,
+    *,
+    buyer_code: str,
+    parsed: dict[str, Any],
+    source_file: str,
+    kind: str,
+    extra_meta: Optional[dict[str, Any]] = None,
+) -> Any:
+    from sqlalchemy import select
+
+    from app.models import BuyerPriceList, BuyerPriceSheetRow
+    from app.services.buyer_registry import ensure_buyer_code
+
+    ensure_buyer_code(db, buyer_code)
+    existing = db.scalars(select(BuyerPriceList).where(BuyerPriceList.buyer_code == buyer_code)).first()
+    if existing:
+        db.delete(existing)
+        db.flush()
+    meta = {
+        "source_file": source_file,
+        "kind": kind,
+        "data_row_count": len(parsed["data_rows"]),
+        "column_keys": list(STANDARD_COLUMN_KEYS),
+        "notes": parsed.get("notes") or [],
+    }
+    if extra_meta:
+        meta.update(extra_meta)
+    lst = BuyerPriceList(
+        buyer_code=buyer_code,
+        title=parsed.get("title"),
+        period_label=parsed.get("period_label"),
+        period_start=parsed.get("period_start"),
+        period_end=parsed.get("period_end"),
+        currency="USD",
+        meta_json=meta,
+    )
+    db.add(lst)
+    db.flush()
+    for ri, cells in enumerate(parsed["data_rows"]):
+        db.add(BuyerPriceSheetRow(list_id=lst.id, row_number=ri, cells=cells))
+    db.flush()
+    db.refresh(lst)
+    return lst
+
+
+def _first_existing(paths: list[Path]) -> Optional[Path]:
+    for p in paths:
+        if p.is_file():
+            return p
+    return None
+
+
+def persist_official_buyer_workbooks(db: Any, doc_dir: Path) -> list[Any]:
+    """Isi ulang list ADIDAS (sheet ADCI) dan NIKE (4 blok, tanpa kolom kanan)."""
+    adidas_path = _first_existing(
+        [
+            doc_dir / "1._QUOTATION_ADIDAS_FW26_FEB-JUL_2026_ (1).xlsx",
+            doc_dir / "1._QUOTATION_ADIDAS_FW26_FEB-JUL_2026_ (2).xlsx",
+        ]
+    )
+    nike_path = _first_existing(
+        [
+            doc_dir / "HARGA_TEMPEL_NIKE_JUL_-_DES_2026_UPDATE (1).xlsx",
+            doc_dir / "HARGA_TEMPEL_NIKE_JUL_-_DES_2026_UPDATE (2).xlsx",
+        ]
+    )
+    out: list[Any] = []
+    if adidas_path:
+        parsed = parse_adidas_quotation_xlsx(adidas_path)
+        out.append(
+            _replace_buyer_list(
+                db,
+                buyer_code="ADIDAS",
+                parsed=parsed,
+                source_file=adidas_path.name,
+                kind="adidas_quotation",
+                extra_meta={"canonical_sheet": parsed.get("canonical_sheet") or "ADCI"},
+            )
+        )
+    if nike_path:
+        parsed = parse_nike_tempel_xlsx(nike_path)
+        out.append(
+            _replace_buyer_list(
+                db,
+                buyer_code="NIKE",
+                parsed=parsed,
+                source_file=nike_path.name,
+                kind="nike_tempel",
+            )
+        )
     return out
 
 

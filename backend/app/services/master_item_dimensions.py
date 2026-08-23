@@ -112,14 +112,94 @@ def distinct_colors(rows: list[MasterItem], material_name: str, thickness_text: 
     return sorted(out, key=lambda s: s.lower())
 
 
+def emboss_display(row: MasterItem) -> str:
+    v = (row.emboss or "").strip()
+    return v if v else "-"
+
+
+def emboss_matches(row: MasterItem, emboss: str | None) -> bool:
+    raw = (emboss or "").strip()
+    if not raw:
+        return True
+    e = _norm_text(raw)
+    row_e = _norm_text(row.emboss or "")
+    if e in ("", "-"):
+        return row_e in ("", "-")
+    return row_e == e
+
+
+def _filter_by_color(rows: list[MasterItem], color: str | None) -> list[MasterItem]:
+    c = _norm_text(color)
+    if not c:
+        return []
+    return [r for r in rows if _norm_text(r.color or "") == c]
+
+
+def distinct_embosses(
+    rows: list[MasterItem],
+    material_name: str,
+    thickness_text: str | None,
+    color: str | None,
+) -> list[str]:
+    fr = filter_by_material(rows, material_name)
+    if thickness_text and str(thickness_text).strip():
+        fr = [r for r in fr if thickness_matches(r, thickness_text)]
+    else:
+        return []
+    fr = _filter_by_color(fr, color)
+    seen: set[str] = set()
+    out: list[str] = []
+    for r in fr:
+        v = emboss_display(r)
+        k = _norm_text(v)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(v)
+    return sorted(out, key=lambda s: s.lower())
+
+
+def distinct_item_codes(
+    rows: list[MasterItem],
+    material_name: str,
+    thickness_text: str | None,
+    color: str | None,
+    emboss: str | None = None,
+) -> list[str]:
+    fr = filter_by_material(rows, material_name)
+    if thickness_text and str(thickness_text).strip():
+        fr = [r for r in fr if thickness_matches(r, thickness_text)]
+    else:
+        return []
+    fr = _filter_by_color(fr, color)
+    if emboss and str(emboss).strip():
+        fr = [r for r in fr if emboss_matches(r, emboss)]
+    seen: set[str] = set()
+    out: list[str] = []
+    for r in fr:
+        code = (r.item_code or "").strip()
+        if not code:
+            continue
+        k = code.upper()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(code)
+    return sorted(out, key=str.upper)
+
+
 def resolve_by_dimensions(
     rows: list[MasterItem],
     *,
     material_name: str,
     thickness_text: str,
     color: str,
+    emboss: str | None = None,
 ) -> list[MasterItem]:
     fr = filter_by_material(rows, material_name)
     fr = [r for r in fr if thickness_matches(r, thickness_text)]
     c = _norm_text(color)
-    return [r for r in fr if _norm_text(r.color or "") == c]
+    fr = [r for r in fr if _norm_text(r.color or "") == c]
+    if emboss and str(emboss).strip():
+        fr = [r for r in fr if emboss_matches(r, emboss)]
+    return fr

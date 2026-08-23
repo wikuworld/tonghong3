@@ -407,6 +407,7 @@
                     class="w-full"
                     :placeholder="t('common.placeholder.color')"
                     :disabled="w.isMaterialFieldLocked('color') || !String(w.formModel.material_name || '').trim() || !String(w.formModel.thickness_text || '').trim()"
+                    @change="w.onPickedColorDimension"
                   >
                     <el-option
                       v-for="opt in w.poColorCascadeOptions"
@@ -425,6 +426,7 @@
                     class="w-full"
                     :placeholder="t('common.placeholder.color')"
                     :disabled="w.isMaterialFieldLocked('color') || !String(w.formModel.material_name || '').trim() || (!w.isSubkonPo && !String(w.formModel.thickness_text || '').trim())"
+                    @change="w.onPickedColorDimension"
                   >
                     <el-option v-for="c in w.colorDimensionOptions" :key="c" :label="c" :value="c" />
                   </el-select>
@@ -457,7 +459,19 @@
             <el-col :xs="24" :md="8">
               <el-form-item :label="t('pages.po.emboss')">
                 <div class="field-lock-row">
-                  <el-input v-model="w.formModel.emboss" class="w-full" clearable :disabled="w.isMaterialFieldLocked('emboss')" />
+                  <el-select
+                    v-model="w.formModel.emboss"
+                    filterable
+                    :allow-create="!w.isSubkonPo"
+                    default-first-option
+                    clearable
+                    class="w-full"
+                    :placeholder="t('pages.po.embossCascadePlaceholder')"
+                    :disabled="w.isMaterialFieldLocked('emboss') || !String(w.formModel.color || '').trim()"
+                    @change="w.onPickedEmbossDimension"
+                  >
+                    <el-option v-for="e in w.embossDimensionOptions" :key="e" :label="e" :value="e" />
+                  </el-select>
                   <el-button
                     v-if="w.isMaterialFieldLocked('emboss')"
                     link
@@ -477,6 +491,26 @@
                     {{ t('pages.po.fieldReset') }}
                   </el-button>
                 </div>
+              </el-form-item>
+            </el-col>
+            <el-col v-if="!w.isSubkonPo" :xs="24" :md="8">
+              <el-form-item :label="t('pages.po.masterItemCode')">
+                <el-select
+                  v-model="w.masterItemCodePicker"
+                  filterable
+                  clearable
+                  class="w-full"
+                  :placeholder="t('pages.po.itemCodeCascadePlaceholder')"
+                  :disabled="!String(w.formModel.emboss || '').trim()"
+                  @change="w.onPickedMasterItemCode"
+                >
+                  <el-option
+                    v-for="code in w.itemCodeDimensionOptions"
+                    :key="code"
+                    :label="code"
+                    :value="code"
+                  />
+                </el-select>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :md="8">
@@ -535,10 +569,24 @@
 
           <section v-if="!w.isSubkonPo" class="po-wizard-group">
             <header class="po-wizard-group__head">
-              <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupColorSwatch') }}</h4>
-              <p class="po-wizard-group__sub">{{ t('pages.po.swatchPickerLabel') }}</p>
+              <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupColorStandard') }}</h4>
+              <p class="po-wizard-group__sub">{{ t('pages.po.colorStandardSourceHint') }}</p>
             </header>
-            <div class="mb-2">
+            <div class="mb-3">
+              <p class="mb-1 text-xs text-slate-500">{{ t('pages.po.colorStandardSourceLabel') }}</p>
+              <el-radio-group
+                :model-value="w.colorStandardSource"
+                size="small"
+                class="po-color-source-radio"
+                @change="w.onColorStandardSourceChange"
+              >
+                <el-radio-button value="swatch">{{ t('pages.po.colorStandardSourceSwatch') }}</el-radio-button>
+                <el-radio-button value="csi">{{ t('pages.po.colorStandardSourceCsi') }}</el-radio-button>
+                <el-radio-button value="waiting">{{ t('pages.po.colorStandardSourceWaiting') }}</el-radio-button>
+                <el-radio-button value="manual">{{ t('pages.po.colorStandardSourceManual') }}</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div v-if="w.colorStandardSource === 'swatch'" class="mb-2">
                 <div
                   v-if="w.selectedSwatchRecipe && !w.swatchPickerOpen"
                   class="flex flex-wrap items-center gap-2 rounded border border-emerald-200 bg-emerald-50/80 px-3 py-2"
@@ -594,6 +642,55 @@
                   {{ t('pages.po.swatchFieldsLockedHint') }}
                 </p>
             </div>
+            <div v-else-if="w.colorStandardSource === 'csi'" class="mb-2">
+              <el-select
+                v-model="w.selectedCsiId"
+                filterable
+                remote
+                clearable
+                class="w-full"
+                :placeholder="t('pages.po.colorStandardCsiPlaceholder')"
+                :loading="w.csiLoading"
+                :disabled="!w.formModel.buyer"
+                :remote-method="w.searchCsiOptions"
+                @change="w.applySelectedCsiColor"
+              >
+                <el-option
+                  v-for="c in w.csiOptions"
+                  :key="c.id"
+                  :label="w.csiColorOptionLabel(c)"
+                  :value="c.id"
+                />
+              </el-select>
+              <p v-if="!w.formModel.buyer" class="mt-1 text-xs text-amber-600">
+                {{ t('pages.po.colorStandardCsiNeedBuyer') }}
+              </p>
+              <p v-else class="mt-1 text-xs text-slate-500">{{ t('pages.po.colorStandardCsiHint') }}</p>
+            </div>
+            <el-alert
+              v-else-if="w.colorStandardSource === 'waiting'"
+              type="warning"
+              :closable="false"
+              show-icon
+              class="mb-2"
+              :title="t('pages.po.colorStandardWaitingHint')"
+            />
+            <p v-else-if="w.colorStandardSource === 'manual'" class="mb-2 text-xs text-slate-500">
+              {{ t('pages.po.colorStandardManualHint') }}
+            </p>
+            <el-form-item :label="t('pages.po.colorReference')">
+              <el-input
+                v-model="w.formModel.color_reference"
+                clearable
+                :placeholder="t('pages.po.colorReferencePlaceholder')"
+                @input="w.onColorReferenceInput"
+              />
+              <div class="mt-2 flex items-center gap-2">
+                <el-tag v-if="w.autoFieldMeta.color_reference && w.formModel.color_reference" size="small" type="success">
+                  {{ t('pages.po.autoFilled') }}
+                </el-tag>
+              </div>
+            </el-form-item>
           </section>
 
           <section class="po-wizard-group">
@@ -889,7 +986,15 @@
                   :active-text="t('pages.po.draftRiskOnlyActive')"
                   :inactive-text="t('pages.po.draftRiskAllLines')"
                 />
-                <el-button type="primary" :icon="Plus" class="po-wizard-add-line-btn" @click="w.pushCurrentLine(false)">
+                <template v-if="w.editingDraftLineIndex >= 0">
+                  <el-button size="small" @click="w.cancelEditDraftLine">
+                    {{ t('common.cancel') }}
+                  </el-button>
+                  <el-button type="primary" :icon="Check" class="po-wizard-add-line-btn" @click="w.pushCurrentLine(false)">
+                    {{ t('pages.po.saveDraftLine') }}
+                  </el-button>
+                </template>
+                <el-button v-else type="primary" :icon="Plus" class="po-wizard-add-line-btn" @click="w.pushCurrentLine(false)">
                   {{ t('common.add') }}
                 </el-button>
               </div>
@@ -970,18 +1075,19 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column :label="t('common.actions')" width="120" align="center">
+            <el-table-column :label="t('common.actions')" width="168" align="center" fixed="right">
               <template #default="{ row }">
-                <el-button
-                  v-if="w.isEditMode && w.draftLines.length > 1"
-                  link
-                  type="primary"
-                  size="small"
-                  @click="w.editDraftLine(row)"
-                >
-                  {{ t('pages.po.editDraftLine') }}
-                </el-button>
-                <el-button link type="danger" :icon="Delete" @click="w.removeDraftLine(w.draftLines.indexOf(row))" />
+                <div class="po-draft-line-actions">
+                  <el-tooltip :content="t('pages.po.copyLine')" placement="top">
+                    <el-button link type="primary" :icon="DocumentCopy" @click="w.copyDraftLine(row)" />
+                  </el-tooltip>
+                  <el-tooltip :content="t('pages.po.editDraftLine')" placement="top">
+                    <el-button link type="primary" :icon="Edit" @click="w.editDraftLine(row)" />
+                  </el-tooltip>
+                  <el-tooltip :content="t('common.delete')" placement="top">
+                    <el-button link type="danger" :icon="Delete" @click="w.removeDraftLine(w.draftLines.indexOf(row))" />
+                  </el-tooltip>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -1142,6 +1248,13 @@ const { t } = useI18n()
 <style scoped>
 :deep(.draft-line-active > td) {
   background-color: rgb(239 246 255) !important;
+}
+
+.po-draft-line-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
 }
 
 :deep(.po-wizard-dialog.el-dialog) {
@@ -1389,6 +1502,16 @@ const { t } = useI18n()
 }
 
 .po-category-radio :deep(.el-radio-button__inner) {
+  padding: 6px 10px;
+}
+
+.po-color-source-radio {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.po-color-source-radio :deep(.el-radio-button__inner) {
   padding: 6px 10px;
 }
 

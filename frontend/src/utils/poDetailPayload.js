@@ -44,6 +44,8 @@ export async function appendDetailUnitPrice(body, formModel, { resolveBuyerUnitP
         style_article: formModel.style_article || null,
         thickness_text: formModel.thickness_text || null,
         color_family: formModel.color_family || null,
+        emboss: formModel.emboss || null,
+        factory_code: formModel.factory_code || null,
       })
       if (formModel.unit_price_input != null) {
         body.unit_price = Number(formModel.unit_price_input)
@@ -71,7 +73,6 @@ export async function appendDetailUnitPrice(body, formModel, { resolveBuyerUnitP
 
 export function detailPayloadForUpdate(body) {
   const o = { ...body }
-  delete o.unit_price
   delete o.id
   return o
 }

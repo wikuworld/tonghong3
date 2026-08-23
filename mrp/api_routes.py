@@ -3921,23 +3921,42 @@ def erp_combination_api():
 
 @api.get("/rencana/po/by-combination")
 def rencana_po_by_combination():
+    from erp_master_items import _norm, _thickness_matches
+
     color = (request.args.get("color") or "").strip()
     emboss = (request.args.get("emboss") or "").strip()
+    thickness = (request.args.get("thickness") or request.args.get("tebal") or "").strip()
     color_swatch = (request.args.get("color_swatch") or "").strip()
-    if not color or not emboss or not color_swatch:
-        return _err("Color, Emboss, Color Swatch wajib")
+    if not color or not emboss:
+        return _err("Color dan Emboss wajib")
+    if thickness:
+        mode = "spek"
+    elif color_swatch:
+        mode = "swatch"
+    else:
+        return _err("Thickness atau Color Swatch wajib")
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
     cur.execute(
-        "SELECT id, no_po, no_so, customer, item_name, sq_ft, qty_order, qty_processed, "
-        "qty_balance_erp, (qty_order - qty_processed) AS qty_outstanding "
+        "SELECT id, no_po, no_so, customer, item_name, tebal, warna, emboss, color_swatch, "
+        "sq_ft, qty_order, qty_processed, qty_balance_erp, "
+        "(qty_order - qty_processed) AS qty_outstanding "
         "FROM tbl_master_po "
-        "WHERE warna = %s AND emboss = %s AND color_swatch = %s "
+        "WHERE warna = %s AND emboss = %s "
         "AND status IN ('outstanding','partial') "
         "ORDER BY no_po, item_name",
-        (color, emboss, color_swatch),
+        (color, emboss),
     )
     items = _rows(cur.fetchall())
+    if mode == "spek":
+        items = [i for i in items if _thickness_matches(i.get("tebal"), thickness)]
+    if color_swatch:
+        sw_norm = _norm(color_swatch)
+        items = [
+            i
+            for i in items
+            if _norm(i.get("color_swatch") or "") == sw_norm
+        ]
     cur.close()
     conn.close()
     return jsonify(items)

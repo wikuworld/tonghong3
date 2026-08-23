@@ -29,6 +29,17 @@ import {
   applySwatchRecipeOption,
   pickBestSwatchRecipe,
 } from '../utils/poColorSwatch.js'
+import {
+  COLOR_STANDARD_SOURCE,
+  applyCsiColorToForm,
+  applyWaitingCsToForm,
+  csiColorOptionLabel,
+  extractColorCodeFromReference,
+  hasColorStandardValue,
+  inferColorStandardSource,
+  isWaitingColorRef,
+  matchCsiOption,
+} from '../utils/poColorStandard.js'
 import { parseApiErrorMessage } from '../utils/poApi.js'
 import { customerOptionLabel } from '../utils/poList.js'
 import {
@@ -56,10 +67,12 @@ import {
   checkPoCustomerRef,
   getCustomer,
   listMasterItemDimensionValues,
+  listMasterItems,
   resolveMasterItemByDimensions,
   listFluorescentColors,
   lookupColorSwatchRecipes,
   getColorSwatchPoFill,
+  listCsiColorsPage,
   listPoDetails,
   listPoForCopy,
   resolveBuyerUnitPrice,
@@ -92,6 +105,22 @@ export function usePoFormWizard({
   const canManage = computed(() => canCreate.value || canUpdate.value)
   function formatCustomerOption(c) {
     return customerOptionLabel(c, t)
+  }
+
+  let masterItemsLoad = null
+  async function ensureMasterItemsLoaded() {
+    if ((masterItems.value || []).length) return
+    if (!masterItemsLoad) {
+      masterItemsLoad = listMasterItems()
+        .then((rows) => {
+          masterItems.value = rows || []
+        })
+        .catch(() => {})
+        .finally(() => {
+          masterItemsLoad = null
+        })
+    }
+    await masterItemsLoad
   }
 
   const saving = ref(false)
@@ -308,6 +337,10 @@ const swatchRetriedWithoutMaterial = ref(false)
 const selectedSwatchId = ref(null)
 const swatchFieldsManualEdit = ref(false)
 const swatchPickerOpen = ref(false)
+const colorStandardSource = ref('')
+const selectedCsiId = ref(null)
+const csiOptions = ref([])
+const csiLoading = ref(false)
 
 const selectedSwatchRecipe = computed(() => {
   const id = selectedSwatchId.value
@@ -369,9 +402,14 @@ async function applyLineToForm(line) {
   formModel.thi_line_ref = line.thi_line_ref || ''
   formModel.unit_price_input = line.unit_price != null ? Number(line.unit_price) : null
   selectedSwatchId.value = line.color_swatch_recipe_id ?? null
+  await hydrateColorStandardFromLine(line)
   etdScheduleRows.value = loadEtdScheduleRowsFromApi(line.delivery_schedules || [])
+  const linked = masterItems.value.find((x) => x.id === line.master_item_id)
+  masterItemCodePicker.value = linked?.item_code || ''
   await refreshThicknessOptionsFromApi()
   await refreshColorOptionsFromApi()
+  await refreshEmbossOptionsFromApi()
+  await refreshItemCodeOptionsFromApi()
 }
 
 async function editDraftLine(row) {
@@ -386,6 +424,92 @@ async function editDraftLine(row) {
   ElMessage.info(t('pages.po.editingDraftLine', { n: idx + 1 }))
 }
 
+function cloneDraftLinePayload(row) {
+  const schedules = Array.isArray(row.delivery_schedules)
+    ? row.delivery_schedules.map((s) => ({ ...s }))
+    : []
+  return {
+    master_item_id: row.master_item_id,
+    material_name: row.material_name,
+    thickness_text: row.thickness_text,
+    color: row.color,
+    color_family: row.color_family,
+    emboss: row.emboss,
+    vir_softness_type: row.vir_softness_type,
+    softness: row.softness,
+    color_reference: row.color_reference,
+    color_standard: row.color_standard,
+    backing: row.backing,
+    quantity_order: row.quantity_order,
+    style_article: row.style_article,
+    model: row.model,
+    detail_remark: row.detail_remark,
+    color_swatch_recipe_id: row.color_swatch_recipe_id,
+    unit_price: row.unit_price,
+    base_price: row.base_price,
+    is_special_price: row.is_special_price,
+    discount_type: row.discount_type,
+    discount_value: row.discount_value,
+    manual_override: Boolean(row.manual_override),
+    material_master_override: Boolean(row.material_master_override),
+    material_master_matched: Boolean(row.material_master_matched),
+    delivery_schedules: schedules,
+    copied_from_detail_id: row.id || row.copied_from_detail_id || undefined,
+  }
+}
+
+function copyDraftLine(row) {
+  const idx = draftLines.value.indexOf(row)
+  if (idx < 0) return
+  draftLines.value.splice(idx + 1, 0, cloneDraftLinePayload(row))
+  if (editingDraftLineIndex.value > idx) {
+    editingDraftLineIndex.value += 1
+  }
+  ElMessage.success(t('pages.po.lineCopied'))
+}
+
+function resetCurrentLineForm() {
+  formModel.master_item_id = null
+  formModel.material_name = ''
+  formModel.thickness_text = ''
+  formModel.color = ''
+  formModel.color_family = null
+  formModel.emboss = ''
+  formModel.vir_softness_type = ''
+  formModel.softness = ''
+  autoFieldMeta.softness = false
+  formModel.color_reference = ''
+  autoFieldMeta.color_reference = false
+  formModel.color_standard = ''
+  autoFieldMeta.color_standard = false
+  formModel.backing = ''
+  autoFieldMeta.backing = false
+  formModel.quantity_order = ''
+  formModel.style_article = ''
+  formModel.model = ''
+  autoFieldMeta.model = false
+  formModel.detail_remark = ''
+  formModel.thi_line_ref = ''
+  clearEtdScheduleRows()
+  resetMaterialFieldOverride()
+  colorFamilyAutoMode.value = true
+  lastResolveHadNoMaster.value = false
+  thicknessDimensionOptions.value = []
+  colorDimensionOptions.value = []
+  embossDimensionOptions.value = []
+  itemCodeDimensionOptions.value = []
+  masterItemCodePicker.value = ''
+  formErrors.material_name = ''
+  formErrors.quantity_order = ''
+  resetColorStandardSourceState()
+  scheduleAutoLotGenerate()
+}
+
+function cancelEditDraftLine() {
+  editingDraftLineIndex.value = -1
+  resetCurrentLineForm()
+}
+
 async function saveDetailSchedules(detailId, schedules) {
   const rows = loadEtdScheduleRowsFromApi(schedules || [])
   await setPoDetailDeliverySchedules(
@@ -397,6 +521,9 @@ async function saveDetailSchedules(detailId, schedules) {
 const materialDimensionOptions = ref([])
 const thicknessDimensionOptions = ref([])
 const colorDimensionOptions = ref([])
+const embossDimensionOptions = ref([])
+const itemCodeDimensionOptions = ref([])
+const masterItemCodePicker = ref('')
 const masterResolveLoading = ref(false)
 const ambiguousMasterVisible = ref(false)
 const ambiguousMasterCandidates = ref([])
@@ -431,6 +558,8 @@ async function fetchResolvedUnitPricePreview() {
       style_article: formModel.style_article || null,
       thickness_text: formModel.thickness_text || null,
       color_family: formModel.color_family || null,
+      emboss: formModel.emboss || null,
+      factory_code: formModel.factory_code || null,
     })
     const nextPreview = r.unit_price != null ? Number(r.unit_price) : null
     previewResolvedUnitPrice.value = nextPreview
@@ -469,7 +598,7 @@ const activeSeasonLabel = computed(() => deriveSeasonLabel(formModel.order_date)
 const pricingKeyIncomplete = computed(() => {
   if (formModel.po_category === 'subcont' || formModel.po_category === 'return') return false
   if (!(formModel.buyer || '').trim()) return false
-  return !String(formModel.material_name || '').trim() || !String(formModel.thickness_text || '').trim() || !String(formModel.color_family || '').trim()
+  return !String(formModel.material_name || '').trim() || !String(formModel.thickness_text || '').trim()
 })
 
 const hasSpecialPriceInLines = computed(() => {
@@ -576,10 +705,14 @@ async function loadFluorescentOptions() {
   }
   try {
     const seasonLabel = deriveSeasonLabel(formModel.order_date)
-    fluorescentColorOptions.value = await listFluorescentColors({
+    let rows = await listFluorescentColors({
       buyer_code: buyer,
       season_label: seasonLabel || undefined,
     })
+    if (!rows.length && seasonLabel) {
+      rows = await listFluorescentColors({ buyer_code: buyer })
+    }
+    fluorescentColorOptions.value = rows
   } catch {
     fluorescentColorOptions.value = []
   }
@@ -590,10 +723,14 @@ async function fetchFluorescentOptionsForValidation() {
   if (!buyer) return []
   try {
     const seasonLabel = deriveSeasonLabel(formModel.order_date)
-    return await listFluorescentColors({
+    let rows = await listFluorescentColors({
       buyer_code: buyer,
       season_label: seasonLabel || undefined,
     })
+    if (!rows.length && seasonLabel) {
+      rows = await listFluorescentColors({ buyer_code: buyer })
+    }
+    return rows
   } catch {
     return []
   }
@@ -608,7 +745,9 @@ async function validateFluorescentLinesOrThrow(lines) {
     if (String(line.color_family || '').toLowerCase() !== 'fluorescent') continue
     const color = String(line.color || '').trim().toLowerCase()
     if (!color) continue
-    if (!validNames.has(color)) {
+    const colorCode = extractColorCodeFromReference(line.color)
+    const codeOk = colorCode && opts.some((x) => String(x.color_code || '').trim().toUpperCase() === colorCode)
+    if (!validNames.has(color) && !codeOk) {
       throw new Error(`Line ${i + 1}: warna fluorescent wajib dipilih dari master fluorescent sesuai buyer/season.`)
     }
   }
@@ -619,7 +758,13 @@ function isSelectedFluorescentColorValid() {
   const chosen = String(formModel.color || '').trim().toLowerCase()
   if (!chosen) return true
   if (!fluorescentColorOptions.value.length) return true
-  return fluorescentColorOptions.value.some((opt) => String(opt.color_name || '').trim().toLowerCase() === chosen)
+  const chosenCode = extractColorCodeFromReference(formModel.color)
+  return fluorescentColorOptions.value.some((opt) => {
+    const name = String(opt.color_name || '').trim().toLowerCase()
+    if (name && name === chosen) return true
+    const code = String(opt.color_code || '').trim().toUpperCase()
+    return Boolean(chosenCode && code && code === chosenCode)
+  })
 }
 
 function applyAutoFactoryCode(customer, { force = false } = {}) {
@@ -687,7 +832,14 @@ const materialStepFillStep = computed(() => {
   if (!String(formModel.thickness_text || '').trim()) return 2
   if (!String(formModel.color || '').trim()) return 3
   if (!String(formModel.emboss || '').trim()) return 4
-  if (!selectedSwatchId.value && !String(formModel.color_standard || '').trim()) return 5
+  if (
+    !hasColorStandardValue(formModel, {
+      selectedSwatchId: selectedSwatchId.value,
+      source: colorStandardSource.value,
+    })
+  ) {
+    return 5
+  }
   return 0
 })
 
@@ -730,6 +882,9 @@ function swatchDimensionKey() {
 }
 
 function autoApplyColorSwatchFromDimensions() {
+  const source = colorStandardSource.value
+  if (source && source !== COLOR_STANDARD_SOURCE.SWATCH) return
+
   const material = String(formModel.material_name || '').trim()
   const color = String(formModel.color || '').trim()
   const emboss = String(formModel.emboss || '').trim()
@@ -747,6 +902,8 @@ function autoApplyColorSwatchFromDimensions() {
     materialFieldOverride,
     selectedSwatchId,
   })
+  colorStandardSource.value = COLOR_STANDARD_SOURCE.SWATCH
+  selectedCsiId.value = null
   swatchFieldsManualEdit.value = false
   swatchPickerOpen.value = false
 }
@@ -785,7 +942,7 @@ function clearSwatchSelection() {
   selectedSwatchId.value = null
   swatchFieldsManualEdit.value = false
   swatchPickerOpen.value = true
-  lastAutoSwatchDimensionKey = ''
+  lastAutoSwatchDimensionKey = swatchDimensionKey()
 }
 
 async function loadColorSwatchOptions() {
@@ -801,6 +958,9 @@ async function loadColorSwatchOptions() {
     colorSwatchOptions.value = options
     swatchRetriedWithoutMaterial.value = retriedWithoutMaterial
     autoApplyColorSwatchFromDimensions()
+    if (!selectedSwatchId.value) {
+      await autoApplyCsiFromColorField()
+    }
   } catch {
     colorSwatchOptions.value = []
     swatchRetriedWithoutMaterial.value = false
@@ -823,6 +983,8 @@ async function applyColorSwatch(recipeId) {
       materialFieldOverride,
       selectedSwatchId,
     })
+    colorStandardSource.value = COLOR_STANDARD_SOURCE.SWATCH
+    selectedCsiId.value = null
     swatchFieldsManualEdit.value = false
     swatchPickerOpen.value = false
     ElMessage.success(t('pages.po.swatchApplied'))
@@ -837,11 +999,159 @@ async function applyColorSwatch(recipeId) {
       materialFieldOverride,
       selectedSwatchId,
     })
+    colorStandardSource.value = COLOR_STANDARD_SOURCE.SWATCH
+    selectedCsiId.value = null
     swatchFieldsManualEdit.value = false
     swatchPickerOpen.value = false
     ElMessage.success(t('pages.po.swatchApplied'))
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+function resetColorStandardSourceState() {
+  colorStandardSource.value = ''
+  selectedCsiId.value = null
+  csiOptions.value = []
+  selectedSwatchId.value = null
+  swatchFieldsManualEdit.value = false
+  swatchPickerOpen.value = false
+  lastAutoSwatchDimensionKey = ''
+}
+
+async function loadCsiOptions(query = '') {
+  const buyer = String(formModel.buyer || '').trim().toUpperCase()
+  if (!buyer) {
+    csiOptions.value = []
+    return
+  }
+  csiLoading.value = true
+  try {
+    const page = await listCsiColorsPage({
+      buyer_code: buyer,
+      q: String(query || '').trim() || undefined,
+      limit: 80,
+      offset: 0,
+    })
+    csiOptions.value = page.items || []
+  } catch {
+    csiOptions.value = []
+  } finally {
+    csiLoading.value = false
+  }
+}
+
+function searchCsiOptions(query) {
+  void loadCsiOptions(query)
+}
+
+async function hydrateColorStandardFromLine(line) {
+  const source = inferColorStandardSource(line)
+  colorStandardSource.value = source
+  selectedCsiId.value = null
+  if (source === COLOR_STANDARD_SOURCE.CSI) {
+    const q = extractColorCodeFromReference(line?.color_reference)
+    await loadCsiOptions(q)
+    const hit = matchCsiOption(csiOptions.value, line?.color_reference, q)
+    selectedCsiId.value = hit?.id ?? null
+    return
+  }
+  if (source === COLOR_STANDARD_SOURCE.SWATCH) {
+    swatchPickerOpen.value = !line?.color_swatch_recipe_id
+    lastAutoSwatchDimensionKey = swatchDimensionKey()
+    return
+  }
+  if (source === COLOR_STANDARD_SOURCE.WAITING || source === COLOR_STANDARD_SOURCE.MANUAL) {
+    lastAutoSwatchDimensionKey = swatchDimensionKey()
+  }
+}
+
+async function autoApplyCsiFromColorField() {
+  const source = colorStandardSource.value
+  if (source && source !== COLOR_STANDARD_SOURCE.SWATCH && source !== COLOR_STANDARD_SOURCE.CSI) {
+    return
+  }
+  if (selectedSwatchId.value) return
+  const code =
+    extractColorCodeFromReference(formModel.color) ||
+    extractColorCodeFromReference(formModel.color_reference)
+  if (!code) return
+  await loadCsiOptions(code)
+  const hit = matchCsiOption(csiOptions.value, formModel.color, code)
+  if (!hit) return
+  selectedCsiId.value = hit.id
+  applyCsiColorToForm(hit, formModel, autoFieldMeta)
+  colorStandardSource.value = COLOR_STANDARD_SOURCE.CSI
+  lastAutoSwatchDimensionKey = swatchDimensionKey()
+}
+
+function applySelectedCsiColor(csiId) {
+  if (!csiId) {
+    selectedCsiId.value = null
+    if (autoFieldMeta.color_reference) {
+      formModel.color_reference = ''
+      formModel.color_standard = ''
+      autoFieldMeta.color_reference = false
+      autoFieldMeta.color_standard = false
+    }
+    return
+  }
+  const row = csiOptions.value.find((x) => x.id === csiId)
+  if (!row) return
+  selectedCsiId.value = csiId
+  selectedSwatchId.value = null
+  lastAutoSwatchDimensionKey = swatchDimensionKey()
+  applyCsiColorToForm(row, formModel, autoFieldMeta)
+  ElMessage.success(t('pages.po.colorStandardCsiApplied'))
+}
+
+function onColorReferenceInput() {
+  autoFieldMeta.color_reference = false
+  const typed = String(formModel.color_reference || '').trim()
+  if (!colorStandardSource.value && typed) {
+    colorStandardSource.value = isWaitingColorRef(typed)
+      ? COLOR_STANDARD_SOURCE.WAITING
+      : COLOR_STANDARD_SOURCE.MANUAL
+    lastAutoSwatchDimensionKey = swatchDimensionKey()
+    return
+  }
+  if (colorStandardSource.value === COLOR_STANDARD_SOURCE.WAITING && !isWaitingColorRef(formModel.color_reference)) {
+    colorStandardSource.value = COLOR_STANDARD_SOURCE.MANUAL
+  }
+}
+
+function onColorStandardSourceChange(next) {
+  const source = String(next || '')
+  colorStandardSource.value = source
+  if (source === COLOR_STANDARD_SOURCE.SWATCH) {
+    selectedCsiId.value = null
+    lastAutoSwatchDimensionKey = ''
+    swatchPickerOpen.value = !selectedSwatchId.value
+    void loadColorSwatchOptions()
+    return
+  }
+  selectedSwatchId.value = null
+  swatchFieldsManualEdit.value = false
+  swatchPickerOpen.value = false
+  lastAutoSwatchDimensionKey = swatchDimensionKey()
+  if (source === COLOR_STANDARD_SOURCE.CSI) {
+    if (isWaitingColorRef(formModel.color_reference)) {
+      formModel.color_reference = ''
+      formModel.color_standard = ''
+      autoFieldMeta.color_reference = false
+      autoFieldMeta.color_standard = false
+    }
+    void loadCsiOptions(extractColorCodeFromReference(formModel.color_reference))
+    return
+  }
+  selectedCsiId.value = null
+  if (source === COLOR_STANDARD_SOURCE.WAITING) {
+    applyWaitingCsToForm(formModel, autoFieldMeta)
+    return
+  }
+  if (source === COLOR_STANDARD_SOURCE.MANUAL) {
+    autoFieldMeta.color_reference = false
+    autoFieldMeta.color_standard = false
   }
 }
 
@@ -1073,6 +1383,8 @@ watch(
     formModel.style_article,
     formModel.thickness_text,
     formModel.color_family,
+    formModel.emboss,
+    formModel.factory_code,
   ],
   () => {
     schedulePricePreview()
@@ -1085,8 +1397,7 @@ watch(
   (newColor) => {
     if (formModel.po_category === 'subcont') return
     if (!colorFamilyAutoMode.value) return
-    const inferred = inferColorFamilyFromColor(newColor)
-    if (inferred) formModel.color_family = inferred
+    formModel.color_family = inferColorFamilyFromColor(newColor)
   },
 )
 
@@ -1111,13 +1422,28 @@ watch(
     const scopeKey = swatchScopeKey()
     const scopeChanged = scopeKey !== lastSwatchScopeKey
     lastSwatchScopeKey = scopeKey
-    if (scopeChanged) {
+    const source = colorStandardSource.value
+    const allowAutoSwatch = !source || source === COLOR_STANDARD_SOURCE.SWATCH
+    if (scopeChanged && allowAutoSwatch) {
       selectedSwatchId.value = null
       lastAutoSwatchDimensionKey = ''
       swatchFieldsManualEdit.value = false
       swatchPickerOpen.value = false
     }
-    void loadColorSwatchOptions()
+    if (allowAutoSwatch) {
+      void loadColorSwatchOptions()
+    } else if (source === COLOR_STANDARD_SOURCE.CSI) {
+      void autoApplyCsiFromColorField()
+    }
+  },
+)
+
+watch(
+  () => formModel.buyer,
+  () => {
+    if (colorStandardSource.value !== COLOR_STANDARD_SOURCE.CSI) return
+    selectedCsiId.value = null
+    void loadCsiOptions('')
   },
 )
 
@@ -1241,13 +1567,14 @@ function resetForm() {
   skipMasterResolve.value = false
   loadedDetailMasterSnapshot.value = null
   subkonItemCodePicker.value = ''
+  masterItemCodePicker.value = ''
   thicknessDimensionOptions.value = []
   colorDimensionOptions.value = []
+  embossDimensionOptions.value = []
+  itemCodeDimensionOptions.value = []
   colorFamilyAutoMode.value = true
   lotAutoFromMaterial.value = false
-  selectedSwatchId.value = null
-  swatchFieldsManualEdit.value = false
-  swatchPickerOpen.value = false
+  resetColorStandardSourceState()
   colorSwatchOptions.value = []
   resetMaterialFieldOverride()
   formErrors.customer_id = ''
@@ -1276,6 +1603,11 @@ function applyPoDraft(data) {
   if (!formModel.order_date) {
     formModel.order_date = localTodayIsoDate()
   }
+  colorStandardSource.value = inferColorStandardSource({
+    color_swatch_recipe_id: selectedSwatchId.value,
+    color_reference: formModel.color_reference,
+    color_standard: formModel.color_standard,
+  })
 }
 
 async function restorePoDraftIfAny() {
@@ -1364,6 +1696,71 @@ async function refreshThicknessOptionsFromApi() {
   }
 }
 
+async function refreshEmbossOptionsFromApi() {
+  const m = String(formModel.material_name || '').trim()
+  const tt = String(formModel.thickness_text || '').trim()
+  const co = String(formModel.color || '').trim()
+  if (!m || !tt || !co) {
+    embossDimensionOptions.value = []
+    return
+  }
+  try {
+    const r = await listMasterItemDimensionValues('embosses', {
+      material_name: m,
+      thickness_text: tt,
+      color: co,
+      category: masterDimensionCategoryParam(),
+    })
+    embossDimensionOptions.value = r.values || []
+  } catch {
+    embossDimensionOptions.value = []
+  }
+}
+
+async function refreshItemCodeOptionsFromApi() {
+  const m = String(formModel.material_name || '').trim()
+  const tt = String(formModel.thickness_text || '').trim()
+  const co = String(formModel.color || '').trim()
+  const em = String(formModel.emboss || '').trim()
+  if (!m || !tt || !co) {
+    itemCodeDimensionOptions.value = []
+    return
+  }
+  try {
+    const r = await listMasterItemDimensionValues('item_codes', {
+      material_name: m,
+      thickness_text: tt,
+      color: co,
+      emboss: em || undefined,
+      category: masterDimensionCategoryParam(),
+    })
+    itemCodeDimensionOptions.value = r.values || []
+  } catch {
+    itemCodeDimensionOptions.value = []
+  }
+}
+
+function applyPickedMasterItem(item) {
+  if (!item) return
+  upsertMasterItemInCache(item)
+  skipMasterResolve.value = true
+  resetMaterialFieldOverride()
+  colorFamilyAutoMode.value = true
+  formModel.master_item_id = item.id
+  masterItemCodePicker.value = item.item_code || ''
+  hydrateFormFromMasterItemRow(item, { syncDimensions: false })
+  if (!colorStandardSource.value) {
+    const inferredSource = inferColorStandardSource({
+      color_swatch_recipe_id: selectedSwatchId.value,
+      color_reference: formModel.color_reference,
+      color_standard: formModel.color_standard,
+    })
+    if (inferredSource) colorStandardSource.value = inferredSource
+  }
+  lastResolveHadNoMaster.value = false
+  scheduleAutoLotGenerate()
+}
+
 async function refreshColorOptionsFromApi() {
   const m = String(formModel.material_name || '').trim()
   const tt = String(formModel.thickness_text || '').trim()
@@ -1424,17 +1821,27 @@ function onPickedSubkonItemCode(code) {
   scheduleAutoLotGenerate()
 }
 
-async function onPickedMaterialDimension() {
-  formModel.thickness_text = ''
-  formModel.color = ''
+function clearDownstreamMasterPick({ clearThickness = false, clearColor = false, clearEmboss = false } = {}) {
+  if (clearThickness) formModel.thickness_text = ''
+  if (clearColor) formModel.color = ''
+  if (clearEmboss) formModel.emboss = ''
   formModel.master_item_id = null
   subkonItemCodePicker.value = ''
-  formModel.thi_line_ref = ''
-  lotAutoFromMaterial.value = false
+  masterItemCodePicker.value = ''
   skipMasterResolve.value = false
   lastResolveHadNoMaster.value = false
-  thicknessDimensionOptions.value = []
-  colorDimensionOptions.value = []
+  if (clearThickness) thicknessDimensionOptions.value = []
+  if (clearColor) colorDimensionOptions.value = []
+  if (clearEmboss) {
+    embossDimensionOptions.value = []
+    itemCodeDimensionOptions.value = []
+  }
+}
+
+async function onPickedMaterialDimension() {
+  clearDownstreamMasterPick({ clearThickness: true, clearColor: true, clearEmboss: true })
+  formModel.thi_line_ref = ''
+  lotAutoFromMaterial.value = false
   const m = String(formModel.material_name || '').trim()
   if (m) {
     await refreshThicknessOptionsFromApi()
@@ -1444,15 +1851,57 @@ async function onPickedMaterialDimension() {
 }
 
 async function onPickedThicknessDimension() {
-  formModel.color = ''
-  formModel.master_item_id = null
-  subkonItemCodePicker.value = ''
-  skipMasterResolve.value = false
-  lastResolveHadNoMaster.value = false
-  colorDimensionOptions.value = []
+  clearDownstreamMasterPick({ clearColor: true, clearEmboss: true })
   const m = String(formModel.material_name || '').trim()
   const tt = String(formModel.thickness_text || '').trim()
   if (m && tt) await refreshColorOptionsFromApi()
+}
+
+async function onPickedColorDimension() {
+  clearDownstreamMasterPick({ clearEmboss: true })
+  const m = String(formModel.material_name || '').trim()
+  const tt = String(formModel.thickness_text || '').trim()
+  const co = String(formModel.color || '').trim()
+  if (!m || !tt || !co) return
+  await refreshEmbossOptionsFromApi()
+  if (embossDimensionOptions.value.length === 1) {
+    formModel.emboss = embossDimensionOptions.value[0]
+    await onPickedEmbossDimension()
+  }
+}
+
+async function onPickedEmbossDimension() {
+  formModel.master_item_id = null
+  masterItemCodePicker.value = ''
+  itemCodeDimensionOptions.value = []
+  skipMasterResolve.value = false
+  lastResolveHadNoMaster.value = false
+  const em = String(formModel.emboss || '').trim()
+  if (!em) return
+  await refreshItemCodeOptionsFromApi()
+  if (itemCodeDimensionOptions.value.length === 1) {
+    masterItemCodePicker.value = itemCodeDimensionOptions.value[0]
+    await onPickedMasterItemCode(masterItemCodePicker.value)
+  }
+}
+
+async function onPickedMasterItemCode(code) {
+  const picked = String(code || '').trim()
+  if (!picked) {
+    masterItemCodePicker.value = ''
+    formModel.master_item_id = null
+    return
+  }
+  masterItemCodePicker.value = picked
+  const cached = masterItems.value.find((x) => String(x.item_code || '').trim() === picked)
+  if (cached) {
+    applyPickedMasterItem(cached)
+    return
+  }
+  skipMasterResolve.value = false
+  await resolveMasterFromDimensionsTriple()
+  const linked = masterItems.value.find((x) => x.id === formModel.master_item_id)
+  if (linked?.item_code) masterItemCodePicker.value = linked.item_code
 }
 
 function hydrateFormFromMasterItemRow(item, { syncDimensions = true } = {}) {
@@ -1470,6 +1919,7 @@ function hydrateFormFromMasterItemRow(item, { syncDimensions = true } = {}) {
 function clearLinkedMasterItem() {
   formModel.master_item_id = null
   subkonItemCodePicker.value = ''
+  masterItemCodePicker.value = ''
   resetMaterialFieldOverride()
   skipMasterResolve.value = false
   lastResolveHadNoMaster.value = false
@@ -1483,6 +1933,7 @@ async function resolveMasterFromDimensionsTriple() {
   const mn = String(formModel.material_name || '').trim()
   const tt = String(formModel.thickness_text || '').trim()
   const co = String(formModel.color || '').trim()
+  const em = String(formModel.emboss || '').trim()
   const curSnap = detailMasterSnapshot(formModel)
   if (
     isEditMode.value &&
@@ -1493,9 +1944,9 @@ async function resolveMasterFromDimensionsTriple() {
     return
   }
   const seq = ++masterResolveSeq
-  if (!mn || !tt || !co) {
+  if (!mn || !tt || !co || !em) {
     lastResolveHadNoMaster.value = false
-    formModel.master_item_id = null
+    if (!em) formModel.master_item_id = null
     return
   }
   masterResolveLoading.value = true
@@ -1504,23 +1955,33 @@ async function resolveMasterFromDimensionsTriple() {
       material_name: mn,
       thickness_text: tt,
       color: co,
+      emboss: em,
       category: masterDimensionCategoryParam(),
     })
     if (seq !== masterResolveSeq) return
     lastResolveHadNoMaster.value = res.status === 'none'
     if (res.status === 'single' && res.item) {
-      upsertMasterItemInCache(res.item)
-      resetMaterialFieldOverride()
-      colorFamilyAutoMode.value = true
-      formModel.master_item_id = res.item.id
-      hydrateFormFromMasterItemRow(res.item, { syncDimensions: false })
-      scheduleAutoLotGenerate()
+      applyPickedMasterItem(res.item)
     } else if (res.status === 'ambiguous' && (res.candidates || []).length) {
       formModel.master_item_id = null
       skipMasterResolve.value = true
       ambiguousMasterCandidates.value = res.candidates
+      itemCodeDimensionOptions.value = [
+        ...new Set(res.candidates.map((c) => String(c.item_code || '').trim()).filter(Boolean)),
+      ]
       selectedAmbiguousMasterId.value = res.candidates[0]?.id ?? null
-      ambiguousMasterVisible.value = true
+      if (masterItemCodePicker.value) {
+        const picked = res.candidates.find(
+          (c) => String(c.item_code || '').trim() === masterItemCodePicker.value,
+        )
+        if (picked) {
+          applyPickedMasterItem(picked)
+        } else {
+          ambiguousMasterVisible.value = true
+        }
+      } else {
+        ambiguousMasterVisible.value = true
+      }
     } else {
       formModel.master_item_id = null
     }
@@ -1537,15 +1998,8 @@ function confirmAmbiguousMasterPick() {
   const id = selectedAmbiguousMasterId.value
   const c = ambiguousMasterCandidates.value.find((x) => x.id === id)
   if (!c) return
-  upsertMasterItemInCache(c)
-  formModel.master_item_id = c.id
-  skipMasterResolve.value = false
   ambiguousMasterVisible.value = false
-  resetMaterialFieldOverride()
-  colorFamilyAutoMode.value = true
-  hydrateFormFromMasterItemRow(c, { syncDimensions: false })
-  lastResolveHadNoMaster.value = false
-  scheduleAutoLotGenerate()
+  applyPickedMasterItem(c)
 }
 
 watch(
@@ -1559,9 +2013,10 @@ watch(
 )
 
 watch(
-  () => [formModel.material_name, formModel.thickness_text, formModel.color],
+  () => [formModel.material_name, formModel.thickness_text, formModel.color, formModel.emboss],
   () => {
     if (isSubkonPo.value && subkonItemCodePicker.value) return
+    if (masterItemCodePicker.value && formModel.master_item_id) return
     skipMasterResolve.value = false
     clearTimeout(masterResolveTimer)
     masterResolveTimer = setTimeout(() => {
@@ -1596,6 +2051,7 @@ const openCreateDialog = async () => {
   formDialogVisible.value = true
   pauseLotAutoBriefly()
   void refreshNextPoNumberPreview()
+  await ensureMasterItemsLoaded()
   await restorePoDraftIfAny()
 }
 
@@ -1664,48 +2120,53 @@ async function pushCurrentLine(copyCurrent = false) {
     ElMessage.warning(t('pages.po.manualPriceRemarkRequired'))
     return
   }
-  draftLines.value.push({ ...line })
+  if (editingDraftLineIndex.value >= 0) {
+    const idx = editingDraftLineIndex.value
+    const prev = draftLines.value[idx] || {}
+    draftLines.value[idx] = {
+      ...prev,
+      ...line,
+      id: prev.id,
+      thi_line_ref: line.thi_line_ref || prev.thi_line_ref,
+      delivery_schedules: line.delivery_schedules || [],
+    }
+    editingDraftLineIndex.value = -1
+    ElMessage.success(t('pages.po.draftLineSaved'))
+  } else {
+    draftLines.value.push({ ...line })
+  }
   if (!copyCurrent) {
-    formModel.master_item_id = null
-    formModel.material_name = ''
-    formModel.thickness_text = ''
-    formModel.color = ''
-    formModel.color_family = null
-    formModel.emboss = ''
-    formModel.vir_softness_type = ''
-    formModel.softness = ''
-    autoFieldMeta.softness = false
-    formModel.color_reference = ''
-    autoFieldMeta.color_reference = false
-    formModel.color_standard = ''
-    autoFieldMeta.color_standard = false
-    formModel.backing = ''
-    autoFieldMeta.backing = false
-    formModel.quantity_order = ''
-    formModel.style_article = ''
-    formModel.model = ''
-    autoFieldMeta.model = false
-    formModel.detail_remark = ''
-    formModel.thi_line_ref = ''
-    clearEtdScheduleRows()
-    resetMaterialFieldOverride()
-    colorFamilyAutoMode.value = true
-    lastResolveHadNoMaster.value = false
-    thicknessDimensionOptions.value = []
-    colorDimensionOptions.value = []
-    formErrors.material_name = ''
-    formErrors.quantity_order = ''
-    scheduleAutoLotGenerate()
+    resetCurrentLineForm()
   }
 }
 
-function removeDraftLine(index) {
+async function removeDraftLine(index) {
+  const row = draftLines.value[index]
+  if (!row) return
+  const material = String(row.material_name || '').trim() || '—'
+  const color = String(row.color || '').trim() || '—'
+  const qty = row.quantity_order != null && row.quantity_order !== '' ? row.quantity_order : '—'
+  try {
+    await ElMessageBox.confirm(
+      t('pages.po.deleteLineConfirmDetail', { material, color, qty }),
+      t('pages.po.deleteLineTitle'),
+      { type: 'warning', confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel') },
+    )
+  } catch {
+    return
+  }
   draftLines.value.splice(index, 1)
+  if (editingDraftLineIndex.value === index) {
+    editingDraftLineIndex.value = -1
+  } else if (editingDraftLineIndex.value > index) {
+    editingDraftLineIndex.value -= 1
+  }
 }
 
 const openEditDialog = async (row) => {
   isEditMode.value = true
   editingPoId.value = row.id
+  const masterItemsReady = ensureMasterItemsLoaded()
   resetForm()
   savedHeaderOrderDate.value = row.order_date ? String(row.order_date).slice(0, 10) : ''
   formModel.po_number = row.po_number || ''
@@ -1776,6 +2237,8 @@ const openEditDialog = async (row) => {
       formModel.softness = d0.softness || ''
       formModel.color_reference = d0.color_reference || ''
       formModel.color_standard = d0.color_standard || ''
+      selectedSwatchId.value = d0.color_swatch_recipe_id ?? null
+      await hydrateColorStandardFromLine(d0)
       formModel.backing = d0.backing || ''
       formModel.quantity_order = d0.quantity_order != null ? String(d0.quantity_order) : ''
       formModel.style_article = d0.style_article || ''
@@ -1784,13 +2247,24 @@ const openEditDialog = async (row) => {
       formModel.thi_line_ref = d0.thi_line_ref || ''
       etdScheduleRows.value = loadEtdScheduleRowsFromApi(scheduleLists[0] || [])
       editingDraftLineIndex.value = 0
-      loadedDetailMasterSnapshot.value = `${String(d0.material_name || '').trim()}|${String(d0.thickness_text || '').trim()}|${String(d0.color || '').trim()}|${d0.master_item_id ?? ''}`
+      loadedDetailMasterSnapshot.value = detailMasterSnapshot({
+        material_name: d0.material_name,
+        thickness_text: d0.thickness_text,
+        color: d0.color,
+        emboss: d0.emboss,
+        master_item_id: d0.master_item_id,
+      })
+      await masterItemsReady
       if (d0.master_item_id) {
         const cacheIt = masterItems.value.find((x) => x.id === d0.master_item_id)
         if (cacheIt) upsertMasterItemInCache(cacheIt)
       }
       await refreshThicknessOptionsFromApi()
       await refreshColorOptionsFromApi()
+      await refreshEmbossOptionsFromApi()
+      await refreshItemCodeOptionsFromApi()
+      const linked0 = masterItems.value.find((x) => x.id === d0.master_item_id)
+      masterItemCodePicker.value = linked0?.item_code || ''
       lastResolveHadNoMaster.value = false
     } else {
       loadedDetailMasterSnapshot.value = null
@@ -1855,14 +2329,13 @@ const submitForm = async () => {
         const rowBody = { ...sanitizeNewDetailBody(bodiesFinal[i]) }
         const schedules = rowBody.delivery_schedules || []
         delete rowBody.delivery_schedules
-        const existingId = editingDetailIds.value[i]
+        const existingId = bodiesFinal[i].id || null
         if (existingId) {
           await updatePoDetail(existingId, detailPayloadForUpdate(rowBody))
           await saveDetailSchedules(existingId, schedules)
           keepIds.push(existingId)
         } else {
-          const createdDetail = await addPoDetail(editingPoId.value, rowBody)
-          await saveDetailSchedules(createdDetail.id, schedules)
+          const createdDetail = await addPoDetail(editingPoId.value, { ...rowBody, delivery_schedules: schedules })
           keepIds.push(createdDetail.id)
         }
       }
@@ -1876,8 +2349,7 @@ const submitForm = async () => {
         const rowBody = { ...sanitizeNewDetailBody(raw) }
         const schedules = rowBody.delivery_schedules || []
         delete rowBody.delivery_schedules
-        const createdDetail = await addPoDetail(created.id, rowBody)
-        await saveDetailSchedules(createdDetail.id, schedules)
+        const createdDetail = await addPoDetail(created.id, { ...rowBody, delivery_schedules: schedules })
       }
     }
     ElMessage.success(t('pages.customers.saved'))
@@ -1942,6 +2414,7 @@ function addCopiedItems() {
     softness: d.softness,
     color_reference: d.color_reference,
     color_standard: d.color_standard,
+    color_swatch_recipe_id: d.color_swatch_recipe_id,
     backing: d.backing,
     quantity_order: d.quantity_order,
     style_article: d.style_article,
@@ -1993,6 +2466,12 @@ function addCopiedItems() {
     isFluorescentFamily,
     poColorCascadeOptions,
     colorDimensionOptions,
+    onPickedColorDimension,
+    embossDimensionOptions,
+    onPickedEmbossDimension,
+    itemCodeDimensionOptions,
+    masterItemCodePicker,
+    onPickedMasterItemCode,
     enableMaterialOverride,
     isMaterialFieldLocked,
     materialFieldOverride,
@@ -2019,6 +2498,15 @@ function addCopiedItems() {
     swatchAllMaterials,
     loadColorSwatchOptions,
     swatchRetriedWithoutMaterial,
+    colorStandardSource,
+    selectedCsiId,
+    csiOptions,
+    csiLoading,
+    csiColorOptionLabel,
+    searchCsiOptions,
+    applySelectedCsiColor,
+    onColorStandardSourceChange,
+    onColorReferenceInput,
     masterResolveLoading,
     resolvedMasterItemLabel,
     clearLinkedMasterItem,
@@ -2038,6 +2526,9 @@ function addCopiedItems() {
     draftRiskOnly,
     draftRowClassName,
     pushCurrentLine,
+    editingDraftLineIndex,
+    cancelEditDraftLine,
+    copyDraftLine,
     openCopyItemDialog,
     colorFamilyLabel,
     materialQualityTooltip,

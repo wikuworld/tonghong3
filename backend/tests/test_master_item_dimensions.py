@@ -5,6 +5,8 @@ from decimal import Decimal
 from app.models import MasterItem
 from app.services.master_item_dimensions import (
     distinct_colors,
+    distinct_embosses,
+    distinct_item_codes,
     distinct_material_names,
     distinct_thicknesses,
     filter_by_category,
@@ -66,6 +68,26 @@ def test_thickness_mm_fallback() -> None:
     assert distinct_thicknesses(rows, "M") == ["1.4 - 1.6"]
     hits = resolve_by_dimensions(rows, material_name="M", thickness_text="1.4 - 1.6", color="Red")
     assert len(hits) == 1
+
+
+def test_emboss_then_item_code_cascade() -> None:
+    rows = [
+        _mi(id=1, item_code="FG0001", material_name="PU X", thickness_range="1.2-1.4", color="Black", emboss="AR-167"),
+        _mi(id=2, item_code="FG0002", material_name="PU X", thickness_range="1.2-1.4", color="Black", emboss="DE-73"),
+        _mi(id=3, item_code="FG0003", material_name="PU X", thickness_range="1.2-1.4", color="Black", emboss=""),
+        _mi(id=4, item_code="FG0004", material_name="PU X", thickness_range="1.2-1.4", color="White", emboss="AR-167"),
+    ]
+    assert distinct_embosses(rows, "PU X", "1.2 - 1.4", "Black") == ["-", "AR-167", "DE-73"]
+    assert distinct_item_codes(rows, "PU X", "1.2 - 1.4", "Black", "AR-167") == ["FG0001"]
+    assert distinct_item_codes(rows, "PU X", "1.2 - 1.4", "Black", "-") == ["FG0003"]
+    hits = resolve_by_dimensions(
+        rows,
+        material_name="PU X",
+        thickness_text="1.2 - 1.4",
+        color="Black",
+        emboss="DE-73",
+    )
+    assert len(hits) == 1 and hits[0].item_code == "FG0002"
 
 
 def test_filter_by_category_subkon() -> None:

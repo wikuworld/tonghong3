@@ -41,6 +41,15 @@
       <el-table-column prop="material_name" :label="t('common.material')" min-width="160" show-overflow-tooltip />
       <el-table-column prop="thickness_range" :label="t('common.thickness')" width="90" align="center" />
       <el-table-column prop="color" :label="t('common.color')" min-width="120" show-overflow-tooltip />
+      <el-table-column prop="color_code" :label="t('pages.masterItems.colColorCode')" width="100" show-overflow-tooltip>
+        <template #default="{ row }">
+          <span>{{ row.color_code || '—' }}</span>
+          <div v-if="row.color_code" class="master-items-color-links">
+            <el-tag v-if="row.in_csi" size="small" type="success" effect="plain">{{ t('pages.masterItems.linkCsi') }}</el-tag>
+            <el-tag v-if="row.in_swatch" size="small" type="info" effect="plain">{{ t('pages.masterItems.linkSwatch') }}</el-tag>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column prop="emboss" :label="t('common.emboss')" min-width="120" show-overflow-tooltip />
       <el-table-column
         prop="created_at"
@@ -129,7 +138,47 @@
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.color')">
-              <el-input v-model="form.color" maxlength="500" />
+              <el-select
+                v-model="form.color"
+                filterable
+                allow-create
+                default-first-option
+                clearable
+                class="w-full"
+                :placeholder="t('pages.masterItems.colorFromCsi')"
+                @change="onColorChange"
+              >
+                <el-option
+                  v-for="opt in colorLinkOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+              <div v-if="colorLinks.color_code" class="master-items-color-panel">
+                <div class="master-items-color-panel__row">
+                  <span class="master-items-color-panel__code">{{ t('pages.masterItems.colorCodeLabel') }}: {{ colorLinks.color_code }}</span>
+                  <el-tag v-if="colorLinks.in_csi" size="small" type="success" effect="plain">{{ t('pages.masterItems.linkCsi') }}</el-tag>
+                  <el-tag v-if="colorLinks.in_swatch" size="small" type="info" effect="plain">{{ t('pages.masterItems.linkSwatch') }}</el-tag>
+                </div>
+                <p v-if="colorLinks.csi.length" class="master-items-color-panel__text">
+                  {{ t('pages.masterItems.colorLinkedCsi') }}:
+                  {{ colorLinks.csi.map((c) => `${c.buyer_code} · ${c.color_name}`).join(', ') }}
+                </p>
+                <p v-if="colorLinks.swatch_count" class="master-items-color-panel__text">
+                  {{ t('pages.masterItems.colorLinkedSwatch', { n: colorLinks.swatch_count }) }}
+                  <template v-if="colorLinks.swatch_factories.length">
+                    · {{ t('pages.masterItems.colorLinkedFactories', { list: colorLinks.swatch_factories.join(', ') }) }}
+                  </template>
+                </p>
+                <p v-if="colorLinks.fluorescent.length" class="master-items-color-panel__text">
+                  {{ t('pages.masterItems.colorOverlayFluorescent') }}:
+                  {{ colorLinks.fluorescent.map((f) => `${f.buyer_code} · ${f.color_name}`).join(', ') }}
+                </p>
+                <p v-if="!colorLinks.in_csi && !colorLinks.in_swatch" class="master-items-color-panel__muted">
+                  {{ t('pages.masterItems.colorLinkedNone') }}
+                </p>
+              </div>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
@@ -154,6 +203,19 @@
         <el-descriptions-item :label="t('common.material')">{{ detailRow.material_name || '-' }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.thickness')">{{ detailRow.thickness_range || detailRow.thickness_mm || '-' }}</el-descriptions-item>
         <el-descriptions-item :label="t('common.color')">{{ detailRow.color || '-' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.masterItems.colColorCode')">
+          <span>{{ detailRow.color_code || '—' }}</span>
+          <span v-if="detailRow.color_code" class="master-items-color-links master-items-color-links--inline">
+            <el-tag v-if="detailRow.in_csi" size="small" type="success" effect="plain">{{ t('pages.masterItems.linkCsi') }}</el-tag>
+            <el-tag v-if="detailRow.in_swatch" size="small" type="info" effect="plain">{{ t('pages.masterItems.linkSwatch') }}</el-tag>
+          </span>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="detailColorLinks.csi.length" :label="t('pages.masterItems.colorLinkedCsi')" :span="2">
+          {{ detailColorLinks.csi.map((c) => `${c.buyer_code} · ${c.color_name}`).join(', ') }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="detailColorLinks.swatch_count" :label="t('pages.masterItems.linkSwatch')">
+          {{ t('pages.masterItems.colorLinkedSwatch', { n: detailColorLinks.swatch_count }) }}
+        </el-descriptions-item>
         <el-descriptions-item :label="t('common.emboss')">{{ detailRow.emboss || '-' }}</el-descriptions-item>
         <el-descriptions-item :label="t('pages.masterItems.colCreatedAt')">{{ formatAuditDateTime(detailRow.created_at) }}</el-descriptions-item>
         <el-descriptions-item :label="t('pages.masterItems.colUpdatedAt')">{{ formatAuditDateTime(detailRow.updated_at) }}</el-descriptions-item>
@@ -189,7 +251,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, EditPen, Plus, Close, Check, Upload, Download, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
-import { createMasterItem, deleteMasterItem, listMasterItemsPage, updateMasterItem, exportMasterItems, importMasterItems } from '../../api/client'
+import { createMasterItem, deleteMasterItem, listMasterItemsPage, updateMasterItem, exportMasterItems, importMasterItems, getColorLinks, listColorLinkOptions } from '../../api/client'
 import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
@@ -223,6 +285,74 @@ const form = reactive({
   emboss: '',
   category: '',
 })
+const colorLinkOptions = ref([])
+const colorLinks = reactive({
+  color_code: '',
+  color_qualifier: null,
+  in_csi: false,
+  in_swatch: false,
+  csi: [],
+  swatch_count: 0,
+  swatch_factories: [],
+  fluorescent: [],
+})
+const detailColorLinks = reactive({
+  csi: [],
+  swatch_count: 0,
+})
+let colorLinkTimer = null
+
+function resetColorLinks(target = colorLinks) {
+  target.color_code = ''
+  target.color_qualifier = null
+  target.in_csi = false
+  target.in_swatch = false
+  target.csi = []
+  target.swatch_count = 0
+  target.swatch_factories = []
+  target.fluorescent = []
+}
+
+function applyColorLinksPayload(payload, target = colorLinks) {
+  target.color_code = payload.color_code || ''
+  target.color_qualifier = payload.color_qualifier || null
+  target.in_csi = Boolean(payload.in_csi)
+  target.in_swatch = Boolean(payload.in_swatch)
+  target.csi = payload.csi || []
+  target.swatch_count = Number(payload.swatch_count || 0)
+  target.swatch_factories = payload.swatch_factories || []
+  target.fluorescent = payload.fluorescent || []
+}
+
+async function refreshColorLinks(colorText, target = colorLinks) {
+  const text = String(colorText || '').trim()
+  if (!text) {
+    resetColorLinks(target)
+    return
+  }
+  try {
+    const payload = await getColorLinks({ color: text })
+    applyColorLinksPayload(payload, target)
+  } catch {
+    resetColorLinks(target)
+  }
+}
+
+function onColorChange() {
+  if (colorLinkTimer) clearTimeout(colorLinkTimer)
+  colorLinkTimer = setTimeout(() => {
+    void refreshColorLinks(form.color)
+  }, 280)
+}
+
+async function loadColorLinkOptions() {
+  try {
+    const r = await listColorLinkOptions()
+    colorLinkOptions.value = r.options || []
+  } catch {
+    colorLinkOptions.value = []
+  }
+}
 
 async function load() {
   loading.value = true
@@ -276,6 +406,14 @@ watch([page, pageSize, filterCategory], () => {
   load()
 })
 
+watch(
+  () => form.color,
+  () => {
+    if (!formVisible.value) return
+    onColorChange()
+  },
+)
+
 watch(keyword, () => {
   if (keywordTimer) clearTimeout(keywordTimer)
   keywordTimer = setTimeout(() => {
@@ -291,11 +429,16 @@ function resetForm() {
   form.color = ''
   form.emboss = ''
   form.category = ''
+  resetColorLinks()
 }
 
 function openDetail(row) {
   detailRow.value = row
   detailVisible.value = true
+  resetColorLinks(detailColorLinks)
+  if (row?.color || row?.color_code) {
+    void refreshColorLinks(row.color || '', detailColorLinks)
+  }
 }
 
 function openCreate() {
@@ -315,6 +458,7 @@ function openEdit(row) {
   form.emboss = row.emboss || ''
   form.category = row.category || ''
   formVisible.value = true
+  void refreshColorLinks(form.color)
 }
 
 async function submit() {
@@ -400,7 +544,10 @@ async function handleImport() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadColorLinkOptions()
+})
 </script>
 
 <style scoped>
@@ -418,6 +565,53 @@ onMounted(load)
   margin: 0 0 12px;
   font-size: 12px;
   color: #64748b;
+}
+
+.master-items-color-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.master-items-color-links--inline {
+  display: inline-flex;
+  margin-top: 0;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.master-items-color-panel {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.master-items-color-panel__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.master-items-color-panel__code {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.master-items-color-panel__text,
+.master-items-color-panel__muted {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #475569;
+}
+
+.master-items-color-panel__muted {
+  color: #94a3b8;
 }
 
 .master-items-pagination {

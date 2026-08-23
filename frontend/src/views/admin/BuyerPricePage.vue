@@ -299,7 +299,8 @@
                 <el-table-column prop="THICKNESS" label="THICKNESS" min-width="110" show-overflow-tooltip />
                 <el-table-column prop="COLOR" label="COLOR" min-width="110" show-overflow-tooltip />
                 <el-table-column prop="COLOR WHITE" label="COLOR WHITE" min-width="130" />
-                <el-table-column prop="COLOR BLACK" label="COLOR BLACK" min-width="130" />
+                <el-table-column prop="COLOR BLACK" label="+ COLOR BLACK" min-width="130" />
+                <el-table-column prop="COLOR COLOR" label="+ COLOR" min-width="130" />
                 <el-table-column prop="FLOURASENT" label="FLOURASENT" min-width="120" />
                 <el-table-column prop="METALIC" label="METALIC" min-width="110" />
                 <el-table-column prop="EMBOSS" label="EMBOSS" min-width="110" />
@@ -483,6 +484,25 @@
               </el-input-number>
             </template>
           </el-table-column>
+          <el-table-column label="+ COLOR" min-width="120">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row['COLOR COLOR']"
+                size="small"
+                :controls="false"
+                :min="0"
+                :precision="2"
+                :step="0.01"
+                class="w-full"
+                placeholder="0"
+                @change="(val) => onAddonPriceChange(row, 'COLOR COLOR', val)"
+              >
+                <template #suffix>
+                  <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
+                </template>
+              </el-input-number>
+            </template>
+          </el-table-column>
           <el-table-column label="+ FLOURASENT" min-width="120">
             <template #default="{ row }">
               <el-input-number
@@ -603,7 +623,7 @@ import { useModulePermission } from '../../composables/useModulePermission'
 const { t } = useI18n()
 const { canCreate, canUpdate, canDelete } = useModulePermission('buyerPrices')
 
-const SHEET_COLUMNS = ['ITEM', 'THICKNESS', 'COLOR', 'COLOR WHITE', 'COLOR BLACK', 'FLOURASENT', 'METALIC', 'EMBOSS', 'SPESIAL EMBOSS']
+const SHEET_COLUMNS = ['ITEM', 'THICKNESS', 'COLOR', 'COLOR WHITE', 'COLOR BLACK', 'COLOR COLOR', 'FLOURASENT', 'METALIC', 'EMBOSS', 'SPESIAL EMBOSS']
 
 const rows = ref([])
 const loading = ref(false)
@@ -699,7 +719,7 @@ function createEmptyRow() {
   return o
 }
 
-const PRICE_COLUMNS = new Set(['COLOR WHITE', 'COLOR BLACK', 'FLOURASENT', 'METALIC', 'EMBOSS', 'SPESIAL EMBOSS'])
+const PRICE_COLUMNS = new Set(['COLOR WHITE', 'COLOR BLACK', 'COLOR COLOR', 'FLOURASENT', 'METALIC', 'EMBOSS', 'SPESIAL EMBOSS'])
 
 function isPriceColumn(key) {
   return PRICE_COLUMNS.has(String(key || '').trim().toUpperCase())
@@ -724,7 +744,7 @@ function extractUniqueItems(dataRows) {
 }
 
 function extractFilledComponents(dataRows) {
-  const keys = ['COLOR WHITE', 'COLOR BLACK', 'FLOURASENT', 'METALIC', 'EMBOSS', 'SPESIAL EMBOSS']
+  const keys = ['COLOR WHITE', 'COLOR BLACK', 'COLOR COLOR', 'FLOURASENT', 'METALIC', 'EMBOSS', 'SPESIAL EMBOSS']
   const out = []
   for (const key of keys) {
     const hasValue = (dataRows || []).some((row) => {
@@ -733,7 +753,7 @@ function extractFilledComponents(dataRows) {
       const n = Number(v)
       return Number.isFinite(n) && n > 0
     })
-    if (hasValue) out.push(key)
+    if (hasValue) out.push(key === 'COLOR COLOR' ? '+ COLOR' : key)
   }
   return out
 }

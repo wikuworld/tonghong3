@@ -15,8 +15,9 @@ services:
       MARIADB_DATABASE: ${MYSQL_DATABASE:-tonghong}
       MARIADB_USER: ${MYSQL_USER:-tonghong}
       MARIADB_PASSWORD: ${MYSQL_PASSWORD:-tonghong_secret}
-    expose:
-      - "3306"
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+      - "${MYSQL_ALT_PORT:-8001}:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
     tmpfs:

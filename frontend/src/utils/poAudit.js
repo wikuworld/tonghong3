@@ -7,8 +7,11 @@ const AUDIT_KEY_MAP = {
   thi_line_ref: 'thiLineRef',
   color_family: 'colorFamily',
   color_standard: 'colorStandard',
+  color_reference: 'colorReference',
   thickness: 'thickness',
+  thickness_text: 'thickness',
   softness: 'softness',
+  vir_softness_type: 'virSoftnessType',
   backing: 'backing',
   emboss: 'emboss',
   style_article: 'styleArticle',
@@ -16,11 +19,14 @@ const AUDIT_KEY_MAP = {
   material_name: 'materialName',
   color: 'color',
   remark: 'remark',
+  detail_remark: 'remark',
   status: 'status',
   delivery_schedules: 'deliverySchedules',
   po_number: 'poNumber',
   po_id: 'poId',
   po_header_id: 'poHeaderId',
+  master_item_id: 'masterItemId',
+  color_swatch_recipe_id: 'colorSwatchRecipeId',
   color_both: 'colorBoth',
 }
 
@@ -61,25 +67,78 @@ export function auditFieldLabel(key, labels = PO_AUDIT_FIELD_LABELS) {
   return labels[key] || key
 }
 
+function isEmptyAuditValue(value) {
+  if (value == null || value === '') return true
+  if (Array.isArray(value) && value.length === 0) return true
+  return false
+}
+
+export function formatAuditValue(value) {
+  if (value == null || value === '') return '—'
+  if (Array.isArray(value)) {
+    if (!value.length) return '—'
+    return value
+      .map((row) => {
+        if (row && typeof row === 'object') {
+          const qty = row.qty != null ? row.qty : '—'
+          const dt = row.delivery_date || '—'
+          return `#${row.sequence_no || '—'} ${qty} / ${dt}`
+        }
+        return String(row)
+      })
+      .join('; ')
+  }
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
 export function auditChangedFields(a, labels = PO_AUDIT_FIELD_LABELS) {
+  const action = String(a.action || '').toLowerCase()
   const before = a.before || {}
   const after = a.after || {}
   const allKeys = new Set([...Object.keys(before), ...Object.keys(after)])
   const changes = []
-  const skipKeys = new Set(['id', 'created_at', 'updated_at', 'po_header_id'])
+  const skipKeys = new Set([
+    'id',
+    'created_at',
+    'updated_at',
+    'po_header_id',
+    'po_id',
+    'thickness_min',
+    'thickness_max',
+  ])
 
   for (const key of allKeys) {
     if (skipKeys.has(key)) continue
     const b = before[key]
     const af = after[key]
-    if (JSON.stringify(b) !== JSON.stringify(af)) {
+    if (isEmptyAuditValue(b) && isEmptyAuditValue(af)) continue
+    if (JSON.stringify(b ?? null) !== JSON.stringify(af ?? null)) {
       let change = null
       if (typeof b === 'number' && typeof af === 'number') {
         const diff = af - b
         change = diff > 0 ? `+${diff}` : `${diff}`
       }
-      changes.push({ key, before: b, after: af, change })
+      changes.push({
+        key,
+        before: formatAuditValue(b),
+        after: formatAuditValue(af),
+        change,
+        rawBefore: b,
+        rawAfter: af,
+      })
     }
+  }
+
+  if (action === 'create') {
+    changes.forEach((c) => {
+      c.before = '—'
+    })
+  }
+  if (action === 'delete') {
+    changes.forEach((c) => {
+      c.after = '—'
+    })
   }
 
   const colorIdx = changes.findIndex((c) => c.key === 'color')

@@ -489,16 +489,68 @@
           </template>
           <template #default="{ row }">
             <el-input
-              v-if="col.kind === 'remark_marketing'"
+              v-if="col.kind === 'remark_marketing' && isOutstandingRowEditing(row)"
               v-model="row.remark_marketing"
               size="small"
               type="textarea"
               :rows="2"
               :disabled="!canEditPoDetail"
-              @blur="saveMarketingRemark(row)"
+            />
+            <span v-else-if="col.kind === 'remark_marketing'">{{ formatOutstandingCell(row.remark_marketing) }}</span>
+            <el-date-picker
+              v-else-if="isOutstandingDeliveryDateCol(col.prop) && isOutstandingRowEditing(row)"
+              v-model="row[col.prop]"
+              type="date"
+              value-format="YYYY-MM-DD"
+              size="small"
+              class="mkt-out-date-edit"
+              :disabled="!canEditPoDetail"
+              :placeholder="t('pages.marketingFlow.scheduleDeliveryDate')"
             />
             <span v-else-if="col.kind === 'date'">{{ formatOutstandingDate(row[col.prop]) }}</span>
             <span v-else>{{ formatOutstandingCell(row[col.prop]) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column
+          v-if="canEditPoDetail"
+          :label="t('common.actions')"
+          width="132"
+          align="center"
+          fixed="right"
+        >
+          <template #default="{ row }">
+            <div class="mkt-out-row-actions">
+              <template v-if="isOutstandingRowEditing(row)">
+                <el-tooltip :content="t('common.save')" placement="top">
+                  <el-button
+                    link
+                    type="primary"
+                    :icon="Check"
+                    :loading="savingOutstandingId === row.po_detail_id"
+                    :aria-label="t('common.save')"
+                    @click="saveOutstandingRowEdit(row)"
+                  />
+                </el-tooltip>
+                <el-tooltip :content="t('common.cancel')" placement="top">
+                  <el-button
+                    link
+                    :icon="Close"
+                    :disabled="savingOutstandingId === row.po_detail_id"
+                    :aria-label="t('common.cancel')"
+                    @click="cancelOutstandingRowEdit(row)"
+                  />
+                </el-tooltip>
+              </template>
+              <el-tooltip v-else :content="t('pages.marketingFlow.outstandingEditRow')" placement="top">
+                <el-button
+                  link
+                  type="primary"
+                  :icon="EditPen"
+                  :aria-label="t('pages.marketingFlow.outstandingEditRow')"
+                  @click="startOutstandingRowEdit(row)"
+                />
+              </el-tooltip>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -970,7 +1022,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DArrowLeft, DArrowRight, Document, Download, Printer, User, Close, Check, Warning, CircleCheck, Refresh, RefreshLeft, ArrowDown } from '@element-plus/icons-vue'
+import { DArrowLeft, DArrowRight, Document, Download, Printer, User, Close, Check, Warning, CircleCheck, Refresh, RefreshLeft, ArrowDown, EditPen } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import OutstandingColFilterHeader from '../../components/admin/OutstandingColFilterHeader.vue'
 import OutstandingWorkbenchDialogs from '../../components/admin/OutstandingWorkbenchDialogs.vue'
@@ -999,6 +1051,7 @@ import {
   marketingOutstandingManualXlsxPath,
   marketingOutstandingXlsxPath,
   reportPoDailyMarketingXlsxPath,
+  setPoDetailDeliverySchedules,
   updatePo,
   updatePoDetail,
 } from '../../api/client'
@@ -1134,7 +1187,9 @@ const outstandingSelection = ref([])
 const outstandingScheduleVisible = ref(false)
 const outstandingPiVisible = ref(false)
 const outstandingShipVisible = ref(false)
-const savingRemarkId = ref(null)
+const savingOutstandingId = ref(null)
+const editingOutstandingId = ref(null)
+const outstandingEditSnapshot = ref(null)
 
 const outstandingTableKey = computed(
   () => `out-${outstandingPoCategory.value || 'all'}-${outstandingDeliverySlotCount.value}`,
@@ -1402,16 +1457,88 @@ function onOutstandingSelectionChange(sel) {
   outstandingSelection.value = sel
 }
 
-async function saveMarketingRemark(row) {
-  if (!canEditPoDetail) return
-  savingRemarkId.value = row.po_detail_id
+function isOutstandingDeliveryDateCol(prop) {
+  return /^delivery_\d+_date$/.test(String(prop || ''))
+}
+
+function isOutstandingRowEditing(row) {
+  return Boolean(row?.po_detail_id) && editingOutstandingId.value === row.po_detail_id
+}
+
+function snapshotOutstandingEdit(row) {
+  const snap = { remark_marketing: row.remark_marketing || '' }
+  for (let i = 1; i <= 21; i += 1) {
+    snap[`delivery_${i}_date`] = row[`delivery_${i}_date`] || ''
+  }
+  return snap
+}
+
+function restoreOutstandingEdit(row, snap) {
+  if (!row || !snap) return
+  row.remark_marketing = snap.remark_marketing
+  for (let i = 1; i <= 21; i += 1) {
+    row[`delivery_${i}_date`] = snap[`delivery_${i}_date`] || ''
+  }
+}
+
+function startOutstandingRowEdit(row) {
+  if (!canEditPoDetail || !row?.po_detail_id) return
+  if (editingOutstandingId.value && editingOutstandingId.value !== row.po_detail_id) {
+    const prev = outstandingDisplayRows.value.find((r) => r.po_detail_id === editingOutstandingId.value)
+    if (prev) restoreOutstandingEdit(prev, outstandingEditSnapshot.value)
+  }
+  outstandingEditSnapshot.value = snapshotOutstandingEdit(row)
+  editingOutstandingId.value = row.po_detail_id
+}
+
+function cancelOutstandingRowEdit(row) {
+  restoreOutstandingEdit(row, outstandingEditSnapshot.value)
+  editingOutstandingId.value = null
+  outstandingEditSnapshot.value = null
+}
+
+function schedulesFromOutstandingRow(row) {
+  const slotCount = outstandingDeliverySlotCount.value
+  const schedules = []
+  for (let i = 1; i <= slotCount; i += 1) {
+    const qtyRaw = row[`delivery_${i}_qty`]
+    const dateRaw = row[`delivery_${i}_date`]
+    const qtyNum = qtyRaw !== '' && qtyRaw != null && Number.isFinite(Number(qtyRaw)) ? Number(qtyRaw) : null
+    const delivery_date = dateRaw ? String(dateRaw).slice(0, 10) : null
+    if (qtyNum == null && !delivery_date) continue
+    schedules.push({
+      sequence_no: i,
+      qty: qtyNum,
+      delivery_date,
+    })
+  }
+  return schedules
+}
+
+async function saveOutstandingRowEdit(row) {
+  if (!canEditPoDetail || !row?.po_detail_id) return
+  savingOutstandingId.value = row.po_detail_id
   try {
-    await updatePoDetail(row.po_detail_id, { marketing_outstanding_remark: row.remark_marketing || null })
-    ElMessage.success(t('pages.marketingFlow.remarkSaved'))
+    await updatePoDetail(row.po_detail_id, {
+      marketing_outstanding_remark: String(row.remark_marketing || '').trim() || null,
+    })
+    const datesChanged =
+      !outstandingEditSnapshot.value ||
+      Array.from({ length: 21 }, (_, i) => i + 1).some((i) => {
+        const a = String(row[`delivery_${i}_date`] || '').slice(0, 10)
+        const b = String(outstandingEditSnapshot.value[`delivery_${i}_date`] || '').slice(0, 10)
+        return a !== b
+      })
+    if (datesChanged) {
+      await setPoDetailDeliverySchedules(row.po_detail_id, schedulesFromOutstandingRow(row))
+    }
+    editingOutstandingId.value = null
+    outstandingEditSnapshot.value = null
+    ElMessage.success(t('pages.marketingFlow.outstandingRowSaved'))
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
-    savingRemarkId.value = null
+    savingOutstandingId.value = null
   }
 }
 
@@ -1673,6 +1800,8 @@ async function loadOutstanding() {
     const resp = await listMarketingOutstandingLines(buildOutstandingQueryParams())
     outstandingRows.value = unwrapOutstandingLines(resp)
     outstandingTotal.value = Number(resp?.total ?? outstandingRows.value.length) || 0
+    editingOutstandingId.value = null
+    outstandingEditSnapshot.value = null
     outstandingSelection.value = []
     outstandingTableRef.value?.clearSelection?.()
     syncOutstandingFactoryOptions(outstandingRows.value)
@@ -2747,6 +2876,22 @@ function handleOutstandingExportCommand(command) {
 .admin-table {
   width: 100%;
 }
+.mkt-out-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+.mkt-out-date-edit {
+  width: 100%;
+}
+
+.mkt-out-date-edit :deep(.el-input__wrapper) {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
 .outstanding-table {
   width: 100%;
 }

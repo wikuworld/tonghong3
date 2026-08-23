@@ -5,12 +5,20 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
-from app.models import Brand, CustomerBrandMapping, FluorescentColorMaster, PoDetail, PoDetailDelivery, PoHeader
+from app.models import (
+    AuditLog,
+    Brand,
+    CustomerBrandMapping,
+    FluorescentColorMaster,
+    PoDetail,
+    PoDetailDelivery,
+    PoHeader,
+)
 from app.services.audit import log_change, mark_po_item_revised, po_detail_audit_snapshot
 from app.services.lot_numbers import infer_material_group
 from app.services.so_numbering import next_so_number, peek_so_number
@@ -56,7 +64,48 @@ from app.services.lot_numbers import (
     peek_lot_number,
 )
 from app.services.notifications import create_notification_for_roles
+from app.services.buyer_price_resolve import resolve_unit_price_for_buyer
 from app.routers.auth import get_current_user, require_roles
+
+_PRICING_FIELD_KEYS = frozenset(
+    {
+        "material_name",
+        "color",
+        "color_family",
+        "thickness_text",
+        "emboss",
+        "style_article",
+    }
+)
+
+
+def _apply_unit_price_on_update(db: Session, po, row, data: dict, user) -> None:
+    """Admin/finance boleh set harga. Marketing: resolve ulang jika spek berubah."""
+    cat = (getattr(po, "po_category", None) or "").strip().lower() if po else ""
+    if cat in {"subcont", "return"}:
+        return
+    can_override = getattr(user, "role", None) in ("admin", "finance")
+    if can_override:
+        return
+    data.pop("unit_price", None)
+    if not po or not any(k in data for k in _PRICING_FIELD_KEYS):
+        return
+    buyer = (po.buyer or "").strip()
+    if not buyer:
+        return
+    resolved = resolve_unit_price_for_buyer(
+        db,
+        buyer,
+        material_name=data.get("material_name", row.material_name),
+        color=data.get("color", row.color),
+        style_article=data.get("style_article", row.style_article),
+        thickness_text=data.get("thickness_text", row.thickness_text),
+        color_family=data.get("color_family", row.color_family),
+        emboss=data.get("emboss", row.emboss),
+        factory_code=po.factory_code,
+    )
+    if resolved.get("unit_price") is not None:
+        data["unit_price"] = resolved["unit_price"]
 
 router = APIRouter(tags=["po"])
 
@@ -253,10 +302,13 @@ def _validate_fluorescent_color_master(
     strict_buyers = {"NB", "ADIDAS", "UA", "NIKE", "OIA", "OIA NIKE"}
 
     color_norm = re.sub(r"\s+", " ", color_raw).strip().lower()
-    color_code_hint = None
-    m = re.search(r"\(([A-Za-z0-9\-]+)\)\s*$", color_raw)
-    if m:
-        color_code_hint = m.group(1).strip().lower()
+    from app.services.color_code import extract_item_color_code
+
+    color_code_hint = (extract_item_color_code(color_raw) or "").strip().lower() or None
+    if not color_code_hint:
+        m = re.search(r"\(([A-Za-z0-9\-]+)\)", color_raw)
+        if m:
+            color_code_hint = m.group(1).strip().lower()
 
     season_labels = _season_candidates_from_date(po.order_date)
     season_set = {s.lower() for s in season_labels}
@@ -270,22 +322,27 @@ def _validate_fluorescent_color_master(
     if buyer_code not in strict_buyers and not any(r.buyer_code == buyer_code for r in rows):
         return
 
-    def row_match(row: FluorescentColorMaster) -> bool:
+    def name_or_code_match(row: FluorescentColorMaster) -> bool:
         name = re.sub(r"\s+", " ", str(row.color_name or "")).strip().lower()
         code = str(row.color_code or "").strip().lower()
         if color_norm and (color_norm == name or color_norm in name or name in color_norm):
-            pass
-        elif color_code_hint and code and color_code_hint == code:
-            pass
-        else:
+            return True
+        if color_code_hint and code and color_code_hint == code:
+            return True
+        return False
+
+    def row_match(row: FluorescentColorMaster, *, require_season: bool) -> bool:
+        if not name_or_code_match(row):
             return False
-        if not season_set:
+        if not require_season or not season_set:
             return True
         if not row.season_label:
             return True
         return str(row.season_label).strip().lower() in season_set
 
-    if any(row_match(r) for r in rows):
+    if any(row_match(r, require_season=True) for r in rows):
+        return
+    if any(row_match(r, require_season=False) for r in rows):
         return
     raise HTTPException(
         status_code=400,
@@ -816,6 +873,69 @@ def list_po_details(
     return list(rows)
 
 
+@router.get("/po/{po_id}/audit-logs")
+def list_po_audit_logs(
+    po_id: int,
+    limit: int = Query(300, ge=1, le=500),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> list[dict]:
+    """Audit header SO + semua baris item, termasuk item yang sudah dihapus."""
+    import json
+
+    if not db.get(PoHeader, po_id):
+        raise HTTPException(status_code=404, detail="PO tidak ditemukan")
+
+    header_rows = list(
+        db.scalars(
+            select(AuditLog)
+            .where(AuditLog.entity_type == "sales_order", AuditLog.entity_id == po_id)
+            .order_by(AuditLog.id.desc())
+            .limit(limit)
+        ).all()
+    )
+    line_rows = list(
+        db.scalars(
+            select(AuditLog)
+            .where(
+                AuditLog.entity_type == "sales_order_line",
+                or_(
+                    AuditLog.payload_before.contains(f'"po_id": {int(po_id)}'),
+                    AuditLog.payload_after.contains(f'"po_id": {int(po_id)}'),
+                ),
+            )
+            .order_by(AuditLog.id.desc())
+            .limit(limit)
+        ).all()
+    )
+
+    def _parse(raw: str | None):
+        if not raw:
+            return None
+        try:
+            return json.loads(raw)
+        except Exception:
+            return raw
+
+    merged = header_rows + line_rows
+    merged.sort(key=lambda r: (r.created_at or r.id, r.id), reverse=True)
+    out = []
+    for r in merged[:limit]:
+        out.append(
+            {
+                "id": r.id,
+                "entity_type": r.entity_type,
+                "entity_id": r.entity_id,
+                "action": r.action,
+                "before": _parse(r.payload_before),
+                "after": _parse(r.payload_after),
+                "actor": r.actor,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+        )
+    return out
+
+
 @router.put("/po/{po_id}", response_model=PoHeaderOut)
 def update_po(
     po_id: int,
@@ -1045,6 +1165,7 @@ def add_po_detail(
     if not po:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
     payload = body.model_dump(exclude_unset=True)
+    schedules = payload.pop("delivery_schedules", None)
     _validate_fluorescent_color_master(
         db,
         po,
@@ -1077,6 +1198,10 @@ def add_po_detail(
                 row.id,
                 exc.detail,
             )
+    if schedules:
+        _replace_po_detail_delivery_schedules_core(db, int(row.id), list(schedules))
+        db.flush()
+        db.expire(row, ["delivery_schedules"])
     log_change(
         db,
         entity_type="sales_order_line",
@@ -1111,9 +1236,7 @@ def update_po_detail(
             color=data.get("color", row.color),
         )
 
-    # Harga otomatis: hanya admin/finance yang boleh mengubah unit_price langsung.
-    if "unit_price" in data and user.role not in ("admin", "finance"):
-        raise HTTPException(status_code=403, detail="unit_price dikunci (harga otomatis)")
+    _apply_unit_price_on_update(db, po, row, data, user)
 
     before = po_detail_audit_snapshot(row, include_schedules=True)
     for k, v in data.items():
@@ -1199,11 +1322,21 @@ def generate_lot_preview(
 def delete_po_detail(
     detail_id: int,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("admin")),
+    user=Depends(require_roles("admin", "marketing", "sales")),
 ) -> StatusDeletedOut:
     row = db.get(PoDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail PO tidak ditemukan")
+    from app.models import ProductionDetail
+
+    in_prod = db.scalars(
+        select(ProductionDetail.id).where(ProductionDetail.po_detail_id == detail_id).limit(1)
+    ).first()
+    if in_prod is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Tidak dapat menghapus item yang sudah masuk produksi",
+        )
     log_change(
         db,
         entity_type="sales_order_line",

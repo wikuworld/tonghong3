@@ -53,6 +53,7 @@ def _normalize_cell_value(val: Any) -> Any:
 _NUMERIC_PRICE_KEYS = {
     "COLOR WHITE",
     "COLOR BLACK",
+    "COLOR COLOR",
     "FLOURASENT",
     "METALIC",
     "EMBOSS",
@@ -81,7 +82,7 @@ def _normalize_price_cell(val: Any) -> Any:
     except (TypeError, ValueError):
         raise HTTPException(
             status_code=400,
-            detail="Kolom harga wajib numerik (COLOR WHITE/COLOR BLACK/FLOURASENT/METALIC/EMBOSS/SPESIAL EMBOSS)",
+            detail="Kolom harga wajib numerik (COLOR WHITE/COLOR BLACK/COLOR COLOR/FLOURASENT/METALIC/EMBOSS/SPESIAL EMBOSS)",
         )
 
 
@@ -282,6 +283,8 @@ def resolve_unit_price(
         style_article=body.style_article,
         thickness_text=body.thickness_text,
         color_family=body.color_family,
+        emboss=body.emboss,
+        factory_code=body.factory_code,
     )
     return BuyerPriceResolveOut(**r)
 

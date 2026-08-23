@@ -13,8 +13,13 @@
     </template>
 
     <p v-if="stats.total" class="text-sm text-gray-500 mb-2">
+      <el-tag size="small" type="info" effect="plain" class="mr-1 align-middle">{{ t('common.nav.viewOnly') }}</el-tag>
       {{ t('pages.mrpMasterErp.statsHint', { shown: rows.length, total }) }}
       · {{ t('pages.mrpMasterErp.sourceHint') }}
+    </p>
+    <p v-else class="text-sm text-gray-500 mb-2">
+      <el-tag size="small" type="info" effect="plain" class="mr-1 align-middle">{{ t('common.nav.viewOnly') }}</el-tag>
+      {{ t('pages.mrpMasterErp.sourceHint') }}
     </p>
 
     <div class="admin-inner-card">
@@ -27,6 +32,15 @@
         <el-table-column prop="material_name" :label="t('common.material')" min-width="160" show-overflow-tooltip />
         <el-table-column prop="thickness_range" :label="t('common.thickness')" width="100" align="center" />
         <el-table-column prop="color" :label="t('common.color')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="color_code" :label="t('pages.masterItems.colColorCode')" width="100" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span>{{ row.color_code || '—' }}</span>
+            <div v-if="row.color_code" class="mrp-item-color-links">
+              <el-tag v-if="row.in_csi" size="small" type="success" effect="plain">{{ t('pages.masterItems.linkCsi') }}</el-tag>
+              <el-tag v-if="row.in_swatch" size="small" type="info" effect="plain">{{ t('pages.masterItems.linkSwatch') }}</el-tag>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column prop="emboss" :label="t('common.emboss')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="backing" label="Backer" width="120" show-overflow-tooltip />
       </el-table>
