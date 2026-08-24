@@ -23,18 +23,22 @@ export async function apiFetch(path, options = {}) {
 }
 
 /**
- * GET file dokumen dengan Bearer (HTML/PDF/Excel). Tab baru lewat window.open tidak mengirim token.
+ * Unduh/buka file dokumen dengan Bearer. Tab baru lewat window.open tidak mengirim token.
  * @param {string} apiPath path setelah /api/v1, mis. `/documents/surat-jalan/12` atau `.../12/pdf`
- * @param {{ mode?: 'open'|'download', downloadFallbackName?: string }} opts
+ * @param {{ mode?: 'open'|'download', downloadFallbackName?: string, method?: string, body?: object }} opts
  */
 export async function fetchAuthenticatedDocument(apiPath, opts = {}) {
-  const { mode = 'open', downloadFallbackName = 'download' } = opts
+  const { mode = 'open', downloadFallbackName = 'download', method = 'GET', body } = opts
   const path = apiPath.startsWith('/') ? apiPath : `/${apiPath}`
   const url = `/api/v1${path}`
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
-  const r = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
+  const headers = token ? { Authorization: `Bearer ${token}` } : {}
+  const init = { method, headers }
+  if (body != null && method !== 'GET' && method !== 'HEAD') {
+    headers['Content-Type'] = 'application/json'
+    init.body = typeof body === 'string' ? body : JSON.stringify(body)
+  }
+  const r = await fetch(url, init)
   if (!r.ok) {
     const text = await r.text()
     let msg = text || r.statusText
@@ -273,6 +277,7 @@ export function listPoPage(params = {}) {
   if (params.buyer && String(params.buyer).trim()) q.set('buyer', String(params.buyer).trim())
   if (params.status && String(params.status).trim()) q.set('status', String(params.status).trim())
   if (params.po_category && String(params.po_category).trim()) q.set('po_category', String(params.po_category).trim())
+  if (params.include_stage_counts) q.set('include_stage_counts', 'true')
   if (params.limit != null) q.set('limit', String(params.limit))
   if (params.offset != null) q.set('offset', String(params.offset))
   const suffix = q.toString() ? `?${q}` : ''
@@ -343,10 +348,15 @@ export function listMarketingOutstandingLines(params = {}) {
   if (params.material_status) q.set('material_status', params.material_status)
   if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
   if (params.po_category && String(params.po_category).trim()) q.set('po_category', String(params.po_category).trim())
+  if (params.material_group && String(params.material_group).trim())
+    q.set('material_group', String(params.material_group).trim())
+  if (params.mkt_stage_min && String(params.mkt_stage_min).trim())
+    q.set('mkt_stage_min', String(params.mkt_stage_min).trim())
   if (params.order_date_from && String(params.order_date_from).trim())
     q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
   if (params.order_date_to && String(params.order_date_to).trim())
     q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
+  if (params.skip != null) q.set('skip', String(params.skip))
   if (params.limit != null) q.set('limit', String(params.limit))
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/marketing/outstanding-lines${suffix}`)
@@ -371,6 +381,12 @@ function _marketingOutstandingExportQuery(params = {}, { includePoCategory = fal
   if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
   if (includePoCategory && params.po_category && String(params.po_category).trim()) {
     q.set('po_category', String(params.po_category).trim())
+  }
+  if (params.material_group && String(params.material_group).trim()) {
+    q.set('material_group', String(params.material_group).trim())
+  }
+  if (params.mkt_stage_min && String(params.mkt_stage_min).trim()) {
+    q.set('mkt_stage_min', String(params.mkt_stage_min).trim())
   }
   if (params.order_date_from && String(params.order_date_from).trim())
     q.set('order_date_from', String(params.order_date_from).trim().slice(0, 10))
@@ -498,6 +514,9 @@ export function listMarketingDeliveryPlanning(params = {}) {
   if (params.date_from && String(params.date_from).trim()) q.set('date_from', String(params.date_from).trim().slice(0, 10))
   if (params.date_to && String(params.date_to).trim()) q.set('date_to', String(params.date_to).trim().slice(0, 10))
   if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
+  if (params.mkt_stage_min && String(params.mkt_stage_min).trim())
+    q.set('mkt_stage_min', String(params.mkt_stage_min).trim())
+  if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/marketing/delivery-planning${suffix}`)
 }
@@ -506,6 +525,9 @@ export function getMarketingDeliveryToday(params = {}) {
   const q = new URLSearchParams()
   if (params.on_date && String(params.on_date).trim()) q.set('on_date', String(params.on_date).trim().slice(0, 10))
   if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
+  if (params.mkt_stage_min && String(params.mkt_stage_min).trim())
+    q.set('mkt_stage_min', String(params.mkt_stage_min).trim())
+  if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/marketing/delivery-today${suffix}`)
 }
@@ -531,11 +553,11 @@ export function proformaInvoiceDocxPath(poId) {
 }
 
 export function proformaInvoiceBatchPdfPath() {
-  return `/api/v1/documents/proforma-invoice/batch/pdf`
+  return `/documents/proforma-invoice/batch/pdf`
 }
 
 export function proformaInvoiceBatchDocxPath() {
-  return `/api/v1/documents/proforma-invoice/batch/docx`
+  return `/documents/proforma-invoice/batch/docx`
 }
 
 export function createOutstandingScheduleBatch(body) {

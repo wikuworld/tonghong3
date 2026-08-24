@@ -41,7 +41,7 @@ import {
   matchCsiOption,
 } from '../utils/poColorStandard.js'
 import { parseApiErrorMessage } from '../utils/poApi.js'
-import { customerOptionLabel } from '../utils/poList.js'
+import { customerOptionLabel, normalizePoOrderCategory } from '../utils/poList.js'
 import {
   inferColorFamilyFromColor,
   applyReferenceDefaults as applyReferenceDefaultsFromMaster,
@@ -50,6 +50,10 @@ import {
   isThicknessPricingFormatValid,
   formatThicknessDisplay,
   detailMasterSnapshot,
+  inferItemCategory,
+  ITEM_CATEGORY_PU,
+  ITEM_CATEGORY_SUEDE,
+  normalizeItemCategory,
   resolveMaterialGroupLabel,
 } from '../utils/poMasterResolve.js'
 import {
@@ -77,7 +81,6 @@ import {
   listPoForCopy,
   resolveBuyerUnitPrice,
   setPoDetailDeliverySchedules,
-  listPoDetailDeliverySchedules,
   toIsoDate,
   updatePo,
   updatePoDetail,
@@ -197,7 +200,8 @@ const subkonMasterItems = computed(() =>
 const subkonItemCodePicker = ref('')
 
 function masterDimensionCategoryParam() {
-  return isSubkonPo.value ? 'SubKon' : undefined
+  if (isSubkonPo.value) return 'SubKon'
+  return formModel.item_category || ITEM_CATEGORY_PU
 }
 
 const customerPicDisplay = computed(() => {
@@ -249,7 +253,9 @@ function prevStep() {
 }
 
 const formDialogVisible = ref(false)
+const formHydrating = ref(false)
 const isEditMode = ref(false)
+let editOpenSeq = 0
 /** Tanggal order dari DB saat buka edit — jika ada, tanggal tidak boleh diubah lewat form simpan penuh. */
 const savedHeaderOrderDate = ref('')
 const orderDateLocked = computed(() => isEditMode.value && Boolean(savedHeaderOrderDate.value))
@@ -259,6 +265,7 @@ const editingDetailIds = ref([])
 const draftLines = ref([])
 const draftRiskOnly = ref(false)
 const editingDraftLineIndex = ref(-1)
+const onDraftLineAdded = ref(null)
 const draftLinesDisplay = computed(() => {
   if (!draftRiskOnly.value) return draftLines.value
   return draftLines.value.filter((line) => Boolean(line.manual_override) || Boolean(line.material_master_override))
@@ -286,6 +293,7 @@ const formModel = reactive({
   customer_id: null,
   brand_id: null,
   po_category: 'production',
+  item_category: ITEM_CATEGORY_PU,
   factory_code: '',
   order_date: '',
   buyer: '',
@@ -379,11 +387,15 @@ async function syncCurrentFormToDraftLine() {
 }
 
 function draftRowClassName({ row }) {
+  const classes = []
   const idx = draftLines.value.indexOf(row)
-  return idx >= 0 && idx === editingDraftLineIndex.value ? 'draft-line-active' : ''
+  if (idx >= 0 && idx === editingDraftLineIndex.value) classes.push('draft-line-active')
+  if (row._uid) classes.push(`draft-line-uid-${row._uid}`)
+  return classes.join(' ')
 }
 
 async function applyLineToForm(line) {
+  formModel.item_category = inferItemCategory(line, masterItems.value)
   formModel.master_item_id = line.master_item_id ?? null
   formModel.material_name = line.material_name || ''
   formModel.thickness_text = line.thickness_text || ''
@@ -406,6 +418,7 @@ async function applyLineToForm(line) {
   etdScheduleRows.value = loadEtdScheduleRowsFromApi(line.delivery_schedules || [])
   const linked = masterItems.value.find((x) => x.id === line.master_item_id)
   masterItemCodePicker.value = linked?.item_code || ''
+  await refreshMaterialDimensionOptions()
   await refreshThicknessOptionsFromApi()
   await refreshColorOptionsFromApi()
   await refreshEmbossOptionsFromApi()
@@ -429,6 +442,7 @@ function cloneDraftLinePayload(row) {
     ? row.delivery_schedules.map((s) => ({ ...s }))
     : []
   return {
+    item_category: inferItemCategory(row, masterItems.value),
     master_item_id: row.master_item_id,
     material_name: row.material_name,
     thickness_text: row.thickness_text,
@@ -1173,9 +1187,17 @@ function canInferMaterialGroupForLot() {
   const mn = String(formModel.material_name || '').trim().toLowerCase()
   const vt = String(formModel.vir_softness_type || '').trim().toLowerCase()
   if (formModel.master_item_id) return true
+  if (formModel.item_category) return true
   if (vt.includes('pu')) return true
   if (mn.includes('pu') || mn.includes('suede') || mn.includes('suide')) return true
   return false
+}
+
+async function onItemCategoryChange() {
+  const keep = formModel.item_category || ITEM_CATEGORY_PU
+  resetCurrentLineForm()
+  formModel.item_category = keep
+  await refreshMaterialDimensionOptions()
 }
 
 function pauseLotAutoBriefly(ms = 900) {
@@ -1514,6 +1536,7 @@ function resetForm() {
   formModel.customer_id = null
   formModel.brand_id = null
   formModel.po_category = 'production'
+  formModel.item_category = ITEM_CATEGORY_PU
   formModel.factory_code = ''
   autoFieldMeta.factory_code = false
   formModel.order_date = localTodayIsoDate()
@@ -1615,8 +1638,8 @@ async function restorePoDraftIfAny() {
   if (!raw) return
   try {
     await ElMessageBox.confirm(
-      'Ditemukan draft input PO. Lanjutkan dari draft terakhir?',
-      'Lanjutkan Draft PO',
+      'Ditemukan draft input SO. Lanjutkan dari draft terakhir?',
+      'Lanjutkan Draft SO',
       {
         type: 'info',
         confirmButtonText: 'Lanjutkan Draft',
@@ -1627,7 +1650,9 @@ async function restorePoDraftIfAny() {
     applyPoDraft(parsed)
     if (formModel.customer_id) await onCustomerChange()
     if (formModel.brand_id) await onBrandChange(formModel.brand_id, { fromCustomerChange: true })
-    ElMessage.success('Draft PO berhasil dimuat.')
+    ElMessage.success('Draft SO berhasil dimuat.')
+    formModel.item_category = inferItemCategory(formModel, masterItems.value)
+    await refreshMaterialDimensionOptions()
     await refreshThicknessOptionsFromApi()
     await refreshColorOptionsFromApi()
     lastResolveHadNoMaster.value = false
@@ -1655,7 +1680,7 @@ async function handlePoDialogBeforeClose(done) {
   }
   try {
     await ElMessageBox.confirm(
-      'Simpan draft PO sebelum menutup dialog?',
+      'Simpan draft SO sebelum menutup dialog?',
       'Konfirmasi Tutup',
       {
         type: 'warning',
@@ -1665,7 +1690,7 @@ async function handlePoDialogBeforeClose(done) {
       },
     )
     savePoDraftToLocal()
-    ElMessage.success('Draft PO disimpan. Kamu bisa lanjutkan nanti.')
+    ElMessage.success('Draft SO disimpan. Kamu bisa lanjutkan nanti.')
     done()
   } catch {
     clearPoDraftLocal()
@@ -1675,7 +1700,7 @@ async function handlePoDialogBeforeClose(done) {
 
 function saveDraftAndClose() {
   savePoDraftToLocal()
-  ElMessage.success('Draft PO disimpan. Kamu bisa lanjutkan nanti.')
+  ElMessage.success('Draft SO disimpan. Kamu bisa lanjutkan nanti.')
   formDialogVisible.value = false
 }
 
@@ -1914,6 +1939,8 @@ function hydrateFormFromMasterItemRow(item, { syncDimensions = true } = {}) {
     syncDimensions,
     subkonMode: formModel.po_category === 'subcont',
   })
+  const cat = normalizeItemCategory(item.category)
+  if (cat === ITEM_CATEGORY_PU || cat === ITEM_CATEGORY_SUEDE) formModel.item_category = cat
 }
 
 function clearLinkedMasterItem() {
@@ -2099,6 +2126,7 @@ async function pushCurrentLine(copyCurrent = false) {
   }
 
   const line = await buildCurrentDetailBody()
+  line.item_category = formModel.item_category || inferItemCategory(formModel, masterItems.value)
   if (formModel.buyer?.trim() && line.unit_price == null) {
     ElMessage.warning(t('pages.po.priceNotFound'))
   }
@@ -2133,7 +2161,13 @@ async function pushCurrentLine(copyCurrent = false) {
     editingDraftLineIndex.value = -1
     ElMessage.success(t('pages.po.draftLineSaved'))
   } else {
-    draftLines.value.push({ ...line })
+    const uid = `draft-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+    const added = { ...line, _uid: uid }
+    draftLines.value.push(added)
+    const notifyAdded = onDraftLineAdded.value
+    if (typeof notifyAdded === 'function') {
+      notifyAdded({ uid, label: String(line.material_name || '') })
+    }
   }
   if (!copyCurrent) {
     resetCurrentLineForm()
@@ -2164,15 +2198,15 @@ async function removeDraftLine(index) {
 }
 
 const openEditDialog = async (row) => {
+  const seq = ++editOpenSeq
   isEditMode.value = true
   editingPoId.value = row.id
-  const masterItemsReady = ensureMasterItemsLoaded()
   resetForm()
   savedHeaderOrderDate.value = row.order_date ? String(row.order_date).slice(0, 10) : ''
   formModel.po_number = row.po_number || ''
   formModel.customer_id = row.customer_id
   formModel.brand_id = row.brand_id ?? null
-  formModel.po_category = row.po_category || 'production'
+  formModel.po_category = normalizePoOrderCategory(row.po_category)
   formModel.order_date = row.order_date ? String(row.order_date).slice(0, 10) : ''
   formModel.buyer = row.buyer || ''
   formModel.etd = row.etd ? String(row.etd).slice(0, 10) : ''
@@ -2180,27 +2214,30 @@ const openEditDialog = async (row) => {
   formModel.billing_address = row.billing_address || ''
   formModel.delivery_address = row.delivery_address || ''
   formModel.status = row.status || 'draft'
-  try {
-    selectedCustomer.value = formModel.customer_id ? await getCustomer(formModel.customer_id) : null
-  } catch {
-    selectedCustomer.value = null
-  }
-  if (selectedCustomer.value) {
-    applyAutoFactoryCode(selectedCustomer.value, { force: true })
-  } else {
-    formModel.factory_code = row.factory_code || ''
-    autoFieldMeta.factory_code = false
-  }
+  formModel.factory_code = row.factory_code || ''
+  autoFieldMeta.factory_code = Boolean(row.factory_code)
   pauseLotAutoBriefly()
-  await onBrandChange(formModel.brand_id, { fromCustomerChange: true })
   schedulePricePreview()
+  formDialogVisible.value = true
+  formHydrating.value = true
+
   try {
-    const details = await listPoDetails(row.id)
-    const scheduleLists = await Promise.all(
-      details.map((d) => listPoDetailDeliverySchedules(d.id).catch(() => [])),
-    )
-    draftLines.value = details.map((d, idx) => ({
+    const [customer, details] = await Promise.all([
+      formModel.customer_id ? getCustomer(formModel.customer_id).catch(() => null) : Promise.resolve(null),
+      listPoDetails(row.id),
+      onBrandChange(formModel.brand_id, { fromCustomerChange: true }),
+      ensureMasterItemsLoaded(),
+    ])
+    if (seq !== editOpenSeq) return
+
+    selectedCustomer.value = customer
+    if (selectedCustomer.value) {
+      applyAutoFactoryCode(selectedCustomer.value, { force: true })
+    }
+
+    draftLines.value = (details || []).map((d) => ({
       id: d.id,
+      item_category: inferItemCategory(d, masterItems.value),
       master_item_id: d.master_item_id || undefined,
       material_name: d.material_name || undefined,
       thickness_text: d.thickness_text || undefined,
@@ -2219,62 +2256,74 @@ const openEditDialog = async (row) => {
       thi_line_ref: d.thi_line_ref || undefined,
       color_swatch_recipe_id: d.color_swatch_recipe_id || undefined,
       unit_price: d.unit_price != null ? Number(d.unit_price) : undefined,
-      delivery_schedules: normalizeSchedulesFromApi(scheduleLists[idx]),
+      delivery_schedules: normalizeSchedulesFromApi(d.delivery_schedules),
       manual_override: false,
       material_master_override: false,
       material_master_matched: Boolean(d.master_item_id),
     }))
-    editingDetailIds.value = details.map((d) => d.id)
-    const d0 = details[0]
-    if (d0) {
-      formModel.master_item_id = d0.master_item_id
-      formModel.material_name = d0.material_name || ''
-      formModel.thickness_text = d0.thickness_text || ''
-      formModel.color = d0.color || ''
-      formModel.color_family = d0.color_family || null
-      formModel.emboss = d0.emboss || ''
-      formModel.vir_softness_type = d0.vir_softness_type || ''
-      formModel.softness = d0.softness || ''
-      formModel.color_reference = d0.color_reference || ''
-      formModel.color_standard = d0.color_standard || ''
-      selectedSwatchId.value = d0.color_swatch_recipe_id ?? null
-      await hydrateColorStandardFromLine(d0)
-      formModel.backing = d0.backing || ''
-      formModel.quantity_order = d0.quantity_order != null ? String(d0.quantity_order) : ''
-      formModel.style_article = d0.style_article || ''
-      formModel.model = d0.model || ''
-      formModel.detail_remark = d0.detail_remark || ''
-      formModel.thi_line_ref = d0.thi_line_ref || ''
-      etdScheduleRows.value = loadEtdScheduleRowsFromApi(scheduleLists[0] || [])
-      editingDraftLineIndex.value = 0
-      loadedDetailMasterSnapshot.value = detailMasterSnapshot({
-        material_name: d0.material_name,
-        thickness_text: d0.thickness_text,
-        color: d0.color,
-        emboss: d0.emboss,
-        master_item_id: d0.master_item_id,
-      })
-      await masterItemsReady
-      if (d0.master_item_id) {
-        const cacheIt = masterItems.value.find((x) => x.id === d0.master_item_id)
-        if (cacheIt) upsertMasterItemInCache(cacheIt)
-      }
-      await refreshThicknessOptionsFromApi()
-      await refreshColorOptionsFromApi()
-      await refreshEmbossOptionsFromApi()
-      await refreshItemCodeOptionsFromApi()
-      const linked0 = masterItems.value.find((x) => x.id === d0.master_item_id)
-      masterItemCodePicker.value = linked0?.item_code || ''
-      lastResolveHadNoMaster.value = false
-    } else {
+    editingDetailIds.value = (details || []).map((d) => d.id)
+    const d0 = details?.[0]
+    if (!d0) {
       loadedDetailMasterSnapshot.value = null
+      return
     }
+
+    formModel.master_item_id = d0.master_item_id
+    formModel.material_name = d0.material_name || ''
+    formModel.thickness_text = d0.thickness_text || ''
+    formModel.color = d0.color || ''
+    formModel.color_family = d0.color_family || null
+    formModel.emboss = d0.emboss || ''
+    formModel.vir_softness_type = d0.vir_softness_type || ''
+    formModel.softness = d0.softness || ''
+    formModel.color_reference = d0.color_reference || ''
+    formModel.color_standard = d0.color_standard || ''
+    selectedSwatchId.value = d0.color_swatch_recipe_id ?? null
+    formModel.backing = d0.backing || ''
+    formModel.quantity_order = d0.quantity_order != null ? String(d0.quantity_order) : ''
+    formModel.style_article = d0.style_article || ''
+    formModel.model = d0.model || ''
+    formModel.detail_remark = d0.detail_remark || ''
+    formModel.thi_line_ref = d0.thi_line_ref || ''
+    etdScheduleRows.value = loadEtdScheduleRowsFromApi(d0.delivery_schedules || [])
+    editingDraftLineIndex.value = 0
+    loadedDetailMasterSnapshot.value = detailMasterSnapshot({
+      material_name: d0.material_name,
+      thickness_text: d0.thickness_text,
+      color: d0.color,
+      emboss: d0.emboss,
+      master_item_id: d0.master_item_id,
+    })
+    if (d0.master_item_id) {
+      const cacheIt = masterItems.value.find((x) => x.id === d0.master_item_id)
+      if (cacheIt) upsertMasterItemInCache(cacheIt)
+    }
+    formModel.item_category = inferItemCategory(d0, masterItems.value)
+    draftLines.value = draftLines.value.map((line) => ({
+      ...line,
+      item_category: inferItemCategory(line, masterItems.value),
+    }))
+    const linked0 = masterItems.value.find((x) => x.id === d0.master_item_id)
+    masterItemCodePicker.value = linked0?.item_code || ''
+    lastResolveHadNoMaster.value = false
+
+    formHydrating.value = false
+    await Promise.all([
+      hydrateColorStandardFromLine(d0),
+      refreshMaterialDimensionOptions(),
+      refreshThicknessOptionsFromApi(),
+      refreshColorOptionsFromApi(),
+      refreshEmbossOptionsFromApi(),
+      refreshItemCodeOptionsFromApi(),
+    ])
   } catch {
+    if (seq !== editOpenSeq) return
     editingDetailIds.value = []
     draftLines.value = []
     loadedDetailMasterSnapshot.value = null
+  } finally {
+    if (seq === editOpenSeq) formHydrating.value = false
   }
-  formDialogVisible.value = true
 }
 
 const submitForm = async () => {
@@ -2404,6 +2453,7 @@ function onCopyItemSelectionChange(selection) {
 
 function addCopiedItems() {
   const newLines = copyItemSelected.value.map(d => ({
+    item_category: inferItemCategory(d, masterItems.value),
     master_item_id: d.master_item_id,
     material_name: d.material_name,
     thickness_text: d.thickness_text,
@@ -2433,6 +2483,7 @@ function addCopiedItems() {
 }
   providePoWizardContext({
     formDialogVisible,
+    formHydrating,
     formModel,
     formErrors,
     currentStep,
@@ -2526,6 +2577,7 @@ function addCopiedItems() {
     draftRiskOnly,
     draftRowClassName,
     pushCurrentLine,
+    onDraftLineAdded,
     editingDraftLineIndex,
     cancelEditDraftLine,
     copyDraftLine,
@@ -2535,6 +2587,7 @@ function addCopiedItems() {
     materialQualityType,
     materialQualityLabel,
     materialGroupLabel,
+    onItemCategoryChange,
     hasSpecialPriceInLines,
     generateLotNumber,
     removeDraftLine,
@@ -2557,6 +2610,7 @@ function addCopiedItems() {
 
   return {
     formDialogVisible,
+    formHydrating,
     openCreateDialog,
     openEditDialog,
     materialDimensionOptions,

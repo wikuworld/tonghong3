@@ -23,9 +23,6 @@
       <el-form-item :label="t('pages.marketingFlow.materialRemark')">
         <el-input v-model="header.material_followup_remark" type="textarea" :rows="2" />
       </el-form-item>
-      <el-form-item :label="t('pages.marketingFlow.materialDone')">
-        <el-switch v-model="header.material_followup_done" />
-      </el-form-item>
     </el-form>
     <div class="text-sm font-medium mt-4 mb-2">{{ t('pages.po.lineEtd') }} / {{ t('pages.po.detailRemark') }}</div>
     <el-table v-loading="loading" :data="lines" border size="small" max-height="320">

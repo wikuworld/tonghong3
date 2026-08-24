@@ -8,11 +8,48 @@ from fastapi import HTTPException
 
 from app.models import PoHeader
 from app.services.mkt_workflow import (
+    _po_ids_with_delivery,
+    _stuck_reason_for_header,
     apply_mkt_stage,
+    auto_advance_if_ready,
     get_stuck_reason,
+    po_has_delivery_for_po,
     sync_mkt_workflow_auto_advance,
     validate_mkt_advance,
 )
+
+
+def test_in_outstanding_can_enter_followup_without_toggle():
+    po = MagicMock(spec=PoHeader)
+    po.mkt_workflow_stage = "in_outstanding"
+    po.material_followup_done = False
+    assert (
+        _stuck_reason_for_header(
+            po,
+            has_ppic=True,
+            ppic_complete=True,
+            has_delivery=False,
+            has_sj_invpl=False,
+            has_invoice=False,
+        )
+        is None
+    )
+
+
+def test_material_followup_waits_for_delivery_not_toggle():
+    po = MagicMock(spec=PoHeader)
+    po.mkt_workflow_stage = "material_followup"
+    po.material_followup_done = False
+    flags = dict(
+        has_ppic=True,
+        ppic_complete=True,
+        has_delivery=False,
+        has_sj_invpl=False,
+        has_invoice=False,
+    )
+    assert _stuck_reason_for_header(po, **flags) == "Delivery belum dibuat"
+    flags["has_delivery"] = True
+    assert _stuck_reason_for_header(po, **flags) is None
 
 
 def test_with_ppic_stuck_only_requires_assignment(db_session):
@@ -99,6 +136,89 @@ def test_sync_stop_at_stage(db_session):
                 db_session, 9, actor="tester", stop_at_stage="rekap_printed"
             )
     assert advanced == ["rekap_printed"]
+
+
+def test_auto_advance_holds_in_outstanding_without_schedule(db_session):
+    po = MagicMock(spec=PoHeader)
+    po.id = 10
+    po.mkt_workflow_stage = "in_outstanding"
+    db_session.get.return_value = po
+
+    with patch("app.services.mkt_workflow.get_stuck_reason", return_value=None):
+        with patch("app.services.mkt_workflow.po_has_schedule_for_po", return_value=False):
+            assert auto_advance_if_ready(db_session, 10) is None
+
+    assert po.mkt_workflow_stage == "in_outstanding"
+
+
+def test_auto_advance_from_outstanding_with_schedule(db_session):
+    po = MagicMock(spec=PoHeader)
+    po.id = 10
+    po.mkt_workflow_stage = "in_outstanding"
+    db_session.get.return_value = po
+
+    with patch("app.services.mkt_workflow.get_stuck_reason", return_value=None):
+        with patch("app.services.mkt_workflow.po_has_schedule_for_po", return_value=True):
+            assert auto_advance_if_ready(db_session, 10) == "material_followup"
+
+    assert po.mkt_workflow_stage == "material_followup"
+
+
+def test_manual_advance_from_outstanding_without_schedule(db_session):
+    po = MagicMock(spec=PoHeader)
+    po.id = 10
+    po.mkt_workflow_stage = "in_outstanding"
+    db_session.get.return_value = po
+
+    with patch("app.services.mkt_workflow.get_stuck_reason", return_value=None):
+        validate_mkt_advance(db_session, 10, "material_followup")
+
+    apply_mkt_stage(db_session, 10, "material_followup")
+    assert po.mkt_workflow_stage == "material_followup"
+
+
+def test_po_has_delivery_query_excludes_draft(db_session):
+    db_session.scalars.return_value.first.return_value = None
+    assert po_has_delivery_for_po(db_session, 1) is False
+    stmt = db_session.scalars.call_args[0][0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+    assert "draft" in compiled
+    assert "po_detail_id" in compiled
+
+
+def test_po_ids_with_delivery_query_excludes_draft(db_session):
+    db_session.scalars.return_value.all.return_value = []
+    assert _po_ids_with_delivery(db_session, [1]) == set()
+    stmt = db_session.scalars.call_args[0][0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+    assert "draft" in compiled
+    assert "po_detail_id" in compiled
+
+
+def test_direct_delivery_stmt_uses_po_detail_id():
+    from app.services.mkt_workflow import _stmt_delivery_ids_via_direct
+
+    compiled = str(
+        _stmt_delivery_ids_via_direct(9, posted_only=True).compile(compile_kwargs={"literal_binds": True})
+    ).lower()
+    assert "po_detail_id" in compiled
+    assert "draft" in compiled
+
+
+def test_material_followup_draft_delivery_still_stuck():
+    po = MagicMock(spec=PoHeader)
+    po.mkt_workflow_stage = "material_followup"
+    assert (
+        _stuck_reason_for_header(
+            po,
+            has_ppic=True,
+            ppic_complete=True,
+            has_delivery=False,
+            has_sj_invpl=False,
+            has_invoice=False,
+        )
+        == "Delivery belum dibuat"
+    )
 
 
 def test_invalidate_ppic_on_rollback_before_with_ppic(db_session):

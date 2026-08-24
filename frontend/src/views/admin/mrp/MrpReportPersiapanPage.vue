@@ -12,7 +12,7 @@
       <el-table :data="rows" v-loading="loading" border stripe size="small">
         <el-table-column prop="tanggal" :label="t('common.date')" width="120" />
         <el-table-column prop="kode_proccess" label="Proses" min-width="140" />
-        <el-table-column prop="nama_barang" label="PO" min-width="120" />
+        <el-table-column prop="nama_barang" :label="t('pages.mrpRencana.poCustomerRef')" min-width="120" />
         <el-table-column prop="total_lembar" label="Lembar" width="90" />
         <el-table-column prop="total_ukuran" label="Ukuran" width="90" />
         <el-table-column prop="status_terakhir" :label="t('common.status')" width="110" />

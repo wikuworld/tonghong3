@@ -529,6 +529,7 @@ class PoHeaderPageOut(BaseModel):
     total: int = 0
     limit: int = 20
     offset: int = 0
+    stage_counts: Optional[dict[str, int]] = None
 
 
 class PoMaterialHintItemOut(BaseModel):
@@ -591,6 +592,8 @@ class MarketingOutstandingSnapshotFilter(BaseModel):
     material_status: Optional[str] = None
     factory_code: Optional[str] = None
     po_category: Optional[str] = None
+    material_group: Optional[str] = None
+    mkt_stage_min: Optional[str] = None
     order_date_from: Optional[str] = None
     order_date_to: Optional[str] = None
 
@@ -653,6 +656,9 @@ class MarketingOutstandingLineOut(BaseModel):
     po_detail_id: int
     po_status: Optional[str] = None
     mkt_stage: Optional[str] = None
+    mrp_alloc_status: Optional[str] = None
+    mrp_qty_processed: Optional[str] = None
+    mrp_qty_remaining: Optional[str] = None
     po_category: Optional[str] = None
     factory_code: Optional[str] = None
     delivery_1_qty: Optional[str] = None
@@ -759,11 +765,22 @@ class MarketingDeliveryPlanningSlotOut(BaseModel):
     qty: Optional[str] = None
     po_id: Optional[int] = None
     po_number: Optional[str] = None
+    po_customer_ref: Optional[str] = None
+    customer_name: Optional[str] = None
+    brand: Optional[str] = None
     factory_code: Optional[str] = None
     material_name: Optional[str] = None
     thi_order: Optional[str] = None
+    thi_line_ref: Optional[str] = None
+    lot_no: Optional[str] = None
     po_detail_id: Optional[int] = None
     line_etd: Optional[str] = None
+    mkt_stage: Optional[str] = None
+    order_qty: Optional[str] = None
+    delivered_qty: Optional[str] = None
+    balance_qty: Optional[str] = None
+    ship_status: Optional[str] = None
+    overdue: Optional[bool] = None
 
 
 class MarketingDeliveryPlanningPageOut(BaseModel):
@@ -787,6 +804,7 @@ class MarketingLineEtdTodayOut(BaseModel):
 class MarketingDeliveryTodayOut(BaseModel):
     as_of: str
     planned_delivery_slots: list[MarketingDeliveryPlanningSlotOut] = Field(default_factory=list)
+    overdue_slots: list[MarketingDeliveryPlanningSlotOut] = Field(default_factory=list)
     lines_reply_etd_today: list[MarketingLineEtdTodayOut] = Field(default_factory=list)
     surat_jalan_lines: list[MarketingDeliveryLineOut] = Field(default_factory=list)
 
@@ -1056,6 +1074,7 @@ class DeliveryDetailOut(ORMBase):
 class DeliveryDetailEnrichedOut(DeliveryDetailOut):
     po_id: Optional[int] = None
     po_number: str = ""
+    po_customer_ref: str = ""
     po_detail_id: Optional[int] = None
     system_no: str = ""
     lot_number: str = ""

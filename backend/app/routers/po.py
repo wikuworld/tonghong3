@@ -1008,6 +1008,17 @@ def update_po(
     return row
 
 
+def _coerce_delivery_schedule_items(schedules: list) -> list[DeliveryScheduleItem]:
+    """model_dump() mengubah DeliveryScheduleItem jadi dict; PUT endpoint mengirim objek."""
+    out: list[DeliveryScheduleItem] = []
+    for item in schedules or []:
+        if isinstance(item, DeliveryScheduleItem):
+            out.append(item)
+        else:
+            out.append(DeliveryScheduleItem.model_validate(item))
+    return out
+
+
 def _validate_delivery_schedule_items(schedules: list[DeliveryScheduleItem]) -> None:
     seq_seen: set[int] = set()
     for item in schedules:
@@ -1029,8 +1040,9 @@ def _validate_delivery_schedule_items(schedules: list[DeliveryScheduleItem]) -> 
 def _replace_po_detail_delivery_schedules_core(
     db: Session,
     detail_id: int,
-    schedules: list[DeliveryScheduleItem],
+    schedules: list,
 ) -> None:
+    schedules = _coerce_delivery_schedule_items(schedules)
     _validate_delivery_schedule_items(schedules)
     from app.services.po_delivery_balance import validate_schedule_total_against_order
 
@@ -1166,6 +1178,8 @@ def add_po_detail(
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
     payload = body.model_dump(exclude_unset=True)
     schedules = payload.pop("delivery_schedules", None)
+    if schedules:
+        schedules = _coerce_delivery_schedule_items(schedules)
     _validate_fluorescent_color_master(
         db,
         po,

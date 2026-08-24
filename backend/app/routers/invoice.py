@@ -14,7 +14,7 @@ from app.db import get_db
 from app.config import settings
 from app.models import Customer, DeliveryHeader, Invoice, InvoiceDetail
 from app.schemas import InvoiceCreate, InvoiceDetailCreate, InvoiceDetailOut, InvoiceOut, InvoiceUpdate
-from app.services.business_rules import validate_invoice_against_delivery
+from app.services.business_rules import po_id_from_delivery, validate_invoice_against_delivery
 from app.services.mkt_workflow import sync_invoice_billing_from_delivery
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
@@ -29,23 +29,19 @@ def create_invoice(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "finance")),
 ) -> Invoice:
-    from app.models import DeliveryHeader, PackingHeader, ProductionOrder
-    
     validate_invoice_against_delivery(db, body.delivery_id, body.po_number)
-    
+
     delivery = db.get(DeliveryHeader, body.delivery_id)
-    
+
     data = body.model_dump(exclude_unset=True)
-    
+
     if delivery and not data.get("customer_id"):
         data["customer_id"] = delivery.customer_id
-    
-    if delivery and delivery.packing_id:
-        packing = db.get(PackingHeader, delivery.packing_id)
-        if packing and packing.production_id:
-            production = db.get(ProductionOrder, packing.production_id)
-            if production and not data.get("po_id"):
-                data["po_id"] = production.po_id
+
+    if not data.get("po_id"):
+        resolved = po_id_from_delivery(db, body.delivery_id)
+        if resolved:
+            data["po_id"] = resolved
     
     row = Invoice(**data)
     db.add(row)
@@ -152,34 +148,28 @@ def backfill_invoice_fks(
     _user=Depends(require_roles("admin")),
 ) -> dict:
     """Backfill customer_id and po_id for existing invoices based on delivery chain."""
-    from app.models import DeliveryHeader, PackingHeader, ProductionOrder
-    
     updated = 0
     skipped = 0
-    
+
     invoices = db.query(Invoice).filter(
         (Invoice.customer_id.is_(None)) | (Invoice.po_id.is_(None))
     ).all()
-    
+
     for inv in invoices:
         changed = False
-        
+
         if inv.delivery_id and inv.customer_id is None:
             delivery = db.get(DeliveryHeader, inv.delivery_id)
             if delivery and delivery.customer_id:
                 inv.customer_id = delivery.customer_id
                 changed = True
-        
+
         if inv.delivery_id and inv.po_id is None:
-            delivery = db.get(DeliveryHeader, inv.delivery_id)
-            if delivery and delivery.packing_id:
-                packing = db.get(PackingHeader, delivery.packing_id)
-                if packing and packing.production_id:
-                    production = db.get(ProductionOrder, packing.production_id)
-                    if production and production.po_id:
-                        inv.po_id = production.po_id
-                        changed = True
-        
+            resolved = po_id_from_delivery(db, int(inv.delivery_id))
+            if resolved:
+                inv.po_id = resolved
+                changed = True
+
         if changed:
             updated += 1
         else:

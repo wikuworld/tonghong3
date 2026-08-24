@@ -78,7 +78,6 @@
                   <el-option :label="t('status.claim')" value="claim" />
                   <el-option :label="t('status.return')" value="return" />
                   <el-option :label="t('status.subcont')" value="subcont" />
-                  <el-option :label="t('status.suede')" value="suede" />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -483,6 +482,7 @@ function poStatusLabel(st) {
 }
 
 function categoryLabel(cat) {
+  if (String(cat || '').trim().toLowerCase() === 'suede') return t('status.production')
   if (cat && te(`status.${cat}`)) return t(`status.${cat}`)
   return cat || '—'
 }
@@ -526,7 +526,7 @@ const filteredProductionRows = computed(() => {
     const categoryMatch =
       !category.value ||
       row.po_category === category.value ||
-      (category.value === 'production' && !row.po_category)
+      (category.value === 'production' && (!row.po_category || row.po_category === 'suede'))
     return categoryMatch && rowMatchesKeyword(row) && rowMatchesCustomer(row)
   })
 })

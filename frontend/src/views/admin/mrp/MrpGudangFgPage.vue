@@ -204,8 +204,8 @@
 
         <h4 class="mb-2 font-semibold">{{ t('pages.mrpPacking.poSection') }}</h4>
         <el-table :data="detail.packing_pos || []" border size="small" class="mb-4" empty-text="—">
-          <el-table-column prop="no_po" label="PO" min-width="110" show-overflow-tooltip />
-          <el-table-column prop="no_so" label="SO" min-width="90" show-overflow-tooltip />
+          <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" show-overflow-tooltip />
+          <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="90" show-overflow-tooltip />
           <el-table-column :label="t('pages.mrpPacking.poItem')" min-width="140" show-overflow-tooltip>
             <template #default="{ row }">{{ dash(row.item_name) }}</template>
           </el-table-column>
@@ -218,8 +218,8 @@
         <template v-if="(detail.bridge_lines || []).length">
           <h4 class="mb-2 font-semibold">{{ t('pages.mrpGudangFg.bridgeLines') }}</h4>
           <el-table :data="detail.bridge_lines || []" border size="small" empty-text="—">
-            <el-table-column prop="no_po" label="PO" min-width="110" show-overflow-tooltip />
-            <el-table-column prop="no_so" label="SO" min-width="90" show-overflow-tooltip />
+            <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" show-overflow-tooltip />
+            <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="90" show-overflow-tooltip />
             <el-table-column :label="t('pages.mrpPacking.poItem')" min-width="140" show-overflow-tooltip>
               <template #default="{ row }">{{ dash(row.item_name) }}</template>
             </el-table-column>

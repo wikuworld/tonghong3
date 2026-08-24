@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Optional
@@ -23,6 +23,7 @@ from app.models import (
     Invoice,
     InvoiceDetail,
     MarketingOutstandingSnapshot,
+    MasterItem,
     PackingHeader,
     PoDetail,
     PoDetailDelivery,
@@ -50,6 +51,8 @@ from app.schemas import (
     OutstandingShipBatchOut,
 )
 from app.services.document_numbers import invoice_display_number, surat_jalan_display_number
+from app.services.mkt_workflow import MKT_STAGES_ORDER, mkt_stage_index, normalize_mkt_stage
+from app.services.mrp_po_alloc import enrich_outstanding_mrp_alloc
 from app.services.outstanding_actions import (
     apply_outstanding_schedule_batch,
     apply_outstanding_ship_batch,
@@ -177,6 +180,56 @@ def _dec_str(v: Decimal | None) -> str:
     return str(v)
 
 
+def _delivered_qty_by_po_detail(db: Session) -> dict[int, Decimal]:
+    """Qty terkirim per baris SO: jalur produksi + DeliveryDetail.po_detail_id langsung (MRP)."""
+    delivered: dict[int, Decimal] = {}
+    rows = db.execute(
+        select(ProductionDetail.po_detail_id, func.sum(DeliveryDetail.qty))
+        .join(DeliveryDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
+        .group_by(ProductionDetail.po_detail_id)
+    ).all()
+    for pod_id, total in rows:
+        if pod_id is None:
+            continue
+        delivered[int(pod_id)] = total or Decimal(0)
+    direct_rows = db.execute(
+        select(DeliveryDetail.po_detail_id, func.sum(DeliveryDetail.qty))
+        .where(
+            DeliveryDetail.po_detail_id.is_not(None),
+            or_(
+                DeliveryDetail.production_detail_id.is_(None),
+                DeliveryDetail.production_detail_id == 0,
+            ),
+        )
+        .group_by(DeliveryDetail.po_detail_id)
+    ).all()
+    for pod_id, total in direct_rows:
+        if pod_id is None:
+            continue
+        key = int(pod_id)
+        delivered[key] = (delivered.get(key) or Decimal(0)) + (total or Decimal(0))
+    return delivered
+
+
+def _planning_slot_ship_status(
+    header_stage: Optional[str],
+    delivered: Decimal,
+    order_qty: Decimal,
+) -> str:
+    """planned | partial | shipped | too_early — berdasarkan tahap MKT + sisa kirim baris."""
+    stage = normalize_mkt_stage(header_stage)
+    if mkt_stage_index(stage) < mkt_stage_index("in_outstanding"):
+        return "too_early"
+    order = order_qty or Decimal(0)
+    sent = delivered or Decimal(0)
+    balance = order - sent
+    if order > 0 and balance <= 0:
+        return "shipped"
+    if sent > 0:
+        return "partial"
+    return "planned"
+
+
 def _thickness_display(ln: PoDetail) -> str:
     if ln.thickness_text and str(ln.thickness_text).strip():
         return str(ln.thickness_text).strip()
@@ -215,14 +268,98 @@ def _order_type_marketing(h: PoHeader) -> str:
     return alias.get(c, c.upper()[:20])
 
 
+def _normalize_material_group_filter(raw: Optional[str]) -> Optional[str]:
+    """Query `material_group`: pu | suede. Kosong = semua."""
+    v = (raw or "").strip().lower()
+    if not v:
+        return None
+    if v in {"suede", "suide"}:
+        return "suede"
+    if v == "pu":
+        return "pu"
+    raise HTTPException(status_code=400, detail="material_group harus pu atau suede")
+
+
+def _classify_line_material_group(
+    h: PoHeader,
+    ln: PoDetail,
+    master: MasterItem | None = None,
+) -> str:
+    """Kategori material baris: 'pu' atau 'suede' (tanpa raise)."""
+    if master is not None:
+        cat = (master.category or "").strip().lower()
+        if cat in {"suide", "suede"}:
+            return "suede"
+        if cat == "pu":
+            return "pu"
+    vt = (getattr(ln, "vir_softness_type", None) or "").strip().lower()
+    if "suede" in vt or "suide" in vt:
+        return "suede"
+    if "pu" in vt:
+        return "pu"
+    mn = (getattr(ln, "material_name", None) or "").strip().lower()
+    if "suede" in mn or "suide" in mn:
+        return "suede"
+    if "pu" in mn:
+        return "pu"
+    if (getattr(h, "po_category", None) or "").strip().lower() == "suede":
+        return "suede"
+    return "pu"
+
+
+def _normalize_mkt_stage_min(raw: Optional[str]) -> Optional[str]:
+    v = (raw or "").strip()
+    if not v:
+        return None
+    s = normalize_mkt_stage(v)
+    if s not in MKT_STAGES_ORDER:
+        raise HTTPException(status_code=400, detail="mkt_stage_min tidak valid")
+    return s
+
+
+def _passes_mkt_stage_min(header_stage: Optional[str], min_stage: Optional[str]) -> bool:
+    if not min_stage:
+        return True
+    return mkt_stage_index(header_stage) >= mkt_stage_index(min_stage)
+
+
+def _po_q_matches(header: Any, needle: Optional[str]) -> bool:
+    """Cari no. SO (`po_number`) atau nomor PO customer (`po_customer_ref`)."""
+    q = (needle or "").strip().lower()
+    if not q:
+        return True
+    po_number = (getattr(header, "po_number", None) or "").strip().lower()
+    po_cust = (getattr(header, "po_customer_ref", None) or "").strip().lower()
+    return q in po_number or q in po_cust
+
+
+def _prepare_outstanding_rows(
+    db: Session,
+    *args: Any,
+    mkt_stage_min: Optional[str] = None,
+    **kwargs: Any,
+) -> list[dict[str, Any]]:
+    rows = _query_outstanding_rows(db, *args, **kwargs)
+    min_stage = _normalize_mkt_stage_min(mkt_stage_min)
+    if min_stage:
+        rows = [r for r in rows if _passes_mkt_stage_min(r.get("mkt_stage"), min_stage)]
+    enrich_outstanding_mrp_alloc(rows)
+    return rows
+
+
 def _status_material_text(h: PoHeader, _ln: PoDetail, production_status: str) -> str:
     """Gabungan status produksi baris + follow-up material header (mirip kolom STATUS MATERIAL lembar Excel)."""
     parts: list[str] = []
     st = (production_status or "").strip()
     if st:
         parts.append(f"Produksi: {st}")
-    if getattr(h, "material_followup_done", False):
+    stage = normalize_mkt_stage(getattr(h, "mkt_workflow_stage", None))
+    if getattr(h, "material_followup_done", False) or mkt_stage_index(stage) >= mkt_stage_index(
+        "delivery_arranged"
+    ):
         parts.append("Follow-up material: selesai")
+    elif stage == "material_followup":
+        parts.append("Follow-up material: berjalan")
     else:
         parts.append("Follow-up material: belum")
     fu = (h.material_followup_remark or "").strip()
@@ -360,12 +497,14 @@ def _query_outstanding_rows(
     material_status: Optional[MaterialStatusFilter] = None,
     factory_code: Optional[str] = None,
     po_category: Optional[str] = None,
+    material_group: Optional[str] = None,
     order_date_from: Optional[date] = None,
     order_date_to: Optional[date] = None,
     po_detail_ids: Optional[list[int]] = None,
 ) -> list[dict[str, Any]]:
     """Baris dari PO yang belum completed (aliran outstanding marketing)."""
     wanted_details = {int(x) for x in (po_detail_ids or []) if x is not None}
+    group_needle = _normalize_material_group_filter(material_group)
     headers = db.scalars(
         select(PoHeader)
         .options(
@@ -374,36 +513,21 @@ def _query_outstanding_rows(
         .order_by(PoHeader.id.desc())
     ).all()
 
+    masters_by_id: dict[int, MasterItem] = {}
+    if group_needle:
+        master_ids = {
+            int(ln.master_item_id)
+            for h in headers
+            for ln in (h.details or [])
+            if getattr(ln, "master_item_id", None)
+        }
+        if master_ids:
+            for mi in db.scalars(select(MasterItem).where(MasterItem.id.in_(master_ids))).all():
+                masters_by_id[int(mi.id)] = mi
+
     delivered_by_po_detail: dict[int, Decimal] = {}
     if computed_balance:
-        rows = db.execute(
-            select(ProductionDetail.po_detail_id, func.sum(DeliveryDetail.qty))
-            .join(DeliveryDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
-            .group_by(ProductionDetail.po_detail_id)
-        ).all()
-        for pod_id, total in rows:
-            if pod_id is None:
-                continue
-            delivered_by_po_detail[int(pod_id)] = total or Decimal(0)
-        # Jalur MRP FG OUT: DeliveryDetail.po_detail_id langsung (tanpa ProductionDetail)
-        direct_rows = db.execute(
-            select(DeliveryDetail.po_detail_id, func.sum(DeliveryDetail.qty))
-            .where(
-                DeliveryDetail.po_detail_id.is_not(None),
-                or_(
-                    DeliveryDetail.production_detail_id.is_(None),
-                    DeliveryDetail.production_detail_id == 0,
-                ),
-            )
-            .group_by(DeliveryDetail.po_detail_id)
-        ).all()
-        for pod_id, total in direct_rows:
-            if pod_id is None:
-                continue
-            key = int(pod_id)
-            delivered_by_po_detail[key] = (delivered_by_po_detail.get(key) or Decimal(0)) + (
-                total or Decimal(0)
-            )
+        delivered_by_po_detail = _delivered_qty_by_po_detail(db)
 
     po_needle = (po_q or "").strip().lower()
     factory_needle = (factory_code or "").strip().lower()
@@ -431,15 +555,22 @@ def _query_outstanding_rows(
             if factory_needle not in ((h.factory_code or "").strip().lower()):
                 continue
         if cat_needle:
-            if cat_needle != ((h.po_category or "").strip().lower()):
+            stored_cat = (h.po_category or "").strip().lower()
+            if cat_needle == "production":
+                if stored_cat not in {"", "production", "suede"}:
+                    continue
+            elif cat_needle != stored_cat:
                 continue
-        if po_needle:
-            pn = (h.po_number or "").lower()
-            if po_needle not in pn:
-                continue
+        if po_needle and not _po_q_matches(h, po_needle):
+            continue
         for ln in h.details or []:
             if wanted_details and int(ln.id) not in wanted_details:
                 continue
+            if group_needle:
+                mid = getattr(ln, "master_item_id", None)
+                master = masters_by_id.get(int(mid)) if mid else None
+                if _classify_line_material_group(h, ln, master) != group_needle:
+                    continue
             if computed_balance:
                 delivered = delivered_by_po_detail.get(int(ln.id), Decimal(0))
                 qty = ln.quantity_order or Decimal(0)
@@ -512,6 +643,9 @@ _PROD_OUTSTANDING_COLUMNS: list[tuple[str, str]] = (
         ("detail_remark", "REMARK PO"),
         ("remark_marketing", "REMARK"),
         ("status_material", "STATUS MATERIAL"),
+        ("mkt_stage", "TAHAP MKT"),
+        ("mrp_alloc_status", "ALOKASI MRP"),
+        ("mrp_qty_remaining", "SISA RENCANA"),
     ]
     + _delivery_export_column_pairs(OUTSTANDING_DELIVERY_SLOTS_PROD)
 )
@@ -524,6 +658,9 @@ _CLAIM_SAMPLE_OUTSTANDING_COLUMNS: list[tuple[str, str]] = (
     + [
         ("detail_remark", "REMARK PO"),
         ("remark_marketing", "REMARK"),
+        ("mkt_stage", "TAHAP MKT"),
+        ("mrp_alloc_status", "ALOKASI MRP"),
+        ("mrp_qty_remaining", "SISA RENCANA"),
     ]
     + _delivery_export_column_pairs(OUTSTANDING_DELIVERY_SLOTS_CLAIM_SAMPLE)
 )
@@ -543,6 +680,9 @@ _OUTSTANDING_XLS_COLUMNS: list[tuple[str, str]] = (
         ("schedule_unallocated_qty", "BELUM DIJADWAL"),
         ("actual_vs_schedule_qty", "AKTUAL vs JADWAL"),
         ("production_status", "STATUS PRODUKSI"),
+        ("mkt_stage", "TAHAP MKT"),
+        ("mrp_alloc_status", "ALOKASI MRP"),
+        ("mrp_qty_remaining", "SISA RENCANA"),
     ]
     + _delivery_export_column_pairs(OUTSTANDING_DELIVERY_SLOTS_PROD)
 )
@@ -901,7 +1041,17 @@ def _query_delivery_lines_rows(
         )
     pc = (po_category or "").strip().lower()
     if pc:
-        stmt = stmt.where(or_(PoHeader.id.is_(None), PoHeader.po_category == pc))
+        if pc == "production":
+            stmt = stmt.where(
+                or_(
+                    PoHeader.id.is_(None),
+                    PoHeader.po_category.in_(("production", "suede")),
+                    PoHeader.po_category.is_(None),
+                    PoHeader.po_category == "",
+                )
+            )
+        else:
+            stmt = stmt.where(or_(PoHeader.id.is_(None), PoHeader.po_category == pc))
     cq = (customer or "").strip()
     if cq:
         like_cust = f"%{cq}%"
@@ -1017,6 +1167,8 @@ def marketing_outstanding_lines(
     ),
     factory_code: Optional[str] = Query(None, description="Filter factory code (substring, case-insensitive)"),
     po_category: Optional[str] = Query(None, description="Filter kategori PO: production/sample/claim/return/subcont/suede"),
+    material_group: Optional[str] = Query(None, description="Filter jenis material: pu | suede"),
+    mkt_stage_min: Optional[str] = Query(None, description="Minimal tahap MKT, mis. in_outstanding"),
     order_date_from: Optional[str] = Query(None, description="Tanggal order PO header: dari (YYYY-MM-DD)"),
     order_date_to: Optional[str] = Query(None, description="Tanggal order PO header: sampai (YYYY-MM-DD)"),
     po_detail_ids: Optional[str] = Query(None, description="CSV po_detail_id — batasi ke baris terpilih"),
@@ -1024,7 +1176,7 @@ def marketing_outstanding_lines(
     limit: int = Query(100, ge=1, le=1000, description="Limit for pagination"),
     _user=Depends(get_current_user),
 ) -> MarketingOutstandingPageOut:
-    rows = _query_outstanding_rows(
+    rows = _prepare_outstanding_rows(
         db,
         balance_filter,
         computed_balance,
@@ -1033,6 +1185,8 @@ def marketing_outstanding_lines(
         material_status=material_status,
         factory_code=factory_code,
         po_category=po_category,
+        material_group=material_group,
+        mkt_stage_min=mkt_stage_min,
         order_date_from=_parse_iso_date_optional(order_date_from),
         order_date_to=_parse_iso_date_optional(order_date_to),
         po_detail_ids=_parse_po_detail_ids(po_detail_ids),
@@ -1055,12 +1209,14 @@ def marketing_outstanding_lines_csv(
     material_status: Optional[MaterialStatusFilter] = Query(default=None),
     factory_code: Optional[str] = Query(None),
     po_category: Optional[str] = Query(None),
+    material_group: Optional[str] = Query(None),
+    mkt_stage_min: Optional[str] = Query(None),
     order_date_from: Optional[str] = Query(None),
     order_date_to: Optional[str] = Query(None),
     po_detail_ids: Optional[str] = Query(None),
     _user=Depends(get_current_user),
 ) -> Response:
-    rows = _query_outstanding_rows(
+    rows = _prepare_outstanding_rows(
         db,
         balance_filter,
         computed_balance,
@@ -1069,6 +1225,8 @@ def marketing_outstanding_lines_csv(
         material_status=material_status,
         factory_code=factory_code,
         po_category=po_category,
+        material_group=material_group,
+        mkt_stage_min=mkt_stage_min,
         order_date_from=_parse_iso_date_optional(order_date_from),
         order_date_to=_parse_iso_date_optional(order_date_to),
         po_detail_ids=_parse_po_detail_ids(po_detail_ids),
@@ -1099,12 +1257,14 @@ def marketing_outstanding_lines_xlsx(
     material_status: Optional[MaterialStatusFilter] = Query(default=None),
     factory_code: Optional[str] = Query(None),
     po_category: Optional[str] = Query(None),
+    material_group: Optional[str] = Query(None),
+    mkt_stage_min: Optional[str] = Query(None),
     order_date_from: Optional[str] = Query(None),
     order_date_to: Optional[str] = Query(None),
     po_detail_ids: Optional[str] = Query(None),
     _user=Depends(get_current_user),
 ) -> Response:
-    rows = _query_outstanding_rows(
+    rows = _prepare_outstanding_rows(
         db,
         balance_filter,
         computed_balance,
@@ -1113,6 +1273,8 @@ def marketing_outstanding_lines_xlsx(
         material_status=material_status,
         factory_code=factory_code,
         po_category=po_category,
+        material_group=material_group,
+        mkt_stage_min=mkt_stage_min,
         order_date_from=_parse_iso_date_optional(order_date_from),
         order_date_to=_parse_iso_date_optional(order_date_to),
         po_detail_ids=_parse_po_detail_ids(po_detail_ids),
@@ -1134,13 +1296,15 @@ def marketing_outstanding_return_lines_xlsx(
     shipment_status: ShipmentStatusFilter = Query(default=ShipmentStatusFilter.all),
     material_status: Optional[MaterialStatusFilter] = Query(default=None),
     factory_code: Optional[str] = Query(None),
+    material_group: Optional[str] = Query(None),
+    mkt_stage_min: Optional[str] = Query(None),
     order_date_from: Optional[str] = Query(None),
     order_date_to: Optional[str] = Query(None),
     po_detail_ids: Optional[str] = Query(None),
     _user=Depends(get_current_user),
 ) -> Response:
     """Export lembar RETUR (hanya `po_category=return`) — kolom diselaraskan contoh Excel marketing."""
-    rows = _query_outstanding_rows(
+    rows = _prepare_outstanding_rows(
         db,
         balance_filter,
         computed_balance,
@@ -1149,6 +1313,8 @@ def marketing_outstanding_return_lines_xlsx(
         material_status=material_status,
         factory_code=factory_code,
         po_category="return",
+        material_group=material_group,
+        mkt_stage_min=mkt_stage_min,
         order_date_from=_parse_iso_date_optional(order_date_from),
         order_date_to=_parse_iso_date_optional(order_date_to),
         po_detail_ids=_parse_po_detail_ids(po_detail_ids),
@@ -1170,13 +1336,15 @@ def marketing_outstanding_manual_workbook_xlsx(
     shipment_status: ShipmentStatusFilter = Query(default=ShipmentStatusFilter.all),
     material_status: Optional[MaterialStatusFilter] = Query(default=None),
     factory_code: Optional[str] = Query(None),
+    material_group: Optional[str] = Query(None),
+    mkt_stage_min: Optional[str] = Query(None),
     order_date_from: Optional[str] = Query(None),
     order_date_to: Optional[str] = Query(None),
     po_detail_ids: Optional[str] = Query(None),
     _user=Depends(get_current_user),
 ) -> Response:
     """Unduh workbook multi-lembar (PROD / CLAIM / SAMPLE / SUBCONT / RETUR) seperti Excel manual marketing."""
-    rows = _query_outstanding_rows(
+    rows = _prepare_outstanding_rows(
         db,
         balance_filter,
         computed_balance,
@@ -1185,6 +1353,8 @@ def marketing_outstanding_manual_workbook_xlsx(
         material_status=material_status,
         factory_code=factory_code,
         po_category=None,
+        material_group=material_group,
+        mkt_stage_min=mkt_stage_min,
         order_date_from=_parse_iso_date_optional(order_date_from),
         order_date_to=_parse_iso_date_optional(order_date_to),
         po_detail_ids=_parse_po_detail_ids(po_detail_ids),
@@ -1360,8 +1530,13 @@ def _query_delivery_planning_slots(
     date_from: date,
     date_to: date,
     factory_code: Optional[str] = None,
+    mkt_stage_min: Optional[str] = None,
+    po_q: Optional[str] = None,
+    *,
+    as_of: Optional[date] = None,
 ) -> list[dict[str, Any]]:
     fc = (factory_code or "").strip().lower()
+    min_stage = _normalize_mkt_stage_min(mkt_stage_min)
     stmt = (
         select(PoDetailDelivery, PoDetail, PoHeader)
         .join(PoDetail, PoDetailDelivery.po_detail_id == PoDetail.id)
@@ -1377,29 +1552,80 @@ def _query_delivery_planning_slots(
         )
     )
     raw = db.execute(stmt).all()
+    delivered_map = _delivered_qty_by_po_detail(db)
+    ref = as_of or date.today()
     out: list[dict[str, Any]] = []
     for pdd, pod, ph in raw:
         st = (ph.status or "").lower()
         if st in ("completed", "cancelled", "canceled"):
             continue
+        if pdd.qty is not None and pdd.qty <= 0:
+            continue
         if fc and fc not in ((ph.factory_code or "").strip().lower()):
             continue
+        if not _po_q_matches(ph, po_q):
+            continue
+        stage = normalize_mkt_stage(getattr(ph, "mkt_workflow_stage", None))
+        if min_stage and not _passes_mkt_stage_min(stage, min_stage):
+            continue
+        order = pod.quantity_order or Decimal(0)
+        delivered = delivered_map.get(int(pod.id), Decimal(0))
+        balance = order - delivered
+        ship_status = _planning_slot_ship_status(stage, delivered, order)
+        slot_date = pdd.delivery_date
         out.append(
             {
-                "delivery_date": pdd.delivery_date.isoformat() if pdd.delivery_date else None,
+                "delivery_date": slot_date.isoformat() if slot_date else None,
                 "sequence_no": pdd.sequence_no,
                 "qty": _dec_str(pdd.qty) if pdd.qty is not None else "",
                 "po_id": ph.id,
                 "po_number": (ph.po_number or "").strip(),
+                "po_customer_ref": (ph.po_customer_ref or "").strip(),
+                "customer_name": (ph.customer_name_snapshot or ph.customer_code or "").strip(),
+                "brand": (ph.brand_name_snapshot or ph.buyer or "").strip(),
                 "factory_code": (ph.factory_code or "").strip(),
                 "material_name": (pod.material_name or "").strip(),
                 "thi_order": (ph.po_number or "").strip(),
+                "thi_line_ref": (pod.thi_line_ref or "").strip(),
                 "lot_no": (pod.thi_line_ref or "").strip(),
                 "po_detail_id": pod.id,
                 "line_etd": pod.line_etd.isoformat() if pod.line_etd else None,
+                "mkt_stage": stage,
+                "order_qty": _dec_str(order),
+                "delivered_qty": _dec_str(delivered),
+                "balance_qty": _dec_str(balance),
+                "ship_status": ship_status,
+                "overdue": bool(
+                    slot_date
+                    and slot_date < ref
+                    and ship_status in {"planned", "partial"}
+                ),
             }
         )
     return out
+
+
+def _query_overdue_planning_slots(
+    db: Session,
+    before: date,
+    factory_code: Optional[str] = None,
+    mkt_stage_min: Optional[str] = None,
+    po_q: Optional[str] = None,
+) -> list[dict[str, Any]]:
+    start = date(max(before.year - 2, 2000), 1, 1)
+    if start >= before:
+        return []
+    until = before - timedelta(days=1)
+    slots = _query_delivery_planning_slots(
+        db,
+        start,
+        until,
+        factory_code=factory_code,
+        mkt_stage_min=mkt_stage_min,
+        po_q=po_q,
+        as_of=before,
+    )
+    return [s for s in slots if s.get("overdue")]
 
 
 def _query_line_etd_on_date(db: Session, on_date: date, factory_code: Optional[str] = None) -> list[dict[str, Any]]:
@@ -1450,7 +1676,7 @@ def create_marketing_outstanding_snapshot(
     user=Depends(require_roles("admin", "marketing")),
 ) -> MarketingOutstandingSnapshotListItem:
     f = body.filters
-    rows = _query_outstanding_rows(
+    rows = _prepare_outstanding_rows(
         db,
         _parse_balance_filter(f.balance_filter),
         f.computed_balance,
@@ -1459,6 +1685,8 @@ def create_marketing_outstanding_snapshot(
         material_status=_parse_material_status_optional(f.material_status),
         factory_code=f.factory_code,
         po_category=f.po_category,
+        material_group=f.material_group,
+        mkt_stage_min=f.mkt_stage_min,
         order_date_from=_parse_iso_date_optional(f.order_date_from),
         order_date_to=_parse_iso_date_optional(f.order_date_to),
     )
@@ -1512,6 +1740,8 @@ def marketing_delivery_planning(
     date_from: Optional[str] = Query(None, description="YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, description="YYYY-MM-DD"),
     factory_code: Optional[str] = Query(None),
+    mkt_stage_min: Optional[str] = Query(None, description="Kosong = semua tahap; in_outstanding = siap outstanding ke atas"),
+    po_q: Optional[str] = Query(None),
     _user=Depends(get_current_user),
 ) -> MarketingDeliveryPlanningPageOut:
     today = date.today()
@@ -1519,7 +1749,15 @@ def marketing_delivery_planning(
     dt = _parse_iso_date_optional(date_to) or today
     if df > dt:
         df, dt = dt, df
-    slots = _query_delivery_planning_slots(db, df, dt, factory_code=factory_code)
+    slots = _query_delivery_planning_slots(
+        db,
+        df,
+        dt,
+        factory_code=factory_code,
+        mkt_stage_min=mkt_stage_min,
+        po_q=po_q,
+        as_of=today,
+    )
     return MarketingDeliveryPlanningPageOut(
         date_from=df.isoformat(),
         date_to=dt.isoformat(),
@@ -1533,15 +1771,33 @@ def marketing_delivery_today(
     db: Session = Depends(get_db),
     factory_code: Optional[str] = Query(None),
     on_date: Optional[str] = Query(None, description="Hari acuan (default hari ini), YYYY-MM-DD"),
+    mkt_stage_min: Optional[str] = Query(None),
+    po_q: Optional[str] = Query(None),
     _user=Depends(get_current_user),
 ) -> MarketingDeliveryTodayOut:
     d = _parse_iso_date_optional(on_date) or date.today()
-    planned = _query_delivery_planning_slots(db, d, d, factory_code=factory_code)
+    planned = _query_delivery_planning_slots(
+        db,
+        d,
+        d,
+        factory_code=factory_code,
+        mkt_stage_min=mkt_stage_min,
+        po_q=po_q,
+        as_of=d,
+    )
+    overdue = _query_overdue_planning_slots(
+        db,
+        before=d,
+        factory_code=factory_code,
+        mkt_stage_min=mkt_stage_min,
+        po_q=po_q,
+    )
     line_etd = _query_line_etd_on_date(db, d, factory_code=factory_code)
     sj_lines = _delivery_lines_for_header_date(db, d)
     return MarketingDeliveryTodayOut(
         as_of=d.isoformat(),
         planned_delivery_slots=[MarketingDeliveryPlanningSlotOut.model_validate(s) for s in planned],
+        overdue_slots=[MarketingDeliveryPlanningSlotOut.model_validate(s) for s in overdue],
         lines_reply_etd_today=[MarketingLineEtdTodayOut.model_validate(s) for s in line_etd],
         surat_jalan_lines=[MarketingDeliveryLineOut.model_validate(s) for s in sj_lines],
     )

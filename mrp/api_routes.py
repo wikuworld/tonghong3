@@ -35,6 +35,24 @@ def _err(message: str, status: int = 400):
     return jsonify({"detail": message}), status
 
 
+def _sql_no_so_from_master(alias: str = "pk") -> str:
+    """Ambil No. SO dari master PO (no_po = PO customer)."""
+    return (
+        f"(SELECT po.no_so FROM tbl_master_po po "
+        f"WHERE po.no_po = {alias}.no_po AND po.no_so IS NOT NULL AND po.no_so <> '' "
+        f"ORDER BY po.id DESC LIMIT 1) AS no_so"
+    )
+
+
+def _parse_id_csv(raw: str | None) -> list[int]:
+    out: list[int] = []
+    for part in str(raw or "").split(","):
+        part = part.strip()
+        if part.isdigit():
+            out.append(int(part))
+    return out
+
+
 # ---- health ----
 @api.get("/health")
 def health():
@@ -496,8 +514,16 @@ def master_po_list():
     ensure_rencana_tables(cur)
     ensure_extended_tables(cur)
     conn.commit()
+    source_ids = _parse_id_csv(request.args.get("source_detail_ids"))
     status = (request.args.get("status") or "").strip()
-    if status:
+    if source_ids:
+        placeholders = ",".join(["%s"] * len(source_ids))
+        cur.execute(
+            f"SELECT * FROM tbl_master_po WHERE source_detail_id IN ({placeholders}) "
+            "ORDER BY no_po, item_name LIMIT 2000",
+            source_ids,
+        )
+    elif status:
         cur.execute(
             "SELECT * FROM tbl_master_po WHERE status=%s ORDER BY no_po, item_name LIMIT 500",
             (status,),
@@ -611,10 +637,11 @@ def master_po_sync():
             else:
                 status = "outstanding"
             cur.execute(
-                "UPDATE tbl_master_po SET no_so=%s, customer=%s, customer_id=%s, warna=%s, tebal=%s, emboss=%s, "
+                "UPDATE tbl_master_po SET no_po=%s, no_so=%s, customer=%s, customer_id=%s, warna=%s, tebal=%s, emboss=%s, "
                 "color_swatch=%s, source_detail_id=%s, sq_ft=%s, qty_order=%s, "
                 "qty_balance_erp=%s, status=%s WHERE id=%s",
                 (
+                    no_po,
                     no_so,
                     customer,
                     erp_customer_id,
@@ -1178,7 +1205,8 @@ def proses_list():
     ensure_master_treatment(cur)
     conn.commit()
     cur.execute(
-        "SELECT * FROM tbl_persiapan_kulit ORDER BY date_created DESC LIMIT 100"
+        f"SELECT pk.*, {_sql_no_so_from_master('pk')} "
+        "FROM tbl_persiapan_kulit pk ORDER BY pk.date_created DESC LIMIT 100"
     )
     persiapan_list = _rows(cur.fetchall())
     cur.execute(
@@ -1308,7 +1336,11 @@ def proses_detail_api(persiapan_id: int):
     ensure_extended_tables(cur)
     ensure_master_treatment(cur)
     conn.commit()
-    cur.execute("SELECT * FROM tbl_persiapan_kulit WHERE id = %s", (persiapan_id,))
+    cur.execute(
+        f"SELECT pk.*, {_sql_no_so_from_master('pk')} "
+        "FROM tbl_persiapan_kulit pk WHERE pk.id = %s",
+        (persiapan_id,),
+    )
     persiapan = cur.fetchone()
     if not persiapan:
         cur.close()
@@ -1362,7 +1394,11 @@ def proses_detail_api(persiapan_id: int):
 def proses_label_api(persiapan_id: int):
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
-    cur.execute("SELECT * FROM tbl_persiapan_kulit WHERE id = %s", (persiapan_id,))
+    cur.execute(
+        f"SELECT pk.*, {_sql_no_so_from_master('pk')} "
+        "FROM tbl_persiapan_kulit pk WHERE pk.id = %s",
+        (persiapan_id,),
+    )
     persiapan = cur.fetchone()
     if not persiapan:
         cur.close()
@@ -4165,7 +4201,11 @@ def report_packing_api():
     try:
         cur.execute(
             """
-            SELECT DATE(p.date_created) AS tanggal, p.no_po, p.kode_packing AS kode_process,
+            SELECT DATE(p.date_created) AS tanggal, p.no_po,
+                   (SELECT po.no_so FROM tbl_master_po po
+                    WHERE po.no_po = p.no_po AND po.no_so IS NOT NULL AND po.no_so <> ''
+                    ORDER BY po.id DESC LIMIT 1) AS no_so,
+                   p.kode_packing AS kode_process,
                    COUNT(r.id) AS pack, SUM(r.lembar) AS qty, SUM(r.ukuran) AS size, p.status
             FROM tbl_packing p
             LEFT JOIN tbl_packing_roll r ON r.packing_id = p.id

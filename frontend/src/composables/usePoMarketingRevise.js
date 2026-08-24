@@ -52,7 +52,6 @@ export function usePoMarketingRevise({ t, editingPoId, formModel }) {
         etd: toIsoDate(header.etd) || null,
         delivery_address: header.delivery_address?.trim() || null,
         material_followup_remark: header.material_followup_remark?.trim() || null,
-        material_followup_done: Boolean(header.material_followup_done),
       }
       const payloadLines = lines.value.map((r) => {
         const o = { detail_id: r.detail_id }

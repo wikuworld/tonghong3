@@ -40,6 +40,20 @@ from app.routers.reports import _order_type_label, _thickness_display
 router = APIRouter(tags=["delivery"])
 
 
+def _resolve_delivery_line_masters(
+    db: Session, dd: DeliveryDetail
+) -> tuple[ProductionDetail | None, PoDetail | None, PoHeader | None]:
+    """SO bisa lewat production_detail_id (ERP) atau po_detail_id langsung (MRP)."""
+    pd = db.get(ProductionDetail, dd.production_detail_id) if dd.production_detail_id else None
+    pod = None
+    if dd.po_detail_id:
+        pod = db.get(PoDetail, int(dd.po_detail_id))
+    if pod is None and pd and pd.po_detail_id:
+        pod = db.get(PoDetail, int(pd.po_detail_id))
+    ph = db.get(PoHeader, pod.po_id) if pod and pod.po_id else None
+    return pd, pod, ph
+
+
 def _delivery_detail_enriched(
     dd: DeliveryDetail,
     pd: ProductionDetail | None,
@@ -57,7 +71,8 @@ def _delivery_detail_enriched(
         weight=float(dd.weight) if dd.weight is not None else None,
         po_id=int(ph.id) if ph else None,
         po_number=(ph.po_number or "").strip() if ph else "",
-        po_detail_id=int(pod.id) if pod else None,
+        po_customer_ref=(ph.po_customer_ref or "").strip() if ph else "",
+        po_detail_id=int(pod.id) if pod else (int(dd.po_detail_id) if dd.po_detail_id else None),
         system_no=so_number_for_line(ph, pod),
         lot_number=lot_number_for_line(pod, pd),
         material_name_line=((pod.material_name or "").strip()) if pod else "",
@@ -358,15 +373,14 @@ def list_delivery_details(
 ) -> list[DeliveryDetailEnrichedOut]:
     if not db.get(DeliveryHeader, delivery_id):
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
-    joined = db.execute(
-        select(DeliveryDetail, ProductionDetail, PoDetail, PoHeader)
-        .outerjoin(ProductionDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
-        .outerjoin(PoDetail, ProductionDetail.po_detail_id == PoDetail.id)
-        .outerjoin(PoHeader, PoDetail.po_id == PoHeader.id)
-        .where(DeliveryDetail.delivery_id == delivery_id)
-        .order_by(DeliveryDetail.id.asc())
-    ).all()
-    return [_delivery_detail_enriched(dd, pd, pod, ph) for dd, pd, pod, ph in joined]
+    rows = list(
+        db.scalars(
+            select(DeliveryDetail)
+            .where(DeliveryDetail.delivery_id == delivery_id)
+            .order_by(DeliveryDetail.id.asc())
+        ).all()
+    )
+    return [_delivery_detail_enriched(dd, *_resolve_delivery_line_masters(db, dd)) for dd in rows]
 
 
 @router.post("/delivery/{delivery_id}/details", response_model=DeliveryDetailOut)

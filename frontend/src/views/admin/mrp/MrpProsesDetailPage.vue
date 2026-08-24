@@ -47,6 +47,14 @@
             <span class="mrp-proses-stat__value mrp-proses-stat__value--text">{{ dash(persiapan.kode_wip) }}</span>
           </div>
           <div class="mrp-proses-stat">
+            <span class="mrp-proses-stat__label">{{ t('pages.mrpRencana.poCustomerRef') }}</span>
+            <span class="mrp-proses-stat__value mrp-proses-stat__value--text">{{ dash(persiapan.no_po) }}</span>
+          </div>
+          <div class="mrp-proses-stat">
+            <span class="mrp-proses-stat__label">{{ t('pages.mrpRencana.soRef') }}</span>
+            <span class="mrp-proses-stat__value mrp-proses-stat__value--text">{{ dash(persiapan.no_so) }}</span>
+          </div>
+          <div class="mrp-proses-stat">
             <span class="mrp-proses-stat__label">{{ t('common.status') }}</span>
             <span class="mrp-proses-stat__value">
               <el-tag :type="statusType(persiapan.status)" size="small" effect="plain">
@@ -329,7 +337,8 @@ async function printLabel() {
       <tr><td>Kode Proses</td><td><strong>${esc(p.kode_proses)}</strong></td></tr>
       <tr><td>Kode WIP</td><td><strong>${esc(p.kode_wip)}</strong></td></tr>
       <tr><td>Rencana</td><td>${esc(p.kode_rencana || '—')}</td></tr>
-      <tr><td>PO</td><td>${esc(p.no_po || '—')}</td></tr>
+      <tr><td>${esc(t('pages.mrpRencana.poCustomerRef'))}</td><td>${esc(p.no_po || '—')}</td></tr>
+      <tr><td>${esc(t('pages.mrpRencana.soRef'))}</td><td>${esc(p.no_so || '—')}</td></tr>
       <tr><td>Warna</td><td>${esc(p.warna || '—')}</td></tr>
       <tr><td>Tebal</td><td>${esc(p.tebal || '—')}</td></tr>
       <tr><td>Emboss</td><td>${esc(p.emboss || '—')}</td></tr>

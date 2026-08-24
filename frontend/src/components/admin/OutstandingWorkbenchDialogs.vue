@@ -448,10 +448,7 @@ async function downloadPi(fmt) {
   }
   savingPi.value = true
   try {
-    const path =
-      fmt === 'docx'
-        ? proformaInvoiceBatchDocxPath().replace(/^\/api\/v1/, '')
-        : proformaInvoiceBatchPdfPath().replace(/^\/api\/v1/, '')
+    const path = fmt === 'docx' ? proformaInvoiceBatchDocxPath() : proformaInvoiceBatchPdfPath()
     await fetchAuthenticatedDocument(path, {
       mode: 'download',
       method: 'POST',

@@ -1,13 +1,10 @@
 <template>
-  <el-dialog
+  <el-drawer
     v-model="w.formDialogVisible"
-    :fullscreen="false"
-    width="94%"
-    style="max-width: 1040px"
-    top="4vh"
+    direction="rtl"
+    size="100%"
     destroy-on-close
-    align-center
-    class="po-wizard-dialog"
+    class="so-page-drawer po-wizard-dialog"
     :before-close="w.handlePoDialogBeforeClose"
     :show-close="true"
   >
@@ -54,7 +51,7 @@
       </div>
     </template>
 
-    <div class="po-wizard-body">
+    <div class="po-wizard-body" v-loading="w.formHydrating">
       <el-form label-position="top" class="po-dialog-form" @keydown.enter.prevent="w.handleEnterKey">
         <div v-show="w.currentStep === 0" class="po-wizard-step">
           <div class="po-wizard-panel">
@@ -130,7 +127,6 @@
                   <el-radio-button value="subcont">{{ t('status.subcont') }}</el-radio-button>
                   <el-radio-button value="return">{{ t('status.return') }}</el-radio-button>
                   <el-radio-button value="claim">{{ t('status.claim') }}</el-radio-button>
-                  <el-radio-button value="suede">{{ t('status.suede') }}</el-radio-button>
                 </el-radio-group>
               </el-form-item>
             </el-col>
@@ -169,7 +165,7 @@
                   <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupOrderReference') }}</h4>
                 </header>
                 <el-row :gutter="16" class="material-step-grid">
-            <el-col :xs="24" :md="8">
+            <el-col :xs="24" :md="12">
               <el-form-item>
                 <template #label>
                   <span class="form-label-with-hint">
@@ -185,7 +181,7 @@
                 <el-input :model-value="w.isEditMode ? w.formModel.po_number : w.nextPoNumberDisplay" disabled />
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :md="8">
+            <el-col :xs="24" :md="12">
               <el-form-item
                 :error="w.formErrors.po_customer_ref || undefined"
               >
@@ -203,7 +199,7 @@
                 <el-input v-model="w.formModel.po_customer_ref" clearable maxlength="255" />
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :md="8">
+            <el-col :xs="24" :md="12">
               <el-form-item :label="t('common.orderDate')">
                 <el-date-picker
                   v-model="w.formModel.order_date"
@@ -239,8 +235,9 @@
           </div>
         </div>
 
-        <div v-show="w.currentStep === 1" class="po-wizard-step">
-          <div class="po-wizard-panel mb-4">
+        <div v-show="w.currentStep === 1" class="po-wizard-step po-material-split">
+          <div class="po-material-split__form">
+          <div class="po-wizard-panel">
             <div class="po-wizard-panel__head">
               <h3 class="po-wizard-panel__title">{{ t('pages.po.step2Title') }}</h3>
               <p class="po-wizard-panel__sub">{{ t('pages.po.wizardStep2Hint') }}</p>
@@ -272,6 +269,24 @@
               </el-form-item>
             </el-col>
           </el-row>
+          </section>
+
+          <section v-if="!w.isSubkonPo" class="po-wizard-group po-wizard-group--compact">
+            <header class="po-wizard-group__head">
+              <h4 class="po-wizard-group__title">{{ t('pages.po.itemCategory') }}</h4>
+              <p class="po-wizard-group__sub">{{ t('pages.po.itemCategoryHint') }}</p>
+            </header>
+            <el-form-item>
+              <el-radio-group
+                v-model="w.formModel.item_category"
+                size="small"
+                class="po-category-radio"
+                @change="w.onItemCategoryChange"
+              >
+                <el-radio-button value="PU">PU</el-radio-button>
+                <el-radio-button value="Suide">{{ t('status.suede') }}</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
           </section>
 
           <section class="po-wizard-group">
@@ -925,12 +940,11 @@
           </el-row>
           </section>
 
-          <div class="po-wizard-panel po-wizard-panel--sub mt-2">
-            <div class="po-wizard-panel__head">
-              <h4 class="po-wizard-panel__title">{{ t('pages.po.etdSchedule') }}</h4>
-              <p class="po-wizard-panel__sub">{{ t('pages.po.etdScheduleHint') }}</p>
-            </div>
-            <div class="po-wizard-panel__body">
+          <section class="po-wizard-group">
+            <header class="po-wizard-group__head">
+              <h4 class="po-wizard-group__title">{{ t('pages.po.etdSchedule') }}</h4>
+              <p class="po-wizard-group__sub">{{ t('pages.po.etdScheduleHint') }}</p>
+            </header>
               <el-row :gutter="16" class="material-step-grid">
                 <el-col :xs="24" :md="10">
                   <el-form-item :label="t('pages.po.etdDate')">
@@ -944,7 +958,7 @@
                     />
                   </el-form-item>
                 </el-col>
-                <el-col :xs="24" :md="14" class="flex flex-wrap items-end gap-2">
+                <el-col :xs="24" :md="14" class="po-wizard-inline-actions">
                   <el-button
                     size="small"
                     type="primary"
@@ -967,10 +981,34 @@
                 class="mt-2"
                 :title="t('pages.po.scheduleMismatch')"
               />
+          </section>
+
+          <div class="po-material-add-bar">
+            <template v-if="w.editingDraftLineIndex >= 0">
+              <el-button size="small" @click="w.cancelEditDraftLine">
+                {{ t('common.cancel') }}
+              </el-button>
+              <el-button type="primary" :icon="Check" class="po-wizard-add-line-btn" @click="w.pushCurrentLine(false)">
+                {{ t('pages.po.saveDraftLine') }}
+              </el-button>
+            </template>
+            <el-button
+              v-else
+              ref="addLineBtnRef"
+              type="primary"
+              :icon="Plus"
+              class="po-wizard-add-line-btn"
+              @click="w.pushCurrentLine(false)"
+            >
+              {{ t('common.add') }}
+            </el-button>
+          </div>
             </div>
           </div>
+          </div>
 
-          <div class="po-wizard-panel po-wizard-panel--sub mt-4">
+          <div class="po-material-split__list">
+          <div class="po-wizard-panel po-wizard-panel--sub po-material-list-panel">
             <div class="po-wizard-panel__head">
               <h4 class="po-wizard-panel__title">{{ t('pages.po.materialListTitle') }}</h4>
             </div>
@@ -986,17 +1024,6 @@
                   :active-text="t('pages.po.draftRiskOnlyActive')"
                   :inactive-text="t('pages.po.draftRiskAllLines')"
                 />
-                <template v-if="w.editingDraftLineIndex >= 0">
-                  <el-button size="small" @click="w.cancelEditDraftLine">
-                    {{ t('common.cancel') }}
-                  </el-button>
-                  <el-button type="primary" :icon="Check" class="po-wizard-add-line-btn" @click="w.pushCurrentLine(false)">
-                    {{ t('pages.po.saveDraftLine') }}
-                  </el-button>
-                </template>
-                <el-button v-else type="primary" :icon="Plus" class="po-wizard-add-line-btn" @click="w.pushCurrentLine(false)">
-                  {{ t('common.add') }}
-                </el-button>
               </div>
             </div>
             <div class="po-wizard-panel__body">
@@ -1095,7 +1122,6 @@
           <el-empty v-if="!w.draftLinesDisplay.length" :description="t('pages.po.noItemsYet')" class="mt-2" />
             </div>
           </div>
-            </div>
           </div>
         </div>
 
@@ -1219,7 +1245,7 @@
         </div>
       </div>
     </template>
-  </el-dialog>
+  </el-drawer>
 </template>
 
 <script setup>
@@ -1237,17 +1263,52 @@ import {
   UploadFilled,
   WarningFilled,
 } from '@element-plus/icons-vue'
+import { nextTick, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { usePoWizardContext } from '../../composables/poFormWizardContext.js'
+import { sendToRowAnimation } from '../../composables/useSendToRowAnimation.js'
 
 const w = usePoWizardContext()
 const { t } = useI18n()
+const addLineBtnRef = ref(null)
+
+function addLineButtonEl() {
+  const btn = addLineBtnRef.value
+  if (!btn) return null
+  return btn.$el instanceof HTMLElement ? btn.$el : btn
+}
+
+onMounted(() => {
+  w.onDraftLineAdded = async ({ uid, label }) => {
+    await nextTick()
+    await nextTick()
+    const toEl = document.querySelector(`.draft-line-uid-${uid}`)
+    await sendToRowAnimation({
+      fromEl: addLineButtonEl(),
+      toEl,
+      label,
+    })
+  }
+})
 </script>
 
 <style scoped>
 :deep(.draft-line-active > td) {
   background-color: rgb(239 246 255) !important;
+}
+
+:deep(.draft-line-just-added > td) {
+  animation: draft-line-flash 1.1s ease;
+}
+
+@keyframes draft-line-flash {
+  0% {
+    background-color: rgb(219 234 254);
+  }
+  100% {
+    background-color: transparent;
+  }
 }
 
 .po-draft-line-actions {
@@ -1257,35 +1318,21 @@ const { t } = useI18n()
   gap: 2px;
 }
 
-:deep(.po-wizard-dialog.el-dialog) {
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 16px 44px rgba(15, 23, 42, 0.18);
-  max-height: 92vh;
-  display: flex;
-  flex-direction: column;
+:deep(.po-wizard-dialog.el-drawer) {
+  box-shadow: -12px 0 32px rgba(15, 23, 42, 0.12);
 }
 
-:deep(.po-wizard-dialog .el-dialog__header) {
-  padding: 0;
+:deep(.po-wizard-dialog .el-drawer__header) {
+  padding: 0 16px 0 0;
   margin: 0;
-  border-bottom: 1px solid #e2e8f0;
-  flex-shrink: 0;
 }
 
-:deep(.po-wizard-dialog .el-dialog__body) {
-  flex: 1;
+:deep(.po-wizard-dialog .el-drawer__body) {
   padding: 0;
-  background: #f8fafc;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
 }
 
-:deep(.po-wizard-dialog .el-dialog__footer) {
+:deep(.po-wizard-dialog .el-drawer__footer) {
   padding: 0;
-  flex-shrink: 0;
 }
 
 .po-wizard-header {
@@ -1348,6 +1395,78 @@ const { t } = useI18n()
   min-height: 280px;
 }
 
+.po-material-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+  min-height: 0;
+}
+
+.po-material-split__form,
+.po-material-split__list {
+  min-width: 0;
+  min-height: 0;
+}
+
+.po-material-split__form .po-wizard-panel,
+.po-material-list-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.po-material-split__form .po-wizard-panel__body--stack {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.po-material-list-panel .po-wizard-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.po-material-add-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #eff6ff;
+}
+
+@media (min-width: 1100px) {
+  .po-material-split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .po-wizard-step.po-material-split {
+    min-height: calc(100vh - 220px);
+  }
+
+  .po-material-split__list {
+    position: sticky;
+    top: 0;
+    align-self: start;
+  }
+
+  .po-material-list-panel {
+    max-height: calc(100vh - 200px);
+  }
+
+  .po-material-split__form .el-col[class*='el-col-md-'] {
+    max-width: 50%;
+    flex: 0 0 50%;
+  }
+}
+
 .po-wizard-panel {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
@@ -1390,21 +1509,30 @@ const { t } = useI18n()
 .po-wizard-panel__body--stack {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 12px;
 }
 
 .po-wizard-group {
-  padding: 16px 0;
-  border-top: 1px solid #e2e8f0;
+  padding: 0 14px 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
 }
 
 .po-wizard-group:first-child {
-  border-top: none;
   padding-top: 0;
 }
 
+.po-wizard-group--compact {
+  padding-bottom: 10px;
+}
+
 .po-wizard-group__head {
-  margin-bottom: 12px;
+  margin: 0 -14px 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #eef2f7;
+  background: #f8fafc;
+  border-radius: 9px 9px 0 0;
 }
 
 .po-wizard-group__head--row {
@@ -1478,14 +1606,19 @@ const { t } = useI18n()
 
 .po-wizard-group__title {
   margin: 0;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
 }
 
 .po-wizard-group__sub {
   margin: 4px 0 0;
   font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
   color: #64748b;
   line-height: 1.45;
 }
@@ -1498,11 +1631,13 @@ const { t } = useI18n()
 .po-category-radio {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
+  min-height: 32px;
 }
 
 .po-category-radio :deep(.el-radio-button__inner) {
-  padding: 6px 10px;
+  padding: 7px 12px;
 }
 
 .po-color-source-radio {
@@ -1515,9 +1650,30 @@ const { t } = useI18n()
   padding: 6px 10px;
 }
 
-.material-step-grid :deep(.el-form-item__label) {
-  line-height: 1.35;
-  margin-bottom: 2px;
+.po-dialog-form :deep(.el-form-item) {
+  margin-bottom: 12px;
+  width: 100%;
+}
+
+.po-dialog-form :deep(.el-form-item__label) {
+  height: 38px;
+  display: flex;
+  align-items: flex-end;
+  line-height: 1.25;
+  margin-bottom: 4px !important;
+  padding-bottom: 0 !important;
+  color: #475569;
+  font-weight: 600;
+}
+
+.po-dialog-form :deep(.el-form-item__content) {
+  width: 100%;
+  line-height: 1.4;
+}
+
+.material-step-grid :deep(.el-col) {
+  display: flex;
+  flex-direction: column;
 }
 
 .material-step-grid :deep(.el-input),
@@ -1527,8 +1683,28 @@ const { t } = useI18n()
   width: 100%;
 }
 
-.material-step-grid :deep(.el-form-item__content) {
+.po-dialog-form :deep(.el-date-editor.el-input),
+.po-dialog-form :deep(.el-date-editor.el-input__wrapper) {
   width: 100%;
+}
+
+.po-field-meta,
+.field-lock-row > .mt-1,
+.field-lock-row > .mt-2,
+.field-stack-row > .mt-1,
+.po-dialog-form :deep(.el-form-item__content > .mt-1),
+.po-dialog-form :deep(.el-form-item__content > .mt-2) {
+  min-height: 22px;
+  margin-top: 4px;
+}
+
+.po-wizard-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  padding-bottom: 12px;
+  min-height: 70px;
 }
 
 .field-lock-row,

@@ -74,6 +74,8 @@ export async function appendDetailUnitPrice(body, formModel, { resolveBuyerUnitP
 export function detailPayloadForUpdate(body) {
   const o = { ...body }
   delete o.id
+  delete o.item_category
+  delete o._uid
   return o
 }
 
@@ -81,5 +83,7 @@ export function sanitizeNewDetailBody(body) {
   const o = { ...body }
   delete o.id
   delete o.line_etd
+  delete o.item_category
+  delete o._uid
   return o
 }

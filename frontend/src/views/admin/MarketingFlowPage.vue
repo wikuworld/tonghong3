@@ -19,7 +19,7 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-button type="warning" @click="pullCrToday">{{ t('pages.marketingFlow.pullCrToday') }}</el-button>
+        <el-button type="warning" plain @click="pullCrToday">{{ t('pages.marketingFlow.soToday') }}</el-button>
       </template>
       <template v-else-if="section === 'outstanding'">
         <div class="mkt-out-toolbar">
@@ -41,6 +41,9 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+          <el-button @click="openSnapshotArchive">
+            {{ t('pages.marketingFlow.snapshotArchive') }}
+          </el-button>
           <el-tooltip :content="t('pages.marketingFlow.checklistActionsHint')" placement="bottom" :disabled="Boolean(outstandingSelection.length)">
             <span class="mkt-out-toolbar-actions">
               <el-button
@@ -103,13 +106,33 @@
                 :end-placeholder="t('common.placeholder.toDate')"
               />
             </label>
+            <label class="mkt-out-field">
+              <span class="mkt-out-field__label">{{ t('pages.marketingFlow.filterSoStatus') }}</span>
+              <el-select
+                v-model="flowSoStatus"
+                clearable
+                class="mkt-out-field__control"
+                :placeholder="t('pages.marketingFlow.filterSoStatusAll')"
+                @change="onFlowSoStatusChange"
+              >
+                <el-option :label="t('status.draft')" value="draft" />
+                <el-option :label="t('status.confirmed')" value="confirmed" />
+                <el-option :label="t('status.production')" value="production" />
+                <el-option :label="t('status.completed')" value="completed" />
+                <el-option :label="t('status.cancelled')" value="canceled" />
+              </el-select>
+            </label>
           </div>
+          <p class="mkt-flow-howto">{{ t('pages.marketingFlow.listHowto') }}</p>
 
           <div class="mkt-flow-filter__footer">
             <div class="mkt-flow-filter__meta">
-              <template v-if="filterStage">
-                <span class="mkt-active-filter">
+              <template v-if="filterStage || flowSoStatus">
+                <span v-if="filterStage" class="mkt-active-filter">
                   {{ t('pages.marketingFlow.filterStage') }}: {{ labelFor(filterStage) }}
+                </span>
+                <span v-if="flowSoStatus" class="mkt-active-filter">
+                  {{ t('pages.marketingFlow.filterSoStatus') }}: {{ soStatusLabel(flowSoStatus) }}
                 </span>
                 <el-button link type="primary" size="small" @click="clearFilter">
                   {{ t('common.reset') }}
@@ -123,7 +146,7 @@
                   {{ t('pages.marketingFlow.stuckReason') }}: <strong>{{ flowStats.stuck }}</strong>
                 </span>
                 <span class="mkt-flow-stat-chip mkt-flow-stat-chip--ok">
-                  {{ t('pages.marketingFlow.readyToAdvance') }}: <strong>{{ flowStats.ready }}</strong>
+                  {{ t('pages.marketingFlow.needAction') }}: <strong>{{ flowStats.actionable }}</strong>
                 </span>
               </div>
             </div>
@@ -178,7 +201,7 @@
         <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" fixed="left">
           <template #default="{ $index }">{{ flowRowNumber($index) }}</template>
         </el-table-column>
-        <el-table-column prop="po_number" :label="t('common.poNo')" min-width="150" show-overflow-tooltip>
+        <el-table-column prop="po_number" :label="t('common.poNo')" min-width="136" show-overflow-tooltip>
           <template #default="{ row }">
             <div class="flex flex-wrap items-center gap-1">
               <PoItemRevisedDot :row="row" />
@@ -188,127 +211,102 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('pages.marketingFlow.colMktStage')" min-width="200">
+        <el-table-column :label="t('pages.marketingFlow.colPoCustomer')" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">
-            <div class="mkt-row-stages">
-              <el-tag size="small" effect="dark" class="mkt-pulse-tag mkt-pulse-tag--current">
-                {{ labelFor(normalizeFlowStage(row.mkt_workflow_stage)) }}
-              </el-tag>
-              <template v-if="nextFlowStage(row.mkt_workflow_stage)">
-                <span class="mkt-row-stages__arrow">›</span>
-                <el-tag size="small" effect="plain" class="mkt-pulse-tag mkt-pulse-tag--next">
-                  {{ labelFor(nextFlowStage(row.mkt_workflow_stage)) }}
-                </el-tag>
-              </template>
-            </div>
+            {{ row.po_customer_ref || t('common.emptyValue') }}
           </template>
         </el-table-column>
-        <el-table-column prop="status" :label="t('pages.marketingFlow.colSoStatus')" width="120">
+        <el-table-column :label="t('common.customerName')" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-tag size="small" effect="plain">{{ row.status || t('common.emptyValue') }}</el-tag>
+            {{ row.customer_name_snapshot || row.customer_code || t('common.emptyValue') }}
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('pages.marketingFlow.colMktStage')" min-width="150">
+          <template #default="{ row }">
+            <el-tag size="small" effect="plain" type="success">
+              {{ labelFor(normalizeFlowStage(row.mkt_workflow_stage)) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="status" :label="t('pages.marketingFlow.colSoStatus')" width="128">
+          <template #default="{ row }">
+            <el-tag size="small" :type="statusType(row.status)" effect="plain">
+              {{ soStatusLabel(row.status) }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="order_date" :label="t('common.orderDate')" width="110" />
-        <el-table-column :label="t('pages.marketingFlow.materialDone')" width="100" align="center">
+        <el-table-column :label="t('pages.marketingFlow.nextStepCol')" min-width="240">
           <template #default="{ row }">
-            <el-switch
-              :model-value="Boolean(row.material_followup_done)"
-              size="small"
-              :disabled="!canFlowUpdate"
-              @change="(val) => toggleMaterialFollowUp(row, val)"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('pages.marketingFlow.materialRemark')" min-width="180" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span v-if="row.material_followup_remark" class="text-xs">{{ row.material_followup_remark }}</span>
-            <el-button v-else-if="canFlowUpdate" type="primary" link size="small" @click="openMaterialFollowUpDialog(row)">
-              {{ t('pages.marketingFlow.addRemark') }}
-            </el-button>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('ppicWorkflow.status')" width="110" align="center">
-          <template #default="{ row }">
-            <el-tag v-if="ppicAssignments[row.id]" size="small" :type="ppicAssignments[row.id].status === 'completed' ? 'success' : ppicAssignments[row.id].status === 'in_progress' ? 'warning' : 'info'">
-              {{ ppicStatusLabel(ppicAssignments[row.id].status) }}
-            </el-tag>
-            <span v-else class="text-gray-400 text-xs">—</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('pages.marketingFlow.stuckReason')" min-width="220">
-          <template #default="{ row }">
-            <div class="mkt-stuck-cell">
+            <div class="mkt-next-cell">
               <el-tag
-                v-if="row.stuck_reason || needsRekapPrintConfirm(row)"
-                type="warning"
                 size="small"
                 effect="light"
-                class="mkt-stuck-tag mkt-stuck-tag--blocked"
+                :type="soListNextStepTagType(row)"
+                class="mkt-stuck-tag"
+                :class="soListNextStepTagClass(row)"
               >
                 <span class="mkt-stuck-tag__inner">
-                  <el-icon><Warning /></el-icon>
-                  <span class="mkt-stuck-tag__text">{{
-                    stuckReasonLabel(row.stuck_reason || 'Menunggu rekap PO diprint')
-                  }}</span>
+                  <el-icon v-if="soListNextStepKind(row) === 'done'"><CircleCheck /></el-icon>
+                  <el-icon v-else-if="soListNextStepBlocked(row)"><Warning /></el-icon>
+                  <span class="mkt-stuck-tag__text">{{ soListNextStepLabel(row) }}</span>
                 </span>
               </el-tag>
-              <el-tag
-                v-else-if="canAdvanceRow(row)"
-                type="success"
-                size="small"
-                effect="light"
-                class="mkt-stuck-tag mkt-stuck-tag--ready"
-              >
-                <span class="mkt-stuck-tag__inner">
-                  <el-icon><CircleCheck /></el-icon>
-                  <span class="mkt-stuck-tag__text">{{ t('pages.marketingFlow.readyToAdvance') }}</span>
-                </span>
-              </el-tag>
-              <span v-else class="mkt-stuck-empty">{{ t('common.emptyValue') }}</span>
+              <p v-if="soListNextStepHint(row)" class="mkt-next-hint">{{ soListNextStepHint(row) }}</p>
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="180" fixed="right" align="center">
+        <el-table-column :label="t('common.actions')" width="228" fixed="right" align="center">
           <template #default="{ row }">
-            <el-tooltip v-if="canAdvance" :content="advanceTooltip(row)" placement="top">
+            <div class="mkt-so-actions">
               <el-button
-                type="primary"
-                link
+                v-if="soListPrimaryVisible(row)"
+                :type="soListPrimaryType(row)"
                 size="small"
-                :loading="advancing === row.id"
-                :disabled="!canAdvanceRow(row) || (advancing != null && advancing !== row.id)"
-                @click="advance(row)"
+                :loading="soListPrimaryLoading(row)"
+                :disabled="soListPrimaryDisabled(row)"
+                @click="runSoListPrimary(row)"
               >
-                <el-icon><DArrowRight /></el-icon>
+                {{ soListPrimaryLabel(row) }}
               </el-button>
-            </el-tooltip>
-            <el-tooltip v-if="canRollback && canRollbackRow(row)" :content="t('pages.marketingFlow.rollbackStageHint')" placement="top">
-              <el-button
-                type="warning"
-                link
-                size="small"
-                :loading="rollingBack === row.id"
-                :disabled="rollingBack != null && rollingBack !== row.id"
-                @click="openRollbackDialog(row)"
-              >
-                <el-icon><DArrowLeft /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip :content="t('pages.marketingFlow.rekapPrintAction')" placement="top">
-              <el-button type="success" link size="small" @click="openRekapPrintDialog(row)">
-                <el-icon><Printer /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip :content="t('pages.marketingFlow.openPoDetail')" placement="top">
-              <el-button type="default" link size="small" @click="goPo(row.id)">
-                <el-icon><Document /></el-icon>
-              </el-button>
-            </el-tooltip>
-            <el-tooltip v-if="canEditPoDetail" :content="t('ppicWorkflow.assignToPpic')" placement="top">
-              <el-button type="warning" link size="small" @click="openAssignDialog(row)">
-                <el-icon><User /></el-icon>
-              </el-button>
-            </el-tooltip>
+              <el-dropdown trigger="click" @command="(cmd) => onSoListMore(row, cmd)">
+                <el-button size="small" :icon="MoreFilled" :aria-label="t('pages.marketingFlow.moreActions')" />
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="detail">{{ t('pages.marketingFlow.openPoDetail') }}</el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="soListNextStepKind(row) !== 'rekap'"
+                      command="rekap"
+                    >{{ t('pages.marketingFlow.rekapPrintAction') }}</el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="canEditPoDetail && soListNextStepKind(row) !== 'assign_ppic'"
+                      command="assign"
+                    >{{ t('ppicWorkflow.assignToPpic') }}</el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="soListNextStepKind(row) !== 'outstanding'"
+                      command="outstanding"
+                    >{{ t('pages.marketingFlow.viewOutstandingSo') }}</el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="soListNextStepKind(row) !== 'planning'"
+                      command="planning"
+                    >{{ t('pages.marketingFlow.viewPlanningSo') }}</el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="soListNextStepKind(row) !== 'delivery' && soListNextStepKind(row) !== 'invoice'"
+                      command="delivery"
+                    >{{ t('pages.marketingFlow.viewDeliverySo') }}</el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="canFlowUpdate"
+                      command="remark"
+                    >{{ t('pages.marketingFlow.materialRemark') }}</el-dropdown-item>
+                    <el-dropdown-item
+                      v-if="canRollback && canRollbackRow(row)"
+                      command="rollback"
+                      divided
+                    >{{ t('pages.marketingFlow.rollbackStageHint') }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -327,37 +325,45 @@
     </div>
 
     <OutstandingWorkbenchDialogs
-      v-if="section === 'outstanding'"
+      v-if="section === 'outstanding' || section === 'planning'"
       v-model:schedule-visible="outstandingScheduleVisible"
       v-model:pi-visible="outstandingPiVisible"
       v-model:ship-visible="outstandingShipVisible"
-      :rows="outstandingSelection"
-      @done="loadOutstanding"
+      :rows="workbenchRows"
+      @done="onWorkbenchDone"
     />
 
     <div v-if="section === 'outstanding'" class="admin-inner-card mkt-out-card">
       <div class="mkt-section-body mkt-out-body">
       <div class="filter-panel mkt-out-filter-panel">
         <div class="mkt-out-filter-panel__head">
-          <p class="filter-panel__title">{{ t('pages.marketingFlow.dataScopeTitle') }}</p>
+          <p class="filter-panel__title">{{ t('common.filter') }}</p>
           <div class="mkt-out-filter__actions">
-            <el-tooltip :content="t('pages.marketingFlow.outstandingRefresh')" placement="top">
-              <el-button
-                type="primary"
-                :icon="Refresh"
-                :loading="outstandingLoading"
-                circle
-                @click="loadOutstanding"
-              />
-            </el-tooltip>
-            <el-tooltip :content="t('common.reset')" placement="top">
-              <el-button :icon="RefreshLeft" circle @click="resetOutstandingFilters" />
-            </el-tooltip>
+            <el-button type="primary" :icon="Refresh" :loading="outstandingLoading" @click="loadOutstanding">
+              {{ t('common.refresh') }}
+            </el-button>
+            <el-button :icon="RefreshLeft" @click="resetOutstandingFilters">
+              {{ t('common.reset') }}
+            </el-button>
           </div>
         </div>
+        <p class="mkt-flow-howto">{{ t('pages.marketingFlow.outstandingHowto') }}</p>
 
         <div class="mkt-out-filter">
           <div class="mkt-out-filter__fields">
+            <label class="mkt-out-field">
+              <span class="mkt-out-field__label">{{ t('pages.marketingFlow.outstandingPoSearch') }}</span>
+              <el-input
+                v-model="poSearch"
+                clearable
+                class="mkt-out-field__control"
+                :placeholder="t('pages.marketingFlow.outstandingPoSearchPlaceholder')"
+                :prefix-icon="Search"
+                @change="onOutstandingPoSearchChange"
+                @clear="onOutstandingPoSearchChange"
+              />
+            </label>
+
             <label class="mkt-out-field">
               <span class="mkt-out-field__label">{{ t('pages.po.filterOrderDateRange') }}</span>
               <el-date-picker
@@ -438,7 +444,7 @@
               <el-radio-group
                 v-model="outstandingPoCategory"
                 class="mkt-out-segment"
-                @change="loadOutstanding"
+                @change="onOutstandingSheetChange"
               >
                 <el-radio-button label="">{{ t('pages.marketingFlow.outstandingSheetAll') }}</el-radio-button>
                 <el-radio-button label="production">{{ t('pages.marketingFlow.outstandingSheetProd') }}</el-radio-button>
@@ -448,12 +454,62 @@
                 <el-radio-button label="return">{{ t('pages.marketingFlow.outstandingSheetReturn') }}</el-radio-button>
               </el-radio-group>
             </div>
+            <div class="mkt-out-field mkt-out-field--segment">
+              <span class="mkt-out-field__label">{{ t('pages.marketingFlow.outstandingMaterialGroupFilter') }}</span>
+              <el-radio-group
+                v-model="outstandingMaterialGroup"
+                class="mkt-out-segment"
+                @change="onOutstandingSheetChange"
+              >
+                <el-radio-button label="">{{ t('pages.marketingFlow.outstandingSheetAll') }}</el-radio-button>
+                <el-radio-button label="pu">{{ t('pages.marketingFlow.outstandingMaterialGroupPu') }}</el-radio-button>
+                <el-radio-button label="suede">{{ t('pages.marketingFlow.outstandingMaterialGroupSuede') }}</el-radio-button>
+              </el-radio-group>
+            </div>
+            <div class="mkt-out-field mkt-out-field--segment">
+              <span class="mkt-out-field__label">{{ t('pages.marketingFlow.outstandingMktStageFilter') }}</span>
+              <el-radio-group
+                v-model="outstandingMktStageMin"
+                class="mkt-out-segment"
+                @change="onOutstandingSheetChange"
+              >
+                <el-radio-button label="">{{ t('pages.marketingFlow.outstandingMktStageAll') }}</el-radio-button>
+                <el-radio-button label="in_outstanding">{{ t('pages.marketingFlow.outstandingMktStageReady') }}</el-radio-button>
+              </el-radio-group>
+              <p class="mkt-out-field__hint">{{ t('pages.marketingFlow.outstandingMktStageHint') }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="mkt-out-filter__footer">
+          <div class="mkt-flow-stat-chips">
+            <span class="mkt-flow-stat-chip">
+              {{ t('common.total') }}: <strong>{{ outstandingTotal }}</strong>
+            </span>
+            <span class="mkt-flow-stat-chip">
+              {{ t('pages.marketingFlow.shownRows') }}: <strong>{{ outstandingStats.shown }}</strong>
+            </span>
+            <span class="mkt-flow-stat-chip mkt-flow-stat-chip--warn">
+              {{ t('pages.marketingFlow.outNeedSchedule') }}: <strong>{{ outstandingStats.needSchedule }}</strong>
+            </span>
+            <span class="mkt-flow-stat-chip mkt-flow-stat-chip--ok">
+              {{ t('pages.marketingFlow.outNeedShip') }}: <strong>{{ outstandingStats.needShip }}</strong>
+            </span>
+            <span v-if="outstandingStats.selected" class="mkt-flow-stat-chip">
+              {{ t('pages.marketingFlow.selectedCount', { n: outstandingStats.selected }) }}
+            </span>
+          </div>
+          <div class="mkt-out-view-toggle">
+            <span class="mkt-out-view-toggle__label">{{ t('pages.marketingFlow.outstandingViewLabel') }}</span>
+            <el-radio-group v-model="outstandingViewMode" size="small">
+              <el-radio-button label="work">{{ t('pages.marketingFlow.outstandingViewWork') }}</el-radio-button>
+              <el-radio-button label="excel">{{ t('pages.marketingFlow.outstandingViewExcel') }}</el-radio-button>
+            </el-radio-group>
           </div>
         </div>
       </div>
 
       <p class="mkt-out-col-filter-tip">
-        {{ t('pages.marketingFlow.colFilterTip') }}
+        {{ outstandingCompactView ? t('pages.marketingFlow.outstandingWorkTip') : t('pages.marketingFlow.colFilterTip') }}
       </p>
 
       <div class="admin-table-scroll mkt-out-table-wrap">
@@ -464,13 +520,69 @@
         v-loading="outstandingLoading"
         border
         size="small"
-        class="outstanding-table marketing-outstanding-table outstanding-table--col-filters"
+        :class="[
+          'outstanding-table',
+          'marketing-outstanding-table',
+          outstandingCompactView ? 'outstanding-table--work' : 'outstanding-table--col-filters',
+        ]"
         :row-class-name="outstandingRowClassName"
+        :empty-text="t('pages.marketingFlow.outstandingEmpty')"
         @selection-change="onOutstandingSelectionChange"
       >
         <el-table-column type="selection" width="42" fixed="left" />
+        <template v-if="outstandingCompactView">
+          <el-table-column :label="t('common.orderDate')" width="110" fixed="left">
+            <template #default="{ row }">{{ formatOutstandingDate(row.order_date) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('common.poNo')" min-width="132" fixed="left" show-overflow-tooltip>
+            <template #default="{ row }">
+              <el-button link type="primary" @click="goPo(row.po_id)">
+                {{ row.thi_order || t('common.emptyValue') }}
+              </el-button>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('pages.marketingFlow.colPoCustomer')" min-width="120" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ row.po_customer_ref || row.no_po || t('common.emptyValue') }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="customer_name" :label="t('common.customerName')" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="material_name" :label="t('common.material')" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="qty_sf" :label="t('pages.marketingFlow.colQtySf')" width="92" align="right" />
+          <el-table-column prop="delivered_qty" :label="t('pages.marketingFlow.colDeliveredQty')" width="92" align="right" />
+          <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="92" align="right" />
+          <el-table-column :label="t('pages.marketingFlow.outWorkCol')" width="150">
+            <template #default="{ row }">
+              <el-tag size="small" effect="plain" :type="outstandingWorkStatusType(row)">
+                {{ outstandingWorkStatusLabel(row) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('pages.marketingFlow.colReplyEtd')" width="110">
+            <template #default="{ row }">{{ formatOutstandingDate(row.line_etd) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('pages.marketingFlow.outstandingColMktStage')" min-width="140">
+            <template #default="{ row }">{{ labelFor(row.mkt_stage) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('pages.marketingFlow.nextStepCol')" min-width="150">
+            <template #default="{ row }">{{ outstandingRowNextLabel(row) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('pages.marketingFlow.colRemarkMarketing')" min-width="160">
+            <template #default="{ row }">
+              <el-input
+                v-if="isOutstandingRowEditing(row)"
+                v-model="row.remark_marketing"
+                size="small"
+                type="textarea"
+                :rows="2"
+                :disabled="!canEditPoDetail"
+              />
+              <span v-else>{{ formatOutstandingCell(row.remark_marketing) }}</span>
+            </template>
+          </el-table-column>
+        </template>
         <el-table-column
-          v-for="col in outstandingTableColumnDefs"
+          v-for="col in outstandingCompactView ? [] : outstandingTableColumnDefs"
           :key="col.prop"
           :prop="col.prop"
           :width="col.width"
@@ -508,48 +620,72 @@
               :placeholder="t('pages.marketingFlow.scheduleDeliveryDate')"
             />
             <span v-else-if="col.kind === 'date'">{{ formatOutstandingDate(row[col.prop]) }}</span>
+            <span v-else-if="col.kind === 'mkt_stage'">{{ labelFor(row.mkt_stage) }}</span>
+            <span v-else-if="col.kind === 'mrp_alloc'">{{ formatMrpAllocCell(row) }}</span>
             <span v-else>{{ formatOutstandingCell(row[col.prop]) }}</span>
           </template>
         </el-table-column>
         <el-table-column
-          v-if="canEditPoDetail"
           :label="t('common.actions')"
-          width="132"
+          width="228"
           align="center"
           fixed="right"
         >
           <template #default="{ row }">
-            <div class="mkt-out-row-actions">
+            <div class="mkt-so-actions">
               <template v-if="isOutstandingRowEditing(row)">
-                <el-tooltip :content="t('common.save')" placement="top">
-                  <el-button
-                    link
-                    type="primary"
-                    :icon="Check"
-                    :loading="savingOutstandingId === row.po_detail_id"
-                    :aria-label="t('common.save')"
-                    @click="saveOutstandingRowEdit(row)"
-                  />
-                </el-tooltip>
-                <el-tooltip :content="t('common.cancel')" placement="top">
-                  <el-button
-                    link
-                    :icon="Close"
-                    :disabled="savingOutstandingId === row.po_detail_id"
-                    :aria-label="t('common.cancel')"
-                    @click="cancelOutstandingRowEdit(row)"
-                  />
-                </el-tooltip>
-              </template>
-              <el-tooltip v-else :content="t('pages.marketingFlow.outstandingEditRow')" placement="top">
                 <el-button
-                  link
                   type="primary"
-                  :icon="EditPen"
-                  :aria-label="t('pages.marketingFlow.outstandingEditRow')"
-                  @click="startOutstandingRowEdit(row)"
-                />
-              </el-tooltip>
+                  size="small"
+                  :icon="Check"
+                  :loading="savingOutstandingId === row.po_detail_id"
+                  @click="saveOutstandingRowEdit(row)"
+                >
+                  {{ t('common.save') }}
+                </el-button>
+                <el-button
+                  size="small"
+                  :icon="Close"
+                  :disabled="savingOutstandingId === row.po_detail_id"
+                  @click="cancelOutstandingRowEdit(row)"
+                >
+                  {{ t('common.cancel') }}
+                </el-button>
+              </template>
+              <template v-else>
+                <el-button
+                  v-if="outstandingNextAction(row) !== 'done'"
+                  :type="outstandingRowNextType(row)"
+                  size="small"
+                  @click="runOutstandingRowPrimary(row)"
+                >
+                  {{ outstandingRowNextLabel(row) }}
+                </el-button>
+                <el-dropdown trigger="click" @command="(cmd) => onOutstandingRowMore(row, cmd)">
+                  <el-button size="small" :icon="MoreFilled" :aria-label="t('pages.marketingFlow.moreActions')" />
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="so">{{ t('pages.marketingFlow.openPoDetail') }}</el-dropdown-item>
+                      <el-dropdown-item command="planning">{{ t('pages.marketingFlow.viewPlanningSo') }}</el-dropdown-item>
+                      <el-dropdown-item command="delivery">{{ t('pages.marketingFlow.viewDeliverySo') }}</el-dropdown-item>
+                      <el-dropdown-item command="pi">{{ t('pages.marketingFlow.actionMakePi') }}</el-dropdown-item>
+                      <el-dropdown-item
+                        v-if="outstandingNextAction(row) !== 'schedule'"
+                        command="schedule"
+                      >{{ t('pages.marketingFlow.scheduleDraftButton') }}</el-dropdown-item>
+                      <el-dropdown-item
+                        v-if="outstandingNextAction(row) !== 'ship'"
+                        command="ship"
+                      >{{ t('pages.marketingFlow.actionShipPacking') }}</el-dropdown-item>
+                      <el-dropdown-item
+                        v-if="canEditPoDetail"
+                        command="edit"
+                        divided
+                      >{{ t('pages.marketingFlow.outstandingEditRow') }}</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </template>
             </div>
           </template>
         </el-table-column>
@@ -572,6 +708,7 @@
 
     <div v-if="section === 'planning'" class="admin-inner-card marketing-tabs">
       <div class="mkt-section-body">
+      <p class="mkt-flow-howto">{{ t('pages.marketingFlow.deliveryDraftHint') }}</p>
       <el-tabs v-model="masterPlanningTab" class="mkt-plan-tabs" @tab-change="onMasterPlanningTabChange">
         <el-tab-pane name="planning" :label="t('pages.marketingFlow.planningTitle')">
           <div class="mkt-plan-pane">
@@ -595,6 +732,17 @@
                     />
                   </label>
                   <label class="mkt-out-field">
+                    <span class="mkt-out-field__label">{{ t('pages.marketingFlow.outstandingPoSearch') }}</span>
+                    <el-input
+                      v-model="planningPoSearch"
+                      clearable
+                      class="mkt-out-field__control"
+                      :placeholder="t('pages.marketingFlow.outstandingPoSearchPlaceholder')"
+                      @change="loadPlanning"
+                      @clear="loadPlanning"
+                    />
+                  </label>
+                  <label class="mkt-out-field">
                     <span class="mkt-out-field__label">{{ t('pages.marketingFlow.factoryFilterOptional') }}</span>
                     <el-input
                       v-model="planningFactory"
@@ -602,6 +750,17 @@
                       class="mkt-out-field__control"
                     />
                   </label>
+                  <div class="mkt-out-field mkt-out-field--segment">
+                    <span class="mkt-out-field__label">{{ t('pages.marketingFlow.outstandingMktStageFilter') }}</span>
+                    <el-radio-group
+                      v-model="planningMktStageMin"
+                      class="mkt-out-segment"
+                      @change="loadPlanning"
+                    >
+                      <el-radio-button label="">{{ t('pages.marketingFlow.outstandingMktStageAll') }}</el-radio-button>
+                      <el-radio-button label="in_outstanding">{{ t('pages.marketingFlow.outstandingMktStageReady') }}</el-radio-button>
+                    </el-radio-group>
+                  </div>
                 </div>
                 <div class="mkt-plan-filter__footer">
                   <div class="mkt-plan-stat-chips">
@@ -632,12 +791,59 @@
                 >
                   <el-table-column prop="delivery_date" :label="t('pages.marketingFlow.colShipDate')" width="110" />
                   <el-table-column prop="sequence_no" label="#" width="44" align="center" />
-                  <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+                  <el-table-column :label="t('common.poNo')" min-width="128" show-overflow-tooltip>
+                    <template #default="{ row }">
+                      <el-button link type="primary" @click="goPo(row.po_id)">
+                        {{ row.po_number || t('common.emptyValue') }}
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="po_customer_ref" :label="t('pages.marketingFlow.colPoCustomer')" min-width="110" show-overflow-tooltip />
+                  <el-table-column prop="customer_name" :label="t('common.customerName')" min-width="140" show-overflow-tooltip />
+                  <el-table-column :label="t('pages.marketingFlow.colMktStage')" min-width="130" show-overflow-tooltip>
+                    <template #default="{ row }">{{ labelFor(row.mkt_stage) }}</template>
+                  </el-table-column>
+                  <el-table-column :label="t('common.status')" width="120" align="center">
+                    <template #default="{ row }">
+                      <el-tag size="small" effect="plain" :type="planningShipTagType(row.ship_status)">
+                        {{ planningShipStatusLabel(row.ship_status) }}
+                      </el-tag>
+                    </template>
+                  </el-table-column>
                   <el-table-column prop="factory_code" label="Factory" width="88" show-overflow-tooltip />
                   <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
-                  <el-table-column prop="lot_no" :label="t('common.lotNo')" min-width="140" show-overflow-tooltip />
+                  <el-table-column prop="thi_line_ref" :label="t('pages.marketingFlow.planningColThiLine')" min-width="140" show-overflow-tooltip />
                   <el-table-column prop="qty" :label="t('pages.marketingFlow.colQtyShip')" width="88" />
+                  <el-table-column prop="delivered_qty" :label="t('pages.marketingFlow.planningColDelivered')" width="88" />
+                  <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="88" />
                   <el-table-column prop="line_etd" :label="t('pages.po.lineEtd')" width="110" />
+                  <el-table-column :label="t('common.actions')" width="168" align="center" fixed="right">
+                    <template #default="{ row }">
+                      <el-tooltip :content="t('pages.marketingFlow.planningOpenOutstanding')" placement="top">
+                        <el-button type="primary" link size="small" @click="goOutstandingFromPo(row)">
+                          <el-icon><List /></el-icon>
+                        </el-button>
+                      </el-tooltip>
+                      <el-tooltip
+                        v-if="canShipPlanningSlot(row)"
+                        :content="t('pages.marketingFlow.planningShipAction')"
+                        placement="top"
+                      >
+                        <el-button type="warning" link size="small" @click="shipPlanningSlot(row)">
+                          {{ t('pages.marketingFlow.planningShipAction') }}
+                        </el-button>
+                      </el-tooltip>
+                      <el-tooltip
+                        v-else-if="row.ship_status === 'shipped'"
+                        :content="t('pages.marketingFlow.planningOpenDelivery')"
+                        placement="top"
+                      >
+                        <el-button type="success" link size="small" @click="goDeliveryFromPlanning(row)">
+                          {{ t('pages.marketingFlow.openDelivery') }}
+                        </el-button>
+                      </el-tooltip>
+                    </template>
+                  </el-table-column>
                 </el-table>
               </div>
             </div>
@@ -669,14 +875,25 @@
                       class="mkt-out-field__control"
                     />
                   </label>
+                  <div class="mkt-out-field mkt-out-field--segment">
+                    <span class="mkt-out-field__label">{{ t('pages.marketingFlow.outstandingMktStageFilter') }}</span>
+                    <el-radio-group
+                      v-model="todayMktStageMin"
+                      class="mkt-out-segment"
+                      @change="loadDeliveryToday"
+                    >
+                      <el-radio-button label="">{{ t('pages.marketingFlow.outstandingMktStageAll') }}</el-radio-button>
+                      <el-radio-button label="in_outstanding">{{ t('pages.marketingFlow.outstandingMktStageReady') }}</el-radio-button>
+                    </el-radio-group>
+                  </div>
                 </div>
                 <div class="mkt-plan-filter__footer">
                   <div class="mkt-plan-stat-chips">
                     <span class="mkt-plan-stat-chip">
-                      {{ t('pages.marketingFlow.deliveryTodayPlanned') }}: <strong>{{ todayPlanned.length }}</strong>
+                      {{ t('pages.marketingFlow.deliveryTodayPlanned') }}: <strong>{{ todayPlanRows.length }}</strong>
                     </span>
                     <span class="mkt-plan-stat-chip">
-                      {{ t('pages.marketingFlow.deliveryTodayEtd') }}: <strong>{{ todayEtd.length }}</strong>
+                      {{ t('pages.marketingFlow.deliveryTodayOverdue') }}: <strong>{{ todayOverdue.length }}</strong>
                     </span>
                     <span class="mkt-plan-stat-chip">
                       {{ t('pages.marketingFlow.deliveryTodaySj') }}: <strong>{{ todaySj.length }}</strong>
@@ -695,45 +912,58 @@
               <section class="mkt-plan-block">
                 <div class="mkt-plan-block__head">
                   <h4 class="mkt-plan-block__title">{{ t('pages.marketingFlow.deliveryTodayPlanned') }}</h4>
-                  <span class="mkt-plan-block__count">{{ todayPlanned.length }}</span>
+                  <span class="mkt-plan-block__count">{{ todayPlanRows.length }}</span>
                 </div>
                 <div class="admin-table-scroll">
                   <el-table
-                    :data="todayPlanned"
+                    :data="todayPlanRows"
                     border
                     stripe
                     size="small"
                     class="admin-table mkt-plan-table"
-                    max-height="240"
+                    max-height="360"
                     :empty-text="t('common.tableEmpty')"
                   >
                     <el-table-column prop="delivery_date" :label="t('pages.marketingFlow.colShipDate')" width="110" />
-                    <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
-                    <el-table-column prop="material_name" :label="t('common.material')" min-width="120" show-overflow-tooltip />
+                    <el-table-column :label="t('common.poNo')" min-width="128" show-overflow-tooltip>
+                      <template #default="{ row }">
+                        <el-button link type="primary" @click="goPo(row.po_id)">
+                          {{ row.po_number || t('common.emptyValue') }}
+                        </el-button>
+                      </template>
+                    </el-table-column>
+                    <el-table-column prop="po_customer_ref" :label="t('pages.marketingFlow.colPoCustomer')" min-width="110" show-overflow-tooltip />
+                    <el-table-column prop="material_name" :label="t('common.material')" min-width="130" show-overflow-tooltip />
                     <el-table-column prop="qty" :label="t('pages.marketingFlow.colQtyShip')" width="80" />
-                  </el-table>
-                </div>
-              </section>
-
-              <section class="mkt-plan-block">
-                <div class="mkt-plan-block__head">
-                  <h4 class="mkt-plan-block__title">{{ t('pages.marketingFlow.deliveryTodayEtd') }}</h4>
-                  <span class="mkt-plan-block__count">{{ todayEtd.length }}</span>
-                </div>
-                <div class="admin-table-scroll">
-                  <el-table
-                    :data="todayEtd"
-                    border
-                    stripe
-                    size="small"
-                    class="admin-table mkt-plan-table"
-                    max-height="200"
-                    :empty-text="t('common.tableEmpty')"
-                  >
+                    <el-table-column prop="delivered_qty" :label="t('pages.marketingFlow.planningColDelivered')" width="80" />
+                    <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="80" />
                     <el-table-column prop="line_etd" :label="t('pages.po.lineEtd')" width="110" />
-                    <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
-                    <el-table-column prop="customer_name" :label="t('common.customerName')" min-width="120" show-overflow-tooltip />
-                    <el-table-column prop="material_name" :label="t('common.material')" min-width="120" show-overflow-tooltip />
+                    <el-table-column :label="t('common.status')" width="140" align="center">
+                      <template #default="{ row }">
+                        <el-tag v-if="row.overdue" size="small" type="danger" effect="plain">
+                          {{ t('pages.marketingFlow.planningOverdue') }}
+                        </el-tag>
+                        <el-tag size="small" effect="plain" :type="planningShipTagType(row.ship_status)">
+                          {{ planningShipStatusLabel(row.ship_status) }}
+                        </el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column :label="t('common.actions')" width="160" align="center" fixed="right">
+                      <template #default="{ row }">
+                        <el-button type="primary" link size="small" @click="goOutstandingFromPo(row)">
+                          {{ t('pages.marketingFlow.planningOpenOutstanding') }}
+                        </el-button>
+                        <el-button
+                          v-if="canShipPlanningSlot(row)"
+                          type="warning"
+                          link
+                          size="small"
+                          @click="shipPlanningSlot(row)"
+                        >
+                          {{ t('pages.marketingFlow.planningShipAction') }}
+                        </el-button>
+                      </template>
+                    </el-table-column>
                   </el-table>
                 </div>
               </section>
@@ -750,79 +980,24 @@
                     stripe
                     size="small"
                     class="admin-table mkt-plan-table"
-                    max-height="260"
+                    max-height="240"
                     :empty-text="t('common.tableEmpty')"
                   >
                     <el-table-column prop="surat_jalan_no" :label="t('pages.marketingFlow.colSuratJalan')" min-width="120" show-overflow-tooltip />
                     <el-table-column prop="delivery_date" :label="t('pages.marketingFlow.colShipDate')" width="110" />
-                    <el-table-column prop="po_number" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+                    <el-table-column prop="system_no" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
+                    <el-table-column prop="po_number" :label="t('pages.marketingFlow.colPoCustomerRef')" min-width="120" show-overflow-tooltip />
                     <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
+                    <el-table-column :label="t('common.actions')" width="100" align="center">
+                      <template #default="{ row }">
+                        <el-button link type="primary" size="small" @click="goDelivery(row)">
+                          {{ t('pages.marketingFlow.openDelivery') }}
+                        </el-button>
+                      </template>
+                    </el-table-column>
                   </el-table>
                 </div>
               </section>
-            </div>
-          </div>
-        </el-tab-pane>
-
-        <el-tab-pane name="master" :label="t('pages.marketingFlow.snapshotListTitle')">
-          <div class="mkt-plan-pane">
-            <div class="filter-panel mkt-plan-filter-panel">
-              <p class="filter-panel__title">{{ t('common.filter') }}</p>
-              <div class="mkt-plan-filter">
-                <div class="mkt-plan-filter__fields">
-                  <label class="mkt-out-field mkt-out-field--span2">
-                    <span class="mkt-out-field__label">{{ t('common.remark') }}</span>
-                    <el-input
-                      v-model="snapshotLabel"
-                      clearable
-                      class="mkt-out-field__control"
-                      :placeholder="t('pages.marketingFlow.snapshotLabelPlaceholder')"
-                    />
-                  </label>
-                </div>
-                <div class="mkt-plan-filter__footer">
-                  <div class="mkt-plan-stat-chips">
-                    <span class="mkt-plan-stat-chip">
-                      {{ t('common.total') }}: <strong>{{ snapshots.length }}</strong>
-                    </span>
-                  </div>
-                  <div class="mkt-plan-filter__actions">
-                    <el-button type="success" :loading="snapshotSaving" @click="saveOutstandingSnapshot">
-                      {{ t('pages.marketingFlow.snapshotSave') }}
-                    </el-button>
-                    <el-button type="primary" :icon="Refresh" :loading="snapshotsLoading" @click="loadSnapshotList">
-                      {{ t('common.refresh') }}
-                    </el-button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="mkt-plan-block">
-              <div class="admin-table-scroll">
-                <el-table
-                  :data="snapshots"
-                  border
-                  stripe
-                  size="small"
-                  class="admin-table mkt-plan-table"
-                  v-loading="snapshotsLoading"
-                  max-height="420"
-                  :empty-text="t('common.tableEmpty')"
-                >
-                  <el-table-column prop="id" label="ID" width="64" align="center" />
-                  <el-table-column prop="created_at" :label="t('common.date')" width="168" />
-                  <el-table-column prop="label" :label="t('common.remark')" min-width="120" show-overflow-tooltip />
-                  <el-table-column prop="row_count" :label="t('pages.marketingFlow.rowCountLabel')" width="100" align="right" />
-                  <el-table-column :label="t('common.actions')" width="100" align="center" fixed="right">
-                    <template #default="{ row }">
-                      <el-button type="primary" link size="small" @click="openSnapshotDetail(row.id)">
-                        {{ t('pages.marketingFlow.snapshotView') }}
-                      </el-button>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
             </div>
           </div>
         </el-tab-pane>
@@ -833,6 +1008,17 @@
               <p class="filter-panel__title">{{ t('common.filter') }}</p>
               <div class="mkt-plan-filter">
                 <div class="mkt-plan-filter__fields">
+                  <label class="mkt-out-field">
+                    <span class="mkt-out-field__label">{{ t('pages.marketingFlow.deliverySearchSo') }}</span>
+                    <el-input
+                      v-model="deliverySearch"
+                      clearable
+                      class="mkt-out-field__control"
+                      :placeholder="t('pages.marketingFlow.deliverySearchSo')"
+                      @change="loadDelivery"
+                      @clear="loadDelivery"
+                    />
+                  </label>
                   <label class="mkt-out-field mkt-out-field--span2">
                     <span class="mkt-out-field__label">{{ t('pages.marketingFlow.deliveryShipDateRange') }}</span>
                     <el-date-picker
@@ -885,9 +1071,9 @@
                 >
                   <el-table-column prop="surat_jalan_no" :label="t('pages.marketingFlow.colSuratJalan')" min-width="120" show-overflow-tooltip />
                   <el-table-column prop="delivery_date" :label="t('pages.marketingFlow.colShipDate')" width="110" />
-                  <el-table-column prop="factory_name" :label="t('pages.marketingFlow.colFactoryName')" min-width="140" show-overflow-tooltip />
-                  <el-table-column prop="system_no" :label="t('pages.marketingFlow.colSystemNo')" min-width="120" show-overflow-tooltip />
+                  <el-table-column prop="system_no" :label="t('common.poNo')" min-width="130" show-overflow-tooltip />
                   <el-table-column prop="po_number" :label="t('pages.marketingFlow.colPoCustomerRef')" min-width="120" show-overflow-tooltip />
+                  <el-table-column prop="factory_name" :label="t('pages.marketingFlow.colFactoryName')" min-width="140" show-overflow-tooltip />
                   <el-table-column prop="lot_no" :label="t('pages.marketingFlow.colLotNo')" min-width="130" show-overflow-tooltip />
                   <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
                   <el-table-column prop="qty_sf" :label="t('pages.marketingFlow.colQtyShip')" width="90" />
@@ -909,6 +1095,56 @@
       </el-tabs>
       </div>
     </div>
+
+    <el-dialog
+      v-model="snapshotArchiveVisible"
+      :title="t('pages.marketingFlow.snapshotArchiveTitle')"
+      width="720px"
+      destroy-on-close
+      align-center
+    >
+      <div class="mkt-plan-filter mb-3">
+        <div class="mkt-plan-filter__fields">
+          <label class="mkt-out-field mkt-out-field--span2">
+            <span class="mkt-out-field__label">{{ t('common.remark') }}</span>
+            <el-input
+              v-model="snapshotLabel"
+              clearable
+              :placeholder="t('pages.marketingFlow.snapshotLabelPlaceholder')"
+            />
+          </label>
+        </div>
+        <div class="mkt-plan-filter__footer">
+          <el-button type="success" :loading="snapshotSaving" @click="saveOutstandingSnapshot">
+            {{ t('pages.marketingFlow.snapshotSave') }}
+          </el-button>
+          <el-button type="primary" :icon="Refresh" :loading="snapshotsLoading" @click="loadSnapshotList">
+            {{ t('common.refresh') }}
+          </el-button>
+        </div>
+      </div>
+      <el-table
+        :data="snapshots"
+        border
+        stripe
+        size="small"
+        v-loading="snapshotsLoading"
+        max-height="360"
+        :empty-text="t('common.tableEmpty')"
+      >
+        <el-table-column prop="id" label="ID" width="64" align="center" />
+        <el-table-column prop="created_at" :label="t('common.date')" width="168" />
+        <el-table-column prop="label" :label="t('common.remark')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="row_count" :label="t('pages.marketingFlow.rowCountLabel')" width="100" align="right" />
+        <el-table-column :label="t('common.actions')" width="100" align="center">
+          <template #default="{ row }">
+            <el-button type="primary" link size="small" @click="openSnapshotDetail(row.id)">
+              {{ t('pages.marketingFlow.snapshotView') }}
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
 
     <el-dialog
       v-model="snapshotDetailVisible"
@@ -1002,9 +1238,7 @@
         <el-form-item :label="t('common.poNo')">
           <el-input :model-value="selectedPoForMaterialFollowUp?.po_number" disabled />
         </el-form-item>
-        <el-form-item :label="t('pages.marketingFlow.materialDone')">
-          <el-switch v-model="materialFollowUpForm.done" />
-        </el-form-item>
+        <p class="text-xs text-slate-600 mb-3">{{ t('pages.marketingFlow.materialDoneHint') }}</p>
         <el-form-item :label="t('pages.marketingFlow.materialRemark')">
           <el-input v-model="materialFollowUpForm.remark" type="textarea" :rows="4" :placeholder="t('pages.marketingFlow.materialRemarkPlaceholder')" />
         </el-form-item>
@@ -1022,7 +1256,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DArrowLeft, DArrowRight, Document, Download, Printer, User, Close, Check, Warning, CircleCheck, Refresh, RefreshLeft, ArrowDown, EditPen } from '@element-plus/icons-vue'
+import { Download, Close, Check, Warning, CircleCheck, Refresh, RefreshLeft, ArrowDown, EditPen, List, Search, MoreFilled } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import OutstandingColFilterHeader from '../../components/admin/OutstandingColFilterHeader.vue'
 import OutstandingWorkbenchDialogs from '../../components/admin/OutstandingWorkbenchDialogs.vue'
@@ -1058,14 +1292,16 @@ import {
 import { can } from '../../security/permissions'
 import { useModulePermission } from '../../composables/useModulePermission'
 import { stuckReasonLabel as translateStuckReason } from '../../utils/mktStuckReason.js'
-import { formatDate } from '../../utils/format.js'
+import { soListNextStep, soListNextStepActionable } from '../../utils/mktStage.js'
+import { outstandingNextAction, outstandingWorkStatus } from '../../utils/outstandingWork.js'
+import { formatDate, statusType } from '../../utils/format.js'
 
 const OUTSTANDING_LINES_LIMIT = 1000
 const outstandingPage = ref(1)
 const outstandingPageSize = ref(100)
 const outstandingTotal = ref(0)
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const { canAdvance, canRollback, canUpdate: canFlowUpdate } = useModulePermission('marketingFlow')
 const canEditPoDetail = can('po', 'update')
 const route = useRoute()
@@ -1085,6 +1321,7 @@ const pageTitle = computed(() => {
 
 const pageSubtitle = computed(() => {
   if (section.value === 'flow') return t('pages.marketingFlow.subtitle')
+  if (section.value === 'outstanding') return t('pages.marketingFlow.outstandingSubtitle')
   return ''
 })
 const loading = ref(false)
@@ -1097,6 +1334,7 @@ const flowPageSize = ref(20)
 const stageCountMap = ref({})
 const stageList = ref([])
 const filterStage = ref(null)
+const flowSoStatus = ref('')
 const flowKeyword = ref('')
 let flowWatchReady = false
 let flowKeywordTimer = null
@@ -1117,6 +1355,13 @@ const flowDateRange = ref(null)
 const outstandingDateRange = ref(null)
 
 const orderDateRangeShortcuts = computed(() => [
+  {
+    text: t('pages.marketingFlow.shortcutToday'),
+    value: () => {
+      const e = new Date()
+      return [e, e]
+    },
+  },
   {
     text: t('pages.marketingFlow.shortcutLast7Days'),
     value: () => {
@@ -1181,6 +1426,11 @@ const poSearch = ref('')
 const factoryCode = ref('')
 const outstandingFactoryOptions = ref([])
 const outstandingPoCategory = ref('')
+const outstandingMaterialGroup = ref('')
+const outstandingMktStageMin = ref('in_outstanding')
+const outstandingViewMode = ref('work')
+const outstandingCompactView = computed(() => outstandingViewMode.value === 'work')
+const workbenchOverride = ref(null)
 const materialStatus = ref('')
 const outstandingTableRef = ref(null)
 const outstandingSelection = ref([])
@@ -1192,7 +1442,7 @@ const editingOutstandingId = ref(null)
 const outstandingEditSnapshot = ref(null)
 
 const outstandingTableKey = computed(
-  () => `out-${outstandingPoCategory.value || 'all'}-${outstandingDeliverySlotCount.value}`,
+  () => `out-${outstandingPoCategory.value || 'all'}-${outstandingDeliverySlotCount.value}-${outstandingCompactView.value ? 'work' : 'xls'}`,
 )
 
 function formatOutstandingDate(val) {
@@ -1208,6 +1458,25 @@ function formatOutstandingCell(val) {
   return val
 }
 
+function formatMrpAllocLabel(status) {
+  const key = {
+    unsynced: 'pages.marketingFlow.outstandingMrpUnsynced',
+    outstanding: 'pages.marketingFlow.outstandingMrpOutstanding',
+    partial: 'pages.marketingFlow.outstandingMrpPartial',
+    completed: 'pages.marketingFlow.outstandingMrpCompleted',
+    cancelled: 'pages.marketingFlow.outstandingMrpCancelled',
+  }[String(status || 'unsynced')]
+  return t(key || 'pages.marketingFlow.outstandingMrpUnsynced')
+}
+
+function formatMrpAllocCell(row) {
+  const status = row?.mrp_alloc_status || 'unsynced'
+  const label = formatMrpAllocLabel(status)
+  const rem = row?.mrp_qty_remaining
+  if (status === 'unsynced' || rem == null || rem === '') return label
+  return `${label} · ${rem}`
+}
+
 const ppicUsers = ref([])
 const ppicAssignments = ref({})
 const assignDialogVisible = ref(false)
@@ -1216,7 +1485,7 @@ const selectedPoForAssignment = ref(null)
 const assigning = ref(false)
 
 const materialFollowUpDialogVisible = ref(false)
-const materialFollowUpForm = reactive({ done: false, remark: '' })
+const materialFollowUpForm = reactive({ remark: '' })
 const selectedPoForMaterialFollowUp = ref(null)
 const savingMaterialFollowUp = ref(false)
 
@@ -1284,6 +1553,8 @@ const outstandingTableColumnDefs = computed(() => {
     { prop: 'line_etd', label: 'REPLY ETD', width: 110, kind: 'date' },
     { prop: 'stock_wh_qty', label: 'STOCK WH', width: 96, align: 'right', kind: 'text' },
     { prop: 'balance_qty', label: 'BALANCE', width: 100, align: 'right', kind: 'text' },
+    { prop: 'mkt_stage', label: t('pages.marketingFlow.outstandingColMktStage'), minWidth: 140, kind: 'mkt_stage' },
+    { prop: 'mrp_alloc_status', label: t('pages.marketingFlow.outstandingColMrpAlloc'), minWidth: 170, kind: 'mrp_alloc' },
     { prop: 'system_reference', label: 'SYSTEM NO', minWidth: 140, kind: 'text' },
     { prop: 'detail_remark', label: 'REMARK PO', minWidth: 140, kind: 'text' },
     { prop: 'remark_marketing', label: 'REMARK', minWidth: 200, kind: 'remark_marketing' },
@@ -1376,6 +1647,8 @@ function buildOutstandingQueryParams(extra = {}) {
     material_status: materialStatus.value || undefined,
     factory_code: factoryCode.value || undefined,
     po_category: outstandingPoCategory.value || undefined,
+    material_group: outstandingMaterialGroup.value || undefined,
+    mkt_stage_min: outstandingMktStageMin.value || undefined,
     skip: (page - 1) * size,
     limit: Math.min(size, OUTSTANDING_LINES_LIMIT),
     ...buildOutstandingDateParams(),
@@ -1603,22 +1876,44 @@ function planningDefaultRange() {
 }
 const planningDateRange = ref(planningDefaultRange())
 const planningFactory = ref('')
+const planningPoSearch = ref('')
+const planningMktStageMin = ref('in_outstanding')
 const planningRows = ref([])
 const planningLoading = ref(false)
+const planningShipRows = ref([])
 
 const todayOnDate = ref(isoDateLocal(new Date()))
 const deliveryDateRange = ref(null)
+const deliverySearch = ref('')
 
 const todayFactory = ref('')
+const todayMktStageMin = ref('in_outstanding')
 const todayLoading = ref(false)
 const todayPlanned = ref([])
-const todayEtd = ref([])
+const todayOverdue = ref([])
 const todaySj = ref([])
+
+const todayPlanRows = computed(() => {
+  const overdue = (todayOverdue.value || []).map((r) => ({ ...r, overdue: true }))
+  const ids = new Set(overdue.map((r) => `${r.po_detail_id}-${r.sequence_no}-${r.delivery_date}`))
+  const today = (todayPlanned.value || []).filter((r) => {
+    const key = `${r.po_detail_id}-${r.sequence_no}-${r.delivery_date}`
+    return !ids.has(key)
+  })
+  return [...overdue, ...today]
+})
+
+const workbenchRows = computed(() => {
+  if (section.value === 'planning') return planningShipRows.value
+  if (workbenchOverride.value?.length) return workbenchOverride.value
+  return outstandingSelection.value
+})
 
 const snapshots = ref([])
 const snapshotsLoading = ref(false)
 const snapshotLabel = ref('')
 const snapshotSaving = ref(false)
+const snapshotArchiveVisible = ref(false)
 const snapshotDetailVisible = ref(false)
 const snapshotDetailRows = ref([])
 const snapshotDetailTitle = ref('')
@@ -1713,6 +2008,9 @@ function buildFlowPageParams() {
   if (filterStage.value) {
     params.mkt_workflow_stage = filterStage.value
   }
+  if (flowSoStatus.value) {
+    params.status = flowSoStatus.value
+  }
   if (flowKeyword.value.trim()) {
     params.q = flowKeyword.value.trim()
   }
@@ -1724,16 +2022,9 @@ function buildFlowPageParams() {
 }
 
 const flowStats = computed(() => ({
-  stuck: rows.value.filter((row) => Boolean(row.stuck_reason)).length,
-  ready: rows.value.filter((row) => isStageComplete(row)).length,
+  stuck: rows.value.filter((row) => Boolean(row.stuck_reason) || soListNextStepBlocked(row)).length,
+  actionable: rows.value.filter((row) => soListNextStepActionable(soListNextStepKind(row))).length,
 }))
-
-function isStageComplete(row) {
-  const s = row.mkt_workflow_stage
-  if (!s) return false
-  const idx = stageList.value.indexOf(s)
-  return idx >= 0 && idx < stageList.value.length - 1 && canAdvanceRow(row)
-}
 
 function needsRekapPrintConfirm(row) {
   const nxt = nextFlowStage(row?.mkt_workflow_stage)
@@ -1747,14 +2038,6 @@ function canAdvanceRow(row) {
   const s = row.mkt_workflow_stage
   const idx = stageList.value.indexOf(normalizeFlowStage(s))
   return idx >= 0 && idx < stageList.value.length - 1
-}
-
-function advanceTooltip(row) {
-  if (needsRekapPrintConfirm(row) || row?.stuck_reason === 'Menunggu rekap PO diprint') {
-    return t('pages.marketingFlow.advanceBlockedNeedRekapPrint')
-  }
-  if (row?.stuck_reason) return stuckReasonLabel(row.stuck_reason)
-  return t('pages.marketingFlow.advanceStageHint')
 }
 
 function canRollbackRow(row) {
@@ -1776,6 +2059,7 @@ function toggleStageFilter(stage) {
 
 function clearFilter() {
   filterStage.value = null
+  flowSoStatus.value = ''
   flowPage.value = 1
   load()
 }
@@ -1834,6 +2118,16 @@ function onOutstandingFactoryChange() {
   loadOutstanding()
 }
 
+function onOutstandingPoSearchChange() {
+  outstandingPage.value = 1
+  loadOutstanding()
+}
+
+function onOutstandingSheetChange() {
+  outstandingPage.value = 1
+  loadOutstanding()
+}
+
 function onOutstandingPageSizeChange() {
   outstandingPage.value = 1
   loadOutstanding()
@@ -1842,16 +2136,26 @@ function onOutstandingPageSizeChange() {
 function resetOutstandingFilters() {
   outstandingDateRange.value = null
   outstandingPoCategory.value = ''
+  outstandingMaterialGroup.value = ''
+  outstandingMktStageMin.value = 'in_outstanding'
   balanceFilter.value = 'exclude_zero'
   poSearch.value = ''
   factoryCode.value = ''
   materialStatus.value = ''
   outstandingPage.value = 1
+  workbenchOverride.value = null
   clearOutstandingColFilters()
+  if (route.query.po_q) {
+    const nextQuery = { ...route.query }
+    delete nextQuery.po_q
+    router.replace({ path: route.path, query: nextQuery })
+    return
+  }
   loadOutstanding()
 }
 
 function openOutstandingSchedule() {
+  workbenchOverride.value = null
   if (!outstandingSelection.value.length) {
     ElMessage.warning(t('pages.marketingFlow.selectRowsFirst'))
     return
@@ -1860,6 +2164,7 @@ function openOutstandingSchedule() {
 }
 
 function openOutstandingPi() {
+  workbenchOverride.value = null
   if (!outstandingSelection.value.length) {
     ElMessage.warning(t('pages.marketingFlow.selectRowsFirst'))
     return
@@ -1868,6 +2173,7 @@ function openOutstandingPi() {
 }
 
 function openOutstandingShip() {
+  workbenchOverride.value = null
   if (!outstandingSelection.value.length) {
     ElMessage.warning(t('pages.marketingFlow.selectRowsFirst'))
     return
@@ -1875,10 +2181,81 @@ function openOutstandingShip() {
   outstandingShipVisible.value = true
 }
 
+function workOnOutstandingRow(row, action) {
+  if (!row) return
+  workbenchOverride.value = [row]
+  if (action === 'schedule') outstandingScheduleVisible.value = true
+  else if (action === 'ship') outstandingShipVisible.value = true
+  else if (action === 'pi') outstandingPiVisible.value = true
+}
+
+function outstandingWorkStatusLabel(row) {
+  return t(`pages.marketingFlow.outWorkStatus.${outstandingWorkStatus(row)}`)
+}
+
+function outstandingWorkStatusType(row) {
+  const st = outstandingWorkStatus(row)
+  if (st === 'shipped' || st === 'closed') return 'success'
+  if (st === 'scheduled') return 'success'
+  if (st === 'partial_ship' || st === 'partial_schedule') return 'warning'
+  return 'info'
+}
+
+function outstandingRowNextLabel(row) {
+  return t(`pages.marketingFlow.outNext.${outstandingNextAction(row)}`)
+}
+
+function outstandingRowNextType(row) {
+  const a = outstandingNextAction(row)
+  if (a === 'ship') return 'warning'
+  if (a === 'schedule') return 'primary'
+  return 'default'
+}
+
+function runOutstandingRowPrimary(row) {
+  const a = outstandingNextAction(row)
+  if (a === 'schedule') workOnOutstandingRow(row, 'schedule')
+  else if (a === 'ship') workOnOutstandingRow(row, 'ship')
+  else goDeliveryFromPo({ po_number: row.thi_order })
+}
+
+function onOutstandingRowMore(row, command) {
+  if (command === 'pi') workOnOutstandingRow(row, 'pi')
+  else if (command === 'schedule') workOnOutstandingRow(row, 'schedule')
+  else if (command === 'ship') workOnOutstandingRow(row, 'ship')
+  else if (command === 'edit') startOutstandingRowEdit(row)
+  else if (command === 'so') goPo(row.po_id)
+  else if (command === 'planning') goPlanningFromPo({ po_number: row.thi_order })
+  else if (command === 'delivery') goDeliveryFromPo({ po_number: row.thi_order })
+}
+
+const outstandingStats = computed(() => {
+  const list = outstandingDisplayRows.value || []
+  let needSchedule = 0
+  let needShip = 0
+  for (const row of list) {
+    const a = outstandingNextAction(row)
+    if (a === 'schedule') needSchedule += 1
+    if (a === 'ship') needShip += 1
+  }
+  return {
+    shown: list.length,
+    needSchedule,
+    needShip,
+    selected: outstandingSelection.value.length,
+  }
+})
+
 function resetFlowFilters() {
   flowDateRange.value = null
   flowKeyword.value = ''
   filterStage.value = null
+  flowSoStatus.value = ''
+  flowPage.value = 1
+  load()
+}
+
+function onFlowSoStatusChange() {
   flowPage.value = 1
   load()
 }
@@ -1891,7 +2268,11 @@ async function loadDelivery() {
       Array.isArray(dr) && dr.length === 2 && dr[0] && dr[1]
         ? { delivery_date_from: dr[0], delivery_date_to: dr[1] }
         : {}
-    const linesResp = await listMarketingDeliveryLines({ limit: 500, ...drParams })
+    const linesResp = await listMarketingDeliveryLines({
+      limit: 500,
+      q: deliverySearch.value?.trim() || undefined,
+      ...drParams,
+    })
     const lines = Array.isArray(linesResp) ? linesResp : (linesResp?.data || [])
     deliveryRows.value = lines.map((r) => ({
       ...r,
@@ -1909,7 +2290,6 @@ function onMasterPlanningTabChange(name) {
   if (name === 'planning') loadPlanning()
   else if (name === 'delivery') loadDelivery()
   else if (name === 'today') loadDeliveryToday()
-  else if (name === 'master') loadSnapshotList()
 }
 
 async function loadPlanning() {
@@ -1922,6 +2302,8 @@ async function loadPlanning() {
       date_from: df,
       date_to: dt,
       factory_code: planningFactory.value?.trim() || undefined,
+      mkt_stage_min: planningMktStageMin.value || undefined,
+      po_q: planningPoSearch.value?.trim() || undefined,
     })
     planningRows.value = Array.isArray(r?.data) ? r.data : []
   } catch (e) {
@@ -1938,14 +2320,15 @@ async function loadDeliveryToday() {
     const r = await getMarketingDeliveryToday({
       on_date: todayOnDate.value || undefined,
       factory_code: todayFactory.value?.trim() || undefined,
+      mkt_stage_min: todayMktStageMin.value || undefined,
     })
     todayPlanned.value = Array.isArray(r?.planned_delivery_slots) ? r.planned_delivery_slots : []
-    todayEtd.value = Array.isArray(r?.lines_reply_etd_today) ? r.lines_reply_etd_today : []
+    todayOverdue.value = Array.isArray(r?.overdue_slots) ? r.overdue_slots : []
     todaySj.value = Array.isArray(r?.surat_jalan_lines) ? r.surat_jalan_lines : []
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
     todayPlanned.value = []
-    todayEtd.value = []
+    todayOverdue.value = []
     todaySj.value = []
   } finally {
     todayLoading.value = false
@@ -1978,6 +2361,8 @@ async function saveOutstandingSnapshot() {
         material_status: materialStatus.value || null,
         factory_code: factoryCode.value?.trim() || null,
         po_category: outstandingPoCategory.value?.trim() || null,
+        material_group: outstandingMaterialGroup.value?.trim() || null,
+        mkt_stage_min: outstandingMktStageMin.value?.trim() || null,
         ...buildOutstandingDateParams(),
       },
     })
@@ -2019,14 +2404,15 @@ onMounted(async () => {
     return
   }
   if (section.value === 'outstanding') {
+    poSearch.value = String(route.query.po_q || '').trim()
     await loadOutstanding()
     return
   }
+  planningPoSearch.value = String(route.query.po_q || '').trim()
   const tab = masterPlanningTab.value
   if (tab === 'planning') await loadPlanning()
   else if (tab === 'delivery') await loadDelivery()
-  else if (tab === 'today') await loadDeliveryToday()
-  else await loadSnapshotList()
+  else await loadDeliveryToday()
 })
 
 onUnmounted(() => {
@@ -2102,48 +2488,115 @@ async function submitAssignment() {
   }
 }
 
-function ppicStatusLabel(status) {
-  const labels = {
-    pending: t('ppicWorkflow.pending'),
-    in_progress: t('ppicWorkflow.inProgress'),
-    completed: t('ppicWorkflow.completed'),
-  }
-  return labels[status] || status || '—'
-}
-
 function stuckReasonLabel(reason) {
   return translateStuckReason(reason, t)
 }
 
-function openMaterialFollowUpDialog(row) {
-  selectedPoForMaterialFollowUp.value = row
-  materialFollowUpForm.done = Boolean(row.material_followup_done)
-  materialFollowUpForm.remark = row.material_followup_remark || ''
-  materialFollowUpDialogVisible.value = true
+function soListNextStepKind(row) {
+  return soListNextStep(row, { hasPpic: Boolean(ppicAssignments.value[row?.id]) })
 }
 
-async function toggleMaterialFollowUp(row, done) {
-  try {
-    await updatePo(row.id, {
-      material_followup_done: done,
-      material_followup_remark: row.material_followup_remark || undefined,
-    })
-    row.material_followup_done = done
-    ElMessage.success(t('common.saveSuccess'))
-    await load()
-  } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
+function soListNextStepLabel(row) {
+  return t(`pages.marketingFlow.nextStep.${soListNextStepKind(row)}`)
+}
+
+function soListNextStepBlocked(row) {
+  const kind = soListNextStepKind(row)
+  return Boolean(row?.stuck_reason) || needsRekapPrintConfirm(row) || kind === 'wait'
+}
+
+function soListNextStepHint(row) {
+  const kind = soListNextStepKind(row)
+  if (row?.stuck_reason) {
+    const label = stuckReasonLabel(row.stuck_reason)
+    if (String(row.stuck_reason).includes('Delivery belum')) {
+      return `${label} ${t('pages.marketingFlow.deliveryDraftHint')}`
+    }
+    return label
   }
+  if (needsRekapPrintConfirm(row)) return stuckReasonLabel('Menunggu rekap PO diprint')
+  if (kind === 'advance' && canAdvanceRow(row)) return t('pages.marketingFlow.readyToAdvance')
+  return t(`pages.marketingFlow.nextStepHint.${kind}`)
+}
+
+function soListNextStepTagType(row) {
+  const kind = soListNextStepKind(row)
+  if (kind === 'done') return 'success'
+  if (kind === 'wait' || soListNextStepBlocked(row)) return 'warning'
+  if (kind === 'advance' && canAdvanceRow(row)) return 'success'
+  return 'primary'
+}
+
+function soListNextStepTagClass(row) {
+  return {
+    'mkt-stuck-tag--blocked': soListNextStepBlocked(row) && soListNextStepKind(row) !== 'done',
+    'mkt-stuck-tag--ready': soListNextStepKind(row) === 'done' || (soListNextStepKind(row) === 'advance' && canAdvanceRow(row)),
+  }
+}
+
+function soListPrimaryVisible(row) {
+  const kind = soListNextStepKind(row)
+  if (kind === 'wait' || kind === 'done') return false
+  if (kind === 'advance' && !canAdvance) return false
+  if (kind === 'assign_ppic' && !canEditPoDetail) return false
+  return true
+}
+
+function soListPrimaryLabel(row) {
+  return soListNextStepLabel(row)
+}
+
+function soListPrimaryType(row) {
+  const kind = soListNextStepKind(row)
+  if (kind === 'rekap' || kind === 'delivery' || kind === 'invoice') return 'success'
+  if (kind === 'assign_ppic' || kind === 'planning') return 'warning'
+  return 'primary'
+}
+
+function soListPrimaryLoading(row) {
+  return advancing.value === row?.id && soListNextStepKind(row) === 'advance'
+}
+
+function soListPrimaryDisabled(row) {
+  if (advancing.value != null && advancing.value !== row?.id) return true
+  if (soListNextStepKind(row) === 'advance') return !canAdvanceRow(row)
+  return false
+}
+
+function runSoListPrimary(row) {
+  const kind = soListNextStepKind(row)
+  if (kind === 'rekap') openRekapPrintDialog(row)
+  else if (kind === 'confirm_so') goPo(row.id)
+  else if (kind === 'assign_ppic') openAssignDialog(row)
+  else if (kind === 'advance') advance(row)
+  else if (kind === 'outstanding') goOutstandingFromPo(row)
+  else if (kind === 'planning') goPlanningFromPo(row)
+  else if (kind === 'delivery' || kind === 'invoice') goDeliveryFromPo(row)
+}
+
+function onSoListMore(row, command) {
+  if (command === 'detail') goPo(row.id)
+  else if (command === 'rekap') openRekapPrintDialog(row)
+  else if (command === 'assign') openAssignDialog(row)
+  else if (command === 'outstanding') goOutstandingFromPo(row)
+  else if (command === 'planning') goPlanningFromPo(row)
+  else if (command === 'delivery') goDeliveryFromPo(row)
+  else if (command === 'remark') openMaterialFollowUpDialog(row)
+  else if (command === 'rollback') openRollbackDialog(row)
+}
+
+function openMaterialFollowUpDialog(row) {
+  selectedPoForMaterialFollowUp.value = row
+  materialFollowUpForm.remark = row.material_followup_remark || ''
+  materialFollowUpDialogVisible.value = true
 }
 
 async function saveMaterialFollowUp() {
   savingMaterialFollowUp.value = true
   try {
     await updatePo(selectedPoForMaterialFollowUp.value.id, {
-      material_followup_done: materialFollowUpForm.done,
       material_followup_remark: materialFollowUpForm.remark.trim() || null,
     })
-    selectedPoForMaterialFollowUp.value.material_followup_done = materialFollowUpForm.done
     selectedPoForMaterialFollowUp.value.material_followup_remark = materialFollowUpForm.remark.trim() || null
     ElMessage.success(t('common.saveSuccess'))
     materialFollowUpDialogVisible.value = false
@@ -2211,6 +2664,102 @@ function goPo(id) {
   router.push({ path: '/admin/po', query: { po_id: String(id) } })
 }
 
+function soStatusLabel(st) {
+  const key = String(st || '').trim().toLowerCase()
+  if (!key) return t('common.emptyValue')
+  if (key === 'canceled' && te('status.cancelled')) return t('status.cancelled')
+  if (te(`status.${key}`)) return t(`status.${key}`)
+  return st
+}
+
+function goOutstandingFromPo(row) {
+  const q = String(row?.po_number || '').trim()
+  router.push({
+    path: '/admin/marketing-flow/outstanding',
+    query: q ? { po_q: q } : {},
+  })
+}
+
+function goPlanningFromPo(row) {
+  const q = String(row?.po_number || '').trim()
+  router.push({
+    path: '/admin/marketing-flow/planning',
+    query: q ? { po_q: q } : {},
+  })
+}
+
+function goDeliveryFromPo(row) {
+  const so = String(row?.po_number || '').trim()
+  router.push({
+    path: '/admin/delivery',
+    query: so ? { keyword: so } : {},
+  })
+}
+
+function planningShipStatusLabel(status) {
+  const key = String(status || '').trim()
+  if (key === 'partial') return t('pages.marketingFlow.planningShipStatusPartial')
+  if (key === 'shipped') return t('pages.marketingFlow.planningShipStatusShipped')
+  if (key === 'too_early') return t('pages.marketingFlow.planningShipStatusTooEarly')
+  return t('pages.marketingFlow.planningShipStatusPlanned')
+}
+
+function planningShipTagType(status) {
+  if (status === 'shipped') return 'success'
+  if (status === 'partial') return 'warning'
+  if (status === 'too_early') return 'info'
+  return ''
+}
+
+function canShipPlanningSlot(row) {
+  const st = String(row?.ship_status || '')
+  return st === 'planned' || st === 'partial'
+}
+
+function planningSlotToWorkbenchRow(row) {
+  return {
+    po_id: row.po_id,
+    po_detail_id: row.po_detail_id,
+    po_number: row.po_number,
+    thi_order: row.thi_order || row.po_number,
+    system_reference: row.thi_line_ref || row.lot_no,
+    material_name: row.material_name,
+    customer_name: row.customer_name,
+    balance_qty: row.balance_qty,
+    line_etd: row.line_etd,
+  }
+}
+
+function shipPlanningSlot(row) {
+  if (!canShipPlanningSlot(row)) return
+  planningShipRows.value = [planningSlotToWorkbenchRow(row)]
+  outstandingShipVisible.value = true
+}
+
+function goDeliveryFromPlanning(row) {
+  const q = {}
+  const so = String(row?.po_number || '').trim()
+  if (so) q.keyword = so
+  const fc = row?.factory_code != null ? String(row.factory_code).trim() : ''
+  if (fc) q.factory_code = fc
+  router.push({ path: '/admin/delivery', query: q })
+}
+
+function onWorkbenchDone() {
+  workbenchOverride.value = null
+  if (section.value === 'outstanding') {
+    loadOutstanding()
+    return
+  }
+  loadPlanning()
+  if (masterPlanningTab.value === 'today') loadDeliveryToday()
+}
+
+async function openSnapshotArchive() {
+  snapshotArchiveVisible.value = true
+  await loadSnapshotList()
+}
+
 function goDelivery(row) {
   const q = {}
   if (row.delivery_id != null && row.delivery_id !== '') q.delivery_id = String(row.delivery_id)
@@ -2242,7 +2791,7 @@ async function pullCrToday() {
   const today = new Date().toISOString().slice(0, 10)
   flowDateRange.value = [today, today]
   await load()
-  ElMessage.success(t('pages.marketingFlow.pullCrTodayDone'))
+  ElMessage.success(t('pages.marketingFlow.soTodayDone'))
 }
 
 async function downloadDailyPoReportXlsx() {
@@ -2301,7 +2850,10 @@ async function downloadDelivery() {
     Array.isArray(dr) && dr.length === 2 && dr[0] && dr[1]
       ? { delivery_date_from: dr[0], delivery_date_to: dr[1] }
       : {}
-  const suffix = marketingDeliveryCsvUrl(drParams)
+  const suffix = marketingDeliveryCsvUrl({
+    ...drParams,
+    q: deliverySearch.value?.trim() || undefined,
+  })
   try {
     await fetchAuthenticatedDocument(suffix, { mode: 'download', downloadFallbackName: 'marketing-delivery.csv' })
   } catch (e) {
@@ -2315,7 +2867,10 @@ async function downloadDeliveryXlsx() {
     Array.isArray(dr) && dr.length === 2 && dr[0] && dr[1]
       ? { delivery_date_from: dr[0], delivery_date_to: dr[1] }
       : {}
-  const suffix = marketingDeliveryXlsxPath(drParams)
+  const suffix = marketingDeliveryXlsxPath({
+    ...drParams,
+    q: deliverySearch.value?.trim() || undefined,
+  })
   try {
     await fetchAuthenticatedDocument(suffix, { mode: 'download', downloadFallbackName: 'delivery_list_sistem.xlsx' })
   } catch (e) {
@@ -2464,9 +3019,16 @@ function handleOutstandingExportCommand(command) {
 
 .mkt-flow-filter__fields {
   display: grid;
-  grid-template-columns: minmax(240px, 420px);
+  grid-template-columns: minmax(240px, 420px) minmax(180px, 240px);
   gap: 12px 14px;
   align-items: end;
+}
+
+.mkt-flow-howto {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #64748b;
 }
 
 .mkt-flow-filter__footer {
@@ -2618,7 +3180,7 @@ function handleOutstandingExportCommand(command) {
 
 .mkt-out-filter__fields {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px 12px;
   align-items: end;
 }
@@ -2634,6 +3196,30 @@ function handleOutstandingExportCommand(command) {
   padding-top: 0;
 }
 
+.mkt-out-filter__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.mkt-out-view-toggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.mkt-out-view-toggle__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
 .mkt-out-field {
   display: flex;
   flex-direction: column;
@@ -2647,6 +3233,13 @@ function handleOutstandingExportCommand(command) {
   line-height: 1.25;
   color: #475569;
   margin: 0;
+}
+
+.mkt-out-field__hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #64748b;
 }
 
 .mkt-out-field__control {
@@ -2804,12 +3397,37 @@ function handleOutstandingExportCommand(command) {
 
 .marketing-flow-table {
   width: 100%;
-  min-width: 1280px;
+  min-width: 1180px;
+}
+
+.mkt-next-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.mkt-next-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #64748b;
+}
+
+.mkt-so-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .marketing-outstanding-table {
   width: 100%;
   min-width: 1400px;
+}
+
+.marketing-outstanding-table.outstanding-table--work {
+  min-width: 1180px;
 }
 
 .marketing-outstanding-table :deep(tr.out-row--g0 > td.el-table__cell) {

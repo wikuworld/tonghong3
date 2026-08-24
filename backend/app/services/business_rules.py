@@ -70,13 +70,14 @@ def require_packing_ready(db: "Session", packing_id: int) -> None:
 
 
 # --- Invoice ↔ Delivery ---
-def po_numbers_from_delivery(db: "Session", delivery_id: int) -> set[str]:
-    from app.models import DeliveryDetail, PoDetail, PoHeader, ProductionDetail
+def _po_details_from_delivery(db: "Session", delivery_id: int) -> list:
+    from app.models import DeliveryDetail, PoDetail, ProductionDetail
 
     details = db.scalars(
         select(DeliveryDetail).where(DeliveryDetail.delivery_id == delivery_id)
     ).all()
-    seen: set[str] = set()
+    found = []
+    seen_ids: set[int] = set()
     for d in details:
         pod = None
         if d.po_detail_id:
@@ -85,8 +86,41 @@ def po_numbers_from_delivery(db: "Session", delivery_id: int) -> set[str]:
             pd = db.get(ProductionDetail, d.production_detail_id)
             if pd and pd.po_detail_id:
                 pod = db.get(PoDetail, pd.po_detail_id)
-        if not pod:
+        if not pod or pod.po_id is None:
             continue
+        if int(pod.id) in seen_ids:
+            continue
+        seen_ids.add(int(pod.id))
+        found.append(pod)
+    return found
+
+
+def po_ids_from_delivery(db: "Session", delivery_id: int) -> set[int]:
+    return {int(pod.po_id) for pod in _po_details_from_delivery(db, delivery_id) if pod.po_id}
+
+
+def po_id_from_delivery(db: "Session", delivery_id: int) -> int | None:
+    """Satu SO untuk header invoice. Delivery MRP memakai po_detail_id, bukan packing.production_id."""
+    from app.models import DeliveryHeader, PackingHeader, ProductionOrder
+
+    ids = po_ids_from_delivery(db, delivery_id)
+    hdr = db.get(DeliveryHeader, delivery_id)
+    if hdr and hdr.packing_id:
+        packing = db.get(PackingHeader, hdr.packing_id)
+        if packing and packing.production_id:
+            production = db.get(ProductionOrder, packing.production_id)
+            if production and production.po_id:
+                ids.add(int(production.po_id))
+    if len(ids) == 1:
+        return next(iter(ids))
+    return None
+
+
+def po_numbers_from_delivery(db: "Session", delivery_id: int) -> set[str]:
+    from app.models import PoHeader
+
+    seen: set[str] = set()
+    for pod in _po_details_from_delivery(db, delivery_id):
         ph = db.get(PoHeader, pod.po_id)
         if ph and ph.po_number:
             seen.add(ph.po_number)

@@ -47,8 +47,8 @@
       </div>
 
       <el-table v-if="poList.length" :data="poList" border size="small" empty-text="—">
-        <el-table-column prop="no_po" label="PO" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="no_so" label="SO" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="100" show-overflow-tooltip />
         <el-table-column prop="item_name" :label="t('pages.mrpPacking.poItem')" min-width="140" show-overflow-tooltip />
         <el-table-column prop="customer" :label="t('common.customer')" min-width="120" show-overflow-tooltip />
         <el-table-column :label="t('pages.mrpPacking.qtyPlan')" width="90" align="right">
@@ -94,7 +94,7 @@
         <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
         <el-table-column prop="kode_packing" :label="t('pages.mrpPacking.kodePacking')" min-width="140" show-overflow-tooltip />
         <el-table-column prop="kode_wip" label="WIP" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="no_po" label="PO" width="120" show-overflow-tooltip />
+        <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" width="120" show-overflow-tooltip />
         <el-table-column prop="customer" :label="t('common.customer')" min-width="120" show-overflow-tooltip />
         <el-table-column :label="t('pages.mrpPacking.pieces')" width="90" align="right">
           <template #default="{ row }">{{ formatQty(row.total_lembar) }}</template>

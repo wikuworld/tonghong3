@@ -340,9 +340,16 @@ const unreadCount = ref(0)
 const isSidebarCollapsed = ref(false)
 let unreadTimer = null
 
+function applySidebarWidthVar() {
+  const width = isSidebarCollapsed.value ? '64px' : '240px'
+  document.documentElement.style.setProperty('--admin-sidebar-width', width)
+}
+
 function toggleSidebar() {
   isSidebarCollapsed.value = !isSidebarCollapsed.value
 }
+
+watch(isSidebarCollapsed, applySidebarWidthVar, { immediate: true })
 
 const erpFlowMenus = [
   { path: '/admin/dashboard', labelKey: 'menu.dashboard', icon: DataAnalysis },
@@ -529,6 +536,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (unreadTimer) clearInterval(unreadTimer)
+  document.documentElement.style.removeProperty('--admin-sidebar-width')
 })
 
 async function loadNotifications() {

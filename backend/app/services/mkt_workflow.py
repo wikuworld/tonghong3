@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -65,31 +65,76 @@ def prev_mkt_stage(current: str | None) -> str | None:
     return MKT_STAGES_ORDER[i - 1]
 
 
-def po_has_delivery_for_po(db: "Session", po_id: int) -> bool:
+def _delivery_status_posted():
+    """Delivery yang menggerakkan tahap MKT: bukan draft / kosong."""
+    from app.models import DeliveryHeader
+
+    st = func.lower(func.trim(func.coalesce(DeliveryHeader.status, "")))
+    return st.notin_(("", "draft"))
+
+
+def _direct_po_detail_delivery_clause():
+    """Baris FG OUT: taut DeliveryDetail.po_detail_id tanpa ProductionDetail."""
+    from app.models import DeliveryDetail
+
+    return or_(
+        DeliveryDetail.production_detail_id.is_(None),
+        DeliveryDetail.production_detail_id == 0,
+    )
+
+
+def _stmt_delivery_ids_via_production(po_id: int, *, posted_only: bool = False):
     from app.models import DeliveryDetail, DeliveryHeader, PoDetail, ProductionDetail
 
-    row = db.scalars(
+    stmt = (
         select(DeliveryHeader.id)
         .join(DeliveryDetail, DeliveryDetail.delivery_id == DeliveryHeader.id)
         .join(ProductionDetail, ProductionDetail.id == DeliveryDetail.production_detail_id)
         .join(PoDetail, PoDetail.id == ProductionDetail.po_detail_id)
         .where(PoDetail.po_id == po_id)
-        .limit(1)
-    ).first()
+    )
+    if posted_only:
+        stmt = stmt.where(_delivery_status_posted())
+    return stmt
+
+
+def _stmt_delivery_ids_via_direct(po_id: int, *, posted_only: bool = False):
+    from app.models import DeliveryDetail, DeliveryHeader, PoDetail
+
+    stmt = (
+        select(DeliveryHeader.id)
+        .join(DeliveryDetail, DeliveryDetail.delivery_id == DeliveryHeader.id)
+        .join(PoDetail, PoDetail.id == DeliveryDetail.po_detail_id)
+        .where(PoDetail.po_id == po_id, _direct_po_detail_delivery_clause())
+    )
+    if posted_only:
+        stmt = stmt.where(_delivery_status_posted())
+    return stmt
+
+
+def _stmt_delivery_ids_for_po(po_id: int, *, posted_only: bool = False):
+    return _stmt_delivery_ids_via_production(po_id, posted_only=posted_only).union(
+        _stmt_delivery_ids_via_direct(po_id, posted_only=posted_only)
+    )
+
+
+def po_has_delivery_for_po(db: "Session", po_id: int) -> bool:
+    row = db.scalars(_stmt_delivery_ids_for_po(po_id, posted_only=True)).first()
     return row is not None
+
+
+def po_has_schedule_for_po(db: "Session", po_id: int) -> bool:
+    return po_id in _po_ids_with_schedule(db, [po_id])
 
 
 def po_has_sj_invpl_prints(db: "Session", po_id: int) -> bool:
     """Minimal satu delivery untuk PO ini: SJ + INVPL (packing terkait) sudah dicetak."""
-    from app.models import Customer, DeliveryDetail, DeliveryHeader, PackingHeader, PoDetail, ProductionDetail
+    from app.models import Customer, DeliveryHeader, PackingHeader
 
-    rows = db.scalars(
-        select(DeliveryHeader)
-        .join(DeliveryDetail, DeliveryDetail.delivery_id == DeliveryHeader.id)
-        .join(ProductionDetail, ProductionDetail.id == DeliveryDetail.production_detail_id)
-        .join(PoDetail, PoDetail.id == ProductionDetail.po_detail_id)
-        .where(PoDetail.po_id == po_id)
-    ).all()
+    header_ids = [int(x) for x in db.scalars(_stmt_delivery_ids_for_po(po_id)).all() if x]
+    if not header_ids:
+        return False
+    rows = list(db.scalars(select(DeliveryHeader).where(DeliveryHeader.id.in_(header_ids))).all())
     if not rows:
         return False
     for dh in rows:
@@ -108,15 +153,11 @@ def po_has_sj_invpl_prints(db: "Session", po_id: int) -> bool:
 
 
 def po_has_invoice_for_po(db: "Session", po_id: int) -> bool:
-    from app.models import DeliveryDetail, DeliveryHeader, Invoice, PoDetail, ProductionDetail
+    from app.models import Invoice
 
     row = db.scalars(
         select(Invoice.id)
-        .join(DeliveryHeader, DeliveryHeader.id == Invoice.delivery_id)
-        .join(DeliveryDetail, DeliveryDetail.delivery_id == DeliveryHeader.id)
-        .join(ProductionDetail, ProductionDetail.id == DeliveryDetail.production_detail_id)
-        .join(PoDetail, PoDetail.id == ProductionDetail.po_detail_id)
-        .where(PoDetail.po_id == po_id)
+        .where(Invoice.delivery_id.in_(_stmt_delivery_ids_for_po(po_id)))
         .limit(1)
     ).first()
     return row is not None
@@ -228,13 +269,7 @@ def _stuck_reason_for_header(
         if not ppic_complete:
             return "Menunggu PPIC menyelesaikan tugas"
 
-    elif nxt == "material_followup":
-        if not row.material_followup_done:
-            return "Material belum di-follow up"
-
     elif nxt == "delivery_arranged":
-        if not row.material_followup_done:
-            return "Material belum selesai di-follow up"
         if not has_delivery:
             return "Delivery belum dibuat"
 
@@ -254,12 +289,40 @@ def _po_ids_with_delivery(db: "Session", po_ids: list[int]) -> set[int]:
 
     if not po_ids:
         return set()
-    rows = db.scalars(
+    via_prod = (
         select(PoDetail.po_id)
         .join(ProductionDetail, ProductionDetail.po_detail_id == PoDetail.id)
         .join(DeliveryDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
         .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
-        .where(PoDetail.po_id.in_(po_ids))
+        .where(PoDetail.po_id.in_(po_ids), _delivery_status_posted())
+    )
+    via_direct = (
+        select(PoDetail.po_id)
+        .join(DeliveryDetail, DeliveryDetail.po_detail_id == PoDetail.id)
+        .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
+        .where(
+            PoDetail.po_id.in_(po_ids),
+            _direct_po_detail_delivery_clause(),
+            _delivery_status_posted(),
+        )
+    )
+    rows = db.scalars(via_prod.union(via_direct)).all()
+    return {int(x) for x in rows if x is not None}
+
+
+def _po_ids_with_schedule(db: "Session", po_ids: list[int]) -> set[int]:
+    from app.models import PoDetail, PoDetailDelivery
+
+    if not po_ids:
+        return set()
+    rows = db.scalars(
+        select(PoDetail.po_id)
+        .join(PoDetailDelivery, PoDetailDelivery.po_detail_id == PoDetail.id)
+        .where(
+            PoDetail.po_id.in_(po_ids),
+            PoDetailDelivery.qty.is_not(None),
+            PoDetailDelivery.qty > 0,
+        )
         .distinct()
     ).all()
     return {int(x) for x in rows if x is not None}
@@ -270,15 +333,22 @@ def _po_ids_with_invoice(db: "Session", po_ids: list[int]) -> set[int]:
 
     if not po_ids:
         return set()
-    rows = db.scalars(
+    via_prod = (
         select(PoDetail.po_id)
         .join(ProductionDetail, ProductionDetail.po_detail_id == PoDetail.id)
         .join(DeliveryDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
         .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
         .join(Invoice, Invoice.delivery_id == DeliveryHeader.id)
         .where(PoDetail.po_id.in_(po_ids))
-        .distinct()
-    ).all()
+    )
+    via_direct = (
+        select(PoDetail.po_id)
+        .join(DeliveryDetail, DeliveryDetail.po_detail_id == PoDetail.id)
+        .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
+        .join(Invoice, Invoice.delivery_id == DeliveryHeader.id)
+        .where(PoDetail.po_id.in_(po_ids), _direct_po_detail_delivery_clause())
+    )
+    rows = db.scalars(via_prod.union(via_direct)).all()
     return {int(x) for x in rows if x is not None}
 
 
@@ -363,9 +433,15 @@ def auto_advance_if_ready(db: "Session", po_id: int) -> str | None:
     if stuck_reason is not None:
         return None
 
+    # Gerbang jadwal hanya untuk auto-advance — lanjut manual tetap boleh tanpa slot.
+    if nxt == "material_followup" and not po_has_schedule_for_po(db, po_id):
+        return None
+
     now = datetime.utcnow()
     row.mkt_workflow_stage = nxt
     row.mkt_workflow_updated_at = now
+    if mkt_stage_index(nxt) >= mkt_stage_index("delivery_arranged"):
+        row.material_followup_done = True
 
     # rekap_printed_at hanya via konfirmasi cetak dialog (stamp_rekap_printed_for_recap)
     return nxt
@@ -532,6 +608,8 @@ def apply_mkt_stage(
     now = datetime.utcnow()
     row.mkt_workflow_stage = normalize_mkt_stage(target)
     row.mkt_workflow_updated_at = now
+    if mkt_stage_index(row.mkt_workflow_stage) >= mkt_stage_index("delivery_arranged"):
+        row.material_followup_done = True
     # Jangan auto-stamp rekap_printed_at di sini — hanya lewat dialog konfirmasi cetak.
 
 

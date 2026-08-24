@@ -7,6 +7,7 @@ import {
   listCustomerBrandMappings,
   fetchNextPoNumber,
 } from '../api/client'
+import { ITEM_CATEGORY_SUEDE, normalizeItemCategory } from '../utils/poMasterResolve.js'
 
 export function brandCustomerIds(brand) {
   if (!brand) return []
@@ -35,8 +36,11 @@ export function pickDefaultBrandId(brandIds, mappings) {
 
 /** Untuk preview/nomor SO: production + PU coated → prefix THIPM. */
 export function inferSoMaterialGroup(formModel, draftLines = []) {
-  const vir = String(formModel?.vir_softness_type || draftLines[0]?.vir_softness_type || '').toLowerCase()
-  const material = String(formModel?.material_name || draftLines[0]?.material_name || '').toLowerCase()
+  const row = draftLines[0] || formModel
+  const cat = normalizeItemCategory(formModel?.item_category || row?.item_category)
+  if (cat === ITEM_CATEGORY_SUEDE) return undefined
+  const vir = String(formModel?.vir_softness_type || row?.vir_softness_type || '').toLowerCase()
+  const material = String(formModel?.material_name || row?.material_name || '').toLowerCase()
   const text = `${vir} ${material}`
   if (text.includes('pu') && !text.includes('suede') && !text.includes('suide')) return 'pu'
   return undefined

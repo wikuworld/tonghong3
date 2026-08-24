@@ -43,7 +43,7 @@
             </span>
           </div>
           <div class="mrp-pack-stat">
-            <span class="mrp-pack-stat__label">PO</span>
+            <span class="mrp-pack-stat__label">{{ t('pages.mrpRencana.poCustomerRef') }}</span>
             <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.no_po) }}</span>
           </div>
           <div class="mrp-pack-stat">
@@ -181,8 +181,8 @@
         </div>
         <div v-if="showAddPo" class="mb-3">
           <el-table :data="availablePos" border size="small" empty-text="—">
-            <el-table-column prop="no_po" label="PO" min-width="110" />
-            <el-table-column prop="no_so" label="SO" min-width="100" />
+            <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" />
+            <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="100" />
             <el-table-column prop="item_name" :label="t('pages.mrpPacking.poItem')" min-width="130" show-overflow-tooltip />
             <el-table-column :label="t('pages.mrpPacking.qtyPlan')" width="90" align="right">
               <template #default="{ row }">{{ formatQty(row.qty_sq) }}</template>
@@ -195,8 +195,8 @@
           </el-table>
         </div>
         <el-table :data="packingPos" border size="small" empty-text="—">
-          <el-table-column prop="no_po" label="PO" min-width="110" />
-          <el-table-column prop="no_so" label="SO" min-width="100" />
+          <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" />
+          <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="100" />
           <el-table-column prop="item_name" :label="t('pages.mrpPacking.poItem')" min-width="130" show-overflow-tooltip />
           <el-table-column :label="t('pages.mrpPacking.qtyPlan')" width="90" align="right">
             <template #default="{ row }">{{ formatQty(row.qty_sq) }}</template>
@@ -399,7 +399,7 @@ table.rolls td.qty{text-align:right}
 <tr><td class="lbl">Customer:</td><td class="val">${esc(p.customer)}</td>
 <td class="lbl">Date:</td><td class="val">${esc(p.date_created)}</td></tr>
 <tr><td class="lbl">Description:</td><td class="val" colspan="3">${esc(p.description)}</td></tr>
-<tr><td class="lbl">PO#:</td><td class="val">${esc(p.no_po)}</td>
+<tr><td class="lbl">${esc(t('pages.mrpRencana.poCustomerRef'))}:</td><td class="val">${esc(p.no_po)}</td>
 <td class="lbl">Thickness:</td><td class="val">${esc(p.thickness)}</td></tr>
 <tr><td class="lbl">Color:</td><td class="val">${esc(p.color)}</td>
 <td class="lbl">Softness:</td><td class="val">${esc(p.softness || '-')}</td></tr>

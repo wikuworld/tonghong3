@@ -168,11 +168,41 @@ def test_schedule_batch_append(db_session):
     )
 
     with patch("app.services.outstanding_actions.log_change"):
-        result = apply_outstanding_schedule_batch(db_session, body, actor="mkt")
+        with patch("app.services.outstanding_actions.sync_mkt_workflow_auto_advance") as sync_mock:
+            result = apply_outstanding_schedule_batch(db_session, body, actor="mkt")
 
     assert result["updated_count"] == 1
     assert result["po_detail_ids"] == [7]
     db_session.commit.assert_called()
+    sync_mock.assert_not_called()
+
+
+def test_schedule_batch_triggers_mkt_sync(db_session):
+    drow = MagicMock()
+    drow.id = 7
+    drow.po_id = 3
+    drow.quantity_order = Decimal("100")
+    drow.line_etd = None
+    db_session.get.return_value = drow
+    db_session.scalars.return_value.all.return_value = []
+
+    body = OutstandingScheduleBatchIn(
+        mode="append",
+        lines=[
+            OutstandingScheduleLineIn(
+                po_detail_id=7,
+                delivery_date=date(2026, 8, 1),
+                qty=Decimal("40"),
+            )
+        ],
+    )
+
+    with patch("app.services.outstanding_actions.log_change"):
+        with patch("app.services.outstanding_actions.sync_mkt_workflow_auto_advance") as sync_mock:
+            result = apply_outstanding_schedule_batch(db_session, body, actor="mkt")
+
+    assert result["updated_count"] == 1
+    sync_mock.assert_called_once_with(db_session, 3, actor="mkt")
 
 
 def test_schedule_batch_rejects_over_order_qty(db_session):

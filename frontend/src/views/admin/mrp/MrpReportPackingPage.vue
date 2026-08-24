@@ -11,7 +11,8 @@
     <div class="admin-inner-card">
       <el-table :data="rows" v-loading="loading" border stripe size="small">
         <el-table-column prop="tanggal" :label="t('common.date')" width="120" />
-        <el-table-column prop="no_po" label="PO" min-width="120" />
+        <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="120" />
+        <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="120" />
         <el-table-column prop="kode_process" :label="t('pages.mrpPacking.kodePacking')" min-width="140" />
         <el-table-column prop="pack" label="Pack" width="80" />
         <el-table-column prop="qty" label="Lembar" width="90" />

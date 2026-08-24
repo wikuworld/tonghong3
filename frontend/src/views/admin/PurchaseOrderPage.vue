@@ -80,7 +80,6 @@
                 <el-option :label="t('status.claim')" value="claim" />
                 <el-option :label="t('status.return')" value="return" />
                 <el-option :label="t('status.subcont')" value="subcont" />
-                <el-option :label="t('status.suede')" value="suede" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -115,25 +114,6 @@
           </el-col>
         </el-row>
       </el-form>
-      </div>
-
-      <div class="admin-stats-grid admin-stats-grid--4 mb-4">
-        <div class="admin-stat-card">
-          <span class="admin-stat-card__value">{{ poListStats.total }}</span>
-          <span class="admin-stat-card__label">{{ t('common.total') }}</span>
-        </div>
-        <div class="admin-stat-card admin-stat-card--info">
-          <span class="admin-stat-card__value">{{ poListStats.shown }}</span>
-          <span class="admin-stat-card__label">{{ t('pages.po.shownOnPage') }}</span>
-        </div>
-        <div class="admin-stat-card admin-stat-card--warn">
-          <span class="admin-stat-card__value">{{ poListStats.noDetail }}</span>
-          <span class="admin-stat-card__label">{{ t('pages.po.withoutDetailOnPage') }}</span>
-        </div>
-        <div class="admin-stat-card admin-stat-card--warn">
-          <span class="admin-stat-card__value">{{ poListStats.stuck }}</span>
-          <span class="admin-stat-card__label">{{ t('pages.po.stuckOnPage') }}</span>
-        </div>
       </div>
 
       <div class="po-column-toggle mb-3">
@@ -202,8 +182,25 @@
       >
         <template #default="{ row }">
           <div class="flex flex-wrap items-center gap-1">
-            <el-tag v-if="row.material_followup_done" size="small" type="success" effect="plain">{{ t('pages.po.done') }}</el-tag>
-            <el-tag v-else size="small" type="info" effect="plain">{{ t('pages.po.followupOpen') }}</el-tag>
+            <el-tag
+              v-if="materialFollowUpAutoStatus(row.mkt_workflow_stage) === 'done'"
+              size="small"
+              type="success"
+              effect="plain"
+            >{{ t('pages.marketingFlow.materialDoneAuto.done') }}</el-tag>
+            <el-tag
+              v-else-if="materialFollowUpAutoStatus(row.mkt_workflow_stage) === 'in_progress'"
+              size="small"
+              type="warning"
+              effect="plain"
+            >{{ t('pages.marketingFlow.materialDoneAuto.in_progress') }}</el-tag>
+            <el-tag
+              v-else-if="materialFollowUpAutoStatus(row.mkt_workflow_stage) === 'pending'"
+              size="small"
+              type="info"
+              effect="plain"
+            >{{ t('pages.marketingFlow.materialDoneAuto.pending') }}</el-tag>
+            <el-tag v-else size="small" type="info" effect="plain">{{ t('pages.marketingFlow.materialDoneAuto.idle') }}</el-tag>
             <span v-if="row.material_followup_remark" class="text-xs text-slate-700">{{ row.material_followup_remark }}</span>
             <span v-else class="text-xs text-slate-400">—</span>
           </div>
@@ -401,9 +398,10 @@ import { useModulePermission } from '../../composables/useModulePermission.js'
 import { statusType } from '../../utils/format'
 import { parseApiErrorMessage } from '../../utils/poApi.js'
 import { stuckReasonLabel } from '../../utils/mktStuckReason.js'
-import { createMktStageLabels, mktStageLabel } from '../../utils/mktStage.js'
+import { createMktStageLabels, materialFollowUpAutoStatus, mktStageLabel } from '../../utils/mktStage.js'
 import {
   downloadPoListCsv,
+  poOrderCategoryLabel,
   mergeExtraBuyerCodes,
   mergePoMaterialHints,
   parsePoRoutePoId,
@@ -477,7 +475,7 @@ async function load() {
       listBrands(),
       listBuyerPriceLists().catch(() => []),
       listPoPage(buildPageQuery()),
-      listMasterItemDimensionValues('materials').catch(() => ({ values: [] })),
+      listMasterItemDimensionValues('materials', { category: 'PU' }).catch(() => ({ values: [] })),
     ])
     customers.value = cust
     brands.value = br
@@ -588,15 +586,6 @@ function poRowClassName({ row }) {
 }
 
 const filteredRows = computed(() => rows.value)
-const poListStats = computed(() => {
-  const list = rows.value || []
-  return {
-    total: totalRows.value,
-    shown: list.length,
-    noDetail: list.filter((r) => !Number(r.detail_line_count)).length,
-    stuck: list.filter((r) => String(r.stuck_reason || '').trim()).length,
-  }
-})
 const resetFilter = () => resetFilters(load)
 
 const detailDialogVisible = ref(false)
@@ -638,8 +627,7 @@ function poStatusLabel(st) {
 }
 
 function categoryLabel(cat) {
-  if (cat && te(`status.${cat}`)) return t(`status.${cat}`)
-  return cat || '—'
+  return poOrderCategoryLabel(cat, t, te)
 }
 
 async function downloadSalesContractPdf(row) {

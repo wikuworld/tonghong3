@@ -43,7 +43,18 @@ def apply_po_list_filters(
     if status:
         stmt = stmt.where(PoHeader.status == status)
     if po_category:
-        stmt = stmt.where(PoHeader.po_category == po_category)
+        cat = str(po_category).strip().lower()
+        if cat == "production":
+            stmt = stmt.where(
+                or_(
+                    PoHeader.po_category == "production",
+                    PoHeader.po_category == "suede",
+                    PoHeader.po_category.is_(None),
+                    PoHeader.po_category == "",
+                )
+            )
+        else:
+            stmt = stmt.where(PoHeader.po_category == po_category)
     d_from = parse_query_date(order_date_from)
     d_to = parse_query_date(order_date_to)
     d_one = parse_query_date(order_date)

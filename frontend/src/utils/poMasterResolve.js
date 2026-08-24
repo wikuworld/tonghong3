@@ -4,15 +4,54 @@ export function normalizedText(v) {
   return String(v || '').trim().toLowerCase()
 }
 
-/** PU atau Suede — untuk kolom keterangan baris (ganti System No di ringkasan PO). */
-export function resolveMaterialGroupLabel(row, masterItems = []) {
+export const ITEM_CATEGORY_PU = 'PU'
+export const ITEM_CATEGORY_SUEDE = 'Suide'
+
+/** Nilai API master: PU | Suide | SubKon. */
+export function normalizeItemCategory(raw) {
+  const cat = normalizedText(raw)
+  if (cat === 'suide' || cat === 'suede') return ITEM_CATEGORY_SUEDE
+  if (cat === 'pu') return ITEM_CATEGORY_PU
+  if (cat === 'subkon' || cat === 'subcont' || cat === 'subcontract') return 'SubKon'
+  return ''
+}
+
+export function itemCategoryLabel(raw) {
+  const cat = normalizeItemCategory(raw)
+  if (cat === ITEM_CATEGORY_SUEDE) return 'Suede'
+  if (cat === ITEM_CATEGORY_PU) return 'PU'
+  if (cat === 'SubKon') return 'SubKon'
+  return '—'
+}
+
+/** Kategori item baris: eksplisit, lalu master, lalu tebak dari nama/vir. Default PU. */
+export function inferItemCategory(row, masterItems = []) {
+  const explicit = normalizeItemCategory(row?.item_category)
+  if (explicit === ITEM_CATEGORY_PU || explicit === ITEM_CATEGORY_SUEDE) return explicit
   const masterId = row?.master_item_id
   if (masterId) {
     const mi = masterItems.find((x) => x.id === masterId)
-    const cat = normalizedText(mi?.category)
-    if (cat === 'suide' || cat === 'suede') return 'Suede'
-    if (cat === 'pu') return 'PU'
-    if (cat === 'subkon' || cat === 'subcont' || cat === 'subcontract') return 'SubKon'
+    const fromMaster = normalizeItemCategory(mi?.category)
+    if (fromMaster === ITEM_CATEGORY_PU || fromMaster === ITEM_CATEGORY_SUEDE) return fromMaster
+  }
+  const vir = normalizedText(row?.vir_softness_type)
+  if (vir.includes('suede') || vir.includes('suide')) return ITEM_CATEGORY_SUEDE
+  if (vir.includes('pu')) return ITEM_CATEGORY_PU
+  const mn = normalizedText(row?.material_name)
+  if (mn.includes('suede') || mn.includes('suide')) return ITEM_CATEGORY_SUEDE
+  if (mn.includes('pu')) return ITEM_CATEGORY_PU
+  return ITEM_CATEGORY_PU
+}
+
+/** PU atau Suede — untuk kolom keterangan baris (ganti System No di ringkasan PO). */
+export function resolveMaterialGroupLabel(row, masterItems = []) {
+  const explicit = itemCategoryLabel(row?.item_category)
+  if (explicit !== '—') return explicit
+  const masterId = row?.master_item_id
+  if (masterId) {
+    const mi = masterItems.find((x) => x.id === masterId)
+    const fromMaster = itemCategoryLabel(mi?.category)
+    if (fromMaster !== '—') return fromMaster
   }
   if (normalizedText(row?.vir_softness_type).includes('pu')) return 'PU'
   const mn = normalizedText(row?.material_name)

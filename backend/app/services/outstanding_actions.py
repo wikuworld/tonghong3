@@ -77,6 +77,7 @@ def apply_outstanding_schedule_batch(
         raise HTTPException(status_code=400, detail="Pilih minimal satu baris untuk dijadwalkan")
 
     updated: list[int] = []
+    po_ids: set[int] = set()
     for ln in body.lines:
         drow = db.get(PoDetail, int(ln.po_detail_id))
         if not drow:
@@ -160,6 +161,8 @@ def apply_outstanding_schedule_batch(
         if drow.line_etd is None:
             drow.line_etd = ln.delivery_date
         updated.append(int(drow.id))
+        if po_id is not None:
+            po_ids.add(po_id)
         log_change(
             db,
             entity_type="po_detail",
@@ -174,6 +177,10 @@ def apply_outstanding_schedule_batch(
         )
 
     db.commit()
+    for sid in po_ids:
+        sync_mkt_workflow_auto_advance(db, sid, actor=actor)
+    if po_ids:
+        db.commit()
     return {"ok": True, "updated_count": len(updated), "po_detail_ids": updated}
 
 

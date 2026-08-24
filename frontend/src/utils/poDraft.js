@@ -1,6 +1,7 @@
 /** LocalStorage draft dialog input PO. */
 
 import { emptyEtdScheduleRows, etdScheduleRowsToPayload, loadEtdScheduleRowsFromApi } from './poEtdSchedule.js'
+import { normalizePoOrderCategory } from './poList.js'
 
 export const PO_DRAFT_STORAGE_KEY = 'po_input_dialog_draft_v1'
 
@@ -10,6 +11,7 @@ function extractHeader(formModel) {
     customer_id: formModel.customer_id,
     brand_id: formModel.brand_id,
     po_category: formModel.po_category,
+    item_category: formModel.item_category,
     factory_code: formModel.factory_code,
     order_date: formModel.order_date,
     buyer: formModel.buyer,
@@ -23,6 +25,7 @@ function extractHeader(formModel) {
 
 function extractCurrentLine(formModel, etdScheduleRows) {
   return {
+    item_category: formModel.item_category,
     master_item_id: formModel.master_item_id,
     material_name: formModel.material_name,
     thickness_text: formModel.thickness_text,
@@ -63,7 +66,8 @@ export function applyPoDraftData(data, { formModel, autoFieldMeta, etdScheduleRo
   formModel.po_number = header.po_number || ''
   formModel.customer_id = header.customer_id ?? null
   formModel.brand_id = header.brand_id ?? null
-  formModel.po_category = header.po_category || 'production'
+  formModel.po_category = normalizePoOrderCategory(header.po_category)
+  formModel.item_category = line.item_category || header.item_category || 'PU'
   formModel.factory_code = header.factory_code || ''
   autoFieldMeta.factory_code = false
   formModel.order_date = header.order_date || ''

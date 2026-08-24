@@ -37,7 +37,17 @@ def test_map_po_detail_includes_balance_and_source():
     assert mapped["source_detail_id"] == 11
     assert mapped["qty_order"] == 100.0
     assert mapped["qty_balance_erp"] == 80.0
+    assert mapped["no_so"] == "PO-TEST-1"
+    assert mapped["no_po"] == "CUST-1"
     assert "cancelled" not in mapped
+
+
+def test_map_po_detail_no_po_falls_back_to_so_number():
+    pod = _detail()
+    pod.po.po_customer_ref = None
+    mapped = sync.map_po_detail(pod)
+    assert mapped["no_so"] == "PO-TEST-1"
+    assert mapped["no_po"] == "PO-TEST-1"
 
 
 def test_map_po_detail_cancelled_header():
@@ -64,6 +74,8 @@ def test_sync_incremental_by_detail_id(monkeypatch):
     assert result["updated"] == 1
     assert pushed["items"][0]["source_detail_id"] == 11
     assert pushed["items"][0]["qty_balance_erp"] == 80.0
+    assert pushed["items"][0]["no_so"] == "PO-TEST-1"
+    assert pushed["items"][0]["no_po"] == "CUST-1"
 
 
 def test_sync_orphan_cancelled_detail_ids(monkeypatch):

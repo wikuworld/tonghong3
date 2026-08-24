@@ -71,7 +71,6 @@
                     <el-option :label="t('status.return')" value="return" />
                     <el-option :label="t('status.subcont')" value="subcont" />
                     <el-option :label="t('status.claim')" value="claim" />
-                    <el-option :label="t('status.suede')" value="suede" />
                   </el-select>
                 </el-form-item>
               </el-col>
@@ -182,14 +181,8 @@
         <template #default="{ row }">{{ formatDate(row.delivery_date) }}</template>
       </el-table-column>
       <el-table-column prop="factory_name" :label="t('pages.delivery.columns.factory')" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="po_number" :label="t('pages.delivery.columns.poNumber')" min-width="130" show-overflow-tooltip />
-      <el-table-column
-        v-if="showFullCols"
-        prop="system_no"
-        :label="t('pages.delivery.columns.soNumber')"
-        min-width="110"
-        show-overflow-tooltip
-      />
+      <el-table-column prop="system_no" :label="t('pages.mrpRencana.soRef')" min-width="130" show-overflow-tooltip />
+      <el-table-column prop="po_number" :label="t('pages.mrpRencana.poCustomerRef')" min-width="130" show-overflow-tooltip />
       <el-table-column
         v-if="showFullCols"
         prop="factory_code"
@@ -346,7 +339,6 @@
                   <el-option :label="t('status.return')" value="return" />
                   <el-option :label="t('status.subcont')" value="subcont" />
                   <el-option :label="t('status.claim')" value="claim" />
-                  <el-option :label="t('status.suede')" value="suede" />
                 </el-select>
               </el-form-item>
             </el-col>
@@ -540,18 +532,21 @@
           </div>
           <el-table :data="detailLines" border size="small" :empty-text="t('pages.delivery.linesEmpty')">
             <el-table-column type="index" :label="t('common.noLabel')" width="50" align="center" />
-            <el-table-column prop="production_detail_id" :label="t('pages.delivery.productionDetailId')" min-width="120">
-              <template #default="{ row }">#{{ row.production_detail_id }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.delivery.columns.poNumber')" min-width="120" show-overflow-tooltip>
+            <el-table-column :label="t('pages.delivery.productionDetailId')" min-width="120">
               <template #default="{ row }">
-                <span v-if="!row.po_id">{{ row.po_number || '—' }}</span>
+                <span v-if="row.production_detail_id">#{{ row.production_detail_id }}</span>
+                <span v-else class="text-slate-400">{{ t('common.emptyValue') }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpRencana.soRef')" min-width="120" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span v-if="!row.po_id">{{ row.system_no || row.po_number || '—' }}</span>
                 <el-button v-else link type="primary" @click="goPoFromLine(row)">
-                  {{ row.po_number || `#${row.po_id}` }}
+                  {{ row.system_no || row.po_number || `#${row.po_id}` }}
                 </el-button>
               </template>
             </el-table-column>
-            <el-table-column prop="system_no" :label="t('pages.delivery.columns.soNumber')" width="110" show-overflow-tooltip />
+            <el-table-column prop="po_customer_ref" :label="t('pages.mrpRencana.poCustomerRef')" min-width="120" show-overflow-tooltip />
             <el-table-column prop="lot_number" :label="t('pages.delivery.columns.lotNo')" width="130" show-overflow-tooltip />
             <el-table-column prop="material_name_line" :label="t('pages.delivery.columns.materialName')" min-width="120" show-overflow-tooltip />
             <el-table-column prop="thickness_display" :label="t('pages.delivery.columns.thickness')" width="90" show-overflow-tooltip />
@@ -758,7 +753,7 @@ import { Plus, View, Van, Download, Loading, RefreshLeft, Refresh } from '@eleme
 import AdminSection from '../../components/AdminSection.vue'
 import { can } from '../../security/permissions'
 import { formatDate, formatNumber, statusType } from '../../utils/format'
-import { createPoOrderDateShortcuts } from '../../utils/poList.js'
+import { createPoOrderDateShortcuts, poOrderCategoryLabel } from '../../utils/poList.js'
 import {
   addDeliveryDetail,
   createDelivery,
@@ -854,8 +849,7 @@ function deliveryStatusLabel(st) {
 }
 
 function categoryLabel(cat) {
-  if (cat && te(`status.${cat}`)) return t(`status.${cat}`)
-  return cat || '—'
+  return poOrderCategoryLabel(cat, t, te)
 }
 
 function packingStatusLabel(st) {

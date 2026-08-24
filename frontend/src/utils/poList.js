@@ -1,5 +1,19 @@
 /** Util daftar & filter PO (pagination, enrich baris, deep link). */
 
+/** Jenis order header. Legacy `suede` = production (material PU/Suede ada di item). */
+export function normalizePoOrderCategory(raw) {
+  const cat = String(raw || '').trim().toLowerCase()
+  if (!cat || cat === 'suede') return 'production'
+  return cat
+}
+
+export function poOrderCategoryLabel(cat, t, te) {
+  const norm = normalizePoOrderCategory(cat)
+  if (norm && typeof te === 'function' && te(`status.${norm}`)) return t(`status.${norm}`)
+  if (norm && t) return t(`status.${norm}`)
+  return cat || '—'
+}
+
 export function createPoOrderDateShortcuts(t) {
   return [
     {
@@ -166,7 +180,7 @@ export function downloadPoListCsv(rows, { t, mktStageLabels, emptyValue, filenam
         row.etd || '',
         row.order_date_fmt || (row.order_date ? String(row.order_date).slice(0, 10) : ''),
         row.brand_name_snapshot || '',
-        row.po_category ? t(`status.${row.po_category}`) : '',
+        poOrderCategoryLabel(row.po_category, t, (k) => Boolean(t(k))),
         stage,
       ]
         .map(csvEscape)

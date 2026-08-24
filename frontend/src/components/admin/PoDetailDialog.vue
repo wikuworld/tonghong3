@@ -1,52 +1,58 @@
 <template>
-  <el-dialog
+  <el-drawer
     :model-value="modelValue"
-    :title="t('pages.poDetail.title')"
-    width="95%" style="max-width: 900px"
+    direction="rtl"
+    size="100%"
     destroy-on-close
-    align-center
-    class="po-dialog"
+    class="so-page-drawer po-detail-drawer"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <el-descriptions v-if="detailView" :column="2" border size="small">
-      <el-descriptions-item :label="t('common.poNo')">{{ detailView.po_number }}</el-descriptions-item>
-      <el-descriptions-item :label="t('common.status')">{{ statusLabel(detailView.status) }}</el-descriptions-item>
-      <el-descriptions-item :label="t('pages.po.poCustomerRef')">{{ detailView.po_customer_ref || t('common.emptyValue') }}</el-descriptions-item>
-      <el-descriptions-item :label="t('common.customer')">{{ detailView.customerName }}</el-descriptions-item>
-      <el-descriptions-item :label="t('common.buyer')">{{ detailView.buyer || t('common.emptyValue') }}</el-descriptions-item>
-      <el-descriptions-item :label="t('pages.po.headerEtd')">{{ detailView.etd || t('common.emptyValue') }}</el-descriptions-item>
-    </el-descriptions>
-    <p class="mt-2 text-xs text-slate-500">{{ t('pages.poDetail.lineRevisionHint') }}</p>
-    <el-table
-      v-if="detailLines.length"
-      :data="detailLines"
-      class="mt-4"
-      border
-      size="small"
-      table-layout="auto"
-      max-height="360"
-    >
-      <el-table-column prop="material_name" :label="t('common.material')" min-width="130" show-overflow-tooltip />
-      <el-table-column prop="thickness_text" :label="t('common.thickness')" width="100" />
-      <el-table-column prop="color" :label="t('common.color')" width="88" />
-      <el-table-column prop="color_family" :label="t('pages.po.colorFamily')" width="120" show-overflow-tooltip>
-        <template #default="{ row }">{{ colorFamilyLabel(row.color_family) }}</template>
-      </el-table-column>
-      <el-table-column prop="emboss" :label="t('pages.po.emboss')" width="88" show-overflow-tooltip />
-      <el-table-column prop="color_standard" :label="t('pages.po.colorStandart')" width="120" show-overflow-tooltip />
-      <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="96" />
-      <el-table-column prop="unit_price" :label="t('pages.po.unitPriceUsd')" width="100" align="right">
-        <template #default="{ row }">{{ row.unit_price != null ? row.unit_price : t('common.emptyValue') }}</template>
-      </el-table-column>
-      <el-table-column prop="thi_line_ref" :label="t('pages.po.thiLineRef')" min-width="110" show-overflow-tooltip />
-      <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="100" show-overflow-tooltip />
-      <el-table-column prop="model" :label="t('common.model')" width="96" show-overflow-tooltip />
-    </el-table>
-    <PoDetailAuditPanel :entries="detailAudit" />
-    <template #footer>
-      <el-button type="primary" :icon="Close" @click="$emit('update:modelValue', false)">{{ t('pages.customers.closeDetail') }}</el-button>
+    <template #header>
+      <h2 class="po-detail-drawer__title">{{ t('pages.poDetail.title') }}</h2>
     </template>
-  </el-dialog>
+    <div class="po-detail-drawer__body">
+      <el-descriptions v-if="detailView" :column="2" border size="small">
+        <el-descriptions-item :label="t('common.poNo')">{{ detailView.po_number }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.status')">{{ statusLabel(detailView.status) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.po.poCustomerRef')">{{ detailView.po_customer_ref || t('common.emptyValue') }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.customer')">{{ detailView.customerName }}</el-descriptions-item>
+        <el-descriptions-item :label="t('common.buyer')">{{ detailView.buyer || t('common.emptyValue') }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.po.headerEtd')">{{ detailView.etd || t('common.emptyValue') }}</el-descriptions-item>
+      </el-descriptions>
+      <p class="mt-2 text-xs text-slate-500">{{ t('pages.poDetail.lineRevisionHint') }}</p>
+      <el-table
+        v-if="detailLines.length"
+        :data="detailLines"
+        class="mt-4"
+        border
+        size="small"
+        table-layout="auto"
+        max-height="360"
+      >
+        <el-table-column prop="material_name" :label="t('common.material')" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="thickness_text" :label="t('common.thickness')" width="100" />
+        <el-table-column prop="color" :label="t('common.color')" width="88" />
+        <el-table-column prop="color_family" :label="t('pages.po.colorFamily')" width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ colorFamilyLabel(row.color_family) }}</template>
+        </el-table-column>
+        <el-table-column prop="emboss" :label="t('pages.po.emboss')" width="88" show-overflow-tooltip />
+        <el-table-column prop="color_standard" :label="t('pages.po.colorStandart')" width="120" show-overflow-tooltip />
+        <el-table-column prop="quantity_order" :label="t('common.quantityOrder')" width="96" />
+        <el-table-column prop="unit_price" :label="t('pages.po.unitPriceUsd')" width="100" align="right">
+          <template #default="{ row }">{{ row.unit_price != null ? row.unit_price : t('common.emptyValue') }}</template>
+        </el-table-column>
+        <el-table-column prop="thi_line_ref" :label="t('pages.po.thiLineRef')" min-width="110" show-overflow-tooltip />
+        <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="model" :label="t('common.model')" width="96" show-overflow-tooltip />
+      </el-table>
+      <PoDetailAuditPanel :entries="detailAudit" />
+    </div>
+    <template #footer>
+      <div class="po-detail-drawer__footer">
+        <el-button type="primary" :icon="Close" @click="$emit('update:modelValue', false)">{{ t('pages.customers.closeDetail') }}</el-button>
+      </div>
+    </template>
+  </el-drawer>
 </template>
 
 <script setup>
@@ -68,3 +74,28 @@ defineEmits(['update:modelValue'])
 
 const { t } = useI18n()
 </script>
+
+<style scoped>
+.po-detail-drawer__title {
+  margin: 0;
+  padding: 16px 0 16px 20px;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.po-detail-drawer__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 24px;
+}
+
+.po-detail-drawer__footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+}
+</style>

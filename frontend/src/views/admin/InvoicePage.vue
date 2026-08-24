@@ -68,7 +68,7 @@
                 <span v-else>—</span>
               </template>
             </el-table-column>
-            <el-table-column prop="po_number" :label="t('common.poNo')" min-width="150" show-overflow-tooltip>
+            <el-table-column prop="po_number" :label="t('pages.mrpRencana.soRef')" min-width="150" show-overflow-tooltip>
               <template #default="{ row }">
                 <el-button v-if="row.po_id" link type="primary" @click="goPo(row.po_id)">
                   {{ row.po_number || `#${row.po_id}` }}
@@ -163,7 +163,7 @@
           >
             <el-table-column type="index" :label="t('common.noLabel')" width="50" align="center" fixed="left" />
             <el-table-column prop="invoice_number" :label="t('common.invoiceNo')" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="po_number" :label="t('common.poNo')" min-width="150" show-overflow-tooltip>
+            <el-table-column prop="po_number" :label="t('pages.mrpRencana.soRef')" min-width="150" show-overflow-tooltip>
               <template #default="{ row }">
                 <el-button v-if="row.po_id" link type="primary" @click="goPo(row.po_id)">
                   {{ row.po_number || `#${row.po_id}` }}
@@ -216,7 +216,7 @@
           </el-button>
           <span v-else>—</span>
         </el-descriptions-item>
-        <el-descriptions-item :label="t('common.poNo')">
+        <el-descriptions-item :label="t('pages.mrpRencana.soRef')">
           <el-button v-if="detailRow.po_id" link type="primary" @click="goPo(detailRow.po_id)">
             {{ detailRow.po_number || `#${detailRow.po_id}` }}
           </el-button>
@@ -239,12 +239,12 @@
             <el-option
               v-for="d in deliveriesReady"
               :key="d.id"
-              :label="`${d.delivery_number || `DLV-${d.id}`} ${t('common.dotSeparator')} ${d.status}`"
+              :label="deliveryOptionLabel(d)"
               :value="d.id"
             />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('common.poNo')">
+        <el-form-item :label="t('pages.mrpRencana.soRef')">
           <el-select v-model="form.po_id" filterable clearable class="w-full" @change="onPoPick">
             <el-option v-for="p in poList" :key="p.id" :label="p.po_number" :value="p.id" />
           </el-select>
@@ -338,6 +338,7 @@ import {
   createInvoice,
   listCustomers,
   listDelivery,
+  listDeliveryDetails,
   listInvoice,
   listOutstandingInvoice,
   listPo,
@@ -564,6 +565,7 @@ const form = reactive({
   invoice_number: '',
   customer_name: '',
   invoice_date: '',
+  due_date: '',
   total_amount: '',
   term_of_payment: '',
 })
@@ -571,7 +573,8 @@ const form = reactive({
 function onPoPick(pid) {
   if (!pid) return
   const p = poList.value.find((x) => x.id === pid)
-  if (p?.customer_id) {
+  if (!p) return
+  if (p.customer_id) {
     form.customer_id = p.customer_id
     const c = customers.value.find((x) => x.id === p.customer_id)
     form.customer_name = c?.name || ''
@@ -579,7 +582,12 @@ function onPoPick(pid) {
   form.invoice_number = form.invoice_number || `INV-${p.po_number}`
 }
 
-function onDeliveryPick(did) {
+function deliveryOptionLabel(d) {
+  const no = d.delivery_number || `DLV-${d.id}`
+  return `${no} ${t('common.dotSeparator')} ${d.status}`
+}
+
+async function onDeliveryPick(did) {
   if (!did) {
     form.customer_id = null
     form.customer_name = ''
@@ -593,6 +601,16 @@ function onDeliveryPick(did) {
     form.customer_name = c?.name || ''
   }
   form.po_id = null
+  try {
+    const lines = await listDeliveryDetails(did)
+    const poIds = [...new Set((lines || []).map((l) => l.po_id).filter((id) => id != null))]
+    if (poIds.length === 1) {
+      form.po_id = poIds[0]
+      onPoPick(poIds[0])
+    }
+  } catch {
+    form.po_id = null
+  }
 }
 
 function openCreate() {
@@ -602,6 +620,7 @@ function openCreate() {
   form.invoice_number = ''
   form.customer_name = ''
   form.invoice_date = ''
+  form.due_date = ''
   form.total_amount = ''
   form.term_of_payment = ''
   formVisible.value = true
@@ -623,6 +642,7 @@ async function submit() {
       po_number: p?.po_number || undefined,
       customer_name: form.customer_name || undefined,
       invoice_date: toIsoDate(form.invoice_date) || undefined,
+      due_date: toIsoDate(form.due_date) || undefined,
       total_amount: form.total_amount ? Number(form.total_amount) : undefined,
       term_of_payment: form.term_of_payment || undefined,
     })

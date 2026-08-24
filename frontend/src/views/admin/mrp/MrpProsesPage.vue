@@ -19,7 +19,8 @@
         <el-table-column prop="kode_proses" :label="t('pages.mrpProses.kodeProses')" min-width="130" show-overflow-tooltip />
         <el-table-column prop="kode_rencana" :label="t('pages.mrpProses.kodeRpi')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="kode_wip" label="WIP" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="no_po" label="PO" width="110" show-overflow-tooltip />
+        <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" width="110" show-overflow-tooltip />
+        <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="120" show-overflow-tooltip />
         <el-table-column :label="t('common.color')" width="110" show-overflow-tooltip>
           <template #default="{ row }">{{ dash(row.warna) }}</template>
         </el-table-column>

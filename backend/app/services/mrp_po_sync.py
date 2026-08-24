@@ -42,7 +42,8 @@ def map_po_detail(d: PoDetail, *, force_cancelled: bool = False) -> Optional[dic
     po: Optional[PoHeader] = d.po
     if not po:
         return None
-    no_po = (po.po_number or po.po_customer_ref or "").strip()
+    no_so = (po.po_number or "").strip()
+    no_po = (po.po_customer_ref or po.po_number or "").strip()
     if not no_po:
         return None
     item_name = (d.material_name or d.style_article or f"LINE-{d.id}").strip()
@@ -57,7 +58,7 @@ def map_po_detail(d: PoDetail, *, force_cancelled: bool = False) -> Optional[dic
     payload = {
         "source_detail_id": d.id,
         "no_po": no_po,
-        "no_so": (po.po_customer_ref or po.po_number or "").strip() or None,
+        "no_so": no_so or None,
         "customer": (po.customer_name_snapshot or po.customer_code or "").strip() or None,
         "customer_id": int(po.customer_id) if po.customer_id else None,
         "item_name": item_name,

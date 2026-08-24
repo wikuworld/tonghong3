@@ -227,7 +227,7 @@
         @selection-change="onSoSelect"
       >
         <el-table-column type="selection" width="40" :selectable="soSelectable" />
-        <el-table-column prop="no_po" label="PO" min-width="110" />
+        <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" />
         <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="100" show-overflow-tooltip />
         <el-table-column prop="customer" :label="t('common.customer')" min-width="110" show-overflow-tooltip />
         <el-table-column prop="item_name" :label="t('pages.mrpRencana.poItem')" min-width="130" show-overflow-tooltip />

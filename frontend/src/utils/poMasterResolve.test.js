@@ -3,6 +3,11 @@ import {
   applyReferenceDefaults,
   detailMasterSnapshot,
   inferColorFamilyFromColor,
+  inferItemCategory,
+  ITEM_CATEGORY_PU,
+  ITEM_CATEGORY_SUEDE,
+  normalizeItemCategory,
+  resolveMaterialGroupLabel,
 } from './poMasterResolve.js'
 
 describe('inferColorFamilyFromColor', () => {
@@ -76,5 +81,35 @@ describe('applyReferenceDefaults', () => {
     expect(form.color_standard).toBe('')
     expect(form.color_reference).toBe('')
     expect(form.backing).toBe('BRUSHED')
+  })
+})
+
+describe('item category PU | Suede', () => {
+  it('normalizes aliases', () => {
+    expect(normalizeItemCategory('suede')).toBe(ITEM_CATEGORY_SUEDE)
+    expect(normalizeItemCategory('Suide')).toBe(ITEM_CATEGORY_SUEDE)
+    expect(normalizeItemCategory('pu')).toBe(ITEM_CATEGORY_PU)
+  })
+
+  it('prefers explicit item_category over material name', () => {
+    expect(
+      inferItemCategory({
+        item_category: 'Suide',
+        material_name: 'VIRGIN HYDRO PU',
+      }),
+    ).toBe(ITEM_CATEGORY_SUEDE)
+  })
+
+  it('reads master item category', () => {
+    expect(
+      inferItemCategory({ master_item_id: 4, material_name: 'X' }, [
+        { id: 4, category: 'Suide', material_name: 'SPLIT SUEDE' },
+      ]),
+    ).toBe(ITEM_CATEGORY_SUEDE)
+  })
+
+  it('labels draft rows from item_category', () => {
+    expect(resolveMaterialGroupLabel({ item_category: 'PU' })).toBe('PU')
+    expect(resolveMaterialGroupLabel({ item_category: 'Suide' })).toBe('Suede')
   })
 })
