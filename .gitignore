@@ -36,6 +36,7 @@ frontend.log
 
 # local full backups (SQL dump + project archive)
 backups/
+database/native-migrate/
 
 # MRP local archives / venv (seed SQL remains tracked)
 mrp/archives/

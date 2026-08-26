@@ -1,0 +1,21 @@
+[Unit]
+Description=Tonghong Vite frontend (HMR)
+After=network.target tonghong-backend.service
+
+[Service]
+Type=simple
+User=developer
+Group=developer
+WorkingDirectory=/home/developer/project/frontend
+EnvironmentFile=-/home/developer/project/.env
+Environment=HOME=/home/developer
+Environment=NVM_DIR=/home/developer/.nvm
+Environment=NODE_ENV=development
+Environment=CHOKIDAR_USEPOLLING=true
+Environment=WATCHPACK_POLLING=true
+ExecStart=/home/developer/project/tools/run-frontend-dev.sh
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
