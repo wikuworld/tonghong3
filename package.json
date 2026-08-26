@@ -7,8 +7,6 @@
     "build": "bash -c 'source ./tools/nvm-load.sh; exec npm --prefix frontend run build'",
     "preview": "bash -c 'source ./tools/nvm-load.sh; exec npm --prefix frontend run preview'",
     "install:frontend": "bash -c 'source ./tools/nvm-load.sh; exec npm --prefix frontend install'",
-    "stack:hmr": "bash ./tools/stack-hmr-domain.sh",
-    "stack:prod": "bash ./tools/stack-prod-web.sh",
-    "stack:prod:build": "bash ./tools/stack-prod-web.sh --build"
+    "stack:native": "bash ./tools/stack-native.sh"
   }
 }

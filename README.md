@@ -26,9 +26,10 @@ Sistem ERP ringan untuk alur **Sales/PO → Produksi → QC → Packing → Deli
 
 - `backend/`: FastAPI + SQLAlchemy + Alembic (MariaDB/MySQL)
 - `frontend/`: Vue 3 + Vite + Element Plus (admin UI)
-- `docker-compose.yml`: MariaDB + backend + frontend-dev + web-hmr (stack dev)
+- `mrp/`: Flask shopfloor (di-proxy FastAPI)
+- `deploy/systemd/`: unit systemd stack native
 
-## Menjalankan dengan Docker (disarankan)
+## Menjalankan (systemd, server dev)
 
 1. Salin env contoh:
 
@@ -36,22 +37,18 @@ Sistem ERP ringan untuk alur **Sales/PO → Produksi → QC → Packing → Deli
 cp .env.example .env
 ```
 
-2. Jalankan:
+2. Pasang unit (sekali) lalu start:
 
 ```bash
-docker compose up -d
-```
-
-Atau:
-
-```bash
-./tools/stack-dev.sh
+./tools/stack-native.sh install
+./tools/stack-native.sh start
 ```
 
 Yang terjadi:
-- MariaDB (internal)
+- MariaDB di port 3306
 - Backend FastAPI di `${BACKEND_PORT:-8000}` — otomatis `alembic upgrade head`
-- Frontend Vite + HMR (internal, lewat `web-hmr`)
+- Flask MRP di `127.0.0.1:5010`
+- Frontend Vite + HMR di `127.0.0.1:5173`
 - Nginx proxy di `${WEB_PORT:-8080}` — UI + `/api`
 
 URL:
@@ -60,32 +57,9 @@ URL:
 - **Swagger**: `http://localhost:8000/docs`
 - **Healthcheck**: `http://localhost:8000/health`
 
-Setelah ubah kode Python: `docker compose restart backend`
+Setelah ubah kode Python: `sudo systemctl restart tonghong-backend`
 
-## Menjalankan tanpa Docker (opsional)
-
-### Backend
-
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# set DATABASE_URL sesuai lingkungan Anda
-export DATABASE_URL='mysql+pymysql://tonghong:tonghong_secret@127.0.0.1:3306/tonghong'
-
-alembic upgrade head
-uvicorn app.main:app --reload --port 8000
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
+File Docker (`docker-compose.yml`, `Dockerfile`, dll.) diarsip di luar repo (`~/archives/docker-repo-*.tgz`), bukan cara jalan di server ini.
 
 ## Business process (ringkas)
 
@@ -124,5 +98,5 @@ Base: `/api/v1`
 - **Migrasi DB**: Alembic ada di `backend/alembic/versions/`.
 - **CORS**: atur `CORS_ORIGINS` di `.env`.
 - **Secrets**: jangan commit `.env`; repo menyediakan `.env.example`.
-- **CD GHCR**: set GitHub Actions secrets `JWT_SECRET`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` sebelum publish image.
+- Restart service: `./tools/stack-native.sh restart` atau `sudo systemctl restart tonghong-backend`.
 

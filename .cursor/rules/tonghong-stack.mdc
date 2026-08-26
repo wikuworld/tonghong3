@@ -52,8 +52,6 @@ cd backend && .venv/bin/alembic upgrade head
 sudo systemctl start tonghong-backend
 ```
 
-Cadangan volume Docker lama (jangan `docker volume rm` kecuali yakin): `project_mariadb_data`.
-
 ### Workflow native
 
 - Ubah **frontend** (`./frontend/`): HMR otomatis; akses via **nginx :8080** (bukan port 5173 langsung).
@@ -63,12 +61,6 @@ Cadangan volume Docker lama (jangan `docker volume rm` kecuali yakin): `project_
 - Ubah **`backend/requirements.txt`**: `cd backend && uv pip install --python .venv/bin/python -r requirements.txt` lalu restart backend. Python **3.12** (venv); jangan pakai Python 3.14 host.
 - Ubah nginx native: edit [`frontend/nginx.native.conf`](frontend/nginx.native.conf), lalu `./tools/stack-native.sh install` dan `sudo systemctl reload nginx`.
 - Log: `./tools/stack-native.sh logs` atau `sudo journalctl -u tonghong-backend -f`; status: `./tools/stack-native.sh status`.
-
-### Docker (opsional / rollback)
-
-`docker-compose.yml` masih di repo, tetapi **bukan** cara jalan di server ini. Engine Docker mungkin masih terpasang.
-
-Rollback: pastikan native di-stop dulu (`./tools/stack-native.sh stop` + `sudo systemctl stop mariadb`) agar port 3306/8000/8080 bebas, lalu `docker compose up -d`. Jangan `docker compose down -v` — volume `project_mariadb_data` adalah cadangan DB lama.
 
 ---
 

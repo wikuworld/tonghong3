@@ -6,7 +6,8 @@
 #   ./backend/scripts/smoke_test.sh --verbose
 #   ./backend/scripts/smoke_test.sh --only normalize_lot_numbers
 #
-# Otomatis pakai container backend bila stack Docker aktif.
+# Otomatis pakai venv backend bila ada.
+
 
 set -euo pipefail
 
@@ -15,17 +16,11 @@ BACKEND="$ROOT/backend"
 cd "$ROOT"
 
 run_in_backend() {
-  if command -v docker >/dev/null 2>&1; then
-    if docker compose ps --status running backend 2>/dev/null | grep -q backend; then
-      exec docker compose exec -T backend python scripts/smoke_test.py "$@"
-    fi
-    if sudo -n docker compose ps --status running backend 2>/dev/null | grep -q backend; then
-      exec sudo docker compose exec -T backend python scripts/smoke_test.py "$@"
-    fi
-  fi
-
   cd "$BACKEND"
   export PYTHONPATH=.
+  if [[ -x .venv/bin/python ]]; then
+    exec .venv/bin/python scripts/smoke_test.py "$@"
+  fi
   exec python3 scripts/smoke_test.py "$@"
 }
 

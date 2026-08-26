@@ -9,10 +9,9 @@ Memverifikasi:
 - koneksi database untuk skrip yang membutuhkan DB
 
 Usage:
-  cd backend && PYTHONPATH=. python scripts/smoke_test.py
-  docker compose exec backend python scripts/smoke_test.py
-  docker compose exec backend python scripts/smoke_test.py --verbose
-  docker compose exec backend python scripts/smoke_test.py --only normalize_lot_numbers
+  cd backend && PYTHONPATH=. .venv/bin/python scripts/smoke_test.py
+  cd backend && PYTHONPATH=. .venv/bin/python scripts/smoke_test.py --verbose
+  cd backend && PYTHONPATH=. .venv/bin/python scripts/smoke_test.py --only normalize_lot_numbers
 """
 
 from __future__ import annotations
@@ -156,7 +155,7 @@ def _runtime_ready() -> tuple[bool, str]:
     try:
         import sqlalchemy  # noqa: F401
     except ImportError:
-        return False, "dependency backend belum terpasang — jalankan di container: docker compose exec backend python scripts/smoke_test.py"
+        return False, "dependency backend belum terpasang — jalankan: cd backend && .venv/bin/python scripts/smoke_test.py"
     return True, "runtime OK"
 
 

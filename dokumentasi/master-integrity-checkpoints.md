@@ -8,8 +8,8 @@ Ikuti: satu fase = satu PR → merge `main` → isi baris di bawah → `git tag 
 ```bash
 # Batalkan fase terakhir (contoh F1)
 git revert -m 1 <merge-commit-SHA>
-docker compose exec backend alembic downgrade <revision_sebelum_fase>
-docker compose restart backend
+cd backend && .venv/bin/alembic downgrade <revision_sebelum_fase>
+sudo systemctl restart tonghong-backend
 ```
 
 Lihat juga rencana: branch `feature/db-master-integrity-fN`, tag `db-master-fN`.
@@ -40,7 +40,7 @@ Lihat juga rencana: branch `feature/db-master-integrity-fN`, tag `db-master-fN`.
 - `UNIQUE brands.code` (`uq_brands_code`) OK
 - Brand PUMA/REEBOK + maps OK; swatch PUMA/REEBOK `brand_id` null = **0**
 - `buyer_codes` seed = 10; form-options pakai registry
-- Audit: `docker compose exec backend python scripts/audit_master_integrity.py --json`
+- Audit: `cd backend && .venv/bin/python scripts/audit_master_integrity.py --json`
 - Fluorescent non-GLOBAL `brand_id` null = **0**; `material_aliases` = 8
 - Import: default **warn**; F4 `?reject_unknown_buyer=true` → 400
 

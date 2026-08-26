@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start/stop/status stack Tonghong native (systemd), setara docker compose.
+# Start/stop/status stack Tonghong native (systemd).
 # Usage: ./tools/stack-native.sh {start|stop|restart|status|logs}
 set -euo pipefail
 

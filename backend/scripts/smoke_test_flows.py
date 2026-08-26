@@ -4,11 +4,10 @@
 Menjalankan request HTTP ke API backend (live). Default: baca + buat PO draft smoke lalu hapus.
 
 Usage:
-  cd backend && PYTHONPATH=. python scripts/smoke_test_flows.py
-  docker compose exec backend python scripts/smoke_test_flows.py
-  docker compose exec backend python scripts/smoke_test_flows.py --verbose
-  docker compose exec backend python scripts/smoke_test_flows.py --read-only
-  docker compose exec backend python scripts/smoke_test_flows.py --only po_input
+  cd backend && PYTHONPATH=. .venv/bin/python scripts/smoke_test_flows.py
+  cd backend && PYTHONPATH=. .venv/bin/python scripts/smoke_test_flows.py --verbose
+  cd backend && PYTHONPATH=. .venv/bin/python scripts/smoke_test_flows.py --read-only
+  cd backend && PYTHONPATH=. .venv/bin/python scripts/smoke_test_flows.py --only po_input
 """
 
 from __future__ import annotations

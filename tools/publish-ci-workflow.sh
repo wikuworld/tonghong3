@@ -17,7 +17,7 @@ git pull origin ui/elementplus-consistency
 git checkout -B chore/apply-ci-workflow
 git add .github/workflows/
 git diff --cached --quiet && echo "Tidak ada perubahan workflow." && exit 0
-git commit -m "chore(ci): terapkan workflow vitest dan docker dev smoke"
+git commit -m "chore(ci): terapkan workflow vitest dan pytest"
 git push -u origin chore/apply-ci-workflow --force-with-lease
 gh pr create --head chore/apply-ci-workflow --base ui/elementplus-consistency \
   --title "chore(ci): terapkan workflow GitHub Actions" \

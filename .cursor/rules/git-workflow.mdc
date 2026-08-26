@@ -20,7 +20,8 @@ alwaysApply: true
 
 ## Setelah ubah kode (server dev)
 
-- Backend: `docker compose restart backend` (atau `sudo docker compose restart backend`).
+- Backend: `sudo systemctl restart tonghong-backend` (MRP: `tonghong-mrp`; frontend: `tonghong-frontend`).
+- Status/log: `./tools/stack-native.sh status` / `./tools/stack-native.sh logs`.
 - Review sebelum commit: `git diff`, `git status`.
 - Jangan `git add .` tanpa cek; stage file yang relevan saja.
 
