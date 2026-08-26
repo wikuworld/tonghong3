@@ -4363,11 +4363,108 @@ def packing_bridge_context(packing_id: int):
 
 
 # ---- Checkpoint QC ----
+CHECKPOINT_QC_NAME = "QC"
+
+
+def _resolve_checkpoint_treatment(cur, raw, *, allow_empty_as_qc=False):
+    """Return nama treatment, False if invalid, None if empty and not allowed."""
+    from app import ensure_master_treatment
+
+    name = (raw or "").strip()
+    if not name:
+        return CHECKPOINT_QC_NAME if allow_empty_as_qc else None
+    if name.upper() == CHECKPOINT_QC_NAME:
+        return CHECKPOINT_QC_NAME
+    ensure_master_treatment(cur)
+    cur.execute(
+        "SELECT nama_treatment FROM tbl_master_treatment WHERE nama_treatment=%s LIMIT 1",
+        (name,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return False
+    return row.get("nama_treatment") if isinstance(row, dict) else row[0]
+
+
+def _wip_plan_info(cur, kode_wip: str) -> dict:
+    info = {
+        "kode_rpi": None,
+        "nama_rencana": None,
+        "material_name": None,
+        "emboss": None,
+        "warna": None,
+    }
+    if not kode_wip:
+        return info
+    cur.execute(
+        "SELECT kode_rencana, rencana_item_id, emboss, warna "
+        "FROM tbl_persiapan_kulit WHERE kode_wip=%s "
+        "ORDER BY FIELD(status,'completed','saved','started','draft'), id DESC LIMIT 1",
+        (kode_wip,),
+    )
+    pk = cur.fetchone() or {}
+    item = None
+    item_id = pk.get("rencana_item_id")
+    if item_id:
+        cur.execute(
+            "SELECT kode_rencana_item, material_name, emboss, color, rencana_id "
+            "FROM tbl_rencana_item WHERE id=%s LIMIT 1",
+            (item_id,),
+        )
+        item = cur.fetchone()
+    if not item and pk.get("kode_rencana"):
+        cur.execute(
+            "SELECT kode_rencana_item, material_name, emboss, color, rencana_id "
+            "FROM tbl_rencana_item WHERE kode_rencana_item=%s LIMIT 1",
+            (pk.get("kode_rencana"),),
+        )
+        item = cur.fetchone()
+    if not item:
+        cur.execute(
+            "SELECT kode_rencana_item, material_name, emboss, color, rencana_id "
+            "FROM tbl_rencana_item WHERE kode_lot_wip=%s "
+            "ORDER BY id DESC LIMIT 1",
+            (kode_wip,),
+        )
+        item = cur.fetchone()
+    item = item or {}
+    nama = None
+    rid = item.get("rencana_id")
+    if rid:
+        cur.execute(
+            "SELECT nama_rencana FROM tbl_rencana_produksi WHERE id=%s LIMIT 1",
+            (rid,),
+        )
+        rrow = cur.fetchone() or {}
+        nama = rrow.get("nama_rencana")
+    info["kode_rpi"] = item.get("kode_rencana_item") or pk.get("kode_rencana")
+    info["nama_rencana"] = nama
+    info["material_name"] = item.get("material_name")
+    info["emboss"] = pk.get("emboss") or item.get("emboss")
+    info["warna"] = pk.get("warna") or item.get("color")
+    return info
+
+
+def _attach_plan_info(cur, rows: list) -> list:
+    cache: dict = {}
+    out = []
+    for row in rows:
+        wip = (row or {}).get("kode_wip")
+        if wip not in cache:
+            cache[wip] = _wip_plan_info(cur, wip)
+        merged = dict(row or {})
+        merged.update(cache.get(wip) or {})
+        out.append(merged)
+    return out
+
+
 @api.get("/checkpoint")
 def checkpoint_list():
     from app import ensure_extended_tables
 
     result_f = (request.args.get("result") or "").strip().upper()
+    treatment_f = (request.args.get("treatment") or "").strip()
+    kode_wip = (request.args.get("kode_wip") or "").strip()
     q = (request.args.get("q") or "").strip()
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
@@ -4375,19 +4472,26 @@ def checkpoint_list():
     conn.commit()
     sql = "SELECT * FROM tbl_checkpoint WHERE 1=1"
     params: list = []
+    if kode_wip:
+        sql += " AND kode_wip=%s"
+        params.append(kode_wip)
     if result_f in ("OK", "NG"):
         sql += " AND UPPER(IFNULL(result,''))=%s"
         params.append(result_f)
+    if treatment_f:
+        sql += " AND IFNULL(treatment,'')=%s"
+        params.append(treatment_f)
     if q:
         like = f"%{q}%"
         sql += (
             " AND (kode_wip LIKE %s OR IFNULL(kode_packing,'') LIKE %s "
-            "OR IFNULL(remark,'') LIKE %s OR IFNULL(result,'') LIKE %s)"
+            "OR IFNULL(remark,'') LIKE %s OR IFNULL(result,'') LIKE %s "
+            "OR IFNULL(treatment,'') LIKE %s)"
         )
-        params.extend([like, like, like, like])
+        params.extend([like, like, like, like, like])
     sql += " ORDER BY measured_at DESC, id DESC LIMIT 200"
     cur.execute(sql, params)
-    rows = _rows(cur.fetchall())
+    rows = _attach_plan_info(cur, _rows(cur.fetchall()))
     cur.close()
     conn.close()
     return jsonify(rows)
@@ -4457,6 +4561,7 @@ def checkpoint_scan_wip():
             except (TypeError, ValueError):
                 pass
 
+    plan = _wip_plan_info(cur, kode_wip)
     cur.close()
     conn.close()
     return jsonify(
@@ -4470,29 +4575,31 @@ def checkpoint_scan_wip():
             "customer": (packing or {}).get("customer")
             or (rencana or {}).get("nama_customer"),
             "tebal_target": (prep or {}).get("tebal") or (rencana or {}).get("thickness"),
-            "warna": (prep or {}).get("warna") or (rencana or {}).get("color"),
+            "warna": plan.get("warna")
+            or (prep or {}).get("warna")
+            or (rencana or {}).get("color"),
             "erp_production_detail_id": erp_pd,
             "prep_status": (prep or {}).get("status"),
+            "checkpoint_status": (prep or {}).get("checkpoint_status"),
+            "treatment_jenis": (prep or {}).get("treatment_jenis"),
+            "treatment_list": (prep or {}).get("treatment_list"),
+            "kode_rpi": plan.get("kode_rpi"),
+            "nama_rencana": plan.get("nama_rencana"),
+            "material_name": plan.get("material_name"),
+            "emboss": plan.get("emboss") or (prep or {}).get("emboss"),
         }
     )
 
 
 @api.post("/checkpoint")
 def checkpoint_create():
-    from app import ensure_extended_tables
+    from app import ensure_extended_tables, ensure_master_treatment
 
     body = request.get_json(silent=True) or {}
     kode_wip = (body.get("kode_wip") or "").strip()
     if not kode_wip:
         return _err("kode_wip wajib")
     result = (body.get("result") or "").strip().upper() or None
-    if result not in ("OK", "NG"):
-        return _err("result wajib OK atau NG")
-    is_ok = body.get("is_ok")
-    if is_ok is None:
-        is_ok = 1 if result == "OK" else 0
-    else:
-        is_ok = 1 if is_ok in (True, 1, "1", "true", "True") else 0
 
     thickness = body.get("thickness_actual")
     if thickness is not None and thickness != "":
@@ -4517,7 +4624,39 @@ def checkpoint_create():
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
     ensure_extended_tables(cur)
+    ensure_master_treatment(cur)
     conn.commit()
+
+    treatment = _resolve_checkpoint_treatment(
+        cur,
+        body.get("treatment"),
+        allow_empty_as_qc=result in ("OK", "NG"),
+    )
+    if treatment is None:
+        cur.close()
+        conn.close()
+        return _err("Pilih treatment dari master atau QC")
+    if treatment is False:
+        cur.close()
+        conn.close()
+        return _err("Treatment tidak ada di Master Treatment MRP")
+
+    is_qc = treatment == CHECKPOINT_QC_NAME
+    if is_qc:
+        if result not in ("OK", "NG"):
+            cur.close()
+            conn.close()
+            return _err("result wajib OK atau NG")
+        is_ok = body.get("is_ok")
+        if is_ok is None:
+            is_ok = 1 if result == "OK" else 0
+        else:
+            is_ok = 1 if is_ok in (True, 1, "1", "true", "True") else 0
+    else:
+        result = None
+        is_ok = 1
+        thickness = None
+        softness = None
 
     # Validasi WIP ada di shopfloor (persiapan / packing / rencana).
     cur.execute(
@@ -4571,13 +4710,14 @@ def checkpoint_create():
 
     cur.execute(
         "INSERT INTO tbl_checkpoint "
-        "(kode_wip, kode_packing, checkpoint_type, thickness_actual, softness_actual, "
+        "(kode_wip, kode_packing, checkpoint_type, treatment, thickness_actual, softness_actual, "
         "result, is_ok, remark, erp_production_detail_id) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (
             kode_wip,
             kode_packing,
-            (body.get("checkpoint_type") or "inline")[:50],
+            (body.get("checkpoint_type") or ("qc" if is_qc else "treatment"))[:50],
+            treatment,
             thickness,
             softness,
             result,
@@ -4587,6 +4727,10 @@ def checkpoint_create():
         ),
     )
     new_id = cur.lastrowid
+    cur.execute(
+        "UPDATE tbl_persiapan_kulit SET checkpoint_status=%s WHERE kode_wip=%s",
+        (treatment, kode_wip),
+    )
     conn.commit()
     cur.close()
     conn.close()
@@ -4597,6 +4741,8 @@ def checkpoint_create():
             "kode_wip": kode_wip,
             "kode_packing": kode_packing,
             "erp_production_detail_id": erp_pd,
+            "treatment": treatment,
+            "checkpoint_status": treatment,
             "result": result,
             "is_ok": bool(is_ok),
         }

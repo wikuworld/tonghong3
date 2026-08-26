@@ -554,13 +554,15 @@ async def checkpoint_create_bridged(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """Simpan checkpoint MRP + mirror QcDetail ERP bila production_detail ada."""
+    """Simpan checkpoint MRP + mirror QcDetail ERP bila treatment = QC."""
     body = await request.json()
     async with httpx.AsyncClient(timeout=60.0) as client:
         data = await _mrp_json(client, "POST", "checkpoint", json_body=body)
         erp_pd = data.get("erp_production_detail_id") or body.get("erp_production_detail_id")
+        treatment = str(data.get("treatment") or body.get("treatment") or "").strip()
+        is_qc = (not treatment) or treatment.upper() == "QC"
         qc_detail_id = None
-        if erp_pd:
+        if erp_pd and is_qc:
             try:
                 pd_id = int(erp_pd)
                 qc = db.scalars(

@@ -63,6 +63,15 @@
             </span>
           </div>
           <div class="mrp-proses-stat">
+            <span class="mrp-proses-stat__label">{{ t('pages.mrpProses.checkpointStatus') }}</span>
+            <span class="mrp-proses-stat__value">
+              <el-tag v-if="persiapan.checkpoint_status" size="small" effect="plain">
+                {{ persiapan.checkpoint_status }}
+              </el-tag>
+              <span v-else class="text-gray-400">—</span>
+            </span>
+          </div>
+          <div class="mrp-proses-stat">
             <span class="mrp-proses-stat__label">{{ t('common.color') }}</span>
             <span class="mrp-proses-stat__value mrp-proses-stat__value--text">{{ dash(persiapan.warna) }}</span>
           </div>

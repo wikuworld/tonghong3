@@ -218,6 +218,10 @@ def ensure_extended_tables(cur):
     pers_cols = _col_names(cur, "tbl_persiapan_kulit")
     if "rencana_item_id" not in pers_cols:
         cur.execute("ALTER TABLE tbl_persiapan_kulit ADD COLUMN rencana_item_id INT DEFAULT NULL")
+    if pers_cols and "checkpoint_status" not in pers_cols:
+        cur.execute(
+            "ALTER TABLE tbl_persiapan_kulit ADD COLUMN checkpoint_status VARCHAR(100) DEFAULT NULL"
+        )
     if "material_name" not in item_cols:
         cur.execute("ALTER TABLE tbl_rencana_item ADD COLUMN material_name VARCHAR(150) DEFAULT NULL")
     packing_cols = _col_names(cur, "tbl_packing")
@@ -273,6 +277,7 @@ def ensure_extended_tables(cur):
         "kode_wip VARCHAR(30) NOT NULL, "
         "kode_packing VARCHAR(30) DEFAULT NULL, "
         "checkpoint_type VARCHAR(50) DEFAULT 'inline', "
+        "treatment VARCHAR(100) DEFAULT NULL, "
         "thickness_actual DECIMAL(10,3) DEFAULT NULL, "
         "softness_actual VARCHAR(100) DEFAULT NULL, "
         "result VARCHAR(16) DEFAULT NULL, "
@@ -284,6 +289,9 @@ def ensure_extended_tables(cur):
         "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
         "INDEX idx_checkpoint_wip (kode_wip))"
     )
+    cp_cols = _col_names(cur, "tbl_checkpoint")
+    if cp_cols and "treatment" not in cp_cols:
+        cur.execute("ALTER TABLE tbl_checkpoint ADD COLUMN treatment VARCHAR(100) DEFAULT NULL")
     fg_cols = _col_names(cur, "tbl_gudang_fg")
     if fg_cols:
         if "erp_delivery_id" not in fg_cols:

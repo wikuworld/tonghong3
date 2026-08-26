@@ -31,6 +31,17 @@
           <span>{{ dash(scanInfo.customer) }}</span>
         </div>
         <div class="mrp-cp-prep__item">
+          <span class="mrp-cp-prep__label">{{ t('pages.mrpCheckpoint.currentStatus') }}</span>
+          <el-tag v-if="scanInfo.checkpoint_status" size="small" effect="plain">
+            {{ scanInfo.checkpoint_status }}
+          </el-tag>
+          <span v-else>{{ dash(scanInfo.prep_status) }}</span>
+        </div>
+        <div class="mrp-cp-prep__item">
+          <span class="mrp-cp-prep__label">{{ t('pages.mrpCheckpoint.treatmentPlan') }}</span>
+          <span>{{ dash(scanInfo.treatment_list) }}</span>
+        </div>
+        <div class="mrp-cp-prep__item">
           <span class="mrp-cp-prep__label">{{ t('pages.mrpCheckpoint.tebalTarget') }}</span>
           <span>{{ dash(scanInfo.tebal_target) }}</span>
         </div>
@@ -49,20 +60,39 @@
       </div>
 
       <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        <el-input
-          v-model="form.thickness_actual"
-          :placeholder="t('pages.mrpCheckpoint.thickness')"
-          @keyup.enter="save"
-        />
-        <el-input
-          v-model="form.softness_actual"
-          :placeholder="t('pages.mrpCheckpoint.softness')"
-          @keyup.enter="save"
-        />
-        <el-select v-model="form.result" :placeholder="t('pages.mrpCheckpoint.result')" class="w-full">
-          <el-option :label="t('pages.mrpCheckpoint.resultOk')" value="OK" />
-          <el-option :label="t('pages.mrpCheckpoint.resultNg')" value="NG" />
+        <el-select
+          v-model="form.treatment"
+          filterable
+          :placeholder="t('pages.mrpCheckpoint.treatmentPlaceholder')"
+          class="w-full"
+          :disabled="!scanInfo"
+        >
+          <el-option-group v-for="group in treatmentGroups" :key="group.jenis" :label="group.jenis">
+            <el-option
+              v-for="tr in group.items"
+              :key="tr.nama_treatment"
+              :label="tr.nama_treatment"
+              :value="tr.nama_treatment"
+            />
+          </el-option-group>
+          <el-option :label="t('pages.mrpCheckpoint.qcOption')" :value="QC_TREATMENT" />
         </el-select>
+        <template v-if="isQc">
+          <el-input
+            v-model="form.thickness_actual"
+            :placeholder="t('pages.mrpCheckpoint.thickness')"
+            @keyup.enter="save"
+          />
+          <el-input
+            v-model="form.softness_actual"
+            :placeholder="t('pages.mrpCheckpoint.softness')"
+            @keyup.enter="save"
+          />
+          <el-select v-model="form.result" :placeholder="t('pages.mrpCheckpoint.result')" class="w-full">
+            <el-option :label="t('pages.mrpCheckpoint.resultOk')" value="OK" />
+            <el-option :label="t('pages.mrpCheckpoint.resultNg')" value="NG" />
+          </el-select>
+        </template>
         <el-input
           v-model="form.remark"
           :placeholder="t('common.notes')"
@@ -80,65 +110,43 @@
         <div>
           <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpCheckpoint.listTitle') }}</h3>
           <p class="text-xs text-slate-500 mb-0">
-            {{ t('pages.mrpCheckpoint.statsLine', { ok: stats.ok, ng: stats.ng, linked: stats.linked }) }}
+            {{ scanInfo ? t('pages.mrpCheckpoint.listHint') : t('pages.mrpCheckpoint.listEmpty') }}
           </p>
-        </div>
-        <div class="flex gap-2 flex-wrap items-center">
-          <el-radio-group v-model="resultFilter" size="small" @change="reload">
-            <el-radio-button value="">{{ t('pages.mrpCheckpoint.filterAll') }}</el-radio-button>
-            <el-radio-button value="OK">{{ t('pages.mrpCheckpoint.resultOk') }}</el-radio-button>
-            <el-radio-button value="NG">{{ t('pages.mrpCheckpoint.resultNg') }}</el-radio-button>
-          </el-radio-group>
-          <el-input
-            v-model="search"
-            clearable
-            size="small"
-            class="w-56"
-            :placeholder="t('pages.mrpCheckpoint.searchPlaceholder')"
-          />
         </div>
       </div>
 
       <el-table
-        :data="filteredRows"
+        :data="rows"
         v-loading="loading"
         border
         stripe
         size="small"
         class="admin-table"
-        empty-text="—"
+        :empty-text="t('pages.mrpCheckpoint.listEmpty')"
       >
         <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
-        <el-table-column prop="kode_wip" :label="t('pages.mrpCheckpoint.wip')" min-width="130" show-overflow-tooltip />
-        <el-table-column :label="t('pages.mrpPacking.kodePacking')" min-width="130" show-overflow-tooltip>
-          <template #default="{ row }">{{ dash(row.kode_packing) }}</template>
+        <el-table-column prop="kode_wip" :label="t('pages.mrpCheckpoint.wip')" min-width="140" show-overflow-tooltip />
+        <el-table-column :label="t('pages.mrpProses.kodeRpi')" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.kode_rpi) }}</template>
         </el-table-column>
-        <el-table-column :label="t('pages.mrpCheckpoint.thickness')" width="110" align="right">
-          <template #default="{ row }">{{ formatQty(row.thickness_actual) }}</template>
+        <el-table-column :label="t('pages.mrpCheckpoint.namaRencana')" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.nama_rencana) }}</template>
         </el-table-column>
-        <el-table-column :label="t('pages.mrpCheckpoint.softness')" min-width="100" show-overflow-tooltip>
-          <template #default="{ row }">{{ dash(row.softness_actual) }}</template>
+        <el-table-column :label="t('common.material')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.material_name) }}</template>
         </el-table-column>
-        <el-table-column :label="t('pages.mrpCheckpoint.result')" width="90" align="center">
+        <el-table-column :label="t('common.emboss')" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.emboss) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('common.color')" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.warna) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpCheckpoint.treatment')" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">
-            <el-tag :type="resultType(row.result)" size="small" effect="plain">
-              {{ resultLabel(row.result) }}
+            <el-tag :type="treatmentTagType(row.treatment)" size="small" effect="plain">
+              {{ dash(row.treatment || row.result) }}
             </el-tag>
           </template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpCheckpoint.erpQc')" width="110" align="center">
-          <template #default="{ row }">
-            <el-tag v-if="row.erp_qc_detail_id" type="success" size="small" effect="plain">
-              #{{ row.erp_qc_detail_id }}
-            </el-tag>
-            <span v-else class="text-gray-400">—</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('common.notes')" min-width="140" show-overflow-tooltip>
-          <template #default="{ row }">{{ dash(row.remark) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('common.date')" width="150">
-          <template #default="{ row }">{{ formatDateTime(row.measured_at) }}</template>
         </el-table-column>
       </el-table>
     </div>
@@ -152,44 +160,43 @@ import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import { can } from '../../../security/permissions'
-import { mrpCheckpointScanWip, mrpCreateCheckpoint, mrpListCheckpoint } from '../../../api/client'
+import {
+  mrpCheckpointScanWip,
+  mrpCreateCheckpoint,
+  mrpListCheckpoint,
+  mrpListTreatment,
+} from '../../../api/client'
 
+const QC_TREATMENT = 'QC'
 const { t } = useI18n()
 const loading = ref(false)
 const saving = ref(false)
 const scanning = ref(false)
 const rows = ref([])
-const search = ref('')
-const resultFilter = ref('')
+const treatments = ref([])
 const scanInfo = ref(null)
 const canCreate = computed(() => can('mrpShopfloor', 'create'))
 const form = reactive({
   kode_wip: '',
+  treatment: '',
   thickness_actual: '',
   softness_actual: '',
   result: 'OK',
   remark: '',
 })
 
-const filteredRows = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  if (!q) return rows.value
-  return rows.value.filter((r) =>
-    [r.kode_wip, r.kode_packing, r.result, r.remark, r.softness_actual]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .includes(q),
-  )
-})
+const isQc = computed(() => form.treatment === QC_TREATMENT)
 
-const stats = computed(() => {
-  const list = rows.value || []
-  return {
-    ok: list.filter((r) => String(r.result || '').toUpperCase() === 'OK').length,
-    ng: list.filter((r) => String(r.result || '').toUpperCase() === 'NG').length,
-    linked: list.filter((r) => r.erp_qc_detail_id).length,
+const treatmentGroups = computed(() => {
+  const byJenis = new Map()
+  for (const tr of treatments.value || []) {
+    const name = String(tr.nama_treatment || '').trim()
+    if (!name || name.toUpperCase() === QC_TREATMENT) continue
+    const jenis = String(tr.jenis || '').trim() || '—'
+    if (!byJenis.has(jenis)) byJenis.set(jenis, [])
+    byJenis.get(jenis).push(tr)
   }
+  return [...byJenis.entries()].map(([jenis, items]) => ({ jenis, items }))
 })
 
 function dash(v) {
@@ -197,29 +204,9 @@ function dash(v) {
   return s || '—'
 }
 
-function formatQty(v) {
-  const n = Number(v)
-  if (!Number.isFinite(n)) return '—'
-  return Number.isInteger(n) ? String(n) : n.toLocaleString(undefined, { maximumFractionDigits: 3 })
-}
-
-function formatDateTime(v) {
-  if (!v) return '—'
-  return String(v).replace('T', ' ').slice(0, 19)
-}
-
-function resultType(result) {
-  const r = String(result || '').toUpperCase()
-  if (r === 'OK') return 'success'
-  if (r === 'NG') return 'danger'
+function treatmentTagType(treatment) {
+  if (String(treatment || '').toUpperCase() === QC_TREATMENT) return 'warning'
   return 'info'
-}
-
-function resultLabel(result) {
-  const r = String(result || '').toUpperCase()
-  if (r === 'OK') return t('pages.mrpCheckpoint.resultOk')
-  if (r === 'NG') return t('pages.mrpCheckpoint.resultNg')
-  return result || '—'
 }
 
 function errMsg(e) {
@@ -236,12 +223,25 @@ function errMsg(e) {
   }
 }
 
+async function loadTreatments() {
+  try {
+    const data = await mrpListTreatment()
+    treatments.value = Array.isArray(data) ? data : data?.items || data?.treatments || []
+  } catch (e) {
+    treatments.value = []
+    ElMessage.error(errMsg(e))
+  }
+}
+
 async function reload() {
+  const kode = scanInfo.value?.kode_wip
+  if (!kode) {
+    rows.value = []
+    return
+  }
   loading.value = true
   try {
-    const params = {}
-    if (resultFilter.value) params.result = resultFilter.value
-    rows.value = await mrpListCheckpoint(params)
+    rows.value = await mrpListCheckpoint({ kode_wip: kode })
   } catch (e) {
     ElMessage.error(errMsg(e))
   } finally {
@@ -265,8 +265,10 @@ async function scanWip() {
       if (Number.isFinite(n) && n > 0) form.thickness_actual = String(n)
     }
     ElMessage.success(t('pages.mrpCheckpoint.scanOk'))
+    await reload()
   } catch (e) {
     scanInfo.value = null
+    rows.value = []
     ElMessage.error(errMsg(e))
   } finally {
     scanning.value = false
@@ -279,15 +281,21 @@ async function save() {
     ElMessage.warning(t('pages.mrpCheckpoint.wipPlaceholder'))
     return
   }
-  if (!form.result) {
-    ElMessage.warning(t('pages.mrpCheckpoint.resultRequired'))
+  if (!form.treatment) {
+    ElMessage.warning(t('pages.mrpCheckpoint.treatmentRequired'))
     return
   }
-  if (form.thickness_actual !== '' && form.thickness_actual != null) {
-    const n = Number(form.thickness_actual)
-    if (!Number.isFinite(n) || n <= 0) {
-      ElMessage.warning(t('pages.mrpCheckpoint.thicknessInvalid'))
+  if (isQc.value) {
+    if (!form.result) {
+      ElMessage.warning(t('pages.mrpCheckpoint.resultRequired'))
       return
+    }
+    if (form.thickness_actual !== '' && form.thickness_actual != null) {
+      const n = Number(form.thickness_actual)
+      if (!Number.isFinite(n) || n <= 0) {
+        ElMessage.warning(t('pages.mrpCheckpoint.thicknessInvalid'))
+        return
+      }
     }
   }
   if (!scanInfo.value || scanInfo.value.kode_wip !== kode) {
@@ -296,19 +304,27 @@ async function save() {
   }
   saving.value = true
   try {
-    const res = await mrpCreateCheckpoint({
+    const payload = {
       kode_wip: kode,
+      treatment: form.treatment,
       kode_packing: scanInfo.value?.kode_packing || null,
-      thickness_actual: form.thickness_actual === '' ? null : Number(form.thickness_actual),
-      softness_actual: form.softness_actual.trim() || null,
-      result: form.result,
-      is_ok: form.result === 'OK',
       remark: form.remark.trim() || null,
       erp_production_detail_id: scanInfo.value?.erp_production_detail_id || null,
-    })
+    }
+    if (isQc.value) {
+      payload.thickness_actual = form.thickness_actual === '' ? null : Number(form.thickness_actual)
+      payload.softness_actual = form.softness_actual.trim() || null
+      payload.result = form.result
+      payload.is_ok = form.result === 'OK'
+    }
+    const res = await mrpCreateCheckpoint(payload)
+    const status = res?.checkpoint_status || res?.treatment || form.treatment
+    if (scanInfo.value) scanInfo.value.checkpoint_status = status
     const qc = res?.erp_qc_detail_id
     ElMessage.success(
-      qc ? t('pages.mrpCheckpoint.savedLinked', { qc }) : t('common.saved'),
+      qc
+        ? t('pages.mrpCheckpoint.savedLinked', { qc })
+        : t('pages.mrpCheckpoint.savedStatus', { status }),
     )
     form.thickness_actual = ''
     form.softness_actual = ''
@@ -322,15 +338,14 @@ async function save() {
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  loadTreatments()
+})
 </script>
 
 <style scoped>
 .max-w-xs {
   max-width: 20rem;
-}
-.w-56 {
-  width: 14rem;
 }
 .mrp-cp-list-head {
   display: flex;

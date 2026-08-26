@@ -140,6 +140,7 @@ CREATE TABLE IF NOT EXISTS tbl_persiapan_kulit (
     treatment_list TEXT DEFAULT NULL,
     total_size DECIMAL(12,2) DEFAULT 0,
     status ENUM('draft','started','saved','completed') DEFAULT 'draft',
+    checkpoint_status VARCHAR(100) DEFAULT NULL,
     date_created DATETIME DEFAULT CURRENT_TIMESTAMP,
     date_saved DATETIME DEFAULT NULL,
     INDEX idx_kode_wip (kode_wip),

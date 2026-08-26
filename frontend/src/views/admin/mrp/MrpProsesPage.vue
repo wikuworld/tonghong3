@@ -37,6 +37,14 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column :label="t('pages.mrpProses.checkpointStatus')" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-tag v-if="row.checkpoint_status" size="small" effect="plain">
+              {{ row.checkpoint_status }}
+            </el-tag>
+            <span v-else class="text-gray-400">—</span>
+          </template>
+        </el-table-column>
         <el-table-column :label="t('pages.mrpProses.totalSize')" width="100" align="right">
           <template #default="{ row }">{{ formatQty(row.total_size) }}</template>
         </el-table-column>

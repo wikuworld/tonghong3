@@ -64,6 +64,20 @@ def test_checkpoint_list_and_result_filter(auth_headers):
         for r in ok.json() or []:
             assert str(r.get("result") or "").upper() == "OK"
 
+        wip = _any_wip(client, auth_headers)
+        if wip:
+            by_wip = client.get(
+                "/mrp/checkpoint", headers=auth_headers, params={"kode_wip": wip}
+            )
+            assert by_wip.status_code == 200, by_wip.text
+            for r in by_wip.json() or []:
+                assert r.get("kode_wip") == wip
+                assert "kode_rpi" in r
+                assert "nama_rencana" in r
+                assert "material_name" in r
+                assert "emboss" in r
+                assert "warna" in r
+
 
 def test_checkpoint_scan_and_create(auth_headers):
     with _client() as client:
@@ -117,6 +131,57 @@ def test_checkpoint_scan_and_create(auth_headers):
         assert data.get("ok") is True
         assert data.get("kode_wip") == wip
         assert data.get("result") == "OK"
+        assert str(data.get("treatment") or "").upper() == "QC"
+        assert str(data.get("checkpoint_status") or "").upper() == "QC"
+
+
+def _any_treatment(client, headers) -> str | None:
+    mt = client.get("/mrp/masters/treatment", headers=headers)
+    if mt.status_code != 200:
+        return None
+    rows = mt.json() or []
+    if isinstance(rows, dict):
+        rows = rows.get("items") or rows.get("treatments") or []
+    for r in rows:
+        name = str(r.get("nama_treatment") or "").strip()
+        if name and name.upper() != "QC":
+            return name
+    return None
+
+
+def test_checkpoint_treatment_updates_status(auth_headers):
+    with _client() as client:
+        wip = _any_wip(client, auth_headers)
+        if not wip:
+            pytest.skip("tidak ada WIP shopfloor")
+        treatment = _any_treatment(client, auth_headers)
+        if not treatment:
+            pytest.skip("tidak ada master treatment")
+
+        bad = client.post(
+            "/mrp/checkpoint",
+            headers=auth_headers,
+            json={"kode_wip": wip, "treatment": "TREATMENT-TIDAK-ADA-XYZ"},
+        )
+        assert bad.status_code == 400, bad.text
+
+        created = client.post(
+            "/mrp/checkpoint",
+            headers=auth_headers,
+            json={"kode_wip": wip, "treatment": treatment, "remark": "smoke treatment"},
+        )
+        assert created.status_code in (200, 201), created.text
+        data = created.json()
+        assert data.get("ok") is True
+        assert data.get("treatment") == treatment
+        assert data.get("checkpoint_status") == treatment
+        assert data.get("result") in (None, "")
+
+        scan = client.get(
+            "/mrp/checkpoint/scan-wip", headers=auth_headers, params={"q": wip}
+        )
+        assert scan.status_code == 200, scan.text
+        assert scan.json().get("checkpoint_status") == treatment
 
 
 def test_checkpoint_rejects_unknown_wip(auth_headers):

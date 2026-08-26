@@ -1581,6 +1581,8 @@ export function mrpGudangFgOut(body) {
 export function mrpListCheckpoint(params = {}) {
   const q = new URLSearchParams()
   if (params.result) q.set('result', String(params.result))
+  if (params.treatment) q.set('treatment', String(params.treatment))
+  if (params.kode_wip) q.set('kode_wip', String(params.kode_wip))
   if (params.q) q.set('q', String(params.q))
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/mrp/checkpoint${suffix}`)
