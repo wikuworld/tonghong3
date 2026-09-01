@@ -1584,7 +1584,11 @@ const outstandingTextFilters = reactive({})
 
 function ensureOutstandingTextFilterKeys() {
   for (const key of OUTSTANDING_TEXT_FILTER_KEYS.value) {
-    if (!(key in outstandingTextFilters)) outstandingTextFilters[key] = ''
+    if (!(key in outstandingTextFilters)) outstandingTextFilters[key] = []
+    else if (!Array.isArray(outstandingTextFilters[key])) {
+      const raw = outstandingTextFilters[key]
+      outstandingTextFilters[key] = raw == null || raw === '' ? [] : [String(raw)]
+    }
   }
 }
 
@@ -1617,15 +1621,22 @@ const outstandingColFilterOptions = computed(() => {
   return map
 })
 
-function outstandingRowTextMatches(row, key, needle) {
-  if (!needle || !String(needle).trim()) return true
-  const q = String(needle).trim().toLowerCase()
+function outstandingRowTextMatches(row, key, needles) {
+  const list = Array.isArray(needles)
+    ? needles.map((n) => String(n || '').trim()).filter(Boolean)
+    : needles && String(needles).trim()
+      ? [String(needles).trim()]
+      : []
+  if (!list.length) return true
   let cell = String(row[key] ?? '')
   if (/^\d{4}-\d{2}-\d{2}/.test(cell.trim())) {
     cell = formatOutstandingDate(cell)
   }
   const cellLc = cell.toLowerCase()
-  return cellLc === q || cellLc.includes(q)
+  return list.some((needle) => {
+    const q = needle.toLowerCase()
+    return cellLc === q || cellLc.includes(q)
+  })
 }
 
 function buildOutstandingDateParams() {
@@ -1677,9 +1688,12 @@ function unwrapOutstandingLines(resp) {
 
 const outstandingDisplayRows = computed(() => {
   let list = outstandingRows.value
-  for (const [key, needle] of Object.entries(outstandingTextFilters)) {
-    if (!needle || !String(needle).trim()) continue
-    list = list.filter((r) => outstandingRowTextMatches(r, key, needle))
+  for (const [key, needles] of Object.entries(outstandingTextFilters)) {
+    const active = Array.isArray(needles)
+      ? needles.some((n) => String(n || '').trim())
+      : Boolean(needles && String(needles).trim())
+    if (!active) continue
+    list = list.filter((r) => outstandingRowTextMatches(r, key, needles))
   }
   // Kelompokkan visual: THI ORDER sama berdekatan
   return [...list].sort((a, b) => {
@@ -1722,7 +1736,7 @@ function outstandingRowClassName({ row, rowIndex }) {
 
 function clearOutstandingColFilters() {
   for (const key of Object.keys(outstandingTextFilters)) {
-    outstandingTextFilters[key] = ''
+    outstandingTextFilters[key] = []
   }
 }
 
@@ -2566,7 +2580,6 @@ function soListPrimaryDisabled(row) {
 function runSoListPrimary(row) {
   const kind = soListNextStepKind(row)
   if (kind === 'rekap') openRekapPrintDialog(row)
-  else if (kind === 'confirm_so') goPo(row.id)
   else if (kind === 'assign_ppic') openAssignDialog(row)
   else if (kind === 'advance') advance(row)
   else if (kind === 'outstanding') goOutstandingFromPo(row)

@@ -1,5 +1,5 @@
 <template>
-  <!-- Dialog jadwal kirim batch — qty + tanggal per baris -->
+  <!-- Dialog rencana kirim batch — qty + tanggal per baris -->
   <el-dialog
     :model-value="scheduleVisible"
     :title="t('pages.marketingFlow.scheduleDialogTitle')"

@@ -74,7 +74,7 @@ def apply_outstanding_schedule_batch(
     actor: str,
 ) -> dict[str, Any]:
     if not body.lines:
-        raise HTTPException(status_code=400, detail="Pilih minimal satu baris untuk dijadwalkan")
+        raise HTTPException(status_code=400, detail="Pilih minimal satu baris untuk direncanakan")
 
     updated: list[int] = []
     po_ids: set[int] = set()
@@ -100,7 +100,7 @@ def apply_outstanding_schedule_batch(
                 if qty <= 0:
                     raise HTTPException(
                         status_code=400,
-                        detail=f"Baris #{drow.id} sudah penuh terjadwal (tidak ada sisa qty)",
+                        detail=f"Baris #{drow.id} sudah penuh direncanakan (tidak ada sisa qty)",
                     )
 
         # Jadwal vs ETD: tolak tanggal jauh sebelum order / jauh setelah reply ETD
@@ -114,7 +114,7 @@ def apply_outstanding_schedule_batch(
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"Tanggal jadwal ({ln.delivery_date}) sebelum tanggal order ({order_dt}) "
+                    f"Tanggal rencana ({ln.delivery_date}) sebelum tanggal order ({order_dt}) "
                     f"untuk baris #{drow.id}"
                 ),
             )
@@ -126,7 +126,7 @@ def apply_outstanding_schedule_batch(
                 raise HTTPException(
                     status_code=400,
                     detail=(
-                        f"Tanggal jadwal ({ln.delivery_date}) terlalu jauh setelah reply ETD ({etd}) "
+                        f"Tanggal rencana ({ln.delivery_date}) terlalu jauh setelah reply ETD ({etd}) "
                         f"untuk baris #{drow.id}"
                     ),
                 )
@@ -143,7 +143,7 @@ def apply_outstanding_schedule_batch(
             if next_seq > PO_MAX_DELIVERY_SCHEDULES:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Baris #{drow.id} sudah penuh ({PO_MAX_DELIVERY_SCHEDULES} slot jadwal)",
+                    detail=f"Baris #{drow.id} sudah penuh ({PO_MAX_DELIVERY_SCHEDULES} slot rencana)",
                 )
             schedules = [
                 DeliveryScheduleItem(

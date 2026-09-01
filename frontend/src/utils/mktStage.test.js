@@ -25,10 +25,10 @@ describe('materialFollowUpAutoStatus', () => {
 })
 
 describe('soListNextStep', () => {
-  it('starts with recap then confirm before advancing', () => {
+  it('starts with recap; draft waits for Order Penjualan confirm', () => {
     expect(soListNextStep({ mkt_workflow_stage: 'input_system' })).toBe('rekap')
     expect(soListNextStep({ mkt_workflow_stage: 'input_system', rekap_printed_at: '2026-08-01', status: 'draft' })).toBe(
-      'confirm_so',
+      'wait',
     )
     expect(
       soListNextStep({ mkt_workflow_stage: 'input_system', rekap_printed_at: '2026-08-01', status: 'confirmed' }),

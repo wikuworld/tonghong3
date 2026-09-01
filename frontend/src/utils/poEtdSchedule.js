@@ -1,4 +1,4 @@
-/** Jadwal kirim (ETD) per baris PO — UI wizard: 1 jadwal per baris; backend/outstanding tetap mendukung hingga 21 slot. */
+/** Rencana kirim (ETD) per baris PO — UI wizard: 1 slot per baris; backend/outstanding tetap mendukung hingga 21 slot. */
 
 export function createEtdScheduleRow(sequenceNo = 1) {
   return {

@@ -859,8 +859,8 @@ const materialStepFillStep = computed(() => {
 
 const swatchHelperMessage = computed(() => {
   if (colorSwatchLoading.value) return ''
-  if (!poFactoryKeyForSwatch() || !formModel.buyer) {
-    return t('pages.po.swatchNeedCustomerBuyer')
+  if (!formModel.buyer) {
+    return t('pages.po.swatchNeedBuyer')
   }
   if (!String(formModel.material_name || '').trim()) {
     return t('pages.po.swatchNeedMaterial')
@@ -878,16 +878,32 @@ let lastSwatchScopeKey = ''
 let lastAutoSwatchDimensionKey = ''
 
 function swatchScopeKey() {
-  return [
-    formModel.customer_id,
-    formModel.factory_code,
-    formModel.buyer,
-    formModel.material_name,
-    swatchAllMaterials.value,
-  ]
+  return [formModel.buyer, formModel.material_name, swatchAllMaterials.value]
     .map((x) => String(x ?? '').trim().toLowerCase())
     .join('|')
 }
+
+/** Color Swatch (PU) vs Color Window (Suede) — label saja; sumber data sama. */
+function isSuedeMaterialContext() {
+  const linked = masterItems.value.find((x) => x.id === formModel.master_item_id)
+  const cat = String(linked?.category || '').trim().toLowerCase()
+  const mat = String(formModel.material_name || '').trim().toLowerCase()
+  if (cat.includes('suede') || cat === 'suide') return true
+  if (/\bsuede\b/.test(mat)) return true
+  return false
+}
+
+const wizardColorSwatchGroupTitle = computed(() =>
+  isSuedeMaterialContext()
+    ? t('pages.po.wizardGroupColorWindow')
+    : t('pages.po.wizardGroupColorStandard'),
+)
+
+const wizardColorSwatchGroupSub = computed(() =>
+  isSuedeMaterialContext()
+    ? t('pages.po.colorWindowPickerLabel')
+    : t('pages.po.swatchPickerLabel'),
+)
 
 function swatchDimensionKey() {
   return [formModel.material_name, formModel.color, formModel.emboss]
@@ -1432,8 +1448,6 @@ watch(
 
 watch(
   () => [
-    formModel.customer_id,
-    formModel.factory_code,
     formModel.buyer,
     formModel.material_name,
     formModel.color,
@@ -2392,6 +2406,10 @@ const submitForm = async () => {
       for (const staleId of staleIds) {
         await deletePoDetail(staleId)
       }
+      ElMessage.success(t('pages.customers.saved'))
+      if ((header.status || formModel.status) === 'draft' && bodiesFinal.length) {
+        await offerConfirmAfterSave(editingPoId.value)
+      }
     } else {
       const created = await createPo(header)
       for (const raw of bodiesFinal) {
@@ -2400,8 +2418,9 @@ const submitForm = async () => {
         delete rowBody.delivery_schedules
         const createdDetail = await addPoDetail(created.id, { ...rowBody, delivery_schedules: schedules })
       }
+      ElMessage.success(t('pages.customers.saved'))
+      await offerConfirmAfterSave(created.id)
     }
-    ElMessage.success(t('pages.customers.saved'))
     clearPoDraftLocal()
     formDialogVisible.value = false
     await load()
@@ -2409,6 +2428,26 @@ const submitForm = async () => {
     ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
   } finally {
     saving.value = false
+  }
+}
+
+async function offerConfirmAfterSave(poId) {
+  if (!poId) return
+  try {
+    await ElMessageBox.confirm(t('pages.po.confirmPoAfterSave'), t('pages.po.confirmDraftAction'), {
+      type: 'warning',
+      confirmButtonText: t('common.yes'),
+      cancelButtonText: t('common.no'),
+      distinguishCancelAndClose: true,
+    })
+  } catch {
+    return
+  }
+  try {
+    await updatePo(poId, { status: 'confirmed' })
+    ElMessage.success(t('pages.po.statusChanged'))
+  } catch (e) {
+    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
   }
 }
 
@@ -2541,6 +2580,8 @@ function addCopiedItems() {
     poFactoryKeyForSwatch,
     materialStepFillStep,
     swatchHelperMessage,
+    wizardColorSwatchGroupTitle,
+    wizardColorSwatchGroupSub,
     applyColorSwatch,
     enableSwatchManualEdit,
     reapplySelectedSwatchRecipe,

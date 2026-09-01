@@ -1125,7 +1125,7 @@ def marketing_revise_po(
         log.warning("marketing_revise_po integrity_error po_id=%s: %s", po_id, e)
         raise HTTPException(
             status_code=409,
-            detail="Simpan revisi marketing gagal (konflik data). Periksa jadwal delivery.",
+            detail="Simpan revisi marketing gagal (konflik data). Periksa rencana kirim / delivery.",
         ) from e
     except SQLAlchemyError as e:
         db.rollback()
@@ -1407,7 +1407,7 @@ def set_po_detail_delivery_schedules(
         log.warning("set_po_detail_delivery_schedules integrity_error detail_id=%s: %s", detail_id, e)
         raise HTTPException(
             status_code=409,
-            detail="Simpan jadwal delivery gagal (konflik data). Periksa urutan/jadwal yang duplikat.",
+            detail="Simpan rencana kirim gagal (konflik data). Periksa urutan/rencana yang duplikat.",
         ) from e
     except SQLAlchemyError as e:
         db.rollback()
@@ -1419,11 +1419,11 @@ def set_po_detail_delivery_schedules(
         if "unknown column" in low or "doesn't exist" in low or "does not exist" in low or "doesn't have a default value" in low:
             raise HTTPException(
                 status_code=503,
-                detail="Skema database belum selaras untuk jadwal delivery. Jalankan migrasi terbaru (alembic upgrade head).",
+                detail="Skema database belum selaras untuk rencana kirim. Jalankan migrasi terbaru (alembic upgrade head).",
             ) from e
         raise HTTPException(
             status_code=500,
-            detail="Simpan jadwal delivery gagal (database). Cek log server untuk detail.",
+            detail="Simpan rencana kirim gagal (database). Cek log server untuk detail.",
         ) from e
 
 

@@ -584,8 +584,8 @@
 
           <section v-if="!w.isSubkonPo" class="po-wizard-group">
             <header class="po-wizard-group__head">
-              <h4 class="po-wizard-group__title">{{ t('pages.po.wizardGroupColorStandard') }}</h4>
-              <p class="po-wizard-group__sub">{{ t('pages.po.colorStandardSourceHint') }}</p>
+              <h4 class="po-wizard-group__title">{{ w.wizardColorSwatchGroupTitle }}</h4>
+              <p class="po-wizard-group__sub">{{ w.wizardColorSwatchGroupSub }}</p>
             </header>
             <div class="mb-3">
               <p class="mb-1 text-xs text-slate-500">{{ t('pages.po.colorStandardSourceLabel') }}</p>
@@ -628,7 +628,7 @@
                     class="w-full"
                     :placeholder="t('pages.po.swatchPickerPlaceholder')"
                     :loading="w.colorSwatchLoading"
-                    :disabled="!w.poFactoryKeyForSwatch() || !w.formModel.buyer"
+                    :disabled="!w.formModel.buyer"
                     @change="w.applyColorSwatch"
                   >
                     <el-option

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date, datetime
+import json
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -17,11 +18,51 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
-from app.models import PoDetail, PoHeader, User
-from app.routers.auth import get_current_user
+from app.models import AuditLog, PoDetail, PoHeader, User
+from app.routers.auth import get_current_user, require_roles
+from app.services.accounts_receivable_report import build_rar_payload, render_rar_xlsx
+from app.services.pending_payment_report import (
+    build_pending_payment_payload,
+    render_pending_payment_xlsx,
+)
 from app.services.mkt_workflow import stamp_rekap_printed_for_recap, sync_mkt_workflow_auto_advance
 
 router = APIRouter(tags=["reports"])
+
+_AUDIT_SKIP_KEYS = frozenset(
+    {
+        "id",
+        "created_at",
+        "updated_at",
+        "po_header_id",
+        "po_id",
+        "thickness_min",
+        "thickness_max",
+        "master_item_id",
+        "color_swatch_recipe_id",
+    }
+)
+
+_AUDIT_FIELD_LABELS = {
+    "quantity_order": "Qty",
+    "unit_price": "Harga",
+    "line_etd": "ETD",
+    "thi_line_ref": "THI/Lot",
+    "color_family": "Kategori warna",
+    "color_standard": "Color standart",
+    "color_reference": "Color ref",
+    "thickness_text": "Ketebalan",
+    "softness": "Softness",
+    "vir_softness_type": "Softness type",
+    "backing": "Backing",
+    "emboss": "Emboss",
+    "style_article": "Style/Article",
+    "model": "Model",
+    "material_name": "Material",
+    "color": "Warna",
+    "detail_remark": "Catatan",
+    "delivery_schedules": "Rencana Kirim",
+}
 
 
 class PoDailyRecapConfirmIn(BaseModel):
@@ -163,6 +204,237 @@ def _base_marketing_daily_row(h: PoHeader, ln: PoDetail) -> dict[str, Any]:
     }
 
 
+def _parse_audit_payload(raw: Optional[str]) -> dict[str, Any]:
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _audit_value_empty(value: Any) -> bool:
+    if value is None or value == "":
+        return True
+    if isinstance(value, (list, dict)) and not value:
+        return True
+    return False
+
+
+def _format_audit_value(value: Any) -> str:
+    if _audit_value_empty(value):
+        return "—"
+    if isinstance(value, list):
+        parts: list[str] = []
+        for row in value:
+            if isinstance(row, dict):
+                qty = row.get("qty", "—")
+                dt = row.get("delivery_date") or "—"
+                parts.append(f"#{row.get('sequence_no', '—')} {qty} / {dt}")
+            else:
+                parts.append(str(row))
+        return "; ".join(parts) if parts else "—"
+    if isinstance(value, dict):
+        return json.dumps(value, default=str, ensure_ascii=False)
+    return str(value)
+
+
+def _thickness_from_snapshot(snap: dict[str, Any]) -> str:
+    text = str(snap.get("thickness_text") or "").strip()
+    if text:
+        return text
+    a, b = snap.get("thickness_min"), snap.get("thickness_max")
+    if a is not None and b is not None:
+        return f"{a} - {b}"
+    if a is not None or b is not None:
+        return str(a if a is not None else b)
+    return ""
+
+
+def _diff_po_line_audit(
+    before: dict[str, Any],
+    after: dict[str, Any],
+) -> tuple[list[str], str, str, str]:
+    """Return (changed_field_keys, summary, old_values_text, new_values_text)."""
+    keys = set(before.keys()) | set(after.keys())
+    changed: list[str] = []
+    old_parts: list[str] = []
+    new_parts: list[str] = []
+    summary_parts: list[str] = []
+    for key in sorted(keys):
+        if key in _AUDIT_SKIP_KEYS:
+            continue
+        b = before.get(key)
+        a = after.get(key)
+        if _audit_value_empty(b) and _audit_value_empty(a):
+            continue
+        if json.dumps(b, default=str, sort_keys=True) == json.dumps(a, default=str, sort_keys=True):
+            continue
+        changed.append(key)
+        label = _AUDIT_FIELD_LABELS.get(key, key)
+        b_txt = _format_audit_value(b)
+        a_txt = _format_audit_value(a)
+        old_parts.append(f"{label}: {b_txt}")
+        new_parts.append(f"{label}: {a_txt}")
+        summary_parts.append(f"{label}: {b_txt} → {a_txt}")
+    return changed, "; ".join(summary_parts), "; ".join(old_parts), "; ".join(new_parts)
+
+
+def _customer_filter_ok(h: PoHeader, customer: Optional[str]) -> bool:
+    if not customer or not str(customer).strip():
+        return True
+    q = str(customer).strip().lower()
+    snap = (h.customer_name_snapshot or "").lower()
+    code = (h.customer_code or "").lower()
+    return q == snap or q == code or q in snap or q in code
+
+
+def _normalize_po_category_bucket(raw: Optional[str]) -> str:
+    cat = (raw or "production").strip().lower()
+    if cat in {"", "suede"}:
+        return "production"
+    if cat == "subkon":
+        return "subcont"
+    return cat
+
+
+def _bucket_order_row(cat: str, row: dict[str, Any], buckets: dict[str, list[dict[str, Any]]]) -> None:
+    key = _normalize_po_category_bucket(cat)
+    if key == "sample":
+        buckets["samples"].append(row)
+    elif key == "claim":
+        buckets["claim_orders"].append(row)
+    elif key == "return":
+        buckets["return_orders"].append(row)
+    elif key == "subcont":
+        buckets["subcont_orders"].append(row)
+    else:
+        buckets["production_orders"].append(row)
+
+
+def _collect_revise_from_audit(
+    db: Session,
+    date_from: Optional[date],
+    date_to: Optional[date],
+    customer: Optional[str],
+) -> list[dict[str, Any]]:
+    """Revisi baris SO dari audit_logs (tanggal = hari revisi)."""
+    stmt = (
+        select(AuditLog)
+        .where(
+            AuditLog.entity_type == "sales_order_line",
+            AuditLog.action.in_(("update", "delete")),
+        )
+        .order_by(AuditLog.id.desc())
+    )
+    if date_from is not None:
+        stmt = stmt.where(AuditLog.created_at >= datetime.combine(date_from, time.min))
+    if date_to is not None:
+        # inclusive end-of-day
+        stmt = stmt.where(
+            AuditLog.created_at < datetime.combine(date_to + timedelta(days=1), time.min)
+        )
+
+    rows: list[dict[str, Any]] = []
+    header_cache: dict[int, Optional[PoHeader]] = {}
+    detail_cache: dict[int, Optional[PoDetail]] = {}
+
+    for log in db.scalars(stmt).all():
+        before = _parse_audit_payload(log.payload_before)
+        after = _parse_audit_payload(log.payload_after)
+        changed, summary, old_vals, new_vals = _diff_po_line_audit(before, after)
+        action = (log.action or "").strip().lower()
+        if action == "update" and not changed:
+            continue
+
+        po_id = before.get("po_id") or after.get("po_id")
+        try:
+            po_id_int = int(po_id) if po_id is not None else None
+        except (TypeError, ValueError):
+            po_id_int = None
+
+        h: Optional[PoHeader] = None
+        if po_id_int is not None:
+            if po_id_int not in header_cache:
+                header_cache[po_id_int] = db.get(PoHeader, po_id_int)
+            h = header_cache[po_id_int]
+        if h is None:
+            continue
+        if not _customer_filter_ok(h, customer):
+            continue
+
+        detail_id = log.entity_id
+        ln: Optional[PoDetail] = None
+        if detail_id is not None:
+            did = int(detail_id)
+            if did not in detail_cache:
+                detail_cache[did] = db.get(PoDetail, did)
+            ln = detail_cache[did]
+
+        if ln is not None:
+            row = _base_marketing_daily_row(h, ln)
+        else:
+            # delete / baris sudah hilang — bangun dari snapshot
+            snap = after or before
+            qty_raw = snap.get("quantity_order")
+            try:
+                qty_val = float(qty_raw) if qty_raw is not None and qty_raw != "" else 0.0
+            except (TypeError, ValueError):
+                qty_val = 0.0
+            price_raw = snap.get("unit_price")
+            price_str = "" if price_raw is None or price_raw == "" else str(price_raw)
+            cust = (h.customer_name_snapshot or h.customer_code or "").strip() or "—"
+            row = {
+                "poNo": h.po_number or f"SO-{h.id}",
+                "po_customer_ref": (h.po_customer_ref or "").strip(),
+                "customer": cust,
+                "brand": (h.brand_name_snapshot or "").strip(),
+                "order_type": _order_type_label(h),
+                "buyer": (h.buyer or "").strip(),
+                "order_date": h.order_date.isoformat() if h.order_date else None,
+                "thi_line_ref": str(snap.get("thi_line_ref") or "").strip(),
+                "material": str(snap.get("material_name") or "").strip() or "—",
+                "thickness": _thickness_from_snapshot(snap) or "—",
+                "emboss": str(snap.get("emboss") or "").strip(),
+                "softness_type": str(snap.get("vir_softness_type") or "").strip(),
+                "pu_production": "",
+                "color": str(snap.get("color") or "").strip(),
+                "softness": str(snap.get("softness") or "").strip(),
+                "unit_price": price_str,
+                "color_reference": str(snap.get("color_reference") or "").strip(),
+                "backing": str(snap.get("backing") or "").strip(),
+                "model": str(snap.get("model") or "").strip(),
+                "style_article": str(snap.get("style_article") or "").strip(),
+                "line_etd": snap.get("line_etd") or None,
+                "qty": qty_val,
+                "po_category": (h.po_category or "production").lower(),
+                "status": h.status or "draft",
+                "po_id": h.id,
+                "detail_id": detail_id,
+            }
+
+        row["source"] = "audit"
+        row["revise_action"] = action
+        row["revised_at"] = log.created_at.isoformat() if log.created_at else None
+        row["actor"] = log.actor or ""
+        row["changed_fields"] = changed
+        row["changed_fields_label"] = ", ".join(
+            _AUDIT_FIELD_LABELS.get(k, k) for k in changed
+        )
+        row["change_summary"] = summary or (action.upper() if action == "delete" else "")
+        row["old_values"] = old_vals
+        row["new_values"] = new_vals
+        row["oldThickness"] = _thickness_from_snapshot(before) or row.get("oldThickness") or ""
+        row["newThickness"] = _thickness_from_snapshot(after) or (
+            row.get("thickness") if "thickness_text" in changed else ""
+        )
+        if action == "delete" and not row.get("newThickness"):
+            row["newThickness"] = "—"
+        rows.append(row)
+    return rows
+
+
 def _build_marketing_daily_payload(
     db: Session,
     date_from: Optional[date],
@@ -177,40 +449,71 @@ def _build_marketing_daily_payload(
         .order_by(PoHeader.id.desc())
     ).all()
 
-    revise: list[dict[str, Any]] = []
-    production_orders: list[dict[str, Any]] = []
-    samples: list[dict[str, Any]] = []
+    buckets: dict[str, list[dict[str, Any]]] = {
+        "production_orders": [],
+        "samples": [],
+        "claim_orders": [],
+        "return_orders": [],
+        "subcont_orders": [],
+    }
+    revise_legacy: list[dict[str, Any]] = []
 
     df = (date_field or "order").strip().lower()
     if df not in {"order", "created", "either"}:
         df = "order"
 
     for h in headers:
-        if not _header_matches_filters(h, date_from, date_to, customer, df):
-            continue
-        for ln in h.details or []:
-            if ln.copied_from_detail_id:
+        # Order sections: filter by order/created date
+        if _header_matches_filters(h, date_from, date_to, customer, df):
+            for ln in h.details or []:
+                if ln.copied_from_detail_id:
+                    # legacy copy-line: masuk revisi (bukan order section)
+                    continue
+                cat = (h.po_category or "production").lower()
+                row = _base_marketing_daily_row(h, ln)
+                row["oldThickness"] = ""
+                row["newThickness"] = ""
+                _bucket_order_row(cat, row, buckets)
+
+        # Legacy revise dari copied_from_detail_id — ikut tanggal order/created header
+        # (data lama tanpa audit); digabung dengan audit di bawah.
+        if _header_matches_filters(h, date_from, date_to, customer, df):
+            for ln in h.details or []:
+                if not ln.copied_from_detail_id:
+                    continue
                 old = db.get(PoDetail, ln.copied_from_detail_id)
                 row = _base_marketing_daily_row(h, ln)
+                row["source"] = "copy_line"
+                row["revise_action"] = "copy"
+                row["revised_at"] = (
+                    h.created_at.isoformat() if h.created_at else (h.order_date.isoformat() if h.order_date else None)
+                )
+                row["actor"] = ""
+                row["changed_fields"] = ["thickness_text"]
+                row["changed_fields_label"] = "Ketebalan"
                 row["oldThickness"] = _thickness_display(old)
                 row["newThickness"] = _thickness_display(ln)
-                revise.append(row)
-                continue
+                row["old_values"] = f"Ketebalan: {row['oldThickness']}"
+                row["new_values"] = f"Ketebalan: {row['newThickness']}"
+                row["change_summary"] = f"Ketebalan: {row['oldThickness']} → {row['newThickness']}"
+                revise_legacy.append(row)
 
-            cat = (h.po_category or "production").lower()
-            row = _base_marketing_daily_row(h, ln)
-            row["oldThickness"] = ""
-            row["newThickness"] = ""
-            if cat == "sample":
-                samples.append(row)
-            else:
-                production_orders.append(row)
+    revise_audit = _collect_revise_from_audit(db, date_from, date_to, customer)
+    revise: list[dict[str, Any]] = list(revise_audit) + revise_legacy
+
+    revise.sort(
+        key=lambda r: str(r.get("revised_at") or r.get("order_date") or ""),
+        reverse=True,
+    )
 
     return {
         "report_title": "LAPORAN PO HARIAN MARKETING",
         "revise_thickness": revise,
-        "production_orders": production_orders,
-        "samples": samples,
+        "production_orders": buckets["production_orders"],
+        "samples": buckets["samples"],
+        "claim_orders": buckets["claim_orders"],
+        "return_orders": buckets["return_orders"],
+        "subcont_orders": buckets["subcont_orders"],
     }
 
 
@@ -229,6 +532,98 @@ def report_po_order_description(
     """Data LAPORAN PO HARIAN MARKETING: revisi ketebalan, production order, sample — format lembar Excel."""
     _ = _user
     return _build_marketing_daily_payload(db, date_from, date_to, customer, date_field)
+
+
+@router.get("/reports/accounts-receivable")
+def report_accounts_receivable(
+    db: Session = Depends(get_db),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    customer: Optional[str] = Query(None),
+    payment_status: str = Query("all", description="all | paid | unpaid"),
+    year: Optional[int] = Query(None),
+    limit: int = Query(500, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    _user=Depends(get_current_user),
+) -> dict[str, Any]:
+    """Preview laporan piutang (RAR) — JSON paginated."""
+    _ = _user
+    payload = build_rar_payload(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        customer=customer,
+        payment_status=payment_status,
+        year=year,
+        limit=limit,
+        offset=offset,
+    )
+    payload.pop("rar_rows", None)
+    return payload
+
+
+@router.get("/reports/accounts-receivable.xlsx")
+def export_accounts_receivable_xlsx(
+    db: Session = Depends(get_db),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    customer: Optional[str] = Query(None),
+    payment_status: str = Query("all"),
+    year: Optional[int] = Query(None),
+    _user=Depends(require_roles("admin", "finance")),
+) -> Response:
+    """Ekspor XLSX RAR (Recapitulation Account Receivable)."""
+    _ = _user
+    payload = build_rar_payload(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        customer=customer,
+        payment_status=payment_status,
+        year=year,
+        limit=5000,
+        offset=0,
+    )
+    body = render_rar_xlsx(payload)
+    yr = payload.get("year") or datetime.utcnow().year
+    fn = f"RAR_{yr}_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.xlsx"
+    return Response(
+        content=body,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
+
+
+@router.get("/reports/pending-payment")
+def report_pending_payment(
+    db: Session = Depends(get_db),
+    as_of: Optional[date] = Query(None, description="Tanggal snapshot laporan (default: hari ini)"),
+    year: Optional[int] = Query(None),
+    _user=Depends(get_current_user),
+) -> dict[str, Any]:
+    """Preview laporan Pending Payment (Report Mr. Bob) — JSON."""
+    _ = _user
+    return build_pending_payment_payload(db, as_of=as_of, year=year)
+
+
+@router.get("/reports/pending-payment.xlsx")
+def export_pending_payment_xlsx(
+    db: Session = Depends(get_db),
+    as_of: Optional[date] = Query(None),
+    year: Optional[int] = Query(None),
+    _user=Depends(require_roles("admin", "finance")),
+) -> Response:
+    """Ekspor XLSX Pending Payment (Report Mr. Bob)."""
+    _ = _user
+    payload = build_pending_payment_payload(db, as_of=as_of, year=year)
+    body = render_pending_payment_xlsx(payload)
+    d = payload.get("as_of") or datetime.utcnow().date().isoformat()
+    fn = f"PendingPayment_{d.replace('-', '')}.xlsx"
+    return Response(
+        content=body,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
 
 
 _MARKETING_CSV_COLS = [
@@ -259,6 +654,12 @@ _MARKETING_CSV_COLS = [
     "buyer",
     "po_status",
     "po_category",
+    "source",
+    "revise_action",
+    "revised_at",
+    "actor",
+    "changed_fields",
+    "change_summary",
 ]
 
 _MARKETING_XLSX_COLS = [
@@ -283,10 +684,19 @@ _MARKETING_XLSX_COLS = [
     ("Model", "model"),
     ("Style/Article", "style_article"),
     ("ETD", "line_etd"),
+    ("Source", "source"),
+    ("Revise Action", "revise_action"),
+    ("Revised At", "revised_at"),
+    ("Actor", "actor"),
+    ("Changed Fields", "changed_fields_label"),
+    ("Change Summary", "change_summary"),
 ]
 
 
 def _row_to_csv_tuple(section: str, row: dict[str, Any]) -> tuple:
+    changed = row.get("changed_fields_label") or ""
+    if not changed and isinstance(row.get("changed_fields"), list):
+        changed = ", ".join(str(x) for x in row["changed_fields"])
     return (
         section,
         row.get("order_date") or "",
@@ -315,6 +725,12 @@ def _row_to_csv_tuple(section: str, row: dict[str, Any]) -> tuple:
         row.get("buyer") or "",
         row.get("status") or "",
         row.get("po_category") or "",
+        row.get("source") or "",
+        row.get("revise_action") or "",
+        row.get("revised_at") or "",
+        row.get("actor") or "",
+        changed,
+        row.get("change_summary") or "",
     )
 
 
@@ -370,6 +786,12 @@ def export_po_daily_marketing_csv(
         w.writerow(_row_to_csv_tuple("PRODUCTION_ORDER", row))
     for row in payload["samples"]:
         w.writerow(_row_to_csv_tuple("SAMPLE", row))
+    for row in payload.get("claim_orders") or []:
+        w.writerow(_row_to_csv_tuple("CLAIM", row))
+    for row in payload.get("return_orders") or []:
+        w.writerow(_row_to_csv_tuple("RETURN", row))
+    for row in payload.get("subcont_orders") or []:
+        w.writerow(_row_to_csv_tuple("SUBKON", row))
 
     fn = f"laporan_po_harian_marketing_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.csv"
     body = "\ufeff" + buf.getvalue()
@@ -403,7 +825,10 @@ def export_po_daily_marketing_xlsx(
     row_idx = 4
     row_idx = _append_marketing_section_xlsx(ws, row_idx, "REVISE THICKNESS", payload.get("revise_thickness") or [])
     row_idx = _append_marketing_section_xlsx(ws, row_idx, "PRODUCTION ORDER", payload.get("production_orders") or [])
-    _append_marketing_section_xlsx(ws, row_idx, "SAMPLE", payload.get("samples") or [])
+    row_idx = _append_marketing_section_xlsx(ws, row_idx, "SAMPLE", payload.get("samples") or [])
+    row_idx = _append_marketing_section_xlsx(ws, row_idx, "CLAIM", payload.get("claim_orders") or [])
+    row_idx = _append_marketing_section_xlsx(ws, row_idx, "RETURN", payload.get("return_orders") or [])
+    _append_marketing_section_xlsx(ws, row_idx, "SUBKON", payload.get("subcont_orders") or [])
 
     for idx, _ in enumerate(_MARKETING_XLSX_COLS, start=1):
         ws.column_dimensions[get_column_letter(idx)].width = 16

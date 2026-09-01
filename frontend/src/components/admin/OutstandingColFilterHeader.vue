@@ -2,10 +2,13 @@
   <div class="out-col-head">
     <span class="out-col-head__title">{{ label }}</span>
     <el-select
-      :model-value="modelValue || undefined"
+      :model-value="normalizedValue"
       size="small"
       clearable
       filterable
+      multiple
+      collapse-tags
+      collapse-tags-tooltip
       allow-create
       default-first-option
       class="out-col-head__select"
@@ -25,11 +28,13 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-defineProps({
+const props = defineProps({
   label: { type: String, default: '' },
-  modelValue: { type: String, default: '' },
+  /** Satu atau banyak nilai filter (string[]). String lama tetap didukung. */
+  modelValue: { type: [Array, String], default: () => [] },
   options: { type: Array, default: () => [] },
 })
 
@@ -37,8 +42,23 @@ const emit = defineEmits(['update:modelValue'])
 
 const { t } = useI18n()
 
+const normalizedValue = computed(() => {
+  const v = props.modelValue
+  if (Array.isArray(v)) return v.map((x) => String(x)).filter((x) => x !== '')
+  if (v == null || v === '') return []
+  return [String(v)]
+})
+
 function onUpdate(val) {
-  emit('update:modelValue', val == null ? '' : String(val))
+  if (val == null || val === '') {
+    emit('update:modelValue', [])
+    return
+  }
+  const list = Array.isArray(val) ? val : [val]
+  emit(
+    'update:modelValue',
+    list.map((x) => String(x)).filter((x) => x !== ''),
+  )
 }
 </script>
 
@@ -66,5 +86,9 @@ function onUpdate(val) {
   min-height: 24px;
   padding: 0 6px;
   font-size: 12px;
+}
+
+.out-col-head__select :deep(.el-tag) {
+  max-width: 7rem;
 }
 </style>

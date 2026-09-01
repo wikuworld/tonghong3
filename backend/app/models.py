@@ -973,6 +973,12 @@ class Invoice(Base):
     payment_bank_account: Mapped[Optional[str]] = mapped_column(String(100))
     payment_proof_url: Mapped[Optional[str]] = mapped_column(String(500))
     payment_status: Mapped[str] = mapped_column(String(20), default="unpaid")
+    payment_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    payment_remark: Mapped[Optional[str]] = mapped_column(String(120))
+    credit_note_no: Mapped[Optional[str]] = mapped_column(String(120))
+    credit_note_date: Mapped[Optional[date]] = mapped_column(Date)
+    credit_note_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    oia_export_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
     )

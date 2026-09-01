@@ -23,7 +23,6 @@ from app.services.color_swatch import (
     iter_csv_recipes,
     normalize_factory_key,
     recipe_to_po_fill,
-    resolve_swatch_factory_keys,
 )
 from app.services.master_item_dimensions import distinct_material_names
 from app.services.swatch_factory_map import resolve_swatch_customer_id
@@ -346,34 +345,32 @@ def list_color_swatch_page(
 @router.get("/masters/color-swatch-recipes/lookup", response_model=list[ColorSwatchRecipeOut])
 def lookup_color_swatch(
     buyer_code: str = Query(..., min_length=1),
-    factory_key: Optional[str] = Query(None, description="Kode/nama pabrik (KODE SYSTEM atau factory_key swatch)"),
-    customer_id: Optional[int] = Query(None, description="Customer PO untuk map kode pabrik ke factory_key swatch"),
+    factory_key: Optional[str] = Query(
+        None,
+        description="Deprecated untuk filter: diabaikan. Lookup SO global per buyer (semua factory_key).",
+    ),
+    customer_id: Optional[int] = Query(
+        None,
+        description="Deprecated untuk filter: diabaikan. Lookup SO global per buyer (semua factory_key).",
+    ),
     material_name: Optional[str] = Query(None),
     color_name: Optional[str] = Query(None, description="Filter warna (toleran suffix kode, mis. WOLF GREY (01V))"),
     emboss: Optional[str] = Query(None, description="Filter emboss (toleran suffix deskripsi, mis. AR-167 (DEEP MATTE))"),
     include_all_materials: bool = Query(
-        False, description="Abaikan filter material (tampilkan semua resep pabrik+buyer)"
+        False, description="Abaikan filter material (tampilkan semua resep buyer)"
     ),
     q: Optional[str] = Query(None),
     limit: int = Query(40, ge=1, le=100),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> list[ColorSwatchRecipe]:
+    """Lookup resep aktif per buyer — tanpa filter pabrik/customer (SO boleh tarik seluruh swatch)."""
+    # factory_key / customer_id tetap diterima agar FE lama tidak 422; sengaja tidak memfilter.
+    _ = factory_key, customer_id
     buyer = buyer_code.strip().upper()
-    if not (factory_key or "").strip() and not customer_id:
-        raise HTTPException(
-            status_code=400,
-            detail="factory_key atau customer_id wajib untuk lookup swatch",
-        )
-    factory_keys = resolve_swatch_factory_keys(
-        db, factory_hint=factory_key, customer_id=customer_id
-    )
-    if not factory_keys:
-        return []
     stmt = select(ColorSwatchRecipe).where(
         ColorSwatchRecipe.is_active.is_(True),
         ColorSwatchRecipe.buyer_code == buyer,
-        ColorSwatchRecipe.factory_key.in_(factory_keys),
     )
     if material_name and material_name.strip() and not include_all_materials:
         like = f"%{material_name.strip()}%"
@@ -515,8 +512,12 @@ def delete_color_swatch(
 async def import_color_swatch_csv(
     file: UploadFile = File(...),
     replace_inactive: bool = Query(
-        False,
-        description="Nonaktifkan resep aktif (factory+buyer sama) yang tidak ada di file import",
+        True,
+        description="Nonaktifkan resep aktif yang tidak ada di file (default: seluruh master)",
+    ),
+    replace_inactive_scope: str = Query(
+        "global",
+        description="global = seluruh tabel; pair = hanya factory+buyer yang tersentuh file",
     ),
     reject_unknown_buyer: bool = Query(
         False,
@@ -535,6 +536,7 @@ async def import_color_swatch_csv(
             db,
             recipes,
             replace_inactive=replace_inactive,
+            replace_inactive_scope=replace_inactive_scope,
             reject_unknown_buyer=reject_unknown_buyer,
         )
     except UnknownBuyerRejectError as exc:
@@ -544,7 +546,13 @@ async def import_color_swatch_csv(
 
 @router.post("/masters/color-swatch-recipes/import-bundled", response_model=ImportResultOut)
 def import_color_swatch_bundled(
-    replace_inactive: bool = Query(False, description="Nonaktifkan resep yang tidak ada di file bundled"),
+    replace_inactive: bool = Query(
+        True, description="Nonaktifkan resep aktif yang tidak ada di file bundled"
+    ),
+    replace_inactive_scope: str = Query(
+        "global",
+        description="global = seluruh tabel; pair = hanya factory+buyer yang tersentuh file",
+    ),
     reject_unknown_buyer: bool = Query(
         False,
         description="Tolak import (400) jika ada buyer_code di luar registry",
@@ -577,6 +585,7 @@ def import_color_swatch_bundled(
             db,
             recipes,
             replace_inactive=replace_inactive,
+            replace_inactive_scope=replace_inactive_scope,
             reject_unknown_buyer=reject_unknown_buyer,
         )
     except UnknownBuyerRejectError as exc:

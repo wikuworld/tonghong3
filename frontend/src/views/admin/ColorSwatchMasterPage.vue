@@ -758,13 +758,24 @@ function handleImportFileRemove() {
 
 async function handleImportCsv() {
   if (!importFile.value) return
+  try {
+    await ElMessageBox.confirm(t('pages.colorSwatch.importCsvReplaceConfirm'), t('common.confirm'), {
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
   importing.value = true
   try {
-    const r = await importColorSwatchCsv(importFile.value)
+    const r = await importColorSwatchCsv(importFile.value, {
+      replaceInactive: true,
+      replaceInactiveScope: 'global',
+    })
     ElMessage.success(
       t('pages.colorSwatch.importDone', {
         inserted: r.inserted,
         updated: r.updated,
+        deactivated: r.deactivated ?? 0,
         total: r.total,
       }),
     )
@@ -779,17 +790,23 @@ async function handleImportCsv() {
 
 async function importBundled() {
   try {
-    await ElMessageBox.confirm(t('pages.colorSwatch.importBundledConfirm'), t('common.confirm'), { type: 'info' })
+    await ElMessageBox.confirm(t('pages.colorSwatch.importBundledConfirm'), t('common.confirm'), {
+      type: 'warning',
+    })
   } catch {
     return
   }
   importingBundled.value = true
   try {
-    const r = await importColorSwatchBundled()
+    const r = await importColorSwatchBundled({
+      replaceInactive: true,
+      replaceInactiveScope: 'global',
+    })
     ElMessage.success(
       t('pages.colorSwatch.importDone', {
         inserted: r.inserted,
         updated: r.updated,
+        deactivated: r.deactivated ?? 0,
         total: r.total,
       }),
     )

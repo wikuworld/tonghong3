@@ -880,14 +880,23 @@ export function deleteColorSwatchRecipe(id) {
   return apiFetch(`/masters/color-swatch-recipes/${id}`, { method: 'DELETE' })
 }
 
-export function importColorSwatchCsv(file) {
+export function importColorSwatchCsv(file, { replaceInactive = true, replaceInactiveScope = 'global' } = {}) {
   const fd = new FormData()
   fd.append('file', file)
-  return apiFetch('/masters/color-swatch-recipes/import-csv', { method: 'POST', body: fd })
+  const q = new URLSearchParams()
+  q.set('replace_inactive', replaceInactive ? 'true' : 'false')
+  q.set('replace_inactive_scope', replaceInactiveScope)
+  return apiFetch(`/masters/color-swatch-recipes/import-csv?${q}`, { method: 'POST', body: fd })
 }
 
-export function importColorSwatchBundled() {
-  return apiFetch('/masters/color-swatch-recipes/import-bundled', { method: 'POST' })
+export function importColorSwatchBundled({
+  replaceInactive = true,
+  replaceInactiveScope = 'global',
+} = {}) {
+  const q = new URLSearchParams()
+  q.set('replace_inactive', replaceInactive ? 'true' : 'false')
+  q.set('replace_inactive_scope', replaceInactiveScope)
+  return apiFetch(`/masters/color-swatch-recipes/import-bundled?${q}`, { method: 'POST' })
 }
 
 // --- Production ---
@@ -1065,7 +1074,7 @@ export function reportSalesOrderLinesExportUrl() {
   return '/api/v1/reports/sales-order-lines-export.csv'
 }
 
-/** JSON untuk halaman Reports (revisi ketebalan, produksi, sample). */
+/** JSON untuk halaman Reports (revisi audit baris, produksi/sample/claim/return/subcont). */
 export function fetchReportPoOrderDescription(params = {}) {
   const q = new URLSearchParams()
   if (params.date_from) q.set('date_from', params.date_from)
@@ -1096,6 +1105,50 @@ export function reportPoDailyMarketingXlsxPath(params = {}) {
   if (params.date_field) q.set('date_field', params.date_field)
   const suffix = q.toString() ? `?${q}` : ''
   return `/api/v1/reports/po-daily-marketing.xlsx${suffix}`
+}
+
+/** JSON preview laporan piutang (RAR). */
+export function fetchReportAccountsReceivable(params = {}) {
+  const q = new URLSearchParams()
+  if (params.date_from) q.set('date_from', params.date_from)
+  if (params.date_to) q.set('date_to', params.date_to)
+  if (params.customer) q.set('customer', params.customer)
+  if (params.payment_status) q.set('payment_status', params.payment_status)
+  if (params.year) q.set('year', String(params.year))
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/reports/accounts-receivable${suffix}`)
+}
+
+/** XLSX RAR — path relatif untuk fetch + Authorization. */
+export function reportAccountsReceivableXlsxPath(params = {}) {
+  const q = new URLSearchParams()
+  if (params.date_from) q.set('date_from', params.date_from)
+  if (params.date_to) q.set('date_to', params.date_to)
+  if (params.customer) q.set('customer', params.customer)
+  if (params.payment_status) q.set('payment_status', params.payment_status)
+  if (params.year) q.set('year', String(params.year))
+  const suffix = q.toString() ? `?${q}` : ''
+  return `/api/v1/reports/accounts-receivable.xlsx${suffix}`
+}
+
+/** JSON preview laporan Pending Payment (Report Mr. Bob). */
+export function fetchReportPendingPayment(params = {}) {
+  const q = new URLSearchParams()
+  if (params.as_of) q.set('as_of', params.as_of)
+  if (params.year) q.set('year', String(params.year))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/reports/pending-payment${suffix}`)
+}
+
+/** XLSX Pending Payment — path relatif untuk fetch + Authorization. */
+export function reportPendingPaymentXlsxPath(params = {}) {
+  const q = new URLSearchParams()
+  if (params.as_of) q.set('as_of', params.as_of)
+  if (params.year) q.set('year', String(params.year))
+  const suffix = q.toString() ? `?${q}` : ''
+  return `/api/v1/reports/pending-payment.xlsx${suffix}`
 }
 
 // --- Special Prices ---

@@ -1215,6 +1215,16 @@ class InvoiceOut(ORMBase):
     payment_bank_account: Optional[str] = None
     payment_proof_url: Optional[str] = None
     payment_status: str = "unpaid"
+    payment_amount: Optional[float] = None
+    payment_remark: Optional[str] = None
+    credit_note_no: Optional[str] = None
+    credit_note_date: Optional[date] = None
+    credit_note_amount: Optional[float] = None
+    oia_export_usd: Optional[float] = None
+    balance_after_deduct: Optional[float] = None
+    remark: Optional[str] = None
+    qty_total: Optional[float] = None
+    payment_term_days: Optional[int] = None
     created_at: Optional[datetime] = None
 
 
@@ -1267,6 +1277,12 @@ class InvoiceCreate(BaseModel):
     payment_bank_account: Optional[str] = None
     payment_proof_url: Optional[str] = None
     payment_status: str = "unpaid"
+    payment_amount: Optional[Decimal] = None
+    payment_remark: Optional[str] = None
+    credit_note_no: Optional[str] = None
+    credit_note_date: Optional[date] = None
+    credit_note_amount: Optional[Decimal] = None
+    oia_export_usd: Optional[Decimal] = None
 
 
 class InvoiceUpdate(BaseModel):
@@ -1299,6 +1315,22 @@ class InvoiceUpdate(BaseModel):
     payment_bank_account: Optional[str] = None
     payment_proof_url: Optional[str] = None
     payment_status: Optional[str] = None
+    payment_amount: Optional[Decimal] = None
+    payment_remark: Optional[str] = None
+    credit_note_no: Optional[str] = None
+    credit_note_date: Optional[date] = None
+    credit_note_amount: Optional[Decimal] = None
+    oia_export_usd: Optional[Decimal] = None
+
+
+class AccountsReceivableReportOut(BaseModel):
+    report_title: str
+    year: int
+    summary: dict
+    rows: list[InvoiceOut]
+    total: int
+    limit: int
+    offset: int
 
 
 class InvoiceDetailCreate(BaseModel):

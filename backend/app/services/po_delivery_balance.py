@@ -140,7 +140,7 @@ def validate_schedule_total_against_order(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Total jadwal kirim ({total}) melebihi qty order ({order_qty}) "
+                f"Total rencana kirim ({total}) melebihi qty order ({order_qty}) "
                 f"untuk baris PO #{po_detail_id}. Kurangi qty slot atau naikkan qty order."
             ),
         )

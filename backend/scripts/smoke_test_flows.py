@@ -408,6 +408,112 @@ def smoke_outstanding_materials(ctx: FlowContext) -> CaseResult:
     return _expect_status("outstanding_materials", "Outstanding materials (PPIC)", status, 200, detail=raw)
 
 
+def _get_binary(client: ApiClient, path: str, *, params: Optional[dict[str, Any]] = None) -> tuple[int, bytes, str]:
+    """GET endpoint yang mengembalikan body biner (XLSX, dll.)."""
+    url = f"{client.base_url}{path}"
+    if params:
+        from urllib.parse import urlencode
+
+        qs = urlencode({k: v for k, v in params.items() if v is not None})
+        if qs:
+            url = f"{url}?{qs}"
+    headers = {"Accept": "*/*"}
+    if client.token:
+        headers["Authorization"] = f"Bearer {client.token}"
+    req = Request(url, method="GET", headers=headers)
+    try:
+        with urlopen(req, timeout=60) as resp:
+            data = resp.read()
+            return resp.status, data, ""
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        return exc.code, b"", detail[:800]
+    except URLError as exc:
+        raise ConnectionError(str(exc)) from exc
+
+
+def smoke_rar_json(ctx: FlowContext) -> CaseResult:
+    status, body, raw = ctx.client.get(
+        f"{PREFIX}/reports/accounts-receivable",
+        params={"year": 2026, "limit": 5},
+    )
+    if status != 200 or not isinstance(body, dict):
+        return _expect_status("rar_json", "Preview piutang RAR (JSON)", status, 200, detail=raw)
+    summary = body.get("summary") or {}
+    count = summary.get("count", 0)
+    title = body.get("report_title") or ""
+    if "ACCOUNT RECEIVABLE" not in title.upper():
+        return CaseResult("rar_json", "Preview piutang RAR (JSON)", "fail", "report_title tidak valid", title[:200])
+    return CaseResult(
+        "rar_json",
+        "Preview piutang RAR (JSON)",
+        "pass",
+        f"{count} faktur, title={title[:40]}",
+    )
+
+
+def smoke_rar_xlsx(ctx: FlowContext) -> CaseResult:
+    try:
+        status, data, detail = _get_binary(
+            ctx.client,
+            f"{PREFIX}/reports/accounts-receivable.xlsx",
+            params={"year": 2026},
+        )
+    except ConnectionError as exc:
+        return CaseResult("rar_xlsx", "Export piutang RAR (XLSX)", "fail", str(exc))
+    if status != 200:
+        return _expect_status("rar_xlsx", "Export piutang RAR (XLSX)", status, 200, detail=detail)
+    if len(data) < 500 or not data.startswith(b"PK"):
+        return CaseResult(
+            "rar_xlsx",
+            "Export piutang RAR (XLSX)",
+            "fail",
+            f"body tidak valid ({len(data)} byte)",
+        )
+    return CaseResult("rar_xlsx", "Export piutang RAR (XLSX)", "pass", f"{len(data)} byte")
+
+
+def smoke_pending_payment_json(ctx: FlowContext) -> CaseResult:
+    status, body, raw = ctx.client.get(
+        f"{PREFIX}/reports/pending-payment",
+        params={"year": 2026},
+    )
+    if status != 200 or not isinstance(body, dict):
+        return _expect_status("pending_payment_json", "Preview Pending Payment (JSON)", status, 200, detail=raw)
+    summary = body.get("summary") or {}
+    overdue = summary.get("overdue_customer_count", 0)
+    title = body.get("report_title") or ""
+    if "Pending Payment" not in title:
+        return CaseResult("pending_payment_json", "Preview Pending Payment (JSON)", "fail", "report_title tidak valid", title[:200])
+    return CaseResult(
+        "pending_payment_json",
+        "Preview Pending Payment (JSON)",
+        "pass",
+        f"{overdue} customer overdue, {summary.get('master_count', 0)} baris master",
+    )
+
+
+def smoke_pending_payment_xlsx(ctx: FlowContext) -> CaseResult:
+    try:
+        status, data, detail = _get_binary(
+            ctx.client,
+            f"{PREFIX}/reports/pending-payment.xlsx",
+            params={"year": 2026},
+        )
+    except ConnectionError as exc:
+        return CaseResult("pending_payment_xlsx", "Export Pending Payment (XLSX)", "fail", str(exc))
+    if status != 200:
+        return _expect_status("pending_payment_xlsx", "Export Pending Payment (XLSX)", status, 200, detail=detail)
+    if len(data) < 500 or not data.startswith(b"PK"):
+        return CaseResult(
+            "pending_payment_xlsx",
+            "Export Pending Payment (XLSX)",
+            "fail",
+            f"body tidak valid ({len(data)} byte)",
+        )
+    return CaseResult("pending_payment_xlsx", "Export Pending Payment (XLSX)", "pass", f"{len(data)} byte")
+
+
 FLOW_CASES: list[tuple[str, str, Callable[[FlowContext], CaseResult]]] = [
     ("health", "Health check", smoke_health),
     ("po_preview_number", "Preview nomor PO", smoke_po_preview_number),
@@ -424,6 +530,10 @@ FLOW_CASES: list[tuple[str, str, Callable[[FlowContext], CaseResult]]] = [
     ("delivery_ready", "Siap kirim", smoke_delivery_ready_shipments),
     ("delivery_details", "Detail delivery", smoke_delivery_details),
     ("outstanding_materials", "Outstanding materials", smoke_outstanding_materials),
+    ("rar_json", "Preview piutang RAR", smoke_rar_json),
+    ("rar_xlsx", "Export piutang RAR XLSX", smoke_rar_xlsx),
+    ("pending_payment_json", "Preview Pending Payment", smoke_pending_payment_json),
+    ("pending_payment_xlsx", "Export Pending Payment XLSX", smoke_pending_payment_xlsx),
     ("po_cleanup", "Cleanup PO smoke", smoke_po_cleanup),
 ]
 
@@ -465,7 +575,7 @@ def run_flows(
 
 def print_summary(report: SmokeReport) -> None:
     print("=" * 72)
-    print("SMOKE TEST FLOWS — PO / Marketing / Delivery / Outstanding")
+    print("SMOKE TEST FLOWS — PO / Marketing / Delivery / Outstanding / RAR")
     print("=" * 72)
     for result in report.results:
         icon = {"pass": "PASS", "fail": "FAIL", "skip": "SKIP"}[result.status]

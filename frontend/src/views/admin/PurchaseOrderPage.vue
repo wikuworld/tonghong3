@@ -233,22 +233,13 @@
           </el-tooltip>
         </template>
         <template #default="{ row }">
-          <el-popconfirm
-            v-if="canUpdate && row.status === 'draft'"
-            :title="t('pages.po.confirmPo')"
-            :confirm-button-text="t('common.yes')"
-            :cancel-button-text="t('common.no')"
-            @confirm="quickChangeStatus(row, 'confirmed')"
-          >
-            <template #reference>
-              <el-tag :type="statusType(row.status)" size="small" class="cursor-pointer hover:opacity-70">
-                {{ poStatusLabel(row.status) }}
-              </el-tag>
-            </template>
-          </el-popconfirm>
           <el-tooltip
-            v-else-if="canUpdate"
-            :content="t('pages.po.statusEditViaForm')"
+            v-if="canUpdate"
+            :content="
+              row.status === 'draft'
+                ? t('pages.po.statusConfirmViaWizard')
+                : t('pages.po.statusEditViaForm')
+            "
             placement="top"
           >
             <el-tag :type="statusType(row.status)" size="small">
@@ -426,7 +417,6 @@ import {
   salesContractPdfPath,
   proformaInvoiceDocxPath,
   proformaInvoicePdfPath,
-  updatePo,
 } from '../../api/client'
 
 const { t, te } = useI18n()
@@ -538,21 +528,6 @@ async function enrichPoRowsWithHints(items) {
     return mergePoMaterialHints(items, hintResp.items || [])
   } catch {
     return items
-  }
-}
-
-async function quickChangeStatus(row, newStatus) {
-  if (newStatus === 'confirmed' && row.status !== 'draft') return
-  if (newStatus === 'confirmed' && !Number(row.detail_line_count)) {
-    ElMessage.warning(t('pages.po.confirmNeedsDetail'))
-    return
-  }
-  try {
-    await updatePo(row.id, { status: newStatus })
-    row.status = newStatus
-    ElMessage.success(t('pages.po.statusChanged'))
-  } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
 

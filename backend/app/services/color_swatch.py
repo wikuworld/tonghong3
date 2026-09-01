@@ -382,9 +382,15 @@ def import_recipes(
     recipes: list[dict[str, Any]],
     *,
     replace_inactive: bool = False,
+    replace_inactive_scope: str = "global",
     reject_unknown_buyer: bool = False,
 ) -> dict[str, Any]:
-    """Upsert recipes. Returns counts inserted, updated, skipped (+ warnings)."""
+    """Upsert recipes. Returns counts inserted, updated, skipped (+ warnings).
+
+    replace_inactive_scope:
+      - \"global\": soft-deactivate semua resep aktif yang kuncinya tidak ada di file
+      - \"pair\": hanya orphan pada pasangan factory_key+buyer_code yang tersentuh file
+    """
     from app.services.buyer_registry import collect_unknown_buyer_codes
     from app.services.material_aliases import material_missing_in_master_items
 
@@ -468,14 +474,33 @@ def import_recipes(
             db.flush()
 
     if replace_inactive and imported_keys:
-        touched_pairs = {(d["factory_key"], d["buyer_code"]) for d in recipes}
-        for fk, buyer in touched_pairs:
+        scope = (replace_inactive_scope or "global").strip().lower()
+        if scope == "pair":
+            touched_pairs = {(d["factory_key"], d["buyer_code"]) for d in recipes}
+            for fk, buyer in touched_pairs:
+                rows = db.scalars(
+                    select(ColorSwatchRecipe).where(
+                        ColorSwatchRecipe.factory_key == fk,
+                        ColorSwatchRecipe.buyer_code == buyer,
+                        ColorSwatchRecipe.is_active.is_(True),
+                    )
+                ).all()
+                for recipe in rows:
+                    rk = (
+                        recipe.factory_key,
+                        recipe.buyer_code,
+                        recipe.color_code,
+                        recipe.material_name,
+                        recipe.emboss,
+                    )
+                    if rk not in imported_keys:
+                        recipe.is_active = False
+                        recipe.updated_at = datetime.utcnow()
+                        deactivated += 1
+        else:
+            # global: master hanya berisi isi file terbaru
             rows = db.scalars(
-                select(ColorSwatchRecipe).where(
-                    ColorSwatchRecipe.factory_key == fk,
-                    ColorSwatchRecipe.buyer_code == buyer,
-                    ColorSwatchRecipe.is_active.is_(True),
-                )
+                select(ColorSwatchRecipe).where(ColorSwatchRecipe.is_active.is_(True))
             ).all()
             for recipe in rows:
                 rk = (

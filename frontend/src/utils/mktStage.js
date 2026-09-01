@@ -27,7 +27,7 @@ export function materialFollowUpAutoStatus(stage) {
 
 /**
  * Langkah kerja berikutnya di daftar SO — aksi halaman, bukan sekadar «lanjut tahap».
- * @returns {'rekap'|'confirm_so'|'assign_ppic'|'advance'|'outstanding'|'planning'|'delivery'|'invoice'|'wait'|'done'}
+ * @returns {'rekap'|'assign_ppic'|'advance'|'outstanding'|'planning'|'delivery'|'invoice'|'wait'|'done'}
  */
 export function soListNextStep(row = {}, opts = {}) {
   const stage = normalizeMktStage(row.mkt_workflow_stage)
@@ -39,7 +39,8 @@ export function soListNextStep(row = {}, opts = {}) {
 
   if (stage === 'input_system') {
     if (!row.rekap_printed_at) return 'rekap'
-    if (status === 'draft') return 'confirm_so'
+    // Konfirmasi draft hanya di Order Penjualan (setelah simpan SO), bukan di Daftar SO.
+    if (status === 'draft') return 'wait'
     return 'advance'
   }
 

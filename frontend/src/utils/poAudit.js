@@ -48,7 +48,7 @@ export const PO_AUDIT_FIELD_LABELS = {
   color: 'Warna',
   remark: 'Catatan',
   status: 'Status',
-  delivery_schedules: 'Jadwal Pengiriman',
+  delivery_schedules: 'Rencana Kirim',
   po_number: 'No. PO',
   po_id: 'PO ID',
   po_header_id: 'PO Header ID',

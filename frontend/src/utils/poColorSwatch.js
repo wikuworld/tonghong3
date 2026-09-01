@@ -20,7 +20,8 @@ export function swatchOptionLabel(s) {
   const code = s.color_code ? ` [${s.color_code}]` : ''
   const emb = s.emboss ? ` · ${s.emboss}` : ''
   const std = s.color_standard ? ` → ${s.color_standard}` : ''
-  return `${s.color_name || ''}${code}${emb}${std}`
+  const factory = s.factory_key ? ` · ${s.factory_key}` : ''
+  return `${s.color_name || ''}${code}${emb}${std}${factory}`
 }
 
 export function normalizeSwatchText(value) {
@@ -191,9 +192,11 @@ export async function fetchColorSwatchOptionList({
   customers = [],
   selectedCustomer = null,
 }) {
-  const fk = swatchFactoryHint(formModel, { customers, selectedCustomer })
+  // customers/selectedCustomer retained for API compat; factory no longer gates lookup
+  void customers
+  void selectedCustomer
   const buyer = String(formModel.buyer || '').trim().toUpperCase()
-  if ((!fk && !formModel.customer_id) || !buyer) {
+  if (!buyer) {
     return { options: [], retriedWithoutMaterial: false }
   }
 
@@ -201,8 +204,6 @@ export async function fetchColorSwatchOptionList({
   const color = String(formModel.color || '').trim()
   const emboss = String(formModel.emboss || '').trim()
   const base = {
-    factory_key: fk || undefined,
-    customer_id: formModel.customer_id || undefined,
     buyer_code: buyer,
     limit: 60,
   }

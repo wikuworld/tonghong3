@@ -7,7 +7,7 @@ import {
   syncSingleEtdScheduleQty,
 } from '../utils/poEtdSchedule.js'
 
-/** Step 2: jadwal kirim ETD tunggal per baris (tanpa gelombang). */
+/** Step 2: rencana kirim ETD tunggal per baris (tanpa gelombang). */
 export function usePoStepReview({ formModel }) {
   const etdScheduleOpen = ref(['schedule'])
   const etdScheduleRows = ref(emptyEtdScheduleRows())

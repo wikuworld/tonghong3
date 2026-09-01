@@ -307,14 +307,33 @@
             <el-option :label="t('pages.invoice.paid')" value="paid" />
           </el-select>
         </el-form-item>
+        <el-form-item :label="t('pages.invoice.paymentAmount')">
+          <el-input v-model="outstandingEdit.payment_amount" type="number" step="0.01" />
+        </el-form-item>
         <el-form-item :label="t('pages.invoice.paymentDate')">
           <el-date-picker v-model="outstandingEdit.payment_date" type="date" value-format="YYYY-MM-DD" class="w-full" clearable />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.paymentRemark')">
+          <el-input v-model="outstandingEdit.payment_remark" maxlength="120" clearable />
         </el-form-item>
         <el-form-item :label="t('pages.invoice.paymentBankAccount')">
           <el-input v-model="outstandingEdit.payment_bank_account" maxlength="100" />
         </el-form-item>
         <el-form-item :label="t('pages.invoice.paymentProof')">
           <el-input v-model="outstandingEdit.payment_proof_url" maxlength="500" placeholder="URL atau path file" />
+        </el-form-item>
+        <el-divider content-position="left">{{ t('pages.invoice.creditNoteSection') }}</el-divider>
+        <el-form-item :label="t('pages.invoice.creditNoteNo')">
+          <el-input v-model="outstandingEdit.credit_note_no" maxlength="120" clearable />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.creditNoteDate')">
+          <el-date-picker v-model="outstandingEdit.credit_note_date" type="date" value-format="YYYY-MM-DD" class="w-full" clearable />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.creditNoteAmount')">
+          <el-input v-model="outstandingEdit.credit_note_amount" type="number" step="0.01" />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.oiaExportUsd')">
+          <el-input v-model="outstandingEdit.oia_export_usd" type="number" step="0.01" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -373,9 +392,15 @@ const outstandingEdit = reactive({
   nopen: '',
   nomor_aju: '',
   payment_status: 'unpaid',
+  payment_amount: '',
   payment_date: '',
+  payment_remark: '',
   payment_bank_account: '',
   payment_proof_url: '',
+  credit_note_no: '',
+  credit_note_date: '',
+  credit_note_amount: '',
+  oia_export_usd: '',
 })
 const poList = ref([])
 const customers = ref([])
@@ -465,9 +490,15 @@ function openEditOutstanding(row) {
   outstandingEdit.nopen = row.nopen || ''
   outstandingEdit.nomor_aju = row.nomor_aju || ''
   outstandingEdit.payment_status = row.payment_status || 'unpaid'
+  outstandingEdit.payment_amount = row.payment_amount ?? ''
   outstandingEdit.payment_date = row.payment_date || ''
+  outstandingEdit.payment_remark = row.payment_remark || ''
   outstandingEdit.payment_bank_account = row.payment_bank_account || ''
   outstandingEdit.payment_proof_url = row.payment_proof_url || ''
+  outstandingEdit.credit_note_no = row.credit_note_no || ''
+  outstandingEdit.credit_note_date = row.credit_note_date || ''
+  outstandingEdit.credit_note_amount = row.credit_note_amount ?? ''
+  outstandingEdit.oia_export_usd = row.oia_export_usd ?? ''
   outstandingEditVisible.value = true
 }
 
@@ -485,9 +516,16 @@ async function saveOutstanding() {
       nopen: outstandingEdit.nopen || undefined,
       nomor_aju: outstandingEdit.nomor_aju || undefined,
       payment_status: outstandingEdit.payment_status || undefined,
+      payment_amount: outstandingEdit.payment_amount === '' ? undefined : Number(outstandingEdit.payment_amount),
       payment_date: toIsoDate(outstandingEdit.payment_date) || undefined,
+      payment_remark: outstandingEdit.payment_remark || undefined,
       payment_bank_account: outstandingEdit.payment_bank_account || undefined,
       payment_proof_url: outstandingEdit.payment_proof_url || undefined,
+      credit_note_no: outstandingEdit.credit_note_no || undefined,
+      credit_note_date: toIsoDate(outstandingEdit.credit_note_date) || undefined,
+      credit_note_amount:
+        outstandingEdit.credit_note_amount === '' ? undefined : Number(outstandingEdit.credit_note_amount),
+      oia_export_usd: outstandingEdit.oia_export_usd === '' ? undefined : Number(outstandingEdit.oia_export_usd),
     })
     ElMessage.success(t('common.save'))
     outstandingEditVisible.value = false
