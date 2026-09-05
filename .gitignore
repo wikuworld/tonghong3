@@ -44,3 +44,9 @@ mrp/venv/
 # Local raw-material workbooks (import via UI / default path in container)
 mrp/data/*.xls
 mrp/data/*.xlsx
+
+# Local backup archives (jangan commit)
+archive.tgz
+archive2.tgz
+th26082026.tgz
+*.tgz
