@@ -166,7 +166,7 @@
             </template>
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="120" fixed="right" align="center">
-            <template #default="{ row, $index }">
+            <template #default="{ $index }">
               <el-button link type="primary" size="small" @click="openSoDialog($index)">
                 {{ t('pages.mrpRencana.soBtn') }}
               </el-button>

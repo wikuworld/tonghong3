@@ -2416,7 +2416,7 @@ const submitForm = async () => {
         const rowBody = { ...sanitizeNewDetailBody(raw) }
         const schedules = rowBody.delivery_schedules || []
         delete rowBody.delivery_schedules
-        const createdDetail = await addPoDetail(created.id, { ...rowBody, delivery_schedules: schedules })
+        await addPoDetail(created.id, { ...rowBody, delivery_schedules: schedules })
       }
       ElMessage.success(t('pages.customers.saved'))
       await offerConfirmAfterSave(created.id)

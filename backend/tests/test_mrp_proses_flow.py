@@ -200,5 +200,5 @@ def test_proses_consume_yl_and_complete(auth_headers):
 
         # packing scan WIP harus menerima completed
         wip = detail2.json()["persiapan"]["kode_wip"]
-        scan = client.get(f"/mrp/packing/scan-wip", headers=auth_headers, params={"q": wip})
+        scan = client.get("/mrp/packing/scan-wip", headers=auth_headers, params={"q": wip})
         assert scan.status_code == 200, scan.text

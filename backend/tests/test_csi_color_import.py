@@ -1,7 +1,6 @@
 """Tes mapping sheet Excel CSI → buyer + upsert."""
 
 from pathlib import Path
-from unittest.mock import MagicMock
 
 from app.services.csi_color import SHEET_BUYER, apply_csi_fields, parse_csi_workbook
 
