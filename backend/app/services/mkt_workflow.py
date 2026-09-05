@@ -258,7 +258,8 @@ def _stuck_reason_for_header(
     if nxt == "rekap_printed":
         if not row.rekap_printed_at:
             return "Menunggu rekap PO diprint"
-        if row.status != "confirmed":
+        status_norm = (row.status or "").strip().lower()
+        if status_norm not in {"confirmed", "production", "completed"}:
             return "PO belum di-confirm"
 
     elif nxt == "with_ppic":

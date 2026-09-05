@@ -27,6 +27,7 @@ from app.services.audit import log_change
 from app.services.notifications import create_notification_for_roles
 from app.services.mkt_workflow import sync_mkt_for_delivery, sync_mkt_workflow_auto_advance
 from app.services.business_rules import po_numbers_from_delivery
+from app.services.numbering import next_number
 from app.services.delivery_shipment import (
     list_ready_to_ship,
     lot_number_for_line,
@@ -180,6 +181,7 @@ def create_delivery_from_packing_lines(
         db, pd_ids, expected_customer_id=body.customer_id
     )
     hdr = DeliveryHeader(
+        delivery_number=next_number(db, "DEL", "DEL"),
         customer_id=customer_id or body.customer_id,
         packing_id=body.packing_id,
         delivery_date=body.delivery_date,
@@ -259,7 +261,10 @@ def create_delivery(
     user=Depends(require_roles("admin", "warehouse")),
 ) -> DeliveryHeader:
     require_packing_ready(db, body.packing_id)
-    row = DeliveryHeader(**body.model_dump(exclude_unset=True))
+    data = body.model_dump(exclude_unset=True)
+    if not (data.get("delivery_number") or "").strip():
+        data["delivery_number"] = next_number(db, "DEL", "DEL")
+    row = DeliveryHeader(**data)
     db.add(row)
     db.flush()
     log_change(

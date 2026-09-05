@@ -18,6 +18,7 @@ from app.schemas import QcDetailCreate, QcDetailOut, QcDetailUpdate, QcHeaderCre
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
 from app.services.notifications import create_notification_for_roles
+from app.services.numbering import next_number
 
 router = APIRouter(tags=["qc"])
 
@@ -40,7 +41,10 @@ def create_qc_header(
         pr = db.get(ProductionOrder, body.production_id)
         if not pr:
             raise HTTPException(status_code=404, detail="Production tidak ditemukan")
-    row = QcHeader(**body.model_dump(exclude_unset=True))
+    data = body.model_dump(exclude_unset=True)
+    if not (data.get("qc_number") or "").strip():
+        data["qc_number"] = next_number(db, "QC", "QC")
+    row = QcHeader(**data)
     db.add(row)
     db.flush()
     log_change(

@@ -402,6 +402,7 @@ def update_assignment_status(
 
     from app.services.mkt_workflow import sync_mkt_workflow_auto_advance
 
+    db.flush()
     sync_mkt_workflow_auto_advance(db, assignment.po_id, actor=_user.username)
     db.commit()
     db.refresh(assignment)

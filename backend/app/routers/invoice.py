@@ -19,6 +19,7 @@ from app.services.mkt_workflow import sync_invoice_billing_from_delivery
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
 from app.services.notifications import create_notification_for_roles
+from app.services.numbering import next_number
 
 router = APIRouter(tags=["invoice"])
 
@@ -42,7 +43,10 @@ def create_invoice(
         resolved = po_id_from_delivery(db, body.delivery_id)
         if resolved:
             data["po_id"] = resolved
-    
+
+    if not (data.get("invoice_number") or "").strip():
+        data["invoice_number"] = next_number(db, "INV", "INV")
+
     row = Invoice(**data)
     db.add(row)
     db.flush()

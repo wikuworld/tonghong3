@@ -13,7 +13,7 @@ from pathlib import Path
 BASE = "http://127.0.0.1:8000/api/v1"
 PWD_DEMO = "TonghongDemo2026"
 TODAY = date.today().isoformat()
-STAMP = datetime.now().strftime("%y%m%d%H%M")
+STAMP = datetime.now().strftime("%y%m%d%H%M%S")
 
 
 class StepFail(Exception):
@@ -92,16 +92,51 @@ def load_masters(tok: str) -> dict:
     if not item:
         raise StepFail("master item", "FG01854 tidak ada")
 
+    # Lookup (main API wajib factory_key atau customer_id). Fallback page + filter lokal.
     sw = req(
         "GET",
-        "/masters/color-swatch-recipes/lookup?factory_key=SL043&customer_id="
-        f"{cust['id']}&buyer_code=NIKE&material_name=VIRGIN%20HYDRO%20PU"
-        "&color_name=PINKSICLE%20(6FS)%20FLUORESCENT&emboss=AR-33%20M&limit=20",
+        "/masters/color-swatch-recipes/lookup?buyer_code=NIKE"
+        f"&customer_id={cust['id']}&factory_key=SHOETOWN"
+        "&material_name=VIRGIN%20HYDRO%20PU&q=6FS&limit=40",
         tok,
     )
+    candidates = sw if isinstance(sw, list) else []
+    if not candidates:
+        page_sw = req(
+            "GET",
+            "/masters/color-swatch-recipes/page?keyword=PINK%20SICLE&limit=50",
+            tok,
+        )
+        candidates = page_sw.get("items") if isinstance(page_sw, dict) else (page_sw or [])
+    candidates = [
+        r
+        for r in (candidates or [])
+        if (r.get("color_code") or "").upper() == "6FS"
+        and (
+            r.get("customer_id") == cust["id"]
+            or (r.get("factory_key") or "").upper() == "SHOETOWN"
+        )
+    ]
+
+    def _rank(r: dict) -> tuple:
+        cust_ok = 0 if r.get("customer_id") == cust["id"] else 1
+        mat_ok = 0 if "VIRGIN HYDRO" in (r.get("material_name") or "").upper() else 1
+        return (cust_ok, mat_ok, r.get("id") or 0)
+
     recipe = None
-    if isinstance(sw, list) and sw:
-        recipe = next((r for r in sw if (r.get("color_code") or "").upper() == "6FS"), sw[0])
+    if candidates:
+        recipe = sorted(candidates, key=_rank)[0]
+    if not recipe or not recipe.get("id"):
+        # Last resort: known SL043 PINKSICLE recipe id if still active.
+        try:
+            recipe = req("GET", "/masters/color-swatch-recipes/1082", tok)
+        except StepFail:
+            recipe = None
+    if not recipe or not recipe.get("id"):
+        raise StepFail(
+            "master swatch",
+            "Resep 6FS / VIRGIN HYDRO PU untuk SL043 (SHOETOWN) tidak ditemukan/aktif",
+        )
     return {"customer": cust, "brand": brand, "item": item, "swatch": recipe}
 
 
@@ -130,18 +165,21 @@ def create_so_line(tok: str, masters: dict, *, ref: str, source: str, price_spec
     )
     detail_body = {
         "master_item_id": it["id"],
-        "material_name": "VIRGIN HYDRO PU",
+        "material_name": sw.get("material_name") or "VIRGIN HYDRO PU",
         "thickness_text": "1.0 - 1.2",
         "thickness_min": 1.0,
         "thickness_max": 1.2,
+        # Nama warna SO harus match master fluorescent; swatch pakai spelling berbeda.
         "color": "PINKSICLE (6FS) FLUORESCENT",
         "color_family": "fluorescent",
-        "emboss": "AR-33 M",
+        "emboss": (sw.get("emboss") if source == "swatch" else None) or "AR-33 M",
         "quantity_order": 100,
         "model": "UAT-MATRIX-01",
         "vir_softness_type": "Vir Soft",
     }
-    if source == "swatch" and sw.get("id"):
+    if source == "swatch":
+        if not sw.get("id"):
+            raise StepFail("create_so_line swatch", "masters.swatch kosong")
         detail_body["color_swatch_recipe_id"] = sw["id"]
         detail_body["color_standard"] = sw.get("color_standard") or "TMSL0432020012901"
         detail_body["color_reference"] = sw.get("color_code") or "6FS"
@@ -172,6 +210,16 @@ def create_so_line(tok: str, masters: dict, *, ref: str, source: str, price_spec
     return header, detail
 
 
+def _lot_from_detail(d: dict) -> str | None:
+    return d.get("thi_line_ref") or d.get("lot_number") or d.get("system_reference")
+
+
+def _require(value, label: str, step_name: str):
+    if value in (None, ""):
+        raise StepFail(step_name, f"{label} wajib terisi")
+    return value
+
+
 def run_happy(tokens: dict, masters: dict, results: list) -> dict:
     mkt, prod, qc, wh, fin, ppic = (
         tokens["marketing"],
@@ -185,17 +233,19 @@ def run_happy(tokens: dict, masters: dict, results: list) -> dict:
 
     def a1():
         h, d = create_so_line(mkt, masters, ref=ref, source="swatch")
-        price = d.get("unit_price")
+        swatch_id = _require(d.get("color_swatch_recipe_id"), "color_swatch_recipe_id", "A1")
+        color_standard = _require(d.get("color_standard"), "color_standard", "A1")
+        lot = _require(_lot_from_detail(d), "thi_line_ref/lot", "A1")
         return {
             "po_id": h["id"],
             "po_number": h.get("po_number"),
             "status": h.get("status"),
             "mkt": h.get("mkt_workflow_stage"),
             "detail_id": d["id"],
-            "unit_price": price,
-            "swatch_id": d.get("color_swatch_recipe_id"),
-            "color_standard": d.get("color_standard"),
-            "lot": d.get("lot_number") or d.get("system_reference"),
+            "unit_price": d.get("unit_price"),
+            "swatch_id": swatch_id,
+            "color_standard": color_standard,
+            "lot": lot,
         }
 
     a1d = step(results, "A1 buat SO draft", a1)
@@ -206,6 +256,69 @@ def run_happy(tokens: dict, masters: dict, results: list) -> dict:
         return {"status": h.get("status"), "po_number": h.get("po_number")}
 
     a2d = step(results, "A2 confirm SO", a2)
+
+    def a8_rekap_ppic():
+        """Rekap + PPIC saat status masih confirmed/production-ready (sebelum invoice)."""
+        req(
+            "POST",
+            "/reports/po-daily-recap/confirm-print",
+            mkt,
+            {"po_ids": [po_id], "report_date": TODAY},
+        )
+        so = req("GET", f"/po/{po_id}", mkt)
+        stages = [so.get("mkt_workflow_stage")]
+        if stages[-1] != "rekap_printed":
+            raise StepFail(
+                "A8 rekap",
+                f"expected rekap_printed after confirm-print, got {stages[-1]}",
+            )
+
+        ppic_user = req("GET", "/auth/me", ppic)
+        if not ppic_user or not ppic_user.get("id"):
+            raise StepFail("A8 ppic user", "demo_ppic /auth/me gagal")
+        asg = req(
+            "POST",
+            f"/workflow/po/{po_id}/assign-to-ppic",
+            ppic,
+            {"po_id": po_id, "ppic_user_id": ppic_user["id"], "notes": "UAT"},
+        )
+        so = req("GET", f"/po/{po_id}", mkt)
+        stages.append(so.get("mkt_workflow_stage"))
+        if stages[-1] != "with_ppic":
+            raise StepFail(
+                "A8 assign PPIC",
+                f"expected with_ppic, got {stages[-1]}",
+            )
+
+        req(
+            "PUT",
+            f"/workflow/ppic/assignments/{asg['id']}/status",
+            ppic,
+            {"status": "completed", "notes": "UAT complete"},
+        )
+        so = req("GET", f"/po/{po_id}", mkt)
+        stages.append(so.get("mkt_workflow_stage"))
+        if stages[-1] != "in_outstanding":
+            raise StepFail(
+                "A8 PPIC complete",
+                f"expected in_outstanding, got {stages[-1]}",
+            )
+
+        req(
+            "PUT",
+            f"/po/{po_id}",
+            mkt,
+            {"material_followup_done": True, "material_followup_remark": "UAT follow-up OK"},
+        )
+        try:
+            req("POST", f"/po/{po_id}/mkt-workflow/advance", mkt)
+        except StepFail:
+            pass
+        so = req("GET", f"/po/{po_id}", mkt)
+        stages.append(so.get("mkt_workflow_stage"))
+        return {"stage_trace": stages, "post_ppic_stage": so.get("mkt_workflow_stage")}
+
+    a8_early = step(results, "A8 MKT rekap+PPIC", a8_rekap_ppic)
 
     def a3():
         pr = req(
@@ -259,9 +372,10 @@ def run_happy(tokens: dict, masters: dict, results: list) -> dict:
                 "qty_checked": 100,
             },
         )
+        qc_number = _require(qh.get("qc_number"), "qc_number", "A4")
         return {
             "qc_id": qh["id"],
-            "qc_number": qh.get("qc_number"),
+            "qc_number": qc_number,
             "qc_detail_id": qd["id"],
             "is_ok": qd.get("is_ok"),
         }
@@ -321,14 +435,36 @@ def run_happy(tokens: dict, masters: dict, results: list) -> dict:
         )
         dh = req("PUT", f"/delivery/{dh['id']}", wh, {"status": "sent"})
         details = req("GET", f"/delivery/{dh['id']}/details", wh)
+        delivery_number = _require(dh.get("delivery_number"), "delivery_number", "A6")
         return {
             "delivery_id": dh["id"],
-            "delivery_number": dh.get("delivery_number"),
+            "delivery_number": delivery_number,
             "status": dh.get("status"),
             "detail_count": len(details) if isinstance(details, list) else 0,
         }
 
     a6d = step(results, "A6 delivery sent", a6)
+
+    def a8_sj_invpl():
+        req("POST", f"/packing/{a5d['packing_id']}/mark-invpl-printed", wh)
+        req("POST", f"/delivery/{a6d['delivery_id']}/mark-surat-jalan-printed", wh)
+        for _ in range(3):
+            try:
+                req("POST", f"/po/{po_id}/mkt-workflow/advance", mkt)
+            except StepFail:
+                break
+        so = req("GET", f"/po/{po_id}", mkt)
+        stage = so.get("mkt_workflow_stage")
+        if stage not in {"sj_invpl", "delivery_arranged", "material_followup"}:
+            # material_followup may still be current if delivery gate differs
+            if stage == "invoice_billing":
+                raise StepFail("A8 SJ/INVPL", "sudah invoice_billing sebelum invoice dibuat")
+        return {
+            "stage_trace": (a8_early.get("stage_trace") or []) + [stage],
+            "pre_invoice_stage": stage,
+        }
+
+    a8pre = step(results, "A8 MKT SJ/INVPL", a8_sj_invpl)
 
     def a7():
         inv = req(
@@ -343,85 +479,46 @@ def run_happy(tokens: dict, masters: dict, results: list) -> dict:
                 "invoice_date": TODAY,
             },
         )
+        invoice_number = _require(inv.get("invoice_number"), "invoice_number", "A7")
         return {
             "invoice_id": inv["id"],
-            "invoice_number": inv.get("invoice_number"),
+            "invoice_number": invoice_number,
             "po_number": inv.get("po_number"),
         }
 
     a7d = step(results, "A7 invoice", a7)
 
-    def a8():
-        req(
-            "POST",
-            "/reports/po-daily-recap/confirm-print",
-            mkt,
-            {"po_ids": [po_id], "report_date": TODAY},
-        )
+    def a8_final():
         so = req("GET", f"/po/{po_id}", mkt)
-        stages = [so.get("mkt_workflow_stage")]
-
-        ppic_user = req("GET", "/auth/me", ppic)
-        if not ppic_user or not ppic_user.get("id"):
-            raise StepFail("A8 ppic user", "demo_ppic /auth/me gagal")
-        asg = req(
-            "POST",
-            f"/workflow/po/{po_id}/assign-to-ppic",
-            ppic,
-            {"po_id": po_id, "ppic_user_id": ppic_user["id"], "notes": "UAT"},
-        )
-        so = req("GET", f"/po/{po_id}", mkt)
-        stages.append(so.get("mkt_workflow_stage"))
-
-        req(
-            "PUT",
-            f"/workflow/ppic/assignments/{asg['id']}/status",
-            ppic,
-            {"status": "completed", "notes": "UAT complete"},
-        )
-        so = req("GET", f"/po/{po_id}", mkt)
-        stages.append(so.get("mkt_workflow_stage"))
-
-        req(
-            "PUT",
-            f"/po/{po_id}",
-            mkt,
-            {"material_followup_done": True, "material_followup_remark": "UAT follow-up OK"},
-        )
-        try:
-            req("POST", f"/po/{po_id}/mkt-workflow/advance", mkt)
-        except StepFail:
-            pass
-        so = req("GET", f"/po/{po_id}", mkt)
-        stages.append(so.get("mkt_workflow_stage"))
-
-        req("POST", f"/packing/{a5d['packing_id']}/mark-invpl-printed", wh)
-        req("POST", f"/delivery/{a6d['delivery_id']}/mark-surat-jalan-printed", wh)
-        try:
-            req("POST", f"/po/{po_id}/mkt-workflow/advance", mkt)
-        except StepFail:
-            pass
-        try:
-            req("POST", f"/po/{po_id}/mkt-workflow/advance", mkt)
-        except StepFail:
-            pass
-        so = req("GET", f"/po/{po_id}", mkt)
-        stages.append(so.get("mkt_workflow_stage"))
-
+        final_stage = so.get("mkt_workflow_stage")
+        if final_stage != "invoice_billing":
+            raise StepFail("A8 final", f"expected invoice_billing, got {final_stage}")
         skip = None
         try:
             req("POST", f"/po/{po_id}/mkt-workflow/advance", mkt)
+            skip = "UNEXPECTED_ADVANCE_OK"
         except StepFail as e:
             skip = e.detail
-        so = req("GET", f"/po/{po_id}", mkt)
         return {
-            "final_stage": so.get("mkt_workflow_stage"),
-            "stage_trace": stages,
+            "final_stage": final_stage,
+            "stage_trace": (a8pre.get("stage_trace") or []) + [final_stage],
+            "pre_invoice_stage": a8pre.get("pre_invoice_stage"),
             "skip_after_end": skip,
         }
 
-    a8d = step(results, "A8 marketing flow", a8)
-    return {"a1": a1d, "a2": a2d, "a3": a3d, "a4": a4d, "a5": a5d, "a6": a6d, "a7": a7d, "a8": a8d}
+    a8d = step(results, "A8 marketing flow final", a8_final)
+    return {
+        "a1": a1d,
+        "a2": a2d,
+        "a8_early": a8_early,
+        "a3": a3d,
+        "a4": a4d,
+        "a5": a5d,
+        "a6": a6d,
+        "a8_pre": a8pre,
+        "a7": a7d,
+        "a8": a8d,
+    }
 
 
 def run_branches(tokens: dict, masters: dict, results: list) -> dict:
@@ -528,11 +625,14 @@ def write_report(payload: dict, path: Path) -> None:
                 "po_number",
                 "status",
                 "unit_price",
+                "swatch_id",
+                "lot",
                 "production_number",
                 "qc_number",
                 "packing_number",
                 "delivery_number",
                 "invoice_number",
+                "pre_invoice_stage",
                 "final_stage",
                 "color_standard",
             )
