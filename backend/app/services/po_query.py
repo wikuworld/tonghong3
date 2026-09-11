@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Optional
+from typing import Optional, Sequence
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
 from app.models import PoDetail, PoHeader
+
+
+def _customer_ids_filter(customer_id: Optional[int | Sequence[int]] = None) -> list[int]:
+    if customer_id is None:
+        return []
+    if isinstance(customer_id, (list, tuple, set)):
+        return sorted({int(x) for x in customer_id if x is not None})
+    return [int(customer_id)]
 
 
 def parse_query_date(s: Optional[str]) -> Optional[date]:
@@ -37,7 +45,11 @@ def apply_po_list_filters(
     if mkt_workflow_stage:
         stmt = stmt.where(PoHeader.mkt_workflow_stage == mkt_workflow_stage)
     if customer_id is not None:
-        stmt = stmt.where(PoHeader.customer_id == customer_id)
+        ids = _customer_ids_filter(customer_id)
+        if len(ids) == 1:
+            stmt = stmt.where(PoHeader.customer_id == ids[0])
+        elif ids:
+            stmt = stmt.where(PoHeader.customer_id.in_(ids))
     if buyer:
         stmt = stmt.where(PoHeader.buyer == buyer)
     if status:

@@ -16,7 +16,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Customer, CustomerPic, PoDetail, PoHeader, QuotationHeader
+from app.models import Customer, CustomerPic, PoDetail, PoHeader
 
 COMPANY_LINES = (
     "PT. TONG HONG TANNERY INDONESIA",
@@ -125,17 +125,7 @@ def _build_pi_number(db: Session, ph: PoHeader, details: list[PoDetail]) -> str:
 
 
 def _resolve_salesperson(db: Session, customer_id: int | None) -> str:
-    if not customer_id:
-        return "MARKETING"
-    row = db.scalar(
-        select(QuotationHeader.salesperson)
-        .where(QuotationHeader.customer_id == customer_id)
-        .where(QuotationHeader.salesperson.isnot(None))
-        .order_by(QuotationHeader.quotation_date.desc(), QuotationHeader.id.desc())
-        .limit(1)
-    )
-    name = (row or "").strip()
-    return name.upper() if name else "MARKETING"
+    return "MARKETING"
 
 
 def _resolve_attn(db: Session, cust: Customer | None) -> str:
@@ -156,16 +146,6 @@ def _resolve_attn(db: Session, cust: Customer | None) -> str:
 def _resolve_payment_terms(cust: Customer | None, db: Session, customer_id: int | None) -> str:
     if cust and cust.payment_terms and str(cust.payment_terms).strip():
         return str(cust.payment_terms).strip().upper()
-    if customer_id:
-        row = db.scalar(
-            select(QuotationHeader.payment_terms)
-            .where(QuotationHeader.customer_id == customer_id)
-            .where(QuotationHeader.payment_terms.isnot(None))
-            .order_by(QuotationHeader.quotation_date.desc(), QuotationHeader.id.desc())
-            .limit(1)
-        )
-        if row and str(row).strip():
-            return str(row).strip().upper()
     return DEFAULT_PAYMENT_TERMS
 
 
@@ -392,8 +372,8 @@ def render_proforma_invoice_pdf(ctx: dict[str, Any]) -> bytes:
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
-        leftMargin=14 * mm,
-        rightMargin=14 * mm,
+        leftMargin=12 * mm,
+        rightMargin=12 * mm,
         topMargin=12 * mm,
         bottomMargin=12 * mm,
     )
@@ -401,6 +381,17 @@ def render_proforma_invoice_pdf(ctx: dict[str, Any]) -> bytes:
     center = ParagraphStyle(name="center", parent=styles["Normal"], alignment=1, fontSize=10, leading=12)
     center_bold = ParagraphStyle(name="center_b", parent=center, fontSize=11, leading=13)
     small = ParagraphStyle(name="pi_s", parent=styles["Normal"], fontSize=8.5, leading=11)
+    cell = ParagraphStyle(name="pi_cell", parent=styles["Normal"], fontSize=7, leading=8.5)
+    cell_r = ParagraphStyle(name="pi_cell_r", parent=cell, alignment=2)
+    cell_c = ParagraphStyle(name="pi_cell_c", parent=cell, alignment=1)
+    head_style = ParagraphStyle(
+        name="pi_head",
+        parent=styles["Normal"],
+        fontSize=6.5,
+        leading=8,
+        alignment=1,
+        fontName="Helvetica-Bold",
+    )
     story: list[Any] = []
 
     for i, ln in enumerate(COMPANY_LINES):
@@ -445,49 +436,75 @@ def render_proforma_invoice_pdf(ctx: dict[str, Any]) -> bytes:
         story.append(p)
     story.append(Spacer(1, 3 * mm))
 
-    head = ["PO NO", "ITEM", "THICKNESS", "EMBOSS", "COLOR", "QTY", "UNIT", "PRICE (USD)", "AMOUNT (USD)", "ETD"]
-    data: list[list[Any]] = [head]
+    head_labels = [
+        "PO NO",
+        "ITEM",
+        "THICKNESS",
+        "EMBOSS",
+        "COLOR",
+        "QTY",
+        "UNIT",
+        "UNIT PRICE<br/>(USD)",
+        "AMOUNT<br/>(USD)",
+        "ETD",
+    ]
+    data: list[list[Any]] = [[Paragraph(h, head_style) for h in head_labels]]
     for ln in ctx["lines"]:
         data.append(
             [
-                ln["po_no"],
-                ln["item"],
-                ln["thickness"],
-                ln["emboss"],
-                ln["color"],
-                _dec_qty(ln["qty"]),
-                ln["unit"],
-                _dec_price(ln["unit_price"]),
-                _dec_money(ln["amount"]),
-                ln["etd"],
+                Paragraph(escape(str(ln["po_no"] or "")), cell),
+                Paragraph(escape(str(ln["item"] or "")), cell),
+                Paragraph(escape(str(ln["thickness"] or "")), cell_c),
+                Paragraph(escape(str(ln["emboss"] or "")), cell),
+                Paragraph(escape(str(ln["color"] or "")), cell),
+                Paragraph(escape(_dec_qty(ln["qty"])), cell_r),
+                Paragraph(escape(str(ln["unit"] or "")), cell_c),
+                Paragraph(escape(_dec_price(ln["unit_price"])), cell_r),
+                Paragraph(escape(_dec_money(ln["amount"])), cell_r),
+                Paragraph(escape(str(ln["etd"] or "")), cell_c),
             ]
         )
-    total_row: list[Any] = ["TOTAL", "", "", "", "", _dec_qty(ctx["total_qty"]), ctx["unit"], "", _dec_money(ctx["total_amount"]), ""]
-    data.append(total_row)
+    data.append(
+        [
+            Paragraph("<b>TOTAL</b>", cell),
+            "",
+            "",
+            "",
+            "",
+            Paragraph(f"<b>{escape(_dec_qty(ctx['total_qty']))}</b>", cell_r),
+            Paragraph(escape(str(ctx.get("unit") or "")), cell_c),
+            "",
+            Paragraph(f"<b>{escape(_dec_money(ctx['total_amount']))}</b>", cell_r),
+            "",
+        ]
+    )
 
+    # Lebar disetel agar COLOR/QTY tidak saling tabrak; teks wrap via Paragraph.
     col_widths = [
-        doc.width * 0.14,
-        doc.width * 0.12,
-        doc.width * 0.08,
-        doc.width * 0.07,
-        doc.width * 0.12,
-        doc.width * 0.08,
-        doc.width * 0.05,
-        doc.width * 0.09,
-        doc.width * 0.10,
-        doc.width * 0.06,
+        doc.width * 0.11,  # PO
+        doc.width * 0.13,  # ITEM
+        doc.width * 0.08,  # THICKNESS
+        doc.width * 0.08,  # EMBOSS
+        doc.width * 0.16,  # COLOR (sering panjang)
+        doc.width * 0.09,  # QTY
+        doc.width * 0.05,  # UNIT
+        doc.width * 0.10,  # PRICE
+        doc.width * 0.11,  # AMOUNT
+        doc.width * 0.09,  # ETD
     ]
     tbl = Table(data, colWidths=col_widths, repeatRows=1)
     tbl.setStyle(
         TableStyle(
             [
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.black),
-                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                ("FONTSIZE", (0, 0), (-1, -1), 7),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("ALIGN", (5, 0), (8, -1), "RIGHT"),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.black),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.90, 0.90, 0.90)),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
                 ("SPAN", (0, -1), (4, -1)),
-                ("FONTNAME", (0, -1), (0, -1), "Helvetica-Bold"),
+                ("BACKGROUND", (0, -1), (-1, -1), colors.Color(0.96, 0.96, 0.96)),
             ]
         )
     )

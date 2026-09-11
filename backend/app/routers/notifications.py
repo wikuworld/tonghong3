@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.timeutil import app_now
 from app.models import Notification
 from app.routers.auth import get_current_user
 from app.schemas import NotificationOut
@@ -55,7 +56,7 @@ def mark_notification_read(
         raise HTTPException(status_code=404, detail="Notifikasi tidak ditemukan")
     if not row.is_read:
         row.is_read = True
-        row.read_at = datetime.utcnow()
+        row.read_at = app_now()
         db.commit()
         db.refresh(row)
     return row
@@ -68,7 +69,7 @@ def mark_all_read(db: Session = Depends(get_db), user=Depends(get_current_user))
             Notification.user_id == user.id, Notification.is_read.is_(False)
         )
     ).all()
-    now = datetime.utcnow()
+    now = app_now()
     for row in rows:
         row.is_read = True
         row.read_at = now

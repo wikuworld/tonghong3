@@ -11,16 +11,17 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import DeliveryDetail, DeliveryHeader, PoDetail, PoDetailDelivery, PoHeader
+from app.models import DeliveryDetail, DeliveryHeader, PackingHeader, PoDetail, PoDetailDelivery, PoHeader
 from app.schemas import (
     DeliveryScheduleItem,
     OutstandingScheduleBatchIn,
     OutstandingShipBatchIn,
 )
 from app.services.audit import log_change
-from app.services.business_rules import po_numbers_from_delivery, require_packing_ready
+from app.services.business_rules import require_packing_ready
 from app.services.delivery_shipment import (
     _has_qc_ok,
+    brand_key,
     list_ready_to_ship_for_po_details,
     qty_available_for_packing_line,
     validate_same_customer_and_brand,
@@ -28,8 +29,11 @@ from app.services.delivery_shipment import (
 from app.services.mkt_workflow import (
     mkt_stage_index,
     normalize_mkt_stage,
+    sync_mkt_for_delivery,
     sync_mkt_workflow_auto_advance,
 )
+from app.services.mrp_fg_delivery_bridge import trigger_mrp_fg_out_for_packings
+from app.services.document_numbers import allocate_surat_jalan_number
 from app.services.notifications import create_notification_for_roles
 from app.services.po_delivery_balance import (
     remaining_schedule_qty,
@@ -212,23 +216,39 @@ def apply_outstanding_ship_batch(
                 status_code=400,
                 detail=(
                     f"SO {ph.po_number or ph.id} belum di tahap Outstanding "
-                    f"(sekarang: {stage}). Selesaikan assign/PPIC dulu."
+                    f"(sekarang: {stage}). Konfirmasi SO dulu."
                 ),
             )
 
-    # Group by packing_id + delivery_date
-    groups: dict[tuple[int, date | None], list] = defaultdict(list)
+    # Satu SJ per pelanggan + buyer + tanggal (boleh lintas packing / SO).
+    groups: dict[tuple[int, str, date | None], list] = defaultdict(list)
     for ln in body.lines:
-        groups[(int(ln.packing_id), ln.delivery_date)].append(ln)
+        drow = db.get(PoDetail, int(ln.po_detail_id))
+        ph = db.get(PoHeader, int(drow.po_id)) if drow and drow.po_id else None
+        cust_id = int(ph.customer_id) if ph and ph.customer_id else 0
+        groups[(cust_id, brand_key(ph), ln.delivery_date)].append(ln)
 
     delivery_ids: list[int] = []
-    for (packing_id, ship_date), lines in groups.items():
-        require_packing_ready(db, packing_id)
+    delivery_numbers: list[str] = []
+    for (_cust, _bk, ship_date), lines in groups.items():
+        packing_ids = {int(x.packing_id) for x in lines}
+        for pid in packing_ids:
+            require_packing_ready(db, pid)
         pd_ids = [int(x.production_detail_id) for x in lines]
         customer_id, _brand = validate_same_customer_and_brand(db, pd_ids)
+        first_packing = int(lines[0].packing_id)
+        first_detail = db.get(PoDetail, int(lines[0].po_detail_id))
+        po_for_num = (
+            db.get(PoHeader, int(first_detail.po_id))
+            if first_detail and first_detail.po_id
+            else None
+        )
         hdr = DeliveryHeader(
+            delivery_number=allocate_surat_jalan_number(
+                db, po=po_for_num, on_date=ship_date or date.today()
+            ),
             customer_id=customer_id or None,
-            packing_id=packing_id,
+            packing_id=first_packing,
             delivery_date=ship_date or date.today(),
             delivery_type=body.delivery_type or "production",
             delivery_zone=body.delivery_zone or "outtown",
@@ -242,6 +262,7 @@ def apply_outstanding_ship_batch(
         line_audit: list[dict[str, Any]] = []
         for ln in lines:
             prod_id = int(ln.production_detail_id)
+            packing_id = int(ln.packing_id)
             if not _has_qc_ok(db, prod_id):
                 raise HTTPException(
                     status_code=400,
@@ -277,6 +298,7 @@ def apply_outstanding_ship_batch(
                     delivery_id=hdr.id,
                     production_detail_id=prod_id,
                     packing_detail_id=int(ln.packing_detail_id) if ln.packing_detail_id else None,
+                    po_detail_id=int(ln.po_detail_id),
                     qty=qty,
                 )
             )
@@ -284,6 +306,7 @@ def apply_outstanding_ship_batch(
                 {
                     "po_detail_id": int(ln.po_detail_id),
                     "production_detail_id": prod_id,
+                    "packing_id": packing_id,
                     "packing_detail_id": int(ln.packing_detail_id) if ln.packing_detail_id else None,
                     "qty": str(qty),
                 }
@@ -294,17 +317,30 @@ def apply_outstanding_ship_batch(
             entity_id=hdr.id,
             action="create_from_outstanding_packing",
             after={
-                "packing_id": packing_id,
+                "packing_id": first_packing,
+                "packing_ids": sorted(packing_ids),
+                "delivery_number": hdr.delivery_number,
                 "line_count": len(lines),
                 "lines": line_audit,
             },
             actor=actor,
         )
-        for pn in po_numbers_from_delivery(db, hdr.id):
-            ph = db.scalars(select(PoHeader).where(PoHeader.po_number == pn).limit(1)).first()
-            if ph:
-                sync_mkt_workflow_auto_advance(db, ph.id, actor=actor)
+        mrp_pks = []
+        for pid in packing_ids:
+            pk = db.get(PackingHeader, pid)
+            if pk:
+                mrp_pks.append(pk)
+        trigger_mrp_fg_out_for_packings(
+            db,
+            packings=mrp_pks,
+            delivery=hdr,
+            keterangan=body.destination,
+            actor=actor,
+        )
+        sync_mkt_for_delivery(db, hdr.id, actor=actor)
         delivery_ids.append(int(hdr.id))
+        if hdr.delivery_number:
+            delivery_numbers.append(str(hdr.delivery_number))
 
     try:
         create_notification_for_roles(
@@ -319,9 +355,11 @@ def apply_outstanding_ship_batch(
         pass
 
     db.commit()
+    sj_label = "surat jalan" if len(delivery_ids) == 1 else "surat jalan"
     return {
         "ok": True,
         "delivery_ids": delivery_ids,
+        "delivery_numbers": delivery_numbers,
         "delivery_count": len(delivery_ids),
-        "message": f"{len(delivery_ids)} delivery dibuat dari packing list",
+        "message": f"{len(delivery_ids)} {sj_label} dibuat dari packing list",
     }

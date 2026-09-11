@@ -55,6 +55,23 @@ def test_map_po_detail_cancelled_header():
     assert mapped["cancelled"] is True
 
 
+def test_sync_cancels_draft_header(monkeypatch):
+    db = MagicMock()
+    pod = _detail(status="draft")
+    monkeypatch.setattr(sync, "_load_details", lambda *a, **k: [pod])
+    pushed = {}
+
+    def _push(items, **kwargs):
+        pushed["items"] = items
+        return {"ok": True, "inserted": 0, "updated": 0, "total": len(items)}
+
+    monkeypatch.setattr(sync, "_push_items", _push)
+    result = sync.sync_po_details_to_mrp(db, detail_ids=[11], raise_on_error=True)
+    assert result["ok"] is True
+    assert pushed["items"][0]["source_detail_id"] == 11
+    assert pushed["items"][0]["cancelled"] is True
+
+
 def test_sync_incremental_by_detail_id(monkeypatch):
     db = MagicMock()
     pod = _detail()
@@ -122,6 +139,107 @@ def test_sync_upstream_error_raises_when_requested(monkeypatch):
         sync.sync_po_details_to_mrp(db, detail_ids=[11], raise_on_error=True)
 
 
+def test_push_items_retries_then_succeeds(monkeypatch):
+    calls = {"n": 0}
+
+    class _Resp:
+        status_code = 200
+        content = b'{"ok":true,"updated":1}'
+
+        def json(self):
+            return {"ok": True, "updated": 1}
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("transient")
+            return _Resp()
+
+    monkeypatch.setattr(sync.httpx, "Client", _Client)
+    monkeypatch.setattr(sync.time, "sleep", lambda *_: None)
+    out = sync._push_items([{"source_detail_id": 11}])
+    assert out["ok"] is True
+    assert out["attempts"] == 2
+    assert calls["n"] == 2
+
+
+def test_push_items_exhausts_retries(monkeypatch):
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, json=None):
+            raise RuntimeError("always down")
+
+    monkeypatch.setattr(sync.httpx, "Client", _Client)
+    monkeypatch.setattr(sync.time, "sleep", lambda *_: None)
+    with pytest.raises(RuntimeError, match="always down"):
+        sync._push_items([{"source_detail_id": 11}])
+
+    db = MagicMock()
+    monkeypatch.setattr(sync, "_load_details", lambda *a, **k: [_detail()])
+    result = sync.try_sync_po_details_to_mrp(db, detail_ids=[11])
+    assert result["ok"] is False
+    assert result["attempts"] == sync._PUSH_MAX_ATTEMPTS
+    assert "always down" in result["error"]
+
+
+def test_sync_targeted_by_po_id(monkeypatch):
+    db = MagicMock()
+    pod = _detail(po_id=42, detail_id=99)
+    seen = {}
+
+    def _load(*a, **k):
+        seen.update(k)
+        return [pod]
+
+    monkeypatch.setattr(sync, "_load_details", _load)
+
+    def _push(items, **kwargs):
+        return {"ok": True, "inserted": 0, "updated": 1, "total": len(items), "attempts": 1}
+
+    monkeypatch.setattr(sync, "_push_items", _push)
+    result = sync.sync_po_details_to_mrp(db, po_id=42, raise_on_error=True)
+    assert result["ok"] is True
+    assert seen.get("po_id") == 42
+
+
+def test_gateway_sync_po_passes_po_id(monkeypatch):
+    from app.routers import mrp_gateway as gw
+
+    db = MagicMock()
+    user = MagicMock()
+    called = {}
+
+    def _sync(db_arg, **kwargs):
+        called.update(kwargs)
+        return {"ok": True, "updated": 1, "attempts": 1}
+
+    monkeypatch.setattr(gw, "sync_po_details_to_mrp", _sync)
+    body = gw.MrpSyncPoIn(po_id=7)
+    out = gw.sync_po_from_tonghong(body=body, _user=user, db=db)
+    assert out["ok"] is True
+    assert called.get("po_id") == 7
+    assert called.get("raise_on_error") is True
+    db.commit.assert_called()
+
+
 def test_update_po_detail_calls_sync_after_commit_and_survives_sync_failure():
     """Hook: setelah commit, sync dipanggil; kegagalan sync tidak gagalkan PO."""
     from app.routers import po as po_router
@@ -140,6 +258,7 @@ def test_update_po_detail_calls_sync_after_commit_and_survives_sync_failure():
         patch.object(po_router, "mark_po_item_revised"),
         patch.object(po_router, "_detail_loaded", return_value=row),
         patch.object(po_router, "_validate_fluorescent_color_master"),
+        patch.object(po_router, "assert_po_detail_update_allowed"),
         patch.object(po_router, "try_sync_po_details_to_mrp", sync_mock),
         patch.object(po_router, "po_detail_audit_snapshot", return_value={}),
     ):
@@ -147,4 +266,4 @@ def test_update_po_detail_calls_sync_after_commit_and_survives_sync_failure():
 
     assert out is row
     db.commit.assert_called()
-    sync_mock.assert_called_once_with(db, detail_ids=[11])
+    sync_mock.assert_called_once_with(db, po_id=1, detail_ids=[11])

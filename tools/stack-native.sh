@@ -60,6 +60,10 @@ cmd_install() {
   sudo cp "$ROOT/deploy/systemd/tonghong-backend.service" /etc/systemd/system/
   sudo cp "$ROOT/deploy/systemd/tonghong-mrp.service" /etc/systemd/system/
   sudo cp "$ROOT/deploy/systemd/tonghong-frontend.service" /etc/systemd/system/
+  if [[ -f "$ROOT/deploy/mariadb/99-tonghong-timezone.cnf" ]]; then
+    sudo mkdir -p /etc/mysql/mariadb.conf.d
+    sudo cp "$ROOT/deploy/mariadb/99-tonghong-timezone.cnf" /etc/mysql/mariadb.conf.d/99-tonghong-timezone.cnf
+  fi
   sudo cp "$ROOT/frontend/nginx.native.conf" /etc/nginx/sites-available/tonghong-native
   sudo ln -sfn /etc/nginx/sites-available/tonghong-native /etc/nginx/sites-enabled/tonghong-native
   if [[ -e /etc/nginx/sites-enabled/default ]]; then

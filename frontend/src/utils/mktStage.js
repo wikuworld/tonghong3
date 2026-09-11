@@ -27,31 +27,22 @@ export function materialFollowUpAutoStatus(stage) {
 
 /**
  * Langkah kerja berikutnya di daftar SO — aksi halaman, bukan sekadar «lanjut tahap».
- * @returns {'rekap'|'assign_ppic'|'advance'|'outstanding'|'planning'|'delivery'|'invoice'|'wait'|'done'}
+ * Confirm SO (di Order Penjualan) langsung Outstanding; cetak RKPO opsional arsip.
+ * @returns {'rekap'|'advance'|'outstanding'|'planning'|'delivery'|'invoice'|'wait'|'done'}
  */
 export function soListNextStep(row = {}, opts = {}) {
   const stage = normalizeMktStage(row.mkt_workflow_stage)
   const status = String(row.status || '').trim().toLowerCase()
-  const hasPpic = Boolean(opts.hasPpic)
-  const stuck = String(row.stuck_reason || '')
 
   if (stage === 'invoice_billing') return 'done'
 
   if (stage === 'input_system') {
-    if (!row.rekap_printed_at) return 'rekap'
-    // Konfirmasi draft hanya di Order Penjualan (setelah simpan SO), bukan di Daftar SO.
-    if (status === 'draft') return 'wait'
-    return 'advance'
+    if (status === 'draft' || !status) return 'wait'
+    return 'outstanding'
   }
 
-  if (stage === 'rekap_printed') {
-    if (!hasPpic) return 'assign_ppic'
-    return 'advance'
-  }
-
-  if (stage === 'with_ppic') {
-    if (stuck) return 'wait'
-    return 'advance'
+  if (stage === 'rekap_printed' || stage === 'with_ppic') {
+    return 'outstanding'
   }
 
   if (stage === 'in_outstanding') return 'outstanding'

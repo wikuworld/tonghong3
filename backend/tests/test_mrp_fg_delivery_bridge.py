@@ -1,4 +1,4 @@
-"""Uji bridge FG OUT MRP → Delivery draft + saldo PO langsung."""
+"""Uji bridge FG OUT MRP: taut SJ yang sudah ada, tidak membuat SJ baru."""
 
 from __future__ import annotations
 
@@ -8,7 +8,12 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 
-from app.models import DeliveryDetail, DeliveryHeader, PackingHeader, PoDetail, PoHeader
+from app.models import (
+    DeliveryHeader,
+    PackingHeader,
+    PoDetail,
+    ProductionDetail,
+)
 from app.services import mrp_fg_delivery_bridge as bridge
 from app.services import po_delivery_balance as bal
 
@@ -34,7 +39,29 @@ def test_validate_delivery_qty_with_po_detail_id():
     assert exc.value.status_code == 400
 
 
-def test_bridge_rejects_empty_lines():
+def test_resolve_production_prefers_wip_lot():
+    db = MagicMock()
+    pd = ProductionDetail(id=5, lot_number="WIP-A")
+    db.scalars.return_value.first.return_value = pd
+    got = bridge._resolve_production_detail_for_wip(
+        db, kode_wip="WIP-A", erp_production_detail_id=99
+    )
+    assert got is pd
+    db.get.assert_not_called()
+
+
+def test_resolve_production_falls_back_to_stamp():
+    db = MagicMock()
+    db.scalars.return_value.first.return_value = None
+    pd = ProductionDetail(id=8, lot_number="WIP-X")
+    db.get.return_value = pd
+    got = bridge._resolve_production_detail_for_wip(
+        db, kode_wip="WIP-MISS", erp_production_detail_id=8
+    )
+    assert got is pd
+
+
+def test_bridge_rejects_new_delivery():
     db = MagicMock()
     db.scalars.return_value.first.return_value = None
     with pytest.raises(HTTPException) as exc:
@@ -46,7 +73,8 @@ def test_bridge_rejects_empty_lines():
             customer_name="Acme",
             lines=[],
         )
-    assert "source_detail_id" in str(exc.value.detail).lower() or "sync po" in str(exc.value.detail).lower()
+    assert exc.value.status_code == 400
+    assert "outstanding" in str(exc.value.detail).lower()
 
 
 def test_bridge_idempotent_returns_existing():
@@ -68,64 +96,27 @@ def test_bridge_idempotent_returns_existing():
     assert result.delivery_number == "DEL-1"
 
 
-def test_bridge_creates_stub_and_delivery(monkeypatch):
+def test_bridge_does_not_create_stub_or_delivery():
     db = MagicMock()
 
-    def _scalars(stmt):
+    def _scalars(_stmt):
         result = MagicMock()
         result.first.return_value = None
-        result.one.return_value = Decimal("0")
         return result
 
     db.scalars.side_effect = _scalars
-
-    ph = PoHeader(id=1, po_number="PO-1", customer_id=9, status="confirmed")
-    pod = PoDetail(id=11, po_id=1, quantity_order=Decimal("500"), balance_qty=Decimal("500"))
-
-    def _get(model, pk):
-        if model is PoDetail and pk == 11:
-            return pod
-        if model is PoHeader and pk == 1:
-            return ph
-        return None
-
-    db.get.side_effect = _get
-
-    nums = iter(["PACK-X", "DEL-X"])
-
-    monkeypatch.setattr(bridge, "next_number", lambda *_a, **_k: next(nums))
-    monkeypatch.setattr(bridge, "log_change", lambda *a, **k: None)
-    monkeypatch.setattr(bridge, "validate_delivery_qty_against_po_balance", lambda *a, **k: None)
-    monkeypatch.setattr(bridge, "sync_po_detail_balance_qty", lambda *a, **k: Decimal("490"))
-
     added = []
-
-    def _add(obj):
-        added.append(obj)
-        if isinstance(obj, PackingHeader):
-            obj.id = 70
-        if isinstance(obj, DeliveryHeader):
-            obj.id = 80
-        if isinstance(obj, DeliveryDetail):
-            obj.id = 90
-
-    db.add.side_effect = _add
-
-    result = bridge.bridge_fg_out_to_delivery(
-        db,
-        mrp_fg_id=5,
-        mrp_packing_id=4,
-        kode_packing="FG-99",
-        customer_name="Buyer",
-        lines=[{"source_detail_id": 11, "qty_out": 10}],
-        actor="tester",
-    )
-    assert result.created is True
-    assert result.delivery_id == 80
-    assert result.packing_id == 70
-    assert any(isinstance(x, PackingHeader) and x.source == "mrp" for x in added)
-    assert any(isinstance(x, DeliveryHeader) and x.status == "draft" for x in added)
-    assert any(
-        isinstance(x, DeliveryDetail) and x.po_detail_id == 11 and x.qty == Decimal("10")
-        for x in added
-    )
+    db.add.side_effect = added.append
+    with pytest.raises(HTTPException) as exc:
+        bridge.bridge_fg_out_to_delivery(
+            db,
+            mrp_fg_id=5,
+            mrp_packing_id=4,
+            kode_packing="FG-99",
+            customer_name="Buyer",
+            lines=[{"source_detail_id": 11, "qty_out": 10}],
+            actor="tester",
+        )
+    assert exc.value.status_code == 400
+    assert "outstanding" in str(exc.value.detail).lower()
+    assert added == []

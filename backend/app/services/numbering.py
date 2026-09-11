@@ -6,16 +6,17 @@ Modul ini tetap dipakai untuk PRD/PACK/QUO berbasis periode ``PREFIX-YYYYMM-NNNN
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import DocumentSequence
+from app.timeutil import app_now_aware
 
 
 def _period() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m")
+    return app_now_aware().strftime("%Y%m")
 
 
 def next_number(db: Session, doc_type: str, prefix: str) -> str:

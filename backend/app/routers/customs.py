@@ -15,6 +15,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.timeutil import app_now
 from app.models import (
     CustomsAjuSheetRow,
     CustomsDeclaration,
@@ -135,7 +136,7 @@ def update_declaration(
         raise HTTPException(status_code=404, detail="Deklarasi tidak ditemukan")
     for key, val in body.model_dump(exclude_unset=True).items():
         setattr(dec, key, val)
-    dec.updated_at = datetime.utcnow()
+    dec.updated_at = app_now()
     db.commit()
     db.refresh(dec)
     return dec  # type: ignore[return-value]
@@ -181,7 +182,7 @@ def save_sheets_data(
     meta["sheet_column_keys"] = sheet_column_keys
     meta["row_counts"] = row_counts
     dec.meta_json = meta
-    dec.updated_at = datetime.utcnow()
+    dec.updated_at = app_now()
     db.commit()
     out = declaration_to_api_dict(db, declaration_id)
     if not out:

@@ -7,8 +7,16 @@
         clearable
         class="production-toolbar-search"
       />
-      <el-button v-if="canManage" type="primary" :icon="Plus" :loading="loading" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
+
+    <el-alert class="mb-3" type="info" :closable="false" show-icon>
+      <template #title>
+        <span>{{ t('pages.production.bookHint') }}</span>
+        <router-link class="ml-2 text-primary underline" to="/admin/mrp/rencana-produksi">
+          {{ t('pages.production.openMrpRencana') }}
+        </router-link>
+      </template>
+    </el-alert>
 
     <div class="filter-panel mb-4">
       <p class="filter-panel__title">{{ t('common.filter') }}</p>
@@ -24,6 +32,9 @@
             </el-form-item>
           </el-col>
           <el-col :xs="24" :sm="12" :md="8" :lg="6">
+            <el-form-item :label="t('pages.production.filterMrpOnly')">
+              <el-switch v-model="filterMrpOnly" />
+            </el-form-item>
             <el-form-item label="&nbsp;">
               <el-button class="w-full" @click="resetFilter">{{ t('common.reset') }}</el-button>
             </el-form-item>
@@ -43,7 +54,12 @@
       :empty-text="t('pages.production.tableEmpty')"
     >
       <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
-      <el-table-column prop="production_number" :label="t('common.productionNo')" min-width="140" show-overflow-tooltip />
+      <el-table-column prop="production_number" :label="t('common.productionNo')" min-width="160" show-overflow-tooltip>
+        <template #default="{ row }">
+          <span>{{ row.production_number }}</span>
+          <el-tag v-if="isMrpBook(row)" size="small" type="warning" class="ml-1">{{ t('pages.production.mrpBadge') }}</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="po_number_disp" :label="t('common.poNo')" min-width="140" show-overflow-tooltip />
       <el-table-column prop="customer_name" :label="t('common.customer')" min-width="160" show-overflow-tooltip />
       <el-table-column prop="buyer_disp" :label="t('common.buyer')" min-width="110" show-overflow-tooltip />
@@ -143,80 +159,30 @@
         <el-button type="primary" @click="detailVisible = false">{{ t('pages.production.closeDetail') }}</el-button>
       </template>
     </el-dialog>
-
-    <el-dialog
-      v-model="formVisible"
-      :title="t('pages.production.dialogAdd')"
-      width="600px"
-      destroy-on-close
-      align-center
-      class="production-dialog"
-      @closed="resetFormModel"
-    >
-      <el-alert class="mb-3" type="info" :closable="false" :title="t('pages.production.formHint')" />
-      <el-form ref="formRef" :model="formModel" :rules="formRules" label-position="top" class="production-form" @submit.prevent>
-        <el-form-item :label="t('common.poNo')" prop="po_id" required>
-          <el-select v-model="formModel.po_id" filterable class="w-full" :placeholder="t('common.placeholder.poNumber')">
-            <el-option v-for="p in posEligible" :key="p.id" :label="poOptionLabel(p)" :value="p.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('common.productionNo')">
-          <el-input v-model="formModel.production_number" maxlength="100" clearable :placeholder="t('pages.production.placeholderProdNo')" />
-        </el-form-item>
-        <el-row :gutter="12">
-          <el-col :span="12">
-            <el-form-item :label="t('common.startDate')" prop="start_date">
-              <el-date-picker v-model="formModel.start_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item :label="t('common.endDate')" prop="end_date">
-              <el-date-picker v-model="formModel.end_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-form-item :label="t('common.status')" prop="status">
-          <el-select v-model="formModel.status" class="w-full">
-            <el-option :label="t('status.planned')" value="planned" />
-            <el-option :label="t('status.in_progress')" value="in_progress" />
-            <el-option :label="t('status.done')" value="done" />
-          </el-select>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <div class="production-dialog-footer">
-          <el-button @click="formVisible = false">{{ t('common.cancel') }}</el-button>
-          <el-button v-if="canManage" type="primary" :loading="formSubmitting" @click="submitForm">{{ t('common.save') }}</el-button>
-        </div>
-      </template>
-    </el-dialog>
   </AdminSection>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, View } from '@element-plus/icons-vue'
+import { View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
-import { canWrite } from '../../security/permissions'
 import {
-  createProduction,
   getProduction,
   listPo,
   listProduction,
   listProductionDetails,
-  toIsoDate,
 } from '../../api/client'
 
 const { t, te } = useI18n()
 const route = useRoute()
-const canManage = canWrite('production')
 
 const loading = ref(false)
 const keyword = ref('')
 const filterStatus = ref('')
+const filterMrpOnly = ref(false)
 const rows = ref([])
 const poList = ref([])
 
@@ -225,17 +191,6 @@ const poById = computed(() => {
   for (const p of poList.value) m[p.id] = p
   return m
 })
-
-const posEligible = computed(() =>
-  poList.value.filter((p) => ['confirmed', 'production', 'completed'].includes(p.status)),
-)
-
-function poOptionLabel(p) {
-  const cust = p.customer_name_snapshot || p.customer_code || t('common.emptyValue')
-  const buyer = p.buyer || t('common.emptyValue')
-  const st = p.status && te(`status.${p.status}`) ? t(`status.${p.status}`) : p.status || t('common.emptyValue')
-  return `${p.po_number} · ${cust} · ${buyer} (${st})`
-}
 
 function sliceDate(v) {
   if (v == null || v === '') return ''
@@ -319,9 +274,14 @@ const filteredRows = computed(() => {
         .join(' ')
         .toLowerCase()
         .includes(q)
-    return statusMatch && keywordMatch
+    const mrpMatch = !filterMrpOnly.value || isMrpBook(row)
+    return statusMatch && keywordMatch && mrpMatch
   })
 })
+
+function isMrpBook(row) {
+  return String(row?.production_number || '').startsWith('MRP-')
+}
 
 function statusTagType(status) {
   if (status === 'in_progress') return 'warning'
@@ -332,6 +292,7 @@ function statusTagType(status) {
 const resetFilter = () => {
   filterStatus.value = ''
   keyword.value = ''
+  filterMrpOnly.value = false
 }
 
 const detailVisible = ref(false)
@@ -360,79 +321,13 @@ async function openDetail(row) {
     detailLoading.value = false
   }
 }
-
-const formVisible = ref(false)
-const formRef = ref(null)
-const formSubmitting = ref(false)
-
-const formModel = reactive({
-  po_id: null,
-  production_number: '',
-  start_date: '',
-  end_date: '',
-  status: 'planned',
-})
-
-const formRules = computed(() => ({
-  po_id: [{ required: true, message: t('pages.production.rulePoNo'), trigger: 'change' }],
-}))
-
-function resetFormModel() {
-  formModel.po_id = null
-  formModel.production_number = ''
-  formModel.start_date = ''
-  formModel.end_date = ''
-  formModel.status = 'planned'
-  formRef.value?.clearValidate?.()
-}
-
-function openCreate() {
-  resetFormModel()
-  formVisible.value = true
-}
-
-async function submitForm() {
-  if (!formRef.value) return
-  try {
-    await formRef.value.validate()
-  } catch {
-    return
-  }
-  formSubmitting.value = true
-  try {
-    await createProduction({
-      po_id: formModel.po_id,
-      production_number: formModel.production_number?.trim() || undefined,
-      start_date: toIsoDate(formModel.start_date) || undefined,
-      end_date: toIsoDate(formModel.end_date) || undefined,
-      status: formModel.status,
-    })
-    ElMessage.success(t('pages.production.saved'))
-    formVisible.value = false
-    await load()
-  } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
-  } finally {
-    formSubmitting.value = false
-  }
-}
 </script>
 
 <style scoped>
-.production-form :deep(.el-form-item) {
-  margin-bottom: 16px;
-}
-
 .production-descriptions :deep(.el-descriptions__label) {
   width: 140px;
   font-weight: 600;
   color: text-slate-600;
-}
-
-.production-dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
 }
 
 .w-full {

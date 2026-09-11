@@ -39,7 +39,41 @@ def test_enrich_uses_fetch_and_marks_missing_unsynced():
     assert rows[1]["mrp_alloc_status"] == MRP_UNSYNCED
 
 
+def test_parse_mrp_alloc_row_ship_remaining():
+    out = parse_mrp_alloc_row(
+        {
+            "status": "partial",
+            "qty_order": 100,
+            "qty_processed": 20,
+            "qty_balance_erp": 70,
+        }
+    )
+    assert out["mrp_qty_remaining"] == "80"
+    assert out["mrp_qty_ship_remaining"] == "70"
+
+
 def test_unsynced_shape():
     blank = unsynced_mrp_alloc()
     assert blank["mrp_alloc_status"] == MRP_UNSYNCED
     assert blank["mrp_qty_processed"] == ""
+    assert blank["mrp_qty_ship_remaining"] == ""
+    assert blank["mrp_qty_wip"] == ""
+
+
+def test_parse_mrp_alloc_row_qty_wip():
+    out = parse_mrp_alloc_row(
+        {"status": "partial", "qty_order": 800, "qty_processed": 500, "qty_wip": 200}
+    )
+    assert out["mrp_qty_processed"] == "500"
+    assert out["mrp_qty_wip"] == "200"
+
+
+def test_qty_wip_absent_or_invalid_is_zero():
+    assert parse_mrp_alloc_row({"status": "outstanding", "qty_order": 10})["mrp_qty_wip"] == "0"
+    noisy = parse_mrp_alloc_row({"status": "partial", "qty_order": 10, "qty_wip": "abc"})
+    assert noisy["mrp_qty_wip"] == "0"
+
+
+def test_qty_wip_blank_when_unsynced():
+    out = parse_mrp_alloc_row({"status": "", "qty_order": 10, "qty_wip": 5})
+    assert out["mrp_qty_wip"] == ""

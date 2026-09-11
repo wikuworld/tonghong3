@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import LotSequence, MasterItem, PoDetail, PoHeader
+from app.timeutil import app_now
 
 
 def infer_material_group(
@@ -107,7 +108,7 @@ def peek_lot_number(
     at: datetime | None = None,
 ) -> str:
     """Preview nomor lot berikutnya tanpa menaikkan sequence (untuk draft UI)."""
-    now = at or datetime.now()
+    now = at or app_now()
     date_ymd = now.strftime("%Y%m%d")
     date_yymmdd = now.strftime("%y%m%d")
     prefix = _prefix_for(material_group, po_category)
@@ -133,7 +134,7 @@ def generate_lot_number(
     material_group: str,
     at: datetime | None = None,
 ) -> str:
-    now = at or datetime.now()
+    now = at or app_now()
     date_ymd = now.strftime("%Y%m%d")
     date_yymmdd = now.strftime("%y%m%d")
 
@@ -175,7 +176,7 @@ def generate_po_detail_lot_number(db: Session, detail_id: int, *, at: datetime |
     if not factory:
         raise HTTPException(status_code=400, detail="Factory code PO belum diisi.")
 
-    now = at or datetime.now()
+    now = at or app_now()
     group = _material_group_from_detail(db, detail)
     return generate_lot_number(db, po_category=po.po_category, factory_code=factory, material_group=group, at=now)
 

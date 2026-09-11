@@ -38,6 +38,9 @@
                 v-model="filterCustomerId"
                 clearable
                 filterable
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
                 class="w-full"
                 :placeholder="t('common.placeholder.customer')"
               >
@@ -143,6 +146,9 @@
             <el-tag v-if="!row.detail_line_count" size="small" type="warning" effect="plain">
               {{ t('pages.po.noDetailLines') }}
             </el-tag>
+            <el-tooltip v-if="row.mrp_sync_error" :content="row.mrp_sync_error" placement="top">
+              <el-tag size="small" type="danger" effect="plain">{{ t('pages.po.mrpSyncError') }}</el-tag>
+            </el-tooltip>
           </div>
         </template>
       </el-table-column>
@@ -150,16 +156,9 @@
       <el-table-column prop="order_date_fmt" :label="t('common.orderDate')" width="112" align="center" />
       <el-table-column prop="customerName" :label="t('common.customer')" min-width="200" show-overflow-tooltip />
       <el-table-column prop="brand_name_snapshot" :label="t('pages.po.brand')" min-width="120" show-overflow-tooltip />
-      <el-table-column prop="buyer" :label="t('common.buyer')" min-width="120" show-overflow-tooltip />
       <el-table-column :label="t('common.material')" min-width="140" show-overflow-tooltip>
         <template #default="{ row }">
           <span>{{ row.material_hint }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column :label="t('pages.po.colOrderTypeFactory')" min-width="130" show-overflow-tooltip>
-        <template #default="{ row }">
-          <span>{{ row.order_type_label || t('common.emptyValue') }}</span>
-          <span v-if="row.factory_code" class="text-slate-500"> · {{ row.factory_code }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="po_category" :label="t('common.category')" min-width="110" align="center">

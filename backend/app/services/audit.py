@@ -10,6 +10,7 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from app.models import AuditLog
+from app.timeutil import app_now
 
 
 def _audit_scalar(value: Any) -> Any:
@@ -80,7 +81,7 @@ def mark_po_item_revised(db: Session, po_id: Optional[int], *, kind: str) -> Non
     po = db.get(PoHeader, int(po_id))
     if not po:
         return
-    po.item_revised_at = datetime.utcnow()
+    po.item_revised_at = app_now()
     if kind_norm == "delete":
         po.item_revised_has_delete = True
     else:

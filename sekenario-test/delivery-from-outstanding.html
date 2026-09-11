@@ -23,13 +23,13 @@
   <p class="note">
     Insert delivery marketing dilakukan di <strong>Alur Marketing → Outstanding → Susun kirim (packing)</strong>.
     Halaman <code>/admin/delivery</code> untuk pantau draft, cetak SJ, dan mark sent.
-    Packing harus status <strong>done</strong> + QC OK.
+    Packing MRP finish (ERP <strong>done</strong> + QC OK). Gudang FG OUT <strong>tidak</strong> membuat SJ.
   </p>
 
   <h2>1. Prasyarat data</h2>
   <ul>
-    <li>SO confirmed, stage MKT minimal <code>in_outstanding</code></li>
-    <li>Production detail + QC is_ok + Packing header <code>done</code> + qty_packed</li>
+    <li>SO confirmed, stage MKT minimal <code>in_outstanding</code> (langsung setelah Confirm)</li>
+    <li>Packing MRP finish: packing ERP done + QC OK + qty; FG in stock</li>
     <li>Balance SO &gt; 0</li>
   </ul>
 
@@ -65,7 +65,7 @@
   <div class="scenario">
     <div class="scenario__head">Uji 4 — Stage sebelum outstanding ditolak</div>
     <div class="scenario__body">
-      SO di <code>rekap_printed</code> (belum PPIC complete) → Susun kirim.
+      SO masih <code>draft</code> (belum Confirm) → Susun kirim.
       <br /><strong>Harap:</strong> 400: belum tahap Outstanding.
       <div class="check"><span class="box"></span> Berhasil / Gagal</div>
     </div>
@@ -84,7 +84,8 @@
   <table>
     <tr><th>Modul</th><th>Hubungan</th></tr>
     <tr><td>Outstanding</td><td>Sumber insert delivery marketing</td></tr>
-    <tr><td>Packing</td><td>Harus done + QC OK</td></tr>
+    <tr><td>Packing MRP</td><td>Finish packing → lot siap kirim; FG in stock. Bukan SJ.</td></tr>
+    <tr><td>Gudang FG</td><td>Pantau stok; OUT mandiri ditolak — kirim dari Outstanding</td></tr>
     <tr><td>Delivery</td><td>Draft → sent; dokumen SJ / INVPL</td></tr>
   </table>
 

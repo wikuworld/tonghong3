@@ -45,7 +45,14 @@ def _row_first(row):
     return row[0]
 
 
+_RENCANA_SCHEMA_READY = False
+_EXTENDED_SCHEMA_READY = False
+
+
 def ensure_rencana_tables(cur):
+    global _RENCANA_SCHEMA_READY
+    if _RENCANA_SCHEMA_READY:
+        return
     # ERP-only: jangan CREATE master_customer (mirror). Snapshot di tbl_rencana_item.
     cur.execute(
         "CREATE TABLE IF NOT EXISTS tbl_rencana_item ("
@@ -132,9 +139,13 @@ def ensure_rencana_tables(cur):
             )
     except Exception:
         pass
+    _RENCANA_SCHEMA_READY = True
 
 
 def ensure_extended_tables(cur):
+    global _EXTENDED_SCHEMA_READY
+    if _EXTENDED_SCHEMA_READY:
+        return
     # ERP-only catalogs: jangan CREATE master_erp / master_material_lain.
     try:
         from lot_erp_columns import ensure_lot_erp_columns
@@ -247,6 +258,61 @@ def ensure_extended_tables(cur):
             )
         except mysql.connector.Error:
             pass
+    idx_rows = []
+    try:
+        cur.execute("SHOW INDEX FROM tbl_master_po")
+        raw_idx = cur.fetchall() or []
+        idx_rows = []
+        for r in raw_idx:
+            if isinstance(r, dict):
+                col = r.get("Column_name") or r.get("column_name")
+                non_unique = r.get("Non_unique")
+            else:
+                col = r[4] if len(r) > 4 else None
+                non_unique = r[1] if len(r) > 1 else None
+            if col == "source_detail_id":
+                idx_rows.append({"Non_unique": non_unique})
+    except mysql.connector.Error:
+        idx_rows = []
+    has_unique = False
+    for ix in idx_rows:
+        if ix.get("Non_unique") == 0:
+            has_unique = True
+            break
+    if not has_unique:
+        try:
+            cur.execute(
+                "SELECT source_detail_id FROM tbl_master_po "
+                "WHERE source_detail_id IS NOT NULL "
+                "GROUP BY source_detail_id HAVING COUNT(*) > 1"
+            )
+            dup_sids = [
+                r["source_detail_id"] if isinstance(r, dict) else r[0]
+                for r in (cur.fetchall() or [])
+            ]
+            for sid in dup_sids:
+                cur.execute(
+                    "SELECT id FROM tbl_master_po WHERE source_detail_id=%s "
+                    "ORDER BY qty_processed DESC, id ASC",
+                    (sid,),
+                )
+                rows = cur.fetchall() or []
+                for extra in rows[1:]:
+                    extra_id = extra["id"] if isinstance(extra, dict) else extra[0]
+                    cur.execute(
+                        "UPDATE tbl_master_po SET status='cancelled', source_detail_id=NULL "
+                        "WHERE id=%s",
+                        (extra_id,),
+                    )
+            cur.execute(
+                "CREATE UNIQUE INDEX uq_master_po_source_detail ON tbl_master_po (source_detail_id)"
+            )
+        except mysql.connector.Error:
+            pass
+    try:
+        cur.execute("DROP TABLE IF EXISTS tbl_rencana_produksi_detail")
+    except mysql.connector.Error:
+        pass
     if "qty_balance_erp" not in po_cols_ext:
         cur.execute(
             "ALTER TABLE tbl_master_po ADD COLUMN qty_balance_erp DECIMAL(12,2) DEFAULT NULL"
@@ -310,6 +376,7 @@ def ensure_extended_tables(cur):
             cur.execute(
                 "ALTER TABLE tbl_gudang_fg ADD COLUMN bridge_error VARCHAR(255) DEFAULT NULL"
             )
+    _EXTENDED_SCHEMA_READY = True
 
 
 def _make_rpi_barcode(thickness, emboss, color):
@@ -409,6 +476,24 @@ def init_db_tables():
 
 
 init_db_tables()
+
+
+@app.before_request
+def _retire_flask_html_ui():
+    path = request.path or "/"
+    if path.startswith("/api/") or path.startswith("/static"):
+        return None
+    if path in ("/health", "/init-db"):
+        return None
+    return (
+        "<!doctype html><meta charset='utf-8'><title>MRP UI dipindah</title>"
+        "<p>Antarmuka shopfloor Flask sudah dinonaktifkan. "
+        "Buka ERP Vue: "
+        "<a href='http://127.0.0.1:8080/admin/mrp/rencana-produksi'>"
+        "http://127.0.0.1:8080/admin/mrp/rencana-produksi</a>.</p>",
+        410,
+        {"Content-Type": "text/html; charset=utf-8"},
+    )
 
 
 @app.route("/")
@@ -632,14 +717,25 @@ def _save_item_po_selections(cur, item_id, po_data):
             raise ValueError(
                 f"PO {po.get('no_po') or po_id} tidak dapat dialokasi (status=cancelled)"
             )
+        if po.get("source_detail_id") is None:
+            raise ValueError(
+                f"PO {po.get('no_po') or po_id} belum terhubung ke baris SO ERP (source_detail_id)"
+            )
         qty_order = float(po.get("qty_order") or 0)
         qty_processed = float(po.get("qty_processed") or 0)
-        qty_outstanding = qty_order - qty_processed
-        if qty > qty_outstanding + 1e-9:
+        plan_left = qty_order - qty_processed
+        cap = plan_left
+        if po.get("qty_balance_erp") is not None:
+            try:
+                cap = min(plan_left, max(0.0, float(po.get("qty_balance_erp") or 0)))
+            except (TypeError, ValueError):
+                cap = plan_left
+        if qty > cap + 1e-9:
             raise ValueError(
-                f"Qty {qty} melebihi sisa alokasi {qty_outstanding} "
+                f"Qty {qty} melebihi sisa rencana/kirim {cap} "
                 f"untuk PO {po.get('no_po') or po_id}"
             )
+        qty_outstanding = plan_left
         cur.execute(
             "INSERT INTO tbl_rencana_item_po (item_id, po_id, qty_outstanding, qty_proses) "
             "VALUES (%s, %s, %s, %s)",

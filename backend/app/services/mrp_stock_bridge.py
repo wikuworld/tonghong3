@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.timeutil import app_now
 from app.models import MaterialStock, RawMaterial, Warehouse
 from app.services.audit import log_change
 
@@ -139,7 +140,7 @@ def issue_stock_from_mrp(
             detail=f"Stok ERP tidak cukup ({stock.current_stock}) untuk issue {qty_d}",
         )
     stock.current_stock = after
-    stock.updated_at = datetime.utcnow()
+    stock.updated_at = app_now()
 
     log_change(
         db,

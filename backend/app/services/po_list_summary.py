@@ -126,6 +126,38 @@ def attach_po_list_summaries(db: Session, items: list[PoHeader]) -> None:
         po.etd_display = summary["etd_display"]
 
 
+def attach_mrp_sync_errors(db: Session, items: list[PoHeader]) -> None:
+    """Badge mrp_sync_error dari notifikasi sync terakhir (tanpa kolom baru)."""
+    from app.models import Notification
+
+    ids = [int(p.id) for p in items if getattr(p, "id", None)]
+    if not ids:
+        return
+    rows = (
+        db.query(Notification.entity_id, Notification.message, Notification.id)
+        .filter(
+            Notification.category == "mrp",
+            Notification.entity_type == "sales_order",
+            Notification.title == "MRP sync gagal",
+            Notification.entity_id.in_(ids),
+        )
+        .order_by(Notification.id.desc())
+        .all()
+    )
+    latest: dict[int, str] = {}
+    for eid, msg, _nid in rows:
+        if eid is None:
+            continue
+        sid = int(eid)
+        if sid in latest:
+            continue
+        latest[sid] = (msg or "").strip() or "MRP sync gagal"
+    for po in items:
+        err = latest.get(int(po.id))
+        if err:
+            po.mrp_sync_error = err
+
+
 def serialize_po_headers_for_list(db: Session, items: list[PoHeader]) -> list:
     """Enrich header PO untuk response API (snapshot, material, ETD, stuck reason)."""
     from app.schemas import PoHeaderOut
@@ -133,4 +165,5 @@ def serialize_po_headers_for_list(db: Session, items: list[PoHeader]) -> list:
     attach_stuck_reasons_batch(db, items)
     resolve_header_snapshots_for_list(db, items)
     attach_po_list_summaries(db, items)
+    attach_mrp_sync_errors(db, items)
     return [PoHeaderOut.model_validate(po) for po in items]

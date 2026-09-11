@@ -36,11 +36,53 @@ def _err(message: str, status: int = 400):
 
 
 def _sql_no_so_from_master(alias: str = "pk") -> str:
-    """Ambil No. SO dari master PO (no_po = PO customer)."""
+    """No. SO via kode_wip → rencana → master PO (bukan no_po LIMIT 1)."""
     return (
-        f"(SELECT po.no_so FROM tbl_master_po po "
-        f"WHERE po.no_po = {alias}.no_po AND po.no_so IS NOT NULL AND po.no_so <> '' "
-        f"ORDER BY po.id DESC LIMIT 1) AS no_so"
+        "(SELECT GROUP_CONCAT(DISTINCT COALESCE(NULLIF(po.no_so,''), po.no_po) "
+        "ORDER BY po.no_so SEPARATOR ' / ') "
+        "FROM tbl_rencana_item i "
+        "JOIN tbl_rencana_item_po ip ON i.id = ip.item_id "
+        "JOIN tbl_master_po po ON po.id = ip.po_id "
+        f"WHERE i.kode_lot_wip = {alias}.kode_wip) AS no_so"
+    )
+
+
+def _sql_no_so_for_packing(alias: str = "p") -> str:
+    """No. SO via packing_po.po_id / rencana WIP, bukan no_po LIMIT 1."""
+    return (
+        "(SELECT GROUP_CONCAT(DISTINCT x.no_so ORDER BY x.no_so SEPARATOR ' / ') FROM ("
+        f" SELECT COALESCE(NULLIF(mp.no_so,''), mp.no_po) AS no_so"
+        f" FROM tbl_packing_po pp"
+        f" JOIN tbl_master_po mp ON mp.id = pp.po_id"
+        f" WHERE pp.packing_id = {alias}.id"
+        f" UNION"
+        f" SELECT COALESCE(NULLIF(mp.no_so,''), mp.no_po) AS no_so"
+        f" FROM tbl_rencana_item i"
+        f" JOIN tbl_rencana_item_po ip ON i.id = ip.item_id"
+        f" JOIN tbl_master_po mp ON mp.id = ip.po_id"
+        f" WHERE i.kode_lot_wip = {alias}.kode_wip"
+        f") x WHERE x.no_so IS NOT NULL AND x.no_so <> '') AS no_so"
+    )
+
+
+# Status persiapan yang dianggap masih berjalan di lantai (belum 'completed').
+WIP_PROSES_STATUSES = ("draft", "started", "saved")
+
+
+def _sql_qty_wip(alias: str = "tbl_master_po") -> str:
+    """Qty baris PO yang lot WIP-nya masih punya proses berjalan di tbl_persiapan_kulit.
+
+    EXISTS dipakai (bukan JOIN) supaya satu lot WIP dengan beberapa baris proses
+    tidak melipatgandakan SUM(qty_proses).
+    """
+    statuses = ",".join(f"'{s}'" for s in WIP_PROSES_STATUSES)
+    return (
+        f"(SELECT COALESCE(SUM(p.qty_proses), 0) FROM tbl_rencana_item_po p "
+        f"JOIN tbl_rencana_item i ON i.id = p.item_id "
+        f"WHERE p.po_id = {alias}.id AND i.kode_lot_wip IS NOT NULL "
+        f"AND EXISTS (SELECT 1 FROM tbl_persiapan_kulit pk "
+        f"WHERE pk.kode_wip = i.kode_lot_wip AND pk.status IN ({statuses}))"
+        f") AS qty_wip"
     )
 
 
@@ -516,21 +558,27 @@ def master_po_list():
     conn.commit()
     source_ids = _parse_id_csv(request.args.get("source_detail_ids"))
     status = (request.args.get("status") or "").strip()
+    qty_wip = _sql_qty_wip()
     if source_ids:
         placeholders = ",".join(["%s"] * len(source_ids))
         cur.execute(
-            f"SELECT * FROM tbl_master_po WHERE source_detail_id IN ({placeholders}) "
+            f"SELECT tbl_master_po.*, {qty_wip} FROM tbl_master_po "
+            f"WHERE source_detail_id IN ({placeholders}) "
             "ORDER BY no_po, item_name LIMIT 2000",
             source_ids,
         )
     elif status:
         cur.execute(
-            "SELECT * FROM tbl_master_po WHERE status=%s ORDER BY no_po, item_name LIMIT 500",
+            f"SELECT tbl_master_po.*, {qty_wip} FROM tbl_master_po "
+            "WHERE status=%s AND source_detail_id IS NOT NULL "
+            "ORDER BY no_po, item_name LIMIT 500",
             (status,),
         )
     else:
         cur.execute(
-            "SELECT * FROM tbl_master_po WHERE status IN ('outstanding','partial') "
+            f"SELECT tbl_master_po.*, {qty_wip} FROM tbl_master_po "
+            "WHERE status IN ('outstanding','partial') "
+            "AND source_detail_id IS NOT NULL "
             "ORDER BY no_po, item_name LIMIT 500"
         )
     data = _rows(cur.fetchall())
@@ -559,6 +607,19 @@ def master_po_sync():
     updated = 0
     cancelled_n = 0
     for item in items:
+        if item.get("cancelled"):
+            continue
+        raw_sid = item.get("source_detail_id")
+        try:
+            sid_ok = int(raw_sid) if raw_sid is not None else None
+        except (TypeError, ValueError):
+            sid_ok = None
+        if sid_ok is None:
+            cur.close()
+            conn.close()
+            return _err("source_detail_id wajib; sync tidak boleh merge spek")
+
+    for item in items:
         source_detail_id = item.get("source_detail_id")
         try:
             source_detail_id = int(source_detail_id) if source_detail_id is not None else None
@@ -580,14 +641,6 @@ def master_po_sync():
                 (source_detail_id,),
             )
             existing = cur.fetchone()
-        if not existing and no_po and item_name:
-            cur.execute(
-                "SELECT id, qty_processed, status FROM tbl_master_po "
-                "WHERE no_po=%s AND item_name=%s AND COALESCE(warna,'')=%s "
-                "AND COALESCE(tebal,'')=%s AND COALESCE(emboss,'')=%s LIMIT 1",
-                (no_po, item_name, warna, tebal, emboss),
-            )
-            existing = cur.fetchone()
 
         # Cancel/delete dari ERP: tandai cancelled, jangan hapus (jaga qty_processed).
         if want_cancel:
@@ -600,6 +653,10 @@ def master_po_sync():
                 updated += 1
             continue
 
+        if source_detail_id is None:
+            cur.close()
+            conn.close()
+            return _err("source_detail_id wajib; sync tidak boleh merge spek")
         if not no_po or not item_name:
             continue
         no_so = (item.get("no_so") or "").strip() or None
@@ -622,7 +679,7 @@ def master_po_sync():
                 pass
         color_swatch = (item.get("color_swatch") or "").strip() or None
         qty_order = float(item.get("qty_order") or item.get("sq_ft") or 0)
-        sq_ft = float(item.get("sq_ft") or qty_order or 0)
+        sq_ft = qty_order
         if item.get("qty_balance_erp") is not None:
             qty_balance_erp = float(item.get("qty_balance_erp") or 0)
         else:
@@ -2157,18 +2214,73 @@ def packing_list():
     return jsonify(data)
 
 
+def _resolve_master_po_for_packing(cur, body: dict):
+    """Wajib po_id (tbl_master_po.id) atau source_detail_id. Tidak resolve by no_po."""
+    po_id = body.get("po_id")
+    source_detail_id = body.get("source_detail_id")
+    try:
+        po_id = int(po_id) if po_id not in (None, "") else None
+    except (TypeError, ValueError):
+        po_id = None
+    try:
+        source_detail_id = int(source_detail_id) if source_detail_id not in (None, "") else None
+    except (TypeError, ValueError):
+        source_detail_id = None
+    if po_id is not None:
+        cur.execute(
+            "SELECT id, no_po, no_so, source_detail_id FROM tbl_master_po WHERE id=%s",
+            (po_id,),
+        )
+        return cur.fetchone()
+    if source_detail_id is not None:
+        cur.execute(
+            "SELECT id, no_po, no_so, source_detail_id FROM tbl_master_po "
+            "WHERE source_detail_id=%s",
+            (source_detail_id,),
+        )
+        return cur.fetchone()
+    return None
+
+
+def _packing_po_rows(cur, packing_id: int):
+    cur.execute(
+        "SELECT pp.*, mp.source_detail_id AS source_detail_id, "
+        "mp.item_name AS item_name, mp.warna AS warna "
+        "FROM tbl_packing_po pp "
+        "LEFT JOIN tbl_master_po mp ON mp.id = pp.po_id "
+        "WHERE pp.packing_id = %s",
+        (packing_id,),
+    )
+    return _rows(cur.fetchall())
+
+
+def _wip_has_checkpoint_ok(cur, kode_wip: str) -> bool:
+    kode_wip = (kode_wip or "").strip()
+    if not kode_wip:
+        return False
+    try:
+        cur.execute(
+            "SELECT id FROM tbl_checkpoint "
+            "WHERE kode_wip=%s AND IFNULL(is_ok,0)=1 "
+            "AND (LOWER(IFNULL(checkpoint_type,''))='qc' OR UPPER(IFNULL(treatment,''))='QC') "
+            "ORDER BY id DESC LIMIT 1",
+            (kode_wip,),
+        )
+    except Exception:
+        return False
+    return cur.fetchone() is not None
+
+
 @api.post("/packing")
 def packing_start():
     from app import ensure_extended_tables, generate_code
 
     body = request.get_json(silent=True) or {}
     kode_wip = (body.get("kode_wip") or "").strip()
-    no_po = (body.get("no_po") or "").strip()
-    no_so = (body.get("no_so") or "").strip()
     customer = (body.get("customer") or "").strip()
     qty_sq = body.get("qty_sq") or 0
-    if not kode_wip or not no_po:
-        return _err("kode_wip dan no_po wajib")
+    if not kode_wip:
+        return _err("kode_wip wajib")
 
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
@@ -2183,6 +2295,19 @@ def packing_start():
         cur.close()
         conn.close()
         return _err("WIP tidak valid / belum saved", 404)
+
+    master = _resolve_master_po_for_packing(cur, body)
+    if not master:
+        cur.close()
+        conn.close()
+        return _err("po_id atau source_detail_id wajib dan harus ada di master PO")
+    po_id = int(master["id"])
+    no_po = (body.get("no_po") or master.get("no_po") or "").strip()
+    no_so = (body.get("no_so") or master.get("no_so") or "").strip()
+    if not no_po:
+        cur.close()
+        conn.close()
+        return _err("Master PO tidak punya no_po")
 
     # Hindari dobel packing in_progress untuk WIP+PO yang sama.
     cur.execute(
@@ -2212,19 +2337,6 @@ def packing_start():
         (kode_packing, kode_wip, no_po, customer),
     )
     packing_id = cur.lastrowid
-    po_id = body.get("po_id")
-    try:
-        po_id = int(po_id) if po_id is not None else None
-    except (TypeError, ValueError):
-        po_id = None
-    if po_id is None and no_po:
-        cur.execute(
-            "SELECT id FROM tbl_master_po WHERE no_po=%s ORDER BY id DESC LIMIT 1",
-            (no_po,),
-        )
-        row_po = cur.fetchone()
-        if row_po:
-            po_id = row_po["id"]
     cur.execute(
         "INSERT INTO tbl_packing_po (packing_id, po_id, no_po, no_so, qty_sq) "
         "VALUES (%s,%s,%s,%s,%s)",
@@ -2255,21 +2367,7 @@ def packing_detail_api(packing_id: int):
         (packing_id,),
     )
     rolls = _rows(cur.fetchall())
-    cur.execute(
-        "SELECT pp.*, "
-        "COALESCE(mp1.source_detail_id, mp2.source_detail_id) AS source_detail_id, "
-        "COALESCE(mp1.item_name, mp2.item_name) AS item_name, "
-        "COALESCE(mp1.warna, mp2.warna) AS warna "
-        "FROM tbl_packing_po pp "
-        "LEFT JOIN tbl_master_po mp1 ON mp1.id = pp.po_id "
-        "LEFT JOIN tbl_master_po mp2 ON pp.po_id IS NULL AND mp2.id = ("
-        "  SELECT id FROM tbl_master_po WHERE no_po = pp.no_po "
-        "  ORDER BY id DESC LIMIT 1"
-        ") "
-        "WHERE pp.packing_id = %s",
-        (packing_id,),
-    )
-    packing_pos = _rows(cur.fetchall())
+    packing_pos = _packing_po_rows(cur, packing_id)
     cur.execute(
         "SELECT i.id AS item_id, po.id AS po_id, po.source_detail_id, po.no_po, po.no_so, "
         "po.item_name, po.customer, p.qty_proses AS qty_sq "
@@ -2412,26 +2510,19 @@ def packing_actions(packing_id: int):
             cur.close()
             conn.close()
             return _err("Packing sudah finished")
-        no_po = (body.get("no_po") or "").strip()
-        no_so = (body.get("no_so") or "").strip()
         qty_sq = float(body.get("qty_sq") or 0)
-        po_id = body.get("po_id")
-        try:
-            po_id = int(po_id) if po_id is not None else None
-        except (TypeError, ValueError):
-            po_id = None
+        master = _resolve_master_po_for_packing(cur, body)
+        if not master:
+            cur.close()
+            conn.close()
+            return _err("po_id atau source_detail_id wajib dan harus ada di master PO")
+        po_id = int(master["id"])
+        no_po = (body.get("no_po") or master.get("no_po") or "").strip()
+        no_so = (body.get("no_so") or master.get("no_so") or "").strip()
         if not no_po:
             cur.close()
             conn.close()
-            return _err("no_po wajib")
-        if po_id is None:
-            cur.execute(
-                "SELECT id FROM tbl_master_po WHERE no_po=%s ORDER BY id DESC LIMIT 1",
-                (no_po,),
-            )
-            row_po = cur.fetchone()
-            if row_po:
-                po_id = row_po["id"]
+            return _err("Master PO tidak punya no_po")
         cur.execute(
             "INSERT INTO tbl_packing_po (packing_id, po_id, no_po, no_so, qty_sq) "
             "VALUES (%s,%s,%s,%s,%s)",
@@ -2453,6 +2544,10 @@ def packing_actions(packing_id: int):
 
     elif action == "finish":
         if packing["status"] != "finished":
+            if not _wip_has_checkpoint_ok(cur, packing.get("kode_wip") or ""):
+                cur.close()
+                conn.close()
+                return _err("Checkpoint QC OK wajib sebelum Finish packing")
             cur.execute(
                 "SELECT COUNT(*) AS n FROM tbl_packing_roll WHERE packing_id=%s",
                 (packing_id,),
@@ -2546,20 +2641,7 @@ def gudang_fg_detail(fg_id: int):
         (fg["packing_id"],),
     )
     rolls = _rows(cur.fetchall())
-    cur.execute(
-        "SELECT pp.*, "
-        "COALESCE(mp1.source_detail_id, mp2.source_detail_id) AS source_detail_id, "
-        "COALESCE(mp1.item_name, mp2.item_name) AS item_name "
-        "FROM tbl_packing_po pp "
-        "LEFT JOIN tbl_master_po mp1 ON mp1.id = pp.po_id "
-        "LEFT JOIN tbl_master_po mp2 ON pp.po_id IS NULL AND mp2.id = ("
-        "  SELECT id FROM tbl_master_po WHERE no_po = pp.no_po "
-        "  ORDER BY id DESC LIMIT 1"
-        ") "
-        "WHERE pp.packing_id=%s",
-        (fg["packing_id"],),
-    )
-    packing_pos = _rows(cur.fetchall())
+    packing_pos = _packing_po_rows(cur, fg["packing_id"])
     bridge_lines = []
     if packing:
         cur.execute(
@@ -3979,6 +4061,7 @@ def rencana_po_by_combination():
         "(qty_order - qty_processed) AS qty_outstanding "
         "FROM tbl_master_po "
         "WHERE warna = %s AND emboss = %s "
+        "AND source_detail_id IS NOT NULL "
         "AND status IN ('outstanding','partial') "
         "ORDER BY no_po, item_name",
         (color, emboss),
@@ -4127,6 +4210,7 @@ def rencana_item_list_po_get(item_id: int):
         f"AND {_norm_spek_sql('po.warna')} = %s "
         f"AND {_norm_spek_sql('po.emboss')} = %s "
         f"AND {_norm_spek_sql('po.color_swatch')} = %s "
+        f"AND po.source_detail_id IS NOT NULL "
         f"AND ("
         f"  po.status IN ('outstanding','partial') "
         f"  OR rip.id IS NOT NULL"
@@ -4200,11 +4284,9 @@ def report_packing_api():
     cur = conn.cursor(dictionary=True)
     try:
         cur.execute(
-            """
+            f"""
             SELECT DATE(p.date_created) AS tanggal, p.no_po,
-                   (SELECT po.no_so FROM tbl_master_po po
-                    WHERE po.no_po = p.no_po AND po.no_so IS NOT NULL AND po.no_so <> ''
-                    ORDER BY po.id DESC LIMIT 1) AS no_so,
+                   {_sql_no_so_for_packing("p")},
                    p.kode_packing AS kode_process,
                    COUNT(r.id) AS pack, SUM(r.lembar) AS qty, SUM(r.ukuran) AS size, p.status
             FROM tbl_packing p
@@ -4336,28 +4418,26 @@ def packing_bridge_context(packing_id: int):
         "JOIN tbl_rencana_item_po p ON p.item_id = i.id "
         "JOIN tbl_master_po po ON po.id = p.po_id "
         "WHERE i.kode_lot_wip = %s AND po.source_detail_id IS NOT NULL "
-        "ORDER BY p.id ASC LIMIT 1",
+        "ORDER BY p.id ASC",
         (packing.get("kode_wip"),),
     )
-    line = cur.fetchone()
-    if not line:
+    lines = _rows(cur.fetchall())
+    if not lines:
         cur.execute(
-            "SELECT COALESCE(mp1.source_detail_id, mp2.source_detail_id) AS source_detail_id, "
-            "pp.no_po, pp.qty_sq, COALESCE(mp1.id, mp2.id) AS master_po_id "
+            "SELECT mp.source_detail_id, pp.no_po, pp.qty_sq, mp.id AS master_po_id "
             "FROM tbl_packing_po pp "
-            "LEFT JOIN tbl_master_po mp1 ON mp1.id = pp.po_id "
-            "LEFT JOIN tbl_master_po mp2 ON pp.po_id IS NULL AND mp2.id = ("
-            "  SELECT id FROM tbl_master_po WHERE no_po = pp.no_po ORDER BY id DESC LIMIT 1"
-            ") WHERE pp.packing_id=%s LIMIT 1",
+            "JOIN tbl_master_po mp ON mp.id = pp.po_id "
+            "WHERE pp.packing_id=%s AND mp.source_detail_id IS NOT NULL",
             (packing_id,),
         )
-        line = cur.fetchone()
+        lines = _rows(cur.fetchall())
     cur.close()
     conn.close()
     return jsonify(
         {
             "packing": _row(packing),
-            "line": _row(line) if line else None,
+            "lines": lines,
+            "line": lines[0] if lines else None,
         }
     )
 

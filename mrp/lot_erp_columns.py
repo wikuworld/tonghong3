@@ -6,10 +6,13 @@ from typing import Any
 
 import mysql.connector
 
-from db import get_db_connection, root_db_config
+from db import erp_db_config, get_db_connection
 import os
 
 _ERP_DB = os.getenv("ERP_DB_NAME", "tonghong")
+
+
+_LOT_ERP_COLS_READY = False
 
 
 def _col_names(cur, table: str) -> set[str]:
@@ -20,6 +23,18 @@ def _col_names(cur, table: str) -> set[str]:
     return {r["Field"] if isinstance(r, dict) else r[0] for r in cur.fetchall()}
 
 
+def _col_is_nullable(cur, table: str, col: str) -> bool | None:
+    try:
+        cur.execute(f"SHOW COLUMNS FROM {table} LIKE %s", (col,))
+    except mysql.connector.Error:
+        return None
+    row = cur.fetchone()
+    if not row:
+        return None
+    null = row["Null"] if isinstance(row, dict) else row[2]
+    return str(null).upper() == "YES"
+
+
 def _add_col(cur, table: str, ddl: str) -> None:
     cols = _col_names(cur, table)
     # ddl like: erp_material_id BIGINT DEFAULT NULL
@@ -28,8 +43,20 @@ def _add_col(cur, table: str, ddl: str) -> None:
         cur.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
 
 
+def _modify_nullable(cur, table: str, col: str, ddl: str) -> None:
+    """Jalankan MODIFY hanya jika kolom masih NOT NULL — hindari DDL berulang."""
+    nullable = _col_is_nullable(cur, table, col)
+    if nullable is None or nullable:
+        return
+    cur.execute(ddl)
+
+
 def ensure_lot_erp_columns(cur) -> None:
     """Pastikan lot/out punya erp_material_id + snapshot; lepas FK ke mirror master_*."""
+    global _LOT_ERP_COLS_READY
+    if _LOT_ERP_COLS_READY:
+        return
+
     # Drop orphan FK ke mirror catalog (master sudah di-drop).
     for table, fk_name in (
         ("tbl_stok_kimia_in", "tbl_stok_kimia_in_ibfk_1"),
@@ -52,7 +79,7 @@ def ensure_lot_erp_columns(cur) -> None:
         _add_col(cur, "tbl_stok_kimia_in", "kode_material VARCHAR(50) DEFAULT NULL")
         _add_col(cur, "tbl_stok_kimia_in", "nama_material VARCHAR(255) DEFAULT NULL")
         try:
-            cur.execute("ALTER TABLE tbl_stok_kimia_in MODIFY kimia_id INT NULL")
+            _modify_nullable(cur, "tbl_stok_kimia_in", "kimia_id", "ALTER TABLE tbl_stok_kimia_in MODIFY kimia_id INT NULL")
         except mysql.connector.Error:
             pass
     if _col_names(cur, "tbl_stok_kimia_out"):
@@ -60,7 +87,7 @@ def ensure_lot_erp_columns(cur) -> None:
         _add_col(cur, "tbl_stok_kimia_out", "kode_material VARCHAR(50) DEFAULT NULL")
         _add_col(cur, "tbl_stok_kimia_out", "nama_material VARCHAR(255) DEFAULT NULL")
         try:
-            cur.execute("ALTER TABLE tbl_stok_kimia_out MODIFY kimia_id INT NULL")
+            _modify_nullable(cur, "tbl_stok_kimia_out", "kimia_id", "ALTER TABLE tbl_stok_kimia_out MODIFY kimia_id INT NULL")
         except mysql.connector.Error:
             pass
     # rp in
@@ -69,7 +96,7 @@ def ensure_lot_erp_columns(cur) -> None:
         _add_col(cur, "tbl_stok_rp_in", "kode_material VARCHAR(50) DEFAULT NULL")
         _add_col(cur, "tbl_stok_rp_in", "nama_material VARCHAR(255) DEFAULT NULL")
         try:
-            cur.execute("ALTER TABLE tbl_stok_rp_in MODIFY rp_id INT NULL")
+            _modify_nullable(cur, "tbl_stok_rp_in", "rp_id", "ALTER TABLE tbl_stok_rp_in MODIFY rp_id INT NULL")
         except mysql.connector.Error:
             pass
     if _col_names(cur, "tbl_stok_rp_out"):
@@ -77,7 +104,7 @@ def ensure_lot_erp_columns(cur) -> None:
         _add_col(cur, "tbl_stok_rp_out", "kode_material VARCHAR(50) DEFAULT NULL")
         _add_col(cur, "tbl_stok_rp_out", "nama_material VARCHAR(255) DEFAULT NULL")
         try:
-            cur.execute("ALTER TABLE tbl_stok_rp_out MODIFY rp_id INT NULL")
+            _modify_nullable(cur, "tbl_stok_rp_out", "rp_id", "ALTER TABLE tbl_stok_rp_out MODIFY rp_id INT NULL")
         except mysql.connector.Error:
             pass
     # material lain
@@ -86,7 +113,12 @@ def ensure_lot_erp_columns(cur) -> None:
         _add_col(cur, "tbl_stok_material_lain_in", "kode_material VARCHAR(50) DEFAULT NULL")
         _add_col(cur, "tbl_stok_material_lain_in", "nama_material VARCHAR(255) DEFAULT NULL")
         try:
-            cur.execute("ALTER TABLE tbl_stok_material_lain_in MODIFY material_id INT NULL")
+            _modify_nullable(
+                cur,
+                "tbl_stok_material_lain_in",
+                "material_id",
+                "ALTER TABLE tbl_stok_material_lain_in MODIFY material_id INT NULL",
+            )
         except mysql.connector.Error:
             pass
     if _col_names(cur, "tbl_stok_material_lain_out"):
@@ -94,9 +126,16 @@ def ensure_lot_erp_columns(cur) -> None:
         _add_col(cur, "tbl_stok_material_lain_out", "kode_material VARCHAR(50) DEFAULT NULL")
         _add_col(cur, "tbl_stok_material_lain_out", "nama_material VARCHAR(255) DEFAULT NULL")
         try:
-            cur.execute("ALTER TABLE tbl_stok_material_lain_out MODIFY material_id INT NULL")
+            _modify_nullable(
+                cur,
+                "tbl_stok_material_lain_out",
+                "material_id",
+                "ALTER TABLE tbl_stok_material_lain_out MODIFY material_id INT NULL",
+            )
         except mysql.connector.Error:
             pass
+
+    _LOT_ERP_COLS_READY = True
 
 
 def backfill_lot_erp_ids() -> dict[str, Any]:
@@ -148,7 +187,7 @@ def backfill_lot_erp_ids() -> dict[str, Any]:
         )
         n1 = cur.rowcount
         # match by code to ERP if still null
-        erp = root_db_config()
+        erp = erp_db_config()
         erp["database"] = _ERP_DB
         econn = mysql.connector.connect(**erp)
         ecur = econn.cursor(dictionary=True)

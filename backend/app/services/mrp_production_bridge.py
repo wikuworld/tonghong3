@@ -16,8 +16,6 @@ from app.models import (
     PoHeader,
     ProductionDetail,
     ProductionOrder,
-    QcDetail,
-    QcHeader,
 )
 from app.services.audit import log_change
 from app.services.numbering import next_number
@@ -130,41 +128,6 @@ def upsert_production_mirror(
         created = True
 
     qc_header_id: Optional[int] = None
-    if finish:
-        qc = db.scalars(
-            select(QcHeader).where(QcHeader.production_id == pr.id).limit(1)
-        ).first()
-        if not qc:
-            qc = QcHeader(
-                qc_number=next_number(db, "QC", "QC"),
-                production_id=pr.id,
-                po_id=ph.id,
-                qc_date=date.today(),
-                operator_name=actor or "mrp-bridge",
-            )
-            db.add(qc)
-            db.flush()
-        qc_header_id = int(qc.id)
-        qd = db.scalars(
-            select(QcDetail)
-            .where(
-                QcDetail.qc_id == qc.id,
-                QcDetail.production_detail_id == pd.id,
-            )
-            .limit(1)
-        ).first()
-        if not qd:
-            db.add(
-                QcDetail(
-                    qc_id=qc.id,
-                    production_detail_id=pd.id,
-                    batch_number=kode_wip,
-                    result="OK",
-                    is_ok=True,
-                    qty_checked=pd.qty_actual or pd.qty_planned,
-                    remark="Mirror dari packing FG MRP",
-                )
-            )
 
     log_change(
         db,

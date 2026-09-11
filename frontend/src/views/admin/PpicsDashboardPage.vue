@@ -107,27 +107,12 @@
         <el-table-column prop="completed_at" :label="t('ppicWorkflow.completedAt')" width="140">
           <template #default="{ row }">{{ formatDate(row.completed_at) }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="160" fixed="right" align="center">
+        <el-table-column :label="t('common.actions')" width="88" fixed="right" align="center">
           <template #default="{ row }">
-            <div class="flex flex-wrap items-center justify-center gap-1">
-              <el-tooltip
-                v-if="canUpdate && row.status === 'pending'"
-                :content="t('ppicDashboard.markInProgress')"
-                placement="top"
-              >
-                <el-button type="warning" size="small" :icon="VideoPlay" @click="updateStatus(row, 'in_progress')" />
-              </el-tooltip>
-              <el-tooltip
-                v-if="canUpdate && row.status === 'in_progress'"
-                :content="t('ppicDashboard.markComplete')"
-                placement="top"
-              >
-                <el-button type="success" size="small" :icon="Check" @click="updateStatus(row, 'completed')" />
-              </el-tooltip>
-              <el-tooltip v-if="row.po_id" :content="t('ppicDashboard.openPo')" placement="top">
-                <el-button type="primary" link :icon="View" @click="goPo(row.po_id)" />
-              </el-tooltip>
-            </div>
+            <el-tooltip v-if="row.po_id" :content="t('ppicDashboard.openPo')" placement="top">
+              <el-button type="primary" link :icon="View" @click="goPo(row.po_id)" />
+            </el-tooltip>
+            <span v-else>—</span>
           </template>
         </el-table-column>
       </el-table>
@@ -140,13 +125,11 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Check, Refresh, RefreshLeft, VideoPlay, View } from '@element-plus/icons-vue'
+import { Refresh, RefreshLeft, View } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
-import { getPpicDashboard, listPpicUsers, updatePpicAssignmentStatus } from '../../api/client'
-import { useModulePermission } from '../../composables/useModulePermission'
+import { getPpicDashboard, listPpicUsers } from '../../api/client'
 
 const { t } = useI18n()
-const { canUpdate } = useModulePermission('ppicDashboard')
 const router = useRouter()
 const loading = ref(false)
 const assignments = ref([])
@@ -233,16 +216,6 @@ async function loadAssignments() {
   }
 }
 
-async function updateStatus(row, newStatus) {
-  try {
-    await updatePpicAssignmentStatus(row.id, { status: newStatus })
-    ElMessage.success(t('common.saveSuccess'))
-    await loadAssignments()
-  } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
-  }
-}
-
 function resetFilters() {
   filterStatus.value = ''
   filterPpicUserId.value = null
@@ -321,6 +294,6 @@ onMounted(async () => {
 
 .ppic-assignment-table {
   width: 100%;
-  min-width: 1180px;
+  min-width: 1100px;
 }
 </style>

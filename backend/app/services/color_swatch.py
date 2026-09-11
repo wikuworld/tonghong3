@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import Brand, ColorSwatchRecipe, Customer
+from app.timeutil import app_now
 
 # Buyer valid di sheet harga — selain ini di CSV diabaikan untuk buyer_code
 _VALID_BUYERS = frozenset(
@@ -448,7 +449,7 @@ def import_recipes(
             existing.customer_id = customer_cache[cust_cache_key]
             existing.brand_id = brand_cache[buyer]
             existing.is_active = True
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = app_now()
             updated += 1
             db.flush()
         else:
@@ -495,7 +496,7 @@ def import_recipes(
                     )
                     if rk not in imported_keys:
                         recipe.is_active = False
-                        recipe.updated_at = datetime.utcnow()
+                        recipe.updated_at = app_now()
                         deactivated += 1
         else:
             # global: master hanya berisi isi file terbaru
@@ -512,7 +513,7 @@ def import_recipes(
                 )
                 if rk not in imported_keys:
                     recipe.is_active = False
-                    recipe.updated_at = datetime.utcnow()
+                    recipe.updated_at = app_now()
                     deactivated += 1
 
     db.commit()

@@ -5,13 +5,11 @@ from fastapi.routing import APIRoute
 
 from app import main
 from app.routers import (
-    accounting,
     buyer_prices,
     customs,
     delivery,
     exchange_rates,
     invoice,
-    journal,
     marketing,
     masters,
     packing,
@@ -20,7 +18,6 @@ from app.routers import (
     production,
     qc,
     sales_orders,
-    subcon,
     workflow,
     wilayah,
 )
@@ -170,23 +167,6 @@ def test_delivery_router_require_auth_and_role_guards():
         assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
 
 
-def test_subcon_router_require_auth_and_role_guards():
-    for path, method in [
-        ("/subcon-invoices", "GET"),
-        ("/subcon-invoices/{invoice_id}", "GET"),
-    ]:
-        route = _get_route(subcon.router, path, method)
-        assert _has_dep(route, "get_current_user"), f"{method} {path} harus pakai get_current_user"
-
-    for path, method in [
-        ("/subcon-invoices", "POST"),
-        ("/subcon-invoices/{invoice_id}", "PUT"),
-        ("/subcon-invoices/{invoice_id}", "DELETE"),
-        ("/subcon-invoices/generate-from-po/{po_id}", "POST"),
-    ]:
-        route = _get_route(subcon.router, path, method)
-        assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
-
 
 def test_marketing_router_require_auth_and_role_guards():
     for path, method in [
@@ -284,58 +264,13 @@ def test_invoice_router_require_auth_and_role_guards():
 
 def test_pricing_router_require_auth_and_role_guards():
     for path, method in [
-        ("/pricing/special-prices", "GET"),
-        ("/pricing/customer-prices", "GET"),
-    ]:
-        route = _get_route(pricing.router, path, method)
-        assert _has_dep(route, "get_current_user"), f"{method} {path} harus pakai get_current_user"
-
-    for path, method in [
-        ("/pricing/special-prices", "POST"),
-        ("/pricing/special-prices/{price_id}", "PUT"),
-        ("/pricing/customer-prices", "POST"),
-        ("/pricing/customer-prices/{price_id}", "PUT"),
         ("/pricing/bulk-update", "POST"),
         ("/pricing/bulk-update-csv", "POST"),
     ]:
         route = _get_route(pricing.router, path, method)
         assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
 
-    for path, method in [
-        ("/pricing/special-prices/{price_id}", "DELETE"),
-        ("/pricing/customer-prices/{price_id}", "DELETE"),
-    ]:
-        route = _get_route(pricing.router, path, method)
-        assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
 
-
-def test_accounting_router_require_auth_and_role_guards():
-    for path, method in [
-        ("/accounting/mappings", "GET"),
-        ("/accounting/mappings/resolve", "GET"),
-    ]:
-        route = _get_route(accounting.router, path, method)
-        assert _has_dep(route, "get_current_user"), f"{method} {path} harus pakai get_current_user"
-
-    for path, method in [
-        ("/accounting/mappings", "POST"),
-        ("/accounting/mappings/{mapping_id}", "PUT"),
-        ("/accounting/mappings/{mapping_id}", "DELETE"),
-    ]:
-        route = _get_route(accounting.router, path, method)
-        assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"
-
-
-def test_journal_router_require_auth_and_role_guards():
-    for path, method in [
-        ("/journal/entries", "GET"),
-        ("/journal/entries/trial-balance", "GET"),
-    ]:
-        route = _get_route(journal.router, path, method)
-        assert _has_dep(route, "get_current_user"), f"{method} {path} harus pakai get_current_user"
-
-    route = _get_route(journal.router, "/journal/entries/generate-from-transaction", "POST")
-    assert _has_dep(route, "_dep"), "POST generate-from-transaction harus pakai require_roles"
 
 
 def test_wilayah_router_requires_auth():
@@ -351,7 +286,6 @@ def test_wilayah_router_requires_auth():
 
 def test_workflow_router_require_auth_and_role_guards():
     for path, method in [
-        ("/workflow/outstanding-materials", "GET"),
         ("/workflow/ppic/dashboard", "GET"),
         ("/workflow/ppic/users", "GET"),
         ("/workflow/po/{po_id}/ppic-assignment", "GET"),
@@ -361,11 +295,6 @@ def test_workflow_router_require_auth_and_role_guards():
 
     for path, method in [
         ("/workflow/po/{po_id}/assign-to-ppic", "POST"),
-        ("/workflow/outstanding-materials", "POST"),
-        ("/workflow/outstanding-materials/{material_id}", "PUT"),
-        ("/workflow/outstanding-materials/{material_id}", "DELETE"),
-        ("/workflow/outstanding-materials/generate-from-po/{po_id}", "POST"),
-        ("/workflow/outstanding-materials/{material_id}/deliver", "PUT"),
         ("/workflow/ppic/assignments/{assignment_id}/status", "PUT"),
     ]:
         route = _get_route(workflow.router, path, method)

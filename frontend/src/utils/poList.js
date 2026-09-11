@@ -63,7 +63,9 @@ export function buildPoPageQuery({
 }) {
   const query = {
     q: keyword || undefined,
-    customer_id: filterCustomerId || undefined,
+    customer_id: Array.isArray(filterCustomerId)
+      ? (filterCustomerId.length ? filterCustomerId : undefined)
+      : filterCustomerId || undefined,
     buyer: filterBuyer || undefined,
     po_category: filterPoCategory || undefined,
     status: filterStatus || undefined,

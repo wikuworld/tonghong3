@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.models import PoHeader, SubconInvoice
+from app.models import PoHeader
 from app.services.mkt_workflow import (
     MKT_STAGES_ORDER,
     mkt_stage_index,
@@ -95,20 +95,6 @@ class TestPrevMktStage:
         assert prev_mkt_stage("in_outstanding") == "with_ppic"
         assert prev_mkt_stage("back_to_mkt") == "with_ppic"
 
-
-class TestPoDeleteBlocked:
-    def test_po_delete_blocked_with_active_invoices(self, db_session):
-        po = MagicMock(spec=PoHeader)
-        po.status = "completed"
-        db_session.get.return_value = po
-
-        subcon_invoice = MagicMock(spec=SubconInvoice)
-        subcon_invoice.status = "sent"
-        db_session.scalars.return_value.all.return_value = [subcon_invoice]
-
-        with pytest.raises(HTTPException) as exc_info:
-            validate_mkt_advance(db_session, po_id=1, target="invoice_billing")
-        assert exc_info.value.status_code == 400
 
 
 class TestWorkflowRollback:

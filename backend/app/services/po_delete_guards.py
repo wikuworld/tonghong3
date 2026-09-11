@@ -21,18 +21,7 @@ def validate_po_deletable(db: "Session", po_id: int) -> None:
         PoDetail,
         ProductionDetail,
         ProductionOrder,
-        SubconInvoice,
     )
-
-    active_invoices = db.query(SubconInvoice).filter(
-        SubconInvoice.po_id == po_id,
-        SubconInvoice.status.notin_(["cancelled", "paid"]),
-    ).count()
-    if active_invoices > 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Tidak dapat menghapus PO dengan subcon invoice yang aktif.",
-        )
 
     active_assignments = db.query(PpicsAssignment).filter(
         PpicsAssignment.po_id == po_id,

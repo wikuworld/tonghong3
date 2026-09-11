@@ -10,7 +10,6 @@
       <el-tab-pane :label="t('pages.inventory.tabs.warehouse')" name="warehouse">
         <WarehouseTab />
       </el-tab-pane>
-      <!-- receipt: disembunyikan sampai modul penerimaan dipakai -->
     </el-tabs>
   </div>
 </template>
@@ -41,8 +40,7 @@ watch(
   () => {
     const next = tabFromRoute()
     activeTab.value = next
-    // Redirect away from hidden receipt (and unknown) tabs
-    if (String(route.query.tab || '') === 'receipt' || (route.query.tab && !VALID_TABS.has(String(route.query.tab)))) {
+    if (route.query.tab && !VALID_TABS.has(String(route.query.tab))) {
       router.replace({ path: '/admin/inventory', query: { tab: 'stock' } })
     }
   },

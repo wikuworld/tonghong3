@@ -41,7 +41,32 @@ COMPANY_BLOCK = (
     "Telp. 0254-8480870, Fax. 0254-8480743",
 )
 
-INVPL_DESC_DEFAULT = "DESCRIPTION: SHOE MAKING MATERIAL (COW LEATHER) :"
+INVPL_DESC_DEFAULT = "DESCRIPTION: SHOE MAKING MATERIAL (COW LEATHER)"
+INVPL_TITLE = "INVOICE PACKING LIST"
+INVPL_TITLE_FOC = "INVOICE PACKING LIST (FOC)"
+
+
+def invpl_document_title(*, foc: bool = False) -> str:
+    return INVPL_TITLE_FOC if foc else INVPL_TITLE
+
+
+def apply_invpl_foc_title(ctx: dict[str, Any], foc: bool = False) -> dict[str, Any]:
+    """Salin ctx dan set judul INVPL (+ FOC bila diminta). Tidak mengubah commercial invoice."""
+    out = dict(ctx)
+    out["foc"] = bool(foc)
+    out["document_title"] = invpl_document_title(foc=bool(foc))
+    return out
+
+
+# Fallback bank INVPL (sama teks ringkas Proforma) bila invoice belum diisi.
+INVPL_BANK_DEFAULT = {
+    "bank_name": "BANK CTBC INDONESIA",
+    "account_number": "2020357701 (USD)",
+    "bank_address": "TAMARA CENTER 16th FLOOR, JL. JENDRAL SUDIRMAN KAV.24 JAKARTA",
+    "bank_phone": "62-21-5237788/7245, Fax : 021-2500622",
+}
+
+SJ_SIGN_LABELS = ("RECEIVED BY", "APPROVED BY", "SECURITY", "DELIVERED BY")
 
 
 def _dec(v: Decimal | None) -> Decimal:
@@ -66,6 +91,35 @@ def _item_description(pod: PoDetail) -> str:
     if th and mat:
         return f"{th} {mat}"
     return th or mat or "—"
+
+
+def _sj_item_text(pod: PoDetail | None) -> str:
+    """ITEM SJ: thickness + material + emboss + color (satu sel)."""
+    if not pod:
+        return "—"
+    parts: list[str] = []
+    th = _thickness_mm(pod)
+    mat = (pod.material_name or "").strip()
+    emb = (pod.emboss or "").strip()
+    color = (pod.color or "").strip()
+    if th and mat:
+        parts.append(f"{th} {mat}")
+    elif th or mat:
+        parts.append(th or mat)
+    if emb:
+        parts.append(emb)
+    if color:
+        parts.append(color)
+    return " ".join(parts) if parts else "—"
+
+
+def _sign4_html(*, compact: bool = False) -> str:
+    pad = "<br/><br/>" if compact else "<br/><br/><br/>"
+    cells = "".join(
+        f'<div class="sign-box"><b>{lab}</b>{pad}<div class="sign-line">( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )</div></div>'
+        for lab in SJ_SIGN_LABELS
+    )
+    return f'<div class="sign4">{cells}</div>'
 
 
 def _small_num_to_words(n: int) -> str:
@@ -138,6 +192,13 @@ def _customer_phone_fax(c: Customer | None) -> str:
     return ""
 
 
+def _customer_tel_fax(c: Customer | None) -> tuple[str, str]:
+    """Tel / fax terpisah untuk meta SJ (fax belum ada kolom → kosong)."""
+    if not c:
+        return "", ""
+    return (c.phone or "").strip(), ""
+
+
 def _resolve_customer_delivery_packing(
     db: Session, ph: PackingHeader
 ) -> tuple[Customer | None, DeliveryHeader | None]:
@@ -157,45 +218,87 @@ def _resolve_customer_delivery_packing(
     return None, dh
 
 
-def gather_invpl_rows(
-    db: Session, packing_id: int, *, delivery_id: int | None = None
+def _pod_chain_from_delivery_detail(db: Session, dd: DeliveryDetail):
+    pod: PoDetail | None = None
+    if dd.po_detail_id:
+        pod = db.get(PoDetail, int(dd.po_detail_id))
+    elif dd.production_detail_id:
+        pd_row = db.get(ProductionDetail, int(dd.production_detail_id))
+        if pd_row and pd_row.po_detail_id:
+            pod = db.get(PoDetail, int(pd_row.po_detail_id))
+    poh = db.get(PoHeader, pod.po_id) if pod and pod.po_id else None
+    master = db.get(MasterItem, pod.master_item_id) if pod and pod.master_item_id else None
+    return pod, poh, master
+
+
+def _invpl_line_dict(
+    *,
+    no: int,
+    pod: PoDetail | None,
+    poh: PoHeader | None,
+    master: MasterItem | None,
+    qty: Decimal,
+    rolls,
+    pcs,
+    nw,
+    gw,
+    remark_line: str,
+    is_export: bool,
 ) -> dict[str, Any]:
-    ph = db.get(PackingHeader, packing_id)
-    if not ph:
+    unit_price = pod.unit_price if pod else None
+    amount: Decimal | None = None
+    if unit_price is not None:
+        amount = (qty * unit_price).quantize(Decimal("0.01"))
+    po_no = (poh.po_number or "").strip() if poh else ""
+    exim = ""
+    if is_export and master and (master.exim_material_code or "").strip():
+        exim = master.exim_material_code.strip()
+    return {
+        "no": no,
+        "po_no": po_no,
+        "item": _item_description(pod) if pod else "—",
+        "exim_code": exim,
+        "color": (pod.color or "").strip() if pod else "",
+        "qty": qty,
+        "unit": "S/F",
+        "unit_price": unit_price,
+        "amount": amount,
+        "rolls": rolls,
+        "pcs": pcs,
+        "nw": nw,
+        "gw": gw,
+        "remark": remark_line,
+        "is_claim": bool(poh and (poh.po_category or "").lower() == "claim"),
+    }
+
+
+def gather_invpl_rows(
+    db: Session, packing_id: int | None = None, *, delivery_id: int | None = None
+) -> dict[str, Any]:
+    dh: DeliveryHeader | None = None
+    if delivery_id is not None:
+        dh = db.get(DeliveryHeader, delivery_id)
+        if not dh:
+            raise ValueError("delivery_not_found")
+        if packing_id is None and dh.packing_id:
+            packing_id = int(dh.packing_id)
+
+    ph: PackingHeader | None = None
+    if packing_id:
+        ph = db.get(PackingHeader, int(packing_id))
+    if not ph and not dh:
         raise ValueError("packing_not_found")
 
-    dh: DeliveryHeader | None = None
     cust: Customer | None = None
     inv: Invoice | None = None
-    if delivery_id is not None:
-        dh_fixed = db.get(DeliveryHeader, delivery_id)
-        if not dh_fixed:
-            raise ValueError("delivery_not_found")
-        if dh_fixed.packing_id is None or int(dh_fixed.packing_id) != int(packing_id):
-            raise ValueError("delivery_packing_mismatch")
-        dh = dh_fixed
+    if dh:
         if dh.customer_id:
             cust = db.get(Customer, dh.customer_id)
         inv = db.scalars(select(Invoice).where(Invoice.delivery_id == dh.id).limit(1)).first()
-    else:
+    elif ph:
         cust, dh = _resolve_customer_delivery_packing(db, ph)
         if dh:
             inv = db.scalars(select(Invoice).where(Invoice.delivery_id == dh.id).limit(1)).first()
-
-    pkd_list = db.scalars(
-        select(PackingDetail)
-        .where(PackingDetail.packing_id == packing_id)
-        .order_by(PackingDetail.id.asc())
-    ).all()
-
-    dd_by_pd: dict[int, DeliveryDetail] = {}
-    if dh:
-        dds = db.scalars(
-            select(DeliveryDetail).where(DeliveryDetail.delivery_id == dh.id)
-        ).all()
-        for dd in dds:
-            if dd.production_detail_id:
-                dd_by_pd[int(dd.production_detail_id)] = dd
 
     inv_details: list[InvoiceDetail] = []
     if inv:
@@ -211,7 +314,7 @@ def gather_invpl_rows(
     bill_to = ""
     if is_export:
         bill_to = (cust.billing_address or "").strip() if cust else ""
-        if not bill_to and ph.production_id:
+        if not bill_to and ph and ph.production_id:
             pr = db.get(ProductionOrder, ph.production_id)
             if pr and pr.po_id:
                 hdr = db.get(PoHeader, pr.po_id)
@@ -227,84 +330,128 @@ def gather_invpl_rows(
     total_gw = Decimal(0)
     is_claim_order = False
 
-    for i, pkd in enumerate(pkd_list, 1):
-        pd_row: ProductionDetail | None = None
-        pod: PoDetail | None = None
-        poh: PoHeader | None = None
-        master: MasterItem | None = None
-        if pkd.production_detail_id:
-            pd_row = db.get(ProductionDetail, pkd.production_detail_id)
-            if pd_row and pd_row.po_detail_id:
-                pod = db.get(PoDetail, pd_row.po_detail_id)
-                if pod and pod.po_id:
-                    poh = db.get(PoHeader, pod.po_id)
-                if pod and pod.master_item_id:
-                    master = db.get(MasterItem, pod.master_item_id)
-
-        dd = dd_by_pd.get(int(pkd.production_detail_id or 0), None)
-        qty = _dec(dd.qty if dd and dd.qty is not None else pkd.qty_packed)
-        unit_price = pod.unit_price if pod else None
-        amount: Decimal | None = None
-        if unit_price is not None:
-            amount = (qty * unit_price).quantize(Decimal("0.01"))
-        rolls = dd.qty_roll if dd else None
-        pcs = dd.qty_pcs if dd else None
-        nw: Decimal | None = None
-        gw: Decimal | None = None
-
-        po_no = (poh.po_number or "").strip() if poh else ""
-        if poh and (poh.po_category or "").lower() == "claim":
-            is_claim_order = True
-
-        remark_line = ""
-        if i - 1 < len(inv_details):
-            idet = inv_details[i - 1]
-            if idet.net_weight is not None:
-                nw = idet.net_weight
-            if idet.gross_weight is not None:
-                gw = idet.gross_weight
-            remark_line = (idet.remark or "").strip()
-        if not remark_line:
-            # Default remark otomatis dari no PO agar commercial invoice tetap terisi.
-            remark_line = po_no
-        if nw is None and dd and dd.weight is not None:
-            nw = dd.weight
-        if gw is None:
-            gw = nw
-
-        exim = ""
-        if is_export and master and (master.exim_material_code or "").strip():
-            exim = master.exim_material_code.strip()
-
-        color = (pod.color or "").strip() if pod else ""
-
-        lines_out.append(
-            {
-                "no": i,
-                "po_no": po_no,
-                "item": _item_description(pod) if pod else "—",
-                "exim_code": exim,
-                "color": color,
-                "qty": qty,
-                "unit": "S/F",
-                "unit_price": unit_price,
-                "amount": amount,
-                "rolls": rolls,
-                "pcs": pcs,
-                "nw": nw,
-                "gw": gw,
-                "remark": remark_line,
-            }
+    delivery_details: list[DeliveryDetail] = []
+    if dh:
+        delivery_details = list(
+            db.scalars(
+                select(DeliveryDetail)
+                .where(DeliveryDetail.delivery_id == dh.id)
+                .order_by(DeliveryDetail.id.asc())
+            ).all()
         )
-        total_qty += qty
-        if amount is not None:
-            total_amt += amount
-        total_roll += int(rolls or 0)
-        total_pcs += int(pcs or 0)
-        if nw is not None:
-            total_nw += nw
-        if gw is not None:
-            total_gw += gw
+
+    if delivery_details:
+        for i, dd in enumerate(delivery_details, 1):
+            pod, poh, master = _pod_chain_from_delivery_detail(db, dd)
+            qty = _dec(dd.qty)
+            rolls = dd.qty_roll
+            pcs = dd.qty_pcs
+            nw = dd.weight
+            gw = nw
+            po_no = (poh.po_number or "").strip() if poh else ""
+            remark_line = po_no
+            if i - 1 < len(inv_details):
+                idet = inv_details[i - 1]
+                if idet.net_weight is not None:
+                    nw = idet.net_weight
+                if idet.gross_weight is not None:
+                    gw = idet.gross_weight
+                if (idet.remark or "").strip():
+                    remark_line = (idet.remark or "").strip()
+            if gw is None:
+                gw = nw
+            line = _invpl_line_dict(
+                no=i,
+                pod=pod,
+                poh=poh,
+                master=master,
+                qty=qty,
+                rolls=rolls,
+                pcs=pcs,
+                nw=nw,
+                gw=gw,
+                remark_line=remark_line,
+                is_export=is_export,
+            )
+            if line.pop("is_claim"):
+                is_claim_order = True
+            lines_out.append(line)
+            total_qty += qty
+            if line["amount"] is not None:
+                total_amt += line["amount"]
+            total_roll += int(rolls or 0)
+            total_pcs += int(pcs or 0)
+            if nw is not None:
+                total_nw += nw
+            if gw is not None:
+                total_gw += gw
+    elif ph:
+        pkd_list = db.scalars(
+            select(PackingDetail)
+            .where(PackingDetail.packing_id == ph.id)
+            .order_by(PackingDetail.id.asc())
+        ).all()
+        dd_by_pd: dict[int, DeliveryDetail] = {}
+        for dd in delivery_details:
+            if dd.production_detail_id:
+                dd_by_pd[int(dd.production_detail_id)] = dd
+        for i, pkd in enumerate(pkd_list, 1):
+            pod: PoDetail | None = None
+            poh: PoHeader | None = None
+            master: MasterItem | None = None
+            if pkd.production_detail_id:
+                pd_row = db.get(ProductionDetail, pkd.production_detail_id)
+                if pd_row and pd_row.po_detail_id:
+                    pod = db.get(PoDetail, pd_row.po_detail_id)
+                    if pod and pod.po_id:
+                        poh = db.get(PoHeader, pod.po_id)
+                    if pod and pod.master_item_id:
+                        master = db.get(MasterItem, pod.master_item_id)
+            dd = dd_by_pd.get(int(pkd.production_detail_id or 0), None)
+            qty = _dec(dd.qty if dd and dd.qty is not None else pkd.qty_packed)
+            rolls = dd.qty_roll if dd else None
+            pcs = dd.qty_pcs if dd else None
+            nw = dd.weight if dd and dd.weight is not None else None
+            gw = nw
+            po_no = (poh.po_number or "").strip() if poh else ""
+            remark_line = po_no
+            if i - 1 < len(inv_details):
+                idet = inv_details[i - 1]
+                if idet.net_weight is not None:
+                    nw = idet.net_weight
+                if idet.gross_weight is not None:
+                    gw = idet.gross_weight
+                if (idet.remark or "").strip():
+                    remark_line = (idet.remark or "").strip()
+                elif not remark_line:
+                    remark_line = po_no
+            if gw is None:
+                gw = nw
+            line = _invpl_line_dict(
+                no=i,
+                pod=pod,
+                poh=poh,
+                master=master,
+                qty=qty,
+                rolls=rolls,
+                pcs=pcs,
+                nw=nw,
+                gw=gw,
+                remark_line=remark_line or po_no,
+                is_export=is_export,
+            )
+            if line.pop("is_claim"):
+                is_claim_order = True
+            lines_out.append(line)
+            total_qty += qty
+            if line["amount"] is not None:
+                total_amt += line["amount"]
+            total_roll += int(rolls or 0)
+            total_pcs += int(pcs or 0)
+            if nw is not None:
+                total_nw += nw
+            if gw is not None:
+                total_gw += gw
 
     if inv and inv.total_amount is not None:
         total_amt = inv.total_amount
@@ -322,9 +469,32 @@ def gather_invpl_rows(
 
     cust_name = (cust.name or "").strip() if cust else "—"
     cust_addr = (cust.address or "").strip() if cust else ""
+    packing_number = ""
+    if ph:
+        packing_number = (ph.packing_number or str(ph.id)).strip()
+    elif dh:
+        packing_number = (dh.delivery_number or f"SJ-{dh.id}").strip()
+
+    bank_name = (inv.bank_name or "").strip() if inv else ""
+    account_number = (inv.account_number or "").strip() if inv else ""
+    bank_address = (inv.bank_address or "").strip() if inv else ""
+    bank_phone = (inv.bank_phone or "").strip() if inv else ""
+    if not bank_name:
+        bank_name = INVPL_BANK_DEFAULT["bank_name"]
+        account_number = account_number or INVPL_BANK_DEFAULT["account_number"]
+        bank_address = bank_address or INVPL_BANK_DEFAULT["bank_address"]
+        bank_phone = bank_phone or INVPL_BANK_DEFAULT["bank_phone"]
+
+    inv_raw = (inv.invoice_number or "").strip() if inv else ""
+    ph_for_cat: PoHeader | None = None
+    if delivery_details:
+        _pod, _poh, _ = _pod_chain_from_delivery_detail(db, delivery_details[0])
+        ph_for_cat = _poh
+    invoice_no = invoice_display_number(inv_raw, ph_for_cat, doc_date=doc_date) if inv_raw else ""
 
     return {
-        "packing_number": (ph.packing_number or str(ph.id)).strip(),
+        "packing_number": packing_number,
+        "invoice_no": invoice_no,
         "doc_date": doc_date,
         "doc_date_fmt": _fmt_date_en(doc_date),
         "customer_name": cust_name,
@@ -344,13 +514,18 @@ def gather_invpl_rows(
         "total_amount": total_amt,
         "amount_in_words": amount_words,
         "term_of_payment": (inv.term_of_payment or "").strip() if inv else "",
-        "bank_name": (inv.bank_name or "").strip() if inv else "",
-        "account_number": (inv.account_number or "").strip() if inv else "",
-        "bank_address": (inv.bank_address or "").strip() if inv else "",
-        "bank_phone": (inv.bank_phone or "").strip() if inv else "",
+        "bank_name": bank_name,
+        "account_number": account_number,
+        "bank_address": bank_address,
+        "bank_phone": bank_phone,
         "description_line": INVPL_DESC_DEFAULT,
         "claim_title_suffix": " (Non)" if is_claim_order else "",
+        "document_title": INVPL_TITLE,
     }
+
+
+def gather_invpl_for_delivery(db: Session, delivery_id: int) -> dict[str, Any]:
+    return gather_invpl_rows(db, packing_id=None, delivery_id=delivery_id)
 
 
 CI_REASON_MESSAGES: dict[str, str] = {
@@ -365,17 +540,28 @@ CI_REASON_MESSAGES: dict[str, str] = {
 
 def commercial_invoice_eligibility(db: Session, delivery_id: int) -> tuple[bool, str]:
     """Aturan: INVPL sudah dicetak; dalam kota H+1; luar kota mulai tanggal kirim."""
+    from app.services.business_rules import delivery_has_invpl_printed, _packing_ids_for_delivery
+    from app.models import DeliveryDetail
+
     dh = db.get(DeliveryHeader, delivery_id)
     if not dh:
         return False, "delivery_not_found"
+    details = list(
+        db.scalars(select(DeliveryDetail).where(DeliveryDetail.delivery_id == delivery_id)).all()
+    )
     pid = dh.packing_id
-    if not pid:
-        return False, "no_packing"
-    ph = db.get(PackingHeader, int(pid))
-    if not ph:
-        return False, "packing_not_found"
-    if ph.invpl_printed_at is None:
-        return False, "invpl_not_printed"
+    if pid:
+        ph = db.get(PackingHeader, int(pid))
+        if not ph:
+            return False, "packing_not_found"
+        if ph.invpl_printed_at is None and not delivery_has_invpl_printed(db, delivery_id, details):
+            return False, "invpl_not_printed"
+    else:
+        if not details:
+            return False, "no_packing"
+        related = _packing_ids_for_delivery(db, dh, details)
+        if related and not delivery_has_invpl_printed(db, delivery_id, details):
+            return False, "invpl_not_printed"
 
     dday = dh.delivery_date or date.today()
     zone = (dh.delivery_zone or "outtown").strip().lower()
@@ -395,9 +581,9 @@ def commercial_invoice_eligibility_message(code: str) -> str:
 
 def gather_commercial_invoice_ctx(db: Session, delivery_id: int) -> dict[str, Any]:
     dh = db.get(DeliveryHeader, delivery_id)
-    if not dh or not dh.packing_id:
+    if not dh:
         raise ValueError("delivery_not_found")
-    ctx = gather_invpl_rows(db, int(dh.packing_id), delivery_id=delivery_id)
+    ctx = gather_invpl_for_delivery(db, delivery_id)
     suf = (ctx.get("claim_title_suffix") or "").strip()
     ctx["document_title"] = f"COMMERCIAL INVOICE{suf}"
     return ctx
@@ -473,6 +659,7 @@ def render_invpl_html(ctx: dict[str, Any]) -> str:
     meta_right = f"""
     <div class="meta-right">
       <div><b>DATE:</b> {escape(ctx['doc_date_fmt'])}</div>
+      <div><b>INV. NO:</b> {escape(ctx.get('invoice_no') or '—')}</div>
       <div><b>PL. NO.:</b> {escape(ctx['packing_number'])}</div>
     </div>
     """
@@ -493,20 +680,20 @@ def render_invpl_html(ctx: dict[str, Any]) -> str:
     </div>
   </div>
   {bill_html}
-  <h2 class="title">{escape(ctx.get('document_title', 'INVOICE PACKING LIST'))}</h2>
+  <h2 class="title">{escape(ctx.get('document_title', INVPL_TITLE))}</h2>
   <div class="stars">*******************</div>
   <p class="desc">{escape(ctx['description_line'])}</p>
   <table class="grid"><thead>{thead}</thead><tbody>{rows_html}</tbody></table>
   <p class="words"><b>SAY TOTAL IN WORDS:</b> {escape(ctx['amount_in_words'])}</p>
   <div class="footer-bank">
     <div><b>TERM OF PAYMENT:</b> {escape(ctx['term_of_payment'] or '—')}</div>
-    <div><b>OUR ADVICEING BANK:</b> {escape(ctx['bank_name'] or '—')}</div>
+    <div><b>OUR ADVISING BANK:</b> {escape(ctx['bank_name'] or '—')}</div>
     <div><b>ACCOUNT NO.:</b> {escape(ctx['account_number'] or '—')}</div>
     <div><b>BANK ADDRESS:</b> {escape(ctx['bank_address'] or '—')}</div>
     <div><b>BANK CONTACT:</b> {escape(ctx['bank_phone'] or '—')}</div>
   </div>
   <div class="sign">
-    <p>Authorize signature:</p>
+    <p>Authorized signature:</p>
     <p><br/><br/></p>
     <p><b>(CHIU PO HAO)</b></p>
     <p>Director</p>
@@ -619,42 +806,60 @@ def render_invpl_pdf(ctx: dict[str, Any]) -> bytes:
         bottomMargin=10 * mm,
     )
     styles = getSampleStyleSheet()
-    small = ParagraphStyle(name="s", parent=styles["Normal"], fontSize=7, leading=8)
+    small = ParagraphStyle(name="invpl_s", parent=styles["Normal"], fontSize=7, leading=9)
+    center_small = ParagraphStyle(name="invpl_cs", parent=small, alignment=1)
+    title_style = ParagraphStyle(
+        name="invpl_t", parent=styles["Heading2"], alignment=1, fontSize=12, spaceAfter=2
+    )
     story: list[Any] = []
     for line in COMPANY_BLOCK:
-        story.append(Paragraph(escape(line), small))
-    story.append(Spacer(1, 3 * mm))
+        story.append(Paragraph(f"<b>{escape(line)}</b>", center_small))
+    story.append(Spacer(1, 2 * mm))
+    meta = (
+        f"<b>DATE:</b> {escape(ctx['doc_date_fmt'])} &nbsp;&nbsp; "
+        f"<b>INV. NO:</b> {escape(ctx.get('invoice_no') or '—')}"
+    )
+    story.append(Paragraph(meta, ParagraphStyle("invpl_mr", parent=small, alignment=2)))
+    story.append(Spacer(1, 2 * mm))
     story.append(Paragraph(f"<b>TO:</b> {escape(ctx['customer_name'])}", small))
     story.append(Paragraph(escape(ctx["customer_address"] or ""), small))
     story.append(Paragraph(escape(ctx["customer_phone_line"]), small))
     if ctx["is_export"] and ctx.get("bill_to_block"):
         story.append(Spacer(1, 2 * mm))
         story.append(Paragraph(f"<b>BILL TO:</b> {escape(ctx['bill_to_block'])}", small))
-    story.append(Spacer(1, 2 * mm))
-    story.append(
-        Paragraph(
-            f"<b>DATE:</b> {escape(ctx['doc_date_fmt'])} &nbsp; <b>PL. NO.:</b> {escape(ctx['packing_number'])}",
-            small,
-        )
-    )
     story.append(Spacer(1, 3 * mm))
     story.append(
-        Paragraph(f"<b>{escape(str(ctx.get('document_title', 'INVOICE PACKING LIST')))}</b>", styles["Heading2"])
+        Paragraph(escape(str(ctx.get("document_title", INVPL_TITLE))), title_style)
     )
+    story.append(Paragraph("*******************", center_small))
     story.append(Paragraph(escape(ctx["description_line"]), small))
+    story.append(Spacer(1, 2 * mm))
 
     is_export = ctx["is_export"]
-    table_data: list[list[str]] = []
-    head = ["NO", "PO", "ITEM"]
+    table_data: list[list[Any]] = []
+    head = ["P.O. NO.", "ITEM"]
     if is_export:
         head.append("EXIM")
-    head.extend(["COLOR", "QTY", "U", "U.PRICE", "AMOUNT", "RLL", "PCS", "NW", "GW", "RMK"])
+    head.extend(
+        [
+            "QTY",
+            "UNIT",
+            "U. PRICE (USD)",
+            "AMOUNT (USD)",
+            "ROLLS",
+            "PIECES",
+            "N.W. (KGS)",
+            "G.W. (KGS)",
+        ]
+    )
     table_data.append(head)
     for ln in ctx["lines"]:
-        row = [
-            str(ln["no"]),
-            (ln["po_no"] or "")[:14],
-            (ln["item"] or "")[:42],
+        item = (ln.get("item") or "")
+        if ln.get("color"):
+            item = f"{item} {ln['color']}".strip()
+        row: list[Any] = [
+            Paragraph(escape((ln["po_no"] or "")[:20]), small),
+            Paragraph(escape(item[:90]), small),
         ]
         if is_export:
             row.append((ln.get("exim_code") or "")[:12])
@@ -662,26 +867,24 @@ def render_invpl_pdf(ctx: dict[str, Any]) -> bytes:
         am = ln["amount"]
         row.extend(
             [
-                (ln["color"] or "")[:16],
                 f"{ln['qty']:.2f}" if ln["qty"] is not None else "",
                 ln["unit"] or "S/F",
-                f"{up:.2f}" if up is not None else "",
+                f"{up:.4f}" if up is not None else "",
                 f"{am:.2f}" if am is not None else "",
                 str(ln["rolls"] or ""),
                 str(ln["pcs"] or ""),
                 f"{ln['nw']:.1f}" if ln.get("nw") is not None else "",
                 f"{ln['gw']:.1f}" if ln.get("gw") is not None else "",
-                (ln.get("remark") or "")[:10],
             ]
         )
         table_data.append(row)
+
     t = ctx["totals"]
-    total_row = ["", "", "TOTAL"]
+    total_row: list[Any] = ["TOTAL", ""]
     if is_export:
         total_row.append("")
     total_row.extend(
         [
-            "",
             f"{t['qty']:.2f}",
             "",
             "",
@@ -690,30 +893,41 @@ def render_invpl_pdf(ctx: dict[str, Any]) -> bytes:
             str(t["pcs"]),
             f"{t['nw']:.1f}" if t["nw"] else "",
             f"{t['gw']:.1f}" if t["gw"] else "",
-            "",
         ]
     )
     table_data.append(total_row)
 
     col_count = len(table_data[0])
     full_w = landscape(A4)[0] - 24 * mm
-    cw = full_w / col_count
-    tbl = Table(table_data, colWidths=[cw] * col_count, repeatRows=1)
+    weights = [1.1, 3.2] + ([0.8] if is_export else []) + [0.8, 0.6, 1.1, 1.1, 0.7, 0.7, 0.8, 0.8]
+    s = sum(weights[:col_count])
+    cws = [full_w * (w / s) for w in weights[:col_count]]
+    tbl = Table(table_data, colWidths=cws, repeatRows=1)
     tbl.setStyle(
         TableStyle(
             [
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.black),
-                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                ("FONTSIZE", (0, 0), (-1, -1), 6),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.black),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.92, 0.92, 0.92)),
+                ("FONTSIZE", (0, 0), (-1, -1), 6.5),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
             ]
         )
     )
     story.append(tbl)
     story.append(Spacer(1, 3 * mm))
     story.append(Paragraph(f"<b>SAY TOTAL IN WORDS:</b> {escape(ctx['amount_in_words'])}", small))
-    story.append(Paragraph(escape(f"TERM: {ctx['term_of_payment']} | BANK: {ctx['bank_name']}"), small))
-    story.append(Paragraph(escape(f"ACCT: {ctx['account_number']} | {ctx['bank_address']}"), small))
+    story.append(Paragraph(f"<b>TERM OF PAYMENT:</b> {escape(ctx['term_of_payment'] or '—')}", small))
+    story.append(Paragraph(f"<b>OUR ADVISING BANK:</b> {escape(ctx['bank_name'] or '—')}", small))
+    story.append(Paragraph(f"<b>ACCOUNT NO.:</b> {escape(ctx['account_number'] or '—')}", small))
+    story.append(Paragraph(f"<b>BANK ADDRESS:</b> {escape(ctx['bank_address'] or '—')}", small))
+    story.append(Paragraph(f"<b>BANK CONTACT:</b> {escape(ctx['bank_phone'] or '—')}", small))
+    story.append(Spacer(1, 8 * mm))
+    story.append(Paragraph("Authorized signature:", small))
+    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph("<b>(CHIU PO HAO)</b>", small))
+    story.append(Paragraph("Director", small))
     doc.build(story)
     buf.seek(0)
     return buf.getvalue()
@@ -754,6 +968,8 @@ def gather_sj_rows(db: Session, delivery_id: int) -> dict[str, Any]:
         mat = _item_description(pod) if pod else "—"
         thick = _thickness_mm(pod) if pod else ""
         color = (pod.color or "").strip() if pod else ""
+        emboss = (pod.emboss or "").strip() if pod else ""
+        item = _sj_item_text(pod)
         po_line_remark = (pod.detail_remark or "").strip() if pod else ""
         base_remark = po_no or ""
         if po_line_remark:
@@ -764,8 +980,10 @@ def gather_sj_rows(db: Session, delivery_id: int) -> dict[str, Any]:
             {
                 "no": i,
                 "po_no": po_no,
+                "item": item,
                 "material": mat,
                 "thickness": thick,
+                "emboss": emboss,
                 "color": color,
                 "qty": _dec(dd.qty),
                 "rolls": dd.qty_roll,
@@ -777,10 +995,15 @@ def gather_sj_rows(db: Session, delivery_id: int) -> dict[str, Any]:
         t_roll += int(dd.qty_roll or 0)
         t_pcs += int(dd.qty_pcs or 0)
 
+    tel, fax = _customer_tel_fax(cust)
     dn_raw = (dh.delivery_number or str(dh.id)).strip()
     inv_raw = (inv.invoice_number or "").strip() if inv else ""
     return {
-        "delivery_number": surat_jalan_display_number(dn_raw, ph_for_cat) if dn_raw else "",
+        "delivery_number": surat_jalan_display_number(
+            dn_raw, ph_for_cat, doc_date=dh.delivery_date
+        )
+        if dn_raw
+        else "",
         "delivery_date": dh.delivery_date,
         "delivery_date_fmt": _fmt_date_en(dh.delivery_date),
         "destination": (dh.destination or "").strip(),
@@ -791,93 +1014,116 @@ def gather_sj_rows(db: Session, delivery_id: int) -> dict[str, Any]:
         "customer_name": (cust.name or "").strip() if cust else "—",
         "customer_address": (cust.address or "").strip() if cust else "",
         "customer_phone_line": _customer_phone_fax(cust),
-        "invoice_no": invoice_display_number(inv_raw, ph_for_cat),
+        "customer_tel": tel,
+        "customer_fax": fax,
+        "invoice_no": invoice_display_number(
+            inv_raw, ph_for_cat, doc_date=inv.invoice_date if inv else dh.delivery_date
+        )
+        if inv_raw
+        else "",
         "lines": lines_out,
         "totals": {"qty": t_qty, "rolls": t_roll, "pcs": t_pcs},
         "is_export": bool(cust and cust.is_export_customer),
     }
 
 
-def render_sj_html(ctx: dict[str, Any]) -> str:
+def _sj_body_rows(ctx: dict[str, Any], *, min_rows: int = 8) -> str:
     rows_html = ""
-    for ln in ctx["lines"]:
+    lines = list(ctx.get("lines") or [])
+    for ln in lines:
+        item = ln.get("item") or ln.get("material") or ""
         rows_html += (
-            f"<tr><td>{ln['no']}</td>"
-            f"<td>{escape(ln['po_no'])}</td>"
-            f"<td>{escape(ln['material'])}</td>"
-            f"<td>{escape(ln['thickness'])}</td>"
-            f"<td>{escape(ln['color'])}</td>"
+            f"<tr><td class='c'>{ln['no']}</td>"
+            f"<td>{escape(str(item))}</td>"
             f"<td class='r'>{ln['qty']:.2f}</td>"
             f"<td class='r'>{ln['rolls'] or ''}</td>"
             f"<td class='r'>{ln['pcs'] or ''}</td>"
-            f"<td>{escape(ln['remark'])}</td></tr>"
+            f"<td>{escape(str(ln.get('po_no') or ''))}</td></tr>"
         )
+    for _ in range(max(0, min_rows - len(lines))):
+        rows_html += "<tr>" + "".join("<td>&nbsp;</td>" for _ in range(6)) + "</tr>"
     t = ctx["totals"]
     rows_html += (
-        f"<tr class='total'><td colspan='5'><b>TOTAL</b></td>"
+        f"<tr class='total'><td colspan='2'><b>TOTAL</b></td>"
         f"<td class='r'><b>{t['qty']:.2f}</b></td>"
         f"<td class='r'><b>{t['rolls']}</b></td>"
         f"<td class='r'><b>{t['pcs']}</b></td><td></td></tr>"
     )
+    return rows_html
 
+
+def _sj_meta_html(ctx: dict[str, Any]) -> str:
+    addr = escape(ctx.get("customer_address") or "").replace("\n", "<br/>")
+    tel = escape(ctx.get("customer_tel") or "")
+    fax = escape(ctx.get("customer_fax") or "")
+    return f"""
+  <div class="grid-2">
+    <div class="meta-box">
+      <div><b>DELIVERY TO:</b> {escape(ctx['customer_name'])}</div>
+      <div><b>ADDRESS:</b> {addr}</div>
+      <div><b>TELP. NO.:</b> {tel or '—'}</div>
+      <div><b>FAX. NO.:</b> {fax or '—'}</div>
+      <div><b>INV. NO.:</b> {escape(ctx.get('invoice_no') or '—')}</div>
+    </div>
+    <div class="meta-box">
+      <div><b>SURAT JALAN NO:</b> {escape(ctx['delivery_number'])}</div>
+      <div><b>BC NO.:</b> {escape(ctx.get('bc_number') or '')}</div>
+      <div><b>TANGGAL (Date):</b> {escape(ctx['delivery_date_fmt'])}</div>
+      <div><b>CAR NO.:</b> {escape(ctx.get('vehicle_number') or '')}</div>
+      <div><b>DRIVER'S NAME:</b> {escape(ctx.get('driver_name') or '')}</div>
+    </div>
+  </div>
+"""
+
+
+_SJ_TABLE_HEAD = (
+    "<thead><tr>"
+    "<th>NO.</th><th>ITEM</th><th>QTY (S/F)</th><th>ROLLS</th><th>PIECES</th><th>P.O. NO.</th>"
+    "</tr></thead>"
+)
+
+
+def render_sj_html(ctx: dict[str, Any]) -> str:
     company = "<br/>".join(escape(x) for x in COMPANY_BLOCK)
     export_note = ""
     if ctx.get("is_export"):
-        export_note = f'<p class="note">{escape("Catatan: untuk transaksi ekspor, cetak Surat Jalan bersifat opsional.")}</p>'
-
+        export_note = (
+            '<p class="note">'
+            + escape("Catatan: untuk transaksi ekspor, cetak Surat Jalan bersifat opsional.")
+            + "</p>"
+        )
     body = f"""
 <div class="doc">
-  <div class="top"><span class="page">Page 1</span></div>
   <div class="company"><b>{company}</b></div>
-  <h2 class="title">SURAT JALAN (DELIVERYSHEET)</h2>
+  <h2 class="title">SURAT JALAN (DELIVERY SHEET)</h2>
   {export_note}
-  <div class="grid-2">
-    <div>
-      <div><b>DELIVERED TO:</b> {escape(ctx['customer_name'])}</div>
-      <div><b>ADDRESS:</b> {escape(ctx['customer_address']).replace(chr(10), '<br/>')}</div>
-      <div>{escape(ctx['customer_phone_line'])}</div>
-      <div><b>INV. NO.:</b> {escape(ctx['invoice_no'] or '—')}</div>
-    </div>
-    <div class="right">
-      <div><b>SURAT JALAN NO.:</b> {escape(ctx['delivery_number'])}</div>
-      <div><b>NO. BC:</b> {escape(ctx['bc_number'] or '—')}</div>
-      <div><b>DATE BC:</b> {escape(ctx['bc_date_fmt'] or '—')}</div>
-      <div><b>CAR NO.:</b> {escape(ctx['vehicle_number'])}</div>
-      <div><b>DRIVER'S NAME:</b> {escape(ctx['driver_name'])}</div>
-      <div><b>DATE:</b> {escape(ctx['delivery_date_fmt'])}</div>
-    </div>
-  </div>
-  <table class="grid">
-    <thead><tr><th>NO.</th><th>PO NO</th><th>Material name</th><th>Thickness (MM)</th><th>Color</th>
-    <th>Quantity (S/F)</th><th>Rolls</th><th>Pieces</th><th>Remark</th></tr></thead>
-    <tbody>{rows_html}</tbody>
-  </table>
-  <div class="sign4">
-    <div><b>RECEIVED BY</b><br/><br/><br/></div>
-    <div><b>APPROVED BY</b><br/><br/><br/></div>
-    <div><b>SECURITY</b><br/><br/><br/></div>
-    <div><b>DELIVERED BY</b><br/><br/><br/></div>
-  </div>
+  {_sj_meta_html(ctx)}
+  <table class="grid">{_SJ_TABLE_HEAD}<tbody>{_sj_body_rows(ctx)}</tbody></table>
+  {_sign4_html()}
   <p class="foot-note"><b>NOTE :</b> WHITE(1) ACC, RED(2) CUSTOMER, YELLOW(3) EXIM, GREEN(4) WAREHOUSE, BLUE(5) SECURITY.</p>
 </div>
 """
     style = """
-    body { font-family: Arial, sans-serif; margin: 14px; font-size: 11px; color: #111; }
-    .doc { max-width: 800px; margin: 0 auto; }
-    .top { text-align: right; margin-bottom: 4px; }
+    body { font-family: Arial, Helvetica, sans-serif; margin: 14px; font-size: 11px; color: #111; }
+    .doc { max-width: 820px; margin: 0 auto; border: 1px solid #333; padding: 12px; }
     .company { text-align: center; margin-bottom: 8px; line-height: 1.35; }
-    .title { text-align: center; font-size: 14px; margin: 8px 0; }
+    .title { text-align: center; font-size: 15px; margin: 8px 0 12px; letter-spacing: 0.5px; }
     .note { font-size: 10px; color: #444; margin: 6px 0; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
-    .right { text-align: left; }
-    table.grid { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10px; }
-    table.grid th, table.grid td { border: 1px solid #333; padding: 5px; }
-    table.grid th { background: #eaeaea; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 0 0 10px; border: 1px solid #333; }
+    .meta-box { padding: 8px 10px; line-height: 1.45; border-right: 1px solid #333; }
+    .meta-box:last-child { border-right: none; }
+    table.grid { width: 100%; border-collapse: collapse; margin-top: 0; font-size: 10px; }
+    table.grid th, table.grid td { border: 1px solid #333; padding: 5px 4px; vertical-align: top; }
+    table.grid th { background: #f0f0f0; text-align: center; }
     td.r { text-align: right; }
+    td.c { text-align: center; }
     tr.total td { background: #f5f5f5; font-weight: bold; }
-    .sign4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; margin-top: 24px; text-align: center; font-size: 10px; }
-    .foot-note { margin-top: 16px; font-size: 9px; }
-    @media print { body { margin: 8px; } }
+    .sign4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0; margin-top: 0; border: 1px solid #333; border-top: none; }
+    .sign-box { text-align: center; font-size: 10px; padding: 8px 4px 12px; border-right: 1px solid #333; min-height: 72px; }
+    .sign-box:last-child { border-right: none; }
+    .sign-line { margin-top: 8px; font-size: 9px; }
+    .foot-note { margin-top: 10px; font-size: 9px; }
+    @media print { body { margin: 8px; } .doc { border: none; padding: 0; } }
     """
     return f"""<!DOCTYPE html>
 <html lang="id"><head><meta charset="utf-8"/><title>Surat Jalan</title>
@@ -886,146 +1132,161 @@ def render_sj_html(ctx: dict[str, Any]) -> str:
 
 def render_sj_pdf(ctx: dict[str, Any]) -> bytes:
     buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=A4)
-    w, h = A4
-    y = h - 14 * mm
-    c.setFont("Helvetica", 8)
-    c.drawRightString(w - 18 * mm, y, "Page 1")
-    y -= 5 * mm
-    c.setFont("Helvetica-Bold", 11)
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=14 * mm,
+        rightMargin=14 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+    )
+    styles = getSampleStyleSheet()
+    small = ParagraphStyle(name="sj_s", parent=styles["Normal"], fontSize=8, leading=10)
+    center = ParagraphStyle(name="sj_c", parent=small, alignment=1)
+    title = ParagraphStyle(name="sj_t", parent=styles["Heading2"], alignment=1, fontSize=12, spaceAfter=6)
+    story: list[Any] = []
     for line in COMPANY_BLOCK:
-        c.drawCentredString(w / 2, y, line)
-        y -= 4 * mm
-    y -= 2 * mm
-    c.setFont("Helvetica-Bold", 12)
-    c.drawCentredString(w / 2, y, "SURAT JALAN (DELIVERYSHEET)")
-    y -= 8 * mm
-    c.setFont("Helvetica", 9)
-    c.drawString(18 * mm, y, f"DELIVERED TO: {ctx['customer_name'][:55]}")
-    c.drawString(110 * mm, y, f"SURAT JALAN NO.: {ctx['delivery_number']}")
-    y -= 5 * mm
-    addr = (ctx["customer_address"] or "")[:80]
-    c.drawString(18 * mm, y, f"ADDRESS: {addr}")
-    c.drawString(110 * mm, y, f"NO. BC: {ctx['bc_number'] or '—'}")
-    y -= 5 * mm
-    c.drawString(18 * mm, y, ctx["customer_phone_line"][:70])
-    c.drawString(110 * mm, y, f"DATE BC: {ctx['bc_date_fmt'] or '—'}")
-    y -= 5 * mm
-    c.drawString(18 * mm, y, f"INV. NO.: {ctx['invoice_no'] or '—'}")
-    c.drawString(110 * mm, y, f"CAR NO.: {ctx['vehicle_number'][:20]}")
-    y -= 5 * mm
-    c.drawString(110 * mm, y, f"DRIVER: {ctx['driver_name'][:30]}")
-    y -= 5 * mm
-    c.drawString(110 * mm, y, f"DATE: {ctx['delivery_date_fmt']}")
-    y -= 10 * mm
-    if ctx.get("is_export"):
-        c.setFont("Helvetica-Oblique", 8)
-        c.drawString(18 * mm, y, "Catatan: untuk ekspor, SJ opsional.")
-        y -= 5 * mm
-        c.setFont("Helvetica", 9)
+        story.append(Paragraph(f"<b>{escape(line)}</b>", center))
+    story.append(Paragraph("SURAT JALAN (DELIVERY SHEET)", title))
 
-    cols = ("NO", "PO", "MATERIAL", "THK", "COLOR", "QTY", "RLL", "PCS", "RMK")
-    x0 = 12 * mm
-    colw = (w - 24 * mm) / len(cols)
-    c.setFont("Helvetica-Bold", 7)
-    for i, lab in enumerate(cols):
-        c.drawString(x0 + i * colw, y, lab)
-    y -= 4 * mm
-    c.setFont("Helvetica", 7)
-    for ln in ctx["lines"]:
-        if y < 28 * mm:
-            c.showPage()
-            y = h - 18 * mm
-            c.setFont("Helvetica", 7)
-        row = [
-            str(ln["no"]),
-            (ln["po_no"] or "")[:10],
-            (ln["material"] or "")[:22],
-            (ln["thickness"] or "")[:8],
-            (ln["color"] or "")[:12],
-            f"{ln['qty']:.2f}",
-            str(ln["rolls"] or ""),
-            str(ln["pcs"] or ""),
-            "",
-        ]
-        for i, cell in enumerate(row):
-            c.drawString(x0 + i * colw, y, cell)
-        y -= 3.5 * mm
+    left = (
+        f"<b>DELIVERY TO:</b> {escape(ctx['customer_name'])}<br/>"
+        f"<b>ADDRESS:</b> {escape(ctx.get('customer_address') or '')}<br/>"
+        f"<b>TELP. NO.:</b> {escape(ctx.get('customer_tel') or '—')}<br/>"
+        f"<b>FAX. NO.:</b> {escape(ctx.get('customer_fax') or '—')}<br/>"
+        f"<b>INV. NO.:</b> {escape(ctx.get('invoice_no') or '—')}"
+    )
+    right = (
+        f"<b>SURAT JALAN NO:</b> {escape(ctx['delivery_number'])}<br/>"
+        f"<b>BC NO.:</b> {escape(ctx.get('bc_number') or '')}<br/>"
+        f"<b>TANGGAL (Date):</b> {escape(ctx['delivery_date_fmt'])}<br/>"
+        f"<b>CAR NO.:</b> {escape(ctx.get('vehicle_number') or '')}<br/>"
+        f"<b>DRIVER'S NAME:</b> {escape(ctx.get('driver_name') or '')}"
+    )
+    meta = Table(
+        [[Paragraph(left, small), Paragraph(right, small)]],
+        colWidths=[90 * mm, 90 * mm],
+    )
+    meta.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.black),
+                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.black),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )
+    )
+    story.append(meta)
+    story.append(Spacer(1, 2 * mm))
+
+    data: list[list[Any]] = [["NO.", "ITEM", "QTY (S/F)", "ROLLS", "PIECES", "P.O. NO."]]
+    lines = list(ctx.get("lines") or [])
+    for ln in lines:
+        item = ln.get("item") or ln.get("material") or ""
+        data.append(
+            [
+                str(ln["no"]),
+                Paragraph(escape(str(item)[:120]), small),
+                f"{ln['qty']:.2f}",
+                str(ln["rolls"] or ""),
+                str(ln["pcs"] or ""),
+                Paragraph(escape(str(ln.get("po_no") or "")[:24]), small),
+            ]
+        )
+    for _ in range(max(0, 8 - len(lines))):
+        data.append(["", "", "", "", "", ""])
     t = ctx["totals"]
-    c.setFont("Helvetica-Bold", 7)
-    c.drawString(x0, y, "TOTAL")
-    c.drawString(x0 + 5 * colw, y, f"{t['qty']:.2f}")
-    c.drawString(x0 + 6 * colw, y, str(t["rolls"]))
-    c.drawString(x0 + 7 * colw, y, str(t["pcs"]))
-    y -= 16 * mm
-    c.setFont("Helvetica", 8)
-    c.drawString(18 * mm, y, "RECEIVED BY")
-    c.drawString(58 * mm, y, "APPROVED BY")
-    c.drawString(98 * mm, y, "SECURITY")
-    c.drawString(138 * mm, y, "DELIVERED BY")
-    c.showPage()
-    c.save()
+    data.append(["", "TOTAL", f"{t['qty']:.2f}", str(t["rolls"]), str(t["pcs"]), ""])
+    page_w = A4[0] - 28 * mm
+    cws = [page_w * x for x in (0.07, 0.42, 0.14, 0.11, 0.11, 0.15)]
+    tbl = Table(data, colWidths=cws, repeatRows=1)
+    tbl.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.92, 0.92, 0.92)),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("ALIGN", (0, 0), (0, -1), "CENTER"),
+                ("ALIGN", (2, 1), (4, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ]
+        )
+    )
+    story.append(tbl)
+
+    sign_cells = []
+    for lab in SJ_SIGN_LABELS:
+        sign_cells.append(
+            Paragraph(f"<b>{lab}</b><br/><br/><br/><br/>( &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; )", center)
+        )
+    sign = Table([sign_cells], colWidths=[page_w / 4] * 4)
+    sign.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.black),
+                ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.black),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ]
+        )
+    )
+    story.append(sign)
+    story.append(Spacer(1, 4 * mm))
+    story.append(
+        Paragraph(
+            "<b>NOTE :</b> WHITE(1) ACC, RED(2) CUSTOMER, YELLOW(3) EXIM, GREEN(4) WAREHOUSE, BLUE(5) SECURITY.",
+            ParagraphStyle("sj_n", parent=small, fontSize=7),
+        )
+    )
+    doc.build(story)
     buf.seek(0)
     return buf.getvalue()
 
 
 def render_sj_dotmatrix_html(ctx: dict[str, Any]) -> str:
-    """Cetak fisik dot matrix — layout ringkas (5.5in × 8.5in)."""
-    rows_html = ""
-    for ln in ctx["lines"]:
-        rows_html += (
-            f"<tr>"
-            f"<td>{ln['no']}</td>"
-            f"<td>{escape(ln['po_no'])}</td>"
-            f"<td>{escape(str(ln['material'] or '')[:28])}</td>"
-            f"<td class='r'>{ln['qty']:.2f}</td>"
-            f"<td class='r'>{ln['rolls'] or ''}</td>"
-            f"<td class='r'>{ln['pcs'] or ''}</td>"
-            f"</tr>"
-        )
-    t = ctx["totals"]
-    rows_html += (
-        f"<tr class='total'><td colspan='3'><b>TOTAL</b></td>"
-        f"<td class='r'><b>{t['qty']:.2f}</b></td>"
-        f"<td class='r'><b>{t['rolls']}</b></td>"
-        f"<td class='r'><b>{t['pcs']}</b></td></tr>"
-    )
-    company = " | ".join(COMPANY_BLOCK)
+    """Cetak fisik dot matrix — layout mengikuti form SURAT JALAN."""
+    company = "<br/>".join(escape(x) for x in COMPANY_BLOCK)
     body = f"""
 <div class="doc">
-  <div class="company"><b>{escape(company)}</b></div>
+  <div class="company"><b>{company}</b></div>
   <h2 class="title">SURAT JALAN (DELIVERY SHEET)</h2>
-  <div class="meta">
-    <div><b>TO:</b> {escape(str(ctx['customer_name'] or '')[:40])}</div>
-    <div><b>SJ NO:</b> {escape(ctx['delivery_number'])} &nbsp; <b>DATE:</b> {escape(ctx['delivery_date_fmt'])}</div>
-    <div><b>CAR:</b> {escape(ctx['vehicle_number'])} &nbsp; <b>DRIVER:</b> {escape(ctx['driver_name'])}</div>
-  </div>
-  <table class="grid">
-    <thead><tr><th>NO</th><th>PO NO</th><th>MATERIAL</th><th>QTY SF</th><th>ROLL</th><th>PCS</th></tr></thead>
-    <tbody>{rows_html}</tbody>
-  </table>
-  <div class="sign4">
-    <div>RECEIVED BY</div><div>APPROVED BY</div><div>SECURITY</div><div>DELIVERED BY</div>
-  </div>
+  {_sj_meta_html(ctx)}
+  <table class="grid">{_SJ_TABLE_HEAD}<tbody>{_sj_body_rows(ctx, min_rows=10)}</tbody></table>
+  {_sign4_html(compact=True)}
   <p class="foot-note"><b>NOTE:</b> WHITE(1) ACC, RED(2) CUSTOMER, YELLOW(3) EXIM, GREEN(4) WAREHOUSE, BLUE(5) SECURITY.</p>
 </div>
 """
     style = """
-    @page { size: 5.5in 8.5in; margin: 0.25in; }
+    @page { size: A4 portrait; margin: 0.35in; }
     body { font-family: 'Courier New', Courier, monospace; margin: 0; font-size: 9px; color: #000; }
-    .doc { width: 5in; margin: 0 auto; }
-    .company { text-align: center; font-size: 8px; line-height: 1.2; margin-bottom: 4px; }
-    .title { text-align: center; font-size: 11px; margin: 4px 0 8px; }
-    .meta { margin-bottom: 6px; line-height: 1.35; }
+    .doc { width: 100%; max-width: 190mm; margin: 0 auto; }
+    .company { text-align: center; font-size: 9px; line-height: 1.25; margin-bottom: 4px; }
+    .title { text-align: center; font-size: 12px; margin: 6px 0 8px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 0 0 6px; border: 1px solid #000; }
+    .meta-box { padding: 4px 6px; line-height: 1.35; border-right: 1px solid #000; font-size: 8px; }
+    .meta-box:last-child { border-right: none; }
     table.grid { width: 100%; border-collapse: collapse; font-size: 8px; }
-    table.grid th, table.grid td { border: 1px solid #000; padding: 2px 3px; }
+    table.grid th, table.grid td { border: 1px solid #000; padding: 2px 3px; vertical-align: top; }
+    table.grid th { text-align: center; }
     td.r { text-align: right; }
+    td.c { text-align: center; }
     tr.total td { font-weight: bold; }
-    .sign4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; margin-top: 12px; text-align: center; font-size: 7px; }
-    .foot-note { margin-top: 8px; font-size: 7px; }
+    .sign4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0; border: 1px solid #000; border-top: none; }
+    .sign-box { text-align: center; font-size: 7px; padding: 6px 2px 10px; border-right: 1px solid #000; min-height: 48px; }
+    .sign-box:last-child { border-right: none; }
+    .sign-line { margin-top: 4px; }
+    .foot-note { margin-top: 6px; font-size: 7px; }
     @media print { body { margin: 0; } }
     """
     return f"""<!DOCTYPE html>
 <html lang="id"><head><meta charset="utf-8"/><title>Surat Jalan Dot Matrix</title>
 <style>{style}</style></head><body>{body}
 <script>window.onload=function(){{window.print();}}</script></body></html>"""
+

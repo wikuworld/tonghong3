@@ -10,6 +10,22 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any, Optional
 
+
+def _csv_tokens(raw: Optional[str]) -> list[str]:
+    if not raw:
+        return []
+    return [p.strip() for p in str(raw).split(",") if p.strip()]
+
+
+def _csv_ints(raw: Optional[str]) -> list[int]:
+    out: list[int] = []
+    for p in _csv_tokens(raw):
+        try:
+            out.append(int(p))
+        except (TypeError, ValueError):
+            continue
+    return out
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from openpyxl import Workbook
 from sqlalchemy import func, or_, select
@@ -339,6 +355,9 @@ def _prepare_outstanding_rows(
     mkt_stage_min: Optional[str] = None,
     **kwargs: Any,
 ) -> list[dict[str, Any]]:
+    raw_ids = kwargs.get("customer_ids")
+    if isinstance(raw_ids, str):
+        kwargs["customer_ids"] = _csv_ints(raw_ids)
     rows = _query_outstanding_rows(db, *args, **kwargs)
     min_stage = _normalize_mkt_stage_min(mkt_stage_min)
     if min_stage:
@@ -446,6 +465,7 @@ def _line_to_row(
         "order_date": h.order_date.isoformat() if h.order_date else None,
         "thi_order": thi_order,
         "customer_name": cust,
+        "customer_id": int(h.customer_id) if h.customer_id else None,
         "brand": brand,
         "order_type": _order_type_marketing(h),
         "no_po": (h.po_customer_ref or "").strip() or "—",
@@ -470,6 +490,7 @@ def _line_to_row(
         "stock_wh_qty": _dec_str(ln.stock_wh_qty),
         "balance_qty": _dec_str(balance),
         "system_reference": system_no,
+        "lot_no": (ln.thi_line_ref or "").strip() or "",
         "detail_remark": (ln.detail_remark or "").strip() or "",
         "remark_system": _remark_system_text(ln, delivered, balance),
         "remark_marketing": (ln.marketing_outstanding_remark or "").strip() or "",
@@ -496,6 +517,7 @@ def _query_outstanding_rows(
     shipment_status: ShipmentStatusFilter = ShipmentStatusFilter.all,
     material_status: Optional[MaterialStatusFilter] = None,
     factory_code: Optional[str] = None,
+    customer_ids: Optional[list[int]] = None,
     po_category: Optional[str] = None,
     material_group: Optional[str] = None,
     order_date_from: Optional[date] = None,
@@ -530,7 +552,8 @@ def _query_outstanding_rows(
         delivered_by_po_detail = _delivered_qty_by_po_detail(db)
 
     po_needle = (po_q or "").strip().lower()
-    factory_needle = (factory_code or "").strip().lower()
+    factory_needles = [x.lower() for x in _csv_tokens(factory_code)]
+    customer_id_set = {int(x) for x in (customer_ids or []) if x is not None}
     cat_needle = (po_category or "").strip().lower()
     pending: list[tuple[PoHeader, PoDetail, Decimal, Decimal]] = []
 
@@ -551,9 +574,12 @@ def _query_outstanding_rows(
         if ms != MaterialStatusFilter.cancelled and (h.status or "").strip().lower() in {"cancelled", "canceled"}:
             # default: cancel tidak ikut outstanding kecuali diminta
             continue
-        if factory_needle:
-            if factory_needle not in ((h.factory_code or "").strip().lower()):
+        if factory_needles:
+            fc = (h.factory_code or "").strip().lower()
+            if not any(n in fc for n in factory_needles):
                 continue
+        if customer_id_set and (h.customer_id is None or int(h.customer_id) not in customer_id_set):
+            continue
         if cat_needle:
             stored_cat = (h.po_category or "").strip().lower()
             if cat_needle == "production":
@@ -621,6 +647,8 @@ _OUTSTANDING_CORE_COLUMNS: list[tuple[str, str]] = [
     ("color", "COLOR"),
     ("softness", "SOFTNESS"),
     ("qty_sf", "QTY (S/F)"),
+    ("mrp_qty_processed", "QTY RENCANA (MRP)"),
+    ("mrp_qty_wip", "QTY WIP (MRP)"),
     ("unit_price", "PRICE"),
     ("color_reference", "COLOR S/W"),
     ("color_standard", "COLOR STD"),
@@ -928,9 +956,17 @@ def _delivery_detail_to_row(
         lot_no = (pod.thi_line_ref or "").strip()
 
     sj_raw = (dh.delivery_number or "").strip()
-    surat_jalan_no = surat_jalan_display_number(sj_raw, ph) if sj_raw else "—"
+    surat_jalan_no = (
+        surat_jalan_display_number(sj_raw, ph, doc_date=dh.delivery_date) if sj_raw else "—"
+    )
     inv_raw = (inv.invoice_number or "").strip() if inv else ""
-    invoice_number = invoice_display_number(inv_raw, ph) if inv_raw else ""
+    invoice_number = (
+        invoice_display_number(
+            inv_raw, ph, doc_date=inv.invoice_date if inv else dh.delivery_date
+        )
+        if inv_raw
+        else ""
+    )
 
     gw: Decimal | None = None
     nw: Decimal | None = None
@@ -979,6 +1015,7 @@ def _delivery_detail_to_row(
         "delivery_id": dh.id,
         "delivery_detail_id": dd.id,
         "delivery_status": dh.status or "",
+        "returned_qty": _dec_str(dd.returned_qty) if dd.returned_qty is not None else "",
         "packing_id": dh.packing_id,
         "packing_status": (pkh.status or "").strip() if pkh else "",
         "invpl_printed": bool(pkh and pkh.invpl_printed_at is not None),
@@ -1165,7 +1202,8 @@ def marketing_outstanding_lines(
         default=None,
         description="Override shipment_status: all | sent | not_sent | cancelled",
     ),
-    factory_code: Optional[str] = Query(None, description="Filter factory code (substring, case-insensitive)"),
+    factory_code: Optional[str] = Query(None, description="Filter factory code (CSV, substring, case-insensitive)"),
+    customer_ids: Optional[str] = Query(None, description="CSV customer_id"),
     po_category: Optional[str] = Query(None, description="Filter kategori PO: production/sample/claim/return/subcont/suede"),
     material_group: Optional[str] = Query(None, description="Filter jenis material: pu | suede"),
     mkt_stage_min: Optional[str] = Query(None, description="Minimal tahap MKT, mis. in_outstanding"),
@@ -1184,6 +1222,7 @@ def marketing_outstanding_lines(
         shipment_status=shipment_status,
         material_status=material_status,
         factory_code=factory_code,
+        customer_ids=customer_ids,
         po_category=po_category,
         material_group=material_group,
         mkt_stage_min=mkt_stage_min,
@@ -1208,6 +1247,7 @@ def marketing_outstanding_lines_csv(
     shipment_status: ShipmentStatusFilter = Query(default=ShipmentStatusFilter.all),
     material_status: Optional[MaterialStatusFilter] = Query(default=None),
     factory_code: Optional[str] = Query(None),
+    customer_ids: Optional[str] = Query(None),
     po_category: Optional[str] = Query(None),
     material_group: Optional[str] = Query(None),
     mkt_stage_min: Optional[str] = Query(None),
@@ -1224,6 +1264,7 @@ def marketing_outstanding_lines_csv(
         shipment_status=shipment_status,
         material_status=material_status,
         factory_code=factory_code,
+        customer_ids=customer_ids,
         po_category=po_category,
         material_group=material_group,
         mkt_stage_min=mkt_stage_min,
@@ -1256,6 +1297,7 @@ def marketing_outstanding_lines_xlsx(
     shipment_status: ShipmentStatusFilter = Query(default=ShipmentStatusFilter.all),
     material_status: Optional[MaterialStatusFilter] = Query(default=None),
     factory_code: Optional[str] = Query(None),
+    customer_ids: Optional[str] = Query(None),
     po_category: Optional[str] = Query(None),
     material_group: Optional[str] = Query(None),
     mkt_stage_min: Optional[str] = Query(None),
@@ -1272,6 +1314,7 @@ def marketing_outstanding_lines_xlsx(
         shipment_status=shipment_status,
         material_status=material_status,
         factory_code=factory_code,
+        customer_ids=customer_ids,
         po_category=po_category,
         material_group=material_group,
         mkt_stage_min=mkt_stage_min,
@@ -1428,6 +1471,7 @@ def marketing_delivery_lines_csv(
     delivery_date_from: Optional[str] = Query(None),
     delivery_date_to: Optional[str] = Query(None),
     factory_code: Optional[str] = Query(None),
+    customer_ids: Optional[str] = Query(None),
     po_category: Optional[str] = Query(None),
     customer: Optional[str] = Query(None),
     _user=Depends(get_current_user),
@@ -1478,6 +1522,7 @@ def marketing_delivery_lines_xlsx(
     delivery_date_from: Optional[str] = Query(None),
     delivery_date_to: Optional[str] = Query(None),
     factory_code: Optional[str] = Query(None),
+    customer_ids: Optional[str] = Query(None),
     po_category: Optional[str] = Query(None),
     customer: Optional[str] = Query(None),
     _user=Depends(get_current_user),
@@ -1535,7 +1580,7 @@ def _query_delivery_planning_slots(
     *,
     as_of: Optional[date] = None,
 ) -> list[dict[str, Any]]:
-    fc = (factory_code or "").strip().lower()
+    fc_needles = [x.lower() for x in _csv_tokens(factory_code)]
     min_stage = _normalize_mkt_stage_min(mkt_stage_min)
     stmt = (
         select(PoDetailDelivery, PoDetail, PoHeader)
@@ -1561,8 +1606,10 @@ def _query_delivery_planning_slots(
             continue
         if pdd.qty is not None and pdd.qty <= 0:
             continue
-        if fc and fc not in ((ph.factory_code or "").strip().lower()):
-            continue
+        if fc_needles:
+            code = (ph.factory_code or "").strip().lower()
+            if not any(n in code for n in fc_needles):
+                continue
         if not _po_q_matches(ph, po_q):
             continue
         stage = normalize_mkt_stage(getattr(ph, "mkt_workflow_stage", None))
@@ -1582,6 +1629,7 @@ def _query_delivery_planning_slots(
                 "po_number": (ph.po_number or "").strip(),
                 "po_customer_ref": (ph.po_customer_ref or "").strip(),
                 "customer_name": (ph.customer_name_snapshot or ph.customer_code or "").strip(),
+                "customer_id": int(ph.customer_id) if ph.customer_id else None,
                 "brand": (ph.brand_name_snapshot or ph.buyer or "").strip(),
                 "factory_code": (ph.factory_code or "").strip(),
                 "material_name": (pod.material_name or "").strip(),
@@ -1602,6 +1650,7 @@ def _query_delivery_planning_slots(
                 ),
             }
         )
+    enrich_outstanding_mrp_alloc(out)
     return out
 
 
@@ -1684,6 +1733,7 @@ def create_marketing_outstanding_snapshot(
         shipment_status=_parse_shipment_status(f.shipment_status),
         material_status=_parse_material_status_optional(f.material_status),
         factory_code=f.factory_code,
+        customer_ids=f.customer_ids,
         po_category=f.po_category,
         material_group=f.material_group,
         mkt_stage_min=f.mkt_stage_min,

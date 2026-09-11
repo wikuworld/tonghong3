@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Panduan Alur Order Penjualan — Marketing sampai Invoice</title>
+  <style>
+    :root {
+      --ink: #1a1a1a;
+      --muted: #555;
+      --line: #ccc;
+      --head: #0f3d5c;
+      --soft: #f4f7fa;
+      --ok: #1b5e20;
+      --ok-bg: #e8f5e9;
+      --warn-bg: #fff8e1;
+      --warn: #f57f17;
+      --bad: #b71c1c;
+      --bad-bg: #ffebee;
+      --step: #1565c0;
+    }
+
+    * { box-sizing: border-box; }
+
+    @page {
+      size: A4;
+      margin: 14mm 14mm 16mm 14mm;
+    }
+
+    body {
+      margin: 0 auto;
+      max-width: 210mm;
+      padding: 14mm;
+      color: var(--ink);
+      font: 10.5pt/1.45 "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: #e8e8e8;
+    }
+
+    .sheet {
+      background: #fff;
+      padding: 0;
+    }
+
+    h1 {
+      margin: 0 0 4px;
+      font-size: 16pt;
+      color: var(--head);
+    }
+
+    .subtitle {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 10pt;
+    }
+
+    h2 {
+      margin: 18px 0 8px;
+      font-size: 12pt;
+      color: var(--head);
+      border-bottom: 1.5px solid var(--head);
+      padding-bottom: 3px;
+      page-break-after: avoid;
+    }
+
+    h3 {
+      margin: 12px 0 6px;
+      font-size: 10.5pt;
+      page-break-after: avoid;
+    }
+
+    p, li { margin: 0 0 6px; }
+    ul, ol { margin: 0 0 8px; padding-left: 1.25em; }
+
+    .meta {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px 16px;
+      margin: 10px 0 14px;
+      padding: 8px 10px;
+      background: var(--soft);
+      border: 1px solid var(--line);
+      font-size: 9.5pt;
+    }
+
+    .meta dt { font-weight: 600; color: var(--muted); }
+    .meta dd { margin: 0 0 4px; }
+
+    .callout {
+      margin: 10px 0;
+      padding: 10px 12px;
+      border-left: 4px solid var(--step);
+      background: #e3f2fd;
+      font-size: 9.5pt;
+    }
+
+    .callout.warn {
+      border-left-color: var(--warn);
+      background: var(--warn-bg);
+    }
+
+    .callout.ok {
+      border-left-color: var(--ok);
+      background: var(--ok-bg);
+    }
+
+    .flow {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      margin: 10px 0 14px;
+    }
+
+    .flow-step {
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      min-width: 110px;
+      max-width: 140px;
+      font-size: 8.5pt;
+    }
+
+    .flow-step strong {
+      display: block;
+      color: var(--head);
+      font-size: 9pt;
+      margin-bottom: 2px;
+    }
+
+    .flow-step .who {
+      color: var(--muted);
+      font-size: 8pt;
+    }
+
+    .flow-arrow {
+      color: var(--muted);
+      font-weight: 700;
+      font-size: 14pt;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9.5pt;
+      margin: 8px 0 12px;
+    }
+
+    th, td {
+      border: 1px solid var(--line);
+      padding: 7px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--soft);
+      color: var(--head);
+    }
+
+    .scenario {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      margin: 10px 0;
+      overflow: hidden;
+      page-break-inside: avoid;
+    }
+
+    .scenario__head {
+      background: var(--soft);
+      padding: 8px 10px;
+      font-weight: 600;
+      color: var(--head);
+    }
+
+    .scenario__body {
+      padding: 10px 12px;
+      font-size: 9.5pt;
+    }
+
+    .check {
+      margin-top: 8px;
+      color: var(--muted);
+    }
+
+    .box {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 1px solid #64748b;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 3px;
+      font-size: 8.5pt;
+      font-weight: 600;
+    }
+
+    .badge-ok { background: var(--ok-bg); color: var(--ok); }
+    .badge-role { background: #eef2f6; color: #37474f; }
+
+    .doc-card {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 10px 0;
+    }
+
+    .doc-card div {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      background: #fafafa;
+      font-size: 9pt;
+    }
+
+    .doc-card strong {
+      display: block;
+      color: var(--head);
+      margin-bottom: 2px;
+    }
+
+    .footer {
+      margin-top: 24px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+      font-size: 8.5pt;
+      color: var(--muted);
+    }
+
+    @media print {
+      body { background: #fff; padding: 0; max-width: none; }
+      .sheet { box-shadow: none; }
+    }
+
+    @media (max-width: 700px) {
+      .meta, .doc-card { grid-template-columns: 1fr; }
+      .flow-arrow { display: none; }
+      .flow-step { max-width: none; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <h1>Panduan Alur Order Penjualan</h1>
+    <p class="subtitle">
+      Dari input order Marketing sampai invoice — bahasa sederhana untuk tim operasional.
+      Tidak perlu paham teknis / kode.
+    </p>
+
+    <dl class="meta">
+      <dt>Modul</dt><dd>Order Penjualan (SO) · Alur Marketing</dd>
+      <dt>Contoh uji terakhir</dt><dd>5 Sep 2026 · Customer SL043 · Nike · Item FG01854</dd>
+      <dt>Status uji otomatis</dt><dd><span class="badge badge-ok">SEMUA LULUS</span></dd>
+      <dt>Dokumen contoh</dt><dd>SO <strong>THIPM26090512</strong> sampai Invoice <strong>INV-202609-00002</strong></dd>
+    </dl>
+
+    <div class="callout">
+      <strong>Intinya:</strong> konfirmasi SO langsung ke Outstanding. Produksi, QC, dan packing
+      dijalankan di <strong>MRP</strong>. Surat Jalan hanya dari Outstanding (bisa gabung beberapa SO).
+      Gudang FG OUT tidak membuat SJ.
+    </div>
+
+    <h2>1. Alur singkat (gambaran besar)</h2>
+    <div class="flow">
+      <div class="flow-step">
+        <strong>1. Input SO</strong>
+        Buat &amp; konfirmasi order
+        <span class="who">Marketing / Sales</span>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step">
+        <strong>2. Outstanding</strong>
+        SO siap direncanakan / dikirim
+        <span class="who">Marketing</span>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step">
+        <strong>3. MRP</strong>
+        Rencana → proses → packing → FG in stock
+        <span class="who">Production</span>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step">
+        <strong>4. Kirim</strong>
+        Susun kirim dari Outstanding
+        <span class="who">Marketing · Warehouse</span>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-step">
+        <strong>5. Invoice</strong>
+        Tagih pelanggan
+        <span class="who">Finance</span>
+      </div>
+    </div>
+
+    <div class="callout warn">
+      <strong>Aturan penting:</strong> packing hanya boleh dari barang yang <em>QC OK</em>.
+      Kalau QC hasilnya NG (tidak lulus), packing harus ditolak. Invoice hanya dibuat
+      setelah delivery sudah dikirim (status sent).
+    </div>
+
+    <h2>2. Siapa mengerjakan apa</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Bagian kerja</th>
+          <th>Role di sistem</th>
+          <th>Yang dilakukan</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Buat / revisi order, harga, warna</td>
+          <td><span class="badge badge-role">Marketing</span> (Sales boleh buat SO)</td>
+          <td>Input SO, konfirmasi (langsung Outstanding), pantau outstanding</td>
+        </tr>
+        <tr>
+          <td>Rekap / PPIC (opsional)</td>
+          <td><span class="badge badge-role">PPIC</span></td>
+          <td>Cetak RKPO dan assignment bukan gerbang kirim</td>
+        </tr>
+        <tr>
+          <td>Proses di pabrik</td>
+          <td><span class="badge badge-role">Production</span></td>
+          <td>Rencana, palet, proses, lab, checkpoint, packing MRP</td>
+        </tr>
+        <tr>
+          <td>QC lantai</td>
+          <td><span class="badge badge-role">Production</span></td>
+          <td>Checkpoint QC OK di MRP sebelum packing finish</td>
+        </tr>
+        <tr>
+          <td>Kemas &amp; kirim</td>
+          <td><span class="badge badge-role">Marketing</span> / Warehouse</td>
+          <td>Susun kirim dari Outstanding; cetak SJ / INVPL; mark sent</td>
+        </tr>
+        <tr>
+          <td>Penagihan</td>
+          <td><span class="badge badge-role">Finance</span></td>
+          <td>Buat invoice dari delivery yang sudah dikirim</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>3. Langkah kerja (urutan benar)</h2>
+
+    <div class="scenario">
+      <div class="scenario__head">Langkah A — Marketing membuat order</div>
+      <div class="scenario__body">
+        <ol>
+          <li>Buka <strong>Order Penjualan</strong>, buat SO baru (customer, brand, item, warna, qty).</li>
+          <li>Pastikan warna / color swatch terisi jika memakai resep warna pabrik.</li>
+          <li>Sistem membuat nomor lot otomatis (contoh: <code>PUMSL043…</code>).</li>
+          <li>Klik <strong>Confirm</strong> agar order resmi (bukan draft).</li>
+        </ol>
+        <p><strong>Hasil yang diharapkan:</strong> SO berstatus confirmed dan tahap Marketing <strong>Outstanding</strong>.</p>
+        <div class="check"><span class="box"></span> Sudah dicoba · Lulus / Perlu dicek</div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario__head">Langkah B — Rekap &amp; PPIC (opsional, bukan gerbang)</div>
+      <div class="scenario__body">
+        <ol>
+          <li>Cetak / konfirmasi <strong>rekap PO harian</strong> bila perlu dokumentasi.</li>
+          <li>PPIC boleh meng-<em>assign</em> order; ini tidak menahan kirim.</li>
+        </ol>
+        <p><strong>Hasil yang diharapkan:</strong> tahap tetap Outstanding setelah confirm; RKPO tidak wajib untuk susun kirim.</p>
+        <div class="check"><span class="box"></span> Sudah dicoba · Lulus / Perlu dicek</div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario__head">Langkah C — MRP packing lalu kirim dari Outstanding</div>
+      <div class="scenario__body">
+        <ol>
+          <li>Production menjalankan MRP: rencana, palet, proses, lab, checkpoint QC OK, packing finish.</li>
+          <li>Finish packing memasukkan lot ke Gudang FG <strong>in stock</strong> (bukan Surat Jalan).</li>
+          <li>Marketing di Outstanding → Susun kirim. Beberapa SO pelanggan yang sama boleh satu SJ.</li>
+          <li>Warehouse mark <strong>sent</strong>, cetak SJ dan INVPL bila perlu.</li>
+        </ol>
+        <p><strong>Hasil yang diharapkan:</strong> SJ punya nomor; stok FG jadi OUT; Gudang FG tidak punya tombol kirim mandiri.</p>
+        <div class="check"><span class="box"></span> Sudah dicoba · Lulus / Perlu dicek</div>
+      </div>
+    </div>
+
+    <div class="scenario">
+      <div class="scenario__head">Langkah D — Finance membuat invoice</div>
+      <div class="scenario__body">
+        <ol>
+          <li>Pastikan delivery sudah <strong>sent</strong>.</li>
+          <li>Finance buat invoice yang terhubung ke delivery / SO tersebut.</li>
+        </ol>
+        <p><strong>Hasil yang diharapkan:</strong> invoice punya nomor; tahap Marketing menjadi <strong>Invoice penagihan</strong> (selesai).</p>
+        <div class="check"><span class="box"></span> Sudah dicoba · Lulus / Perlu dicek</div>
+      </div>
+    </div>
+
+    <h2>4. Contoh dokumen hasil uji (5 Sep 2026)</h2>
+    <p>Satu order “jalan bahagia” (happy path) menghasilkan nomor berikut:</p>
+    <div class="doc-card">
+      <div><strong>Order Penjualan (SO)</strong>THIPM26090512</div>
+      <div><strong>Lot</strong>PUMSL043260905021</div>
+      <div><strong>Produksi</strong>PRD-202609-00005</div>
+      <div><strong>QC</strong>QC-202609-00003</div>
+      <div><strong>Packing</strong>PACK-202609-00005</div>
+      <div><strong>Delivery</strong>DEL-202609-00002</div>
+      <div><strong>Invoice</strong>INV-202609-00002</div>
+      <div><strong>Tahap akhir Marketing</strong>Invoice penagihan</div>
+    </div>
+    <div class="callout ok">
+      Semua langkah uji otomatis untuk paket SL043 · Nike · FG01854 · warna PINKSICLE 6FS
+      dinyatakan <strong>LULUS</strong>.
+    </div>
+
+    <h2>5. Kasus khusus yang juga diuji</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Kasus</th>
+          <th>Artinya untuk user</th>
+          <th>Hasil uji</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Warna standar CSI</td>
+          <td>Order boleh memakai color standard CSI (bukan swatch pabrik).</td>
+          <td><span class="badge badge-ok">Lulus</span> · SO THIPM26090513</td>
+        </tr>
+        <tr>
+          <td>Waiting C/S</td>
+          <td>Order menunggu color standard / color swatch.</td>
+          <td><span class="badge badge-ok">Lulus</span> · SO THIPM26090514</td>
+        </tr>
+        <tr>
+          <td>Shopfloor ERP ditolak</td>
+          <td>POST Production/QC/Packing ERP ditolak (403). Produksi hanya di MRP.</td>
+          <td><span class="badge badge-ok">Lulus</span> · 403</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>6. Checklist cepat sebelum bilang “selesai”</h2>
+    <ul>
+      <li>SO sudah <strong>confirmed</strong> dan tahap Outstanding.</li>
+      <li>Packing MRP finish; FG in stock.</li>
+      <li>SJ dibuat dari Outstanding (punya nomor), lalu sent.</li>
+      <li>Invoice sudah dibuat; nomor muncul di RAR (bukti invoice baru).</li>
+      <li>Pending Payment hanya laporan tunggakan master — bukan daftar invoice baru.</li>
+      <li>Di Alur Marketing, tahap order sudah <strong>Invoice penagihan</strong>.</li>
+    </ul>
+
+    <h2>7. Menu yang dipakai</h2>
+    <table>
+      <thead>
+        <tr><th>Keperluan</th><th>Menu di aplikasi</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Buat / edit order</td><td>Order Penjualan (<code>/admin/po</code>)</td></tr>
+        <tr><td>Pantau tahap Marketing</td><td>Alur Marketing → Daftar SO</td></tr>
+        <tr><td>Outstanding / jadwal kirim</td><td>Alur Marketing → Outstanding / Planning</td></tr>
+        <tr><td>Produksi / packing</td><td>Menu MRP (rencana, proses, packing, gudang FG)</td></tr>
+        <tr><td>Kirim / SJ</td><td>Alur Marketing → Outstanding → Susun kirim; Delivery untuk sent / cetak</td></tr>
+        <tr><td>Invoice / RAR</td><td>Invoice · Laporan piutang</td></tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <strong>Tips untuk user awam:</strong> kalau stuck di tengah jalan, tanya:
+      “Order ini sekarang di tahap apa?” — lihat di Alur Marketing.
+      Jangan loncat ke invoice kalau delivery belum dikirim.
+    </div>
+
+    <p class="footer">
+      Tonghong ERP · Panduan alur Marketing → Invoice · Versi uji 5 September 2026 ·
+      Ringkasan teknis tersimpan di <code>dokumentasi/uat-so-sl043-hasil.md</code>
+    </p>
+  </div>
+</body>
+</html>

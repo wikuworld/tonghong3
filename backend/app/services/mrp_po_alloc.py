@@ -30,6 +30,8 @@ def unsynced_mrp_alloc() -> dict[str, str]:
         "mrp_alloc_status": MRP_UNSYNCED,
         "mrp_qty_processed": "",
         "mrp_qty_remaining": "",
+        "mrp_qty_ship_remaining": "",
+        "mrp_qty_wip": "",
     }
 
 
@@ -45,6 +47,16 @@ def parse_mrp_alloc_row(item: dict[str, Any] | None) -> dict[str, str]:
     except (TypeError, ValueError):
         qty_processed = 0.0
     remaining = max(0.0, qty_order - qty_processed)
+    ship = ""
+    try:
+        if item.get("qty_balance_erp") is not None:
+            ship = _qty_str(max(0.0, float(item.get("qty_balance_erp") or 0)))
+    except (TypeError, ValueError):
+        ship = ""
+    try:
+        qty_wip = max(0.0, float(item.get("qty_wip") or 0))
+    except (TypeError, ValueError):
+        qty_wip = 0.0
     status = str(item.get("status") or "").strip().lower()
     if status not in _ALLOC_STATUSES:
         status = MRP_UNSYNCED
@@ -52,6 +64,8 @@ def parse_mrp_alloc_row(item: dict[str, Any] | None) -> dict[str, str]:
         "mrp_alloc_status": status,
         "mrp_qty_processed": _qty_str(qty_processed) if status != MRP_UNSYNCED else "",
         "mrp_qty_remaining": _qty_str(remaining) if status != MRP_UNSYNCED else "",
+        "mrp_qty_ship_remaining": ship if status != MRP_UNSYNCED else "",
+        "mrp_qty_wip": _qty_str(qty_wip) if status != MRP_UNSYNCED else "",
     }
 
 

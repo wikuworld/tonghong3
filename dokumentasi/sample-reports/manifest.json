@@ -1,0 +1,93 @@
+[
+  {
+    "type": "rar",
+    "file": "RAR_2026_full.xlsx",
+    "params": {
+      "year": 2026,
+      "payment_status": "all"
+    },
+    "count": 5347,
+    "amount_faktur_usd": 19777894.12,
+    "not_yet_count": 1496
+  },
+  {
+    "type": "rar",
+    "file": "RAR_2026_unpaid.xlsx",
+    "params": {
+      "year": 2026,
+      "payment_status": "unpaid"
+    },
+    "count": 1496,
+    "amount_faktur_usd": 6008511.05,
+    "not_yet_count": 1496
+  },
+  {
+    "type": "rar",
+    "file": "RAR_2026_paid.xlsx",
+    "params": {
+      "year": 2026,
+      "payment_status": "paid"
+    },
+    "count": 3851,
+    "amount_faktur_usd": 13769383.07,
+    "not_yet_count": 0
+  },
+  {
+    "type": "rar",
+    "file": "RAR_2026_Q1.xlsx",
+    "params": {
+      "year": 2026,
+      "date_from": "2026-01-01",
+      "date_to": "2026-03-31",
+      "payment_status": "all"
+    },
+    "count": 2151,
+    "amount_faktur_usd": 7889076.42,
+    "not_yet_count": 12
+  },
+  {
+    "type": "rar",
+    "file": "RAR_2026_Q2_unpaid.xlsx",
+    "params": {
+      "year": 2026,
+      "date_from": "2026-04-01",
+      "date_to": "2026-06-30",
+      "payment_status": "unpaid"
+    },
+    "count": 404,
+    "amount_faktur_usd": 1565645.29,
+    "not_yet_count": 404
+  },
+  {
+    "type": "pending_payment",
+    "file": "PP_20260807.xlsx",
+    "as_of": "2026-08-07",
+    "overdue_customers": 16,
+    "overdue_invoices": 279,
+    "amount_usd_total": 347007.06
+  },
+  {
+    "type": "pending_payment",
+    "file": "PP_20260814.xlsx",
+    "as_of": "2026-08-14",
+    "overdue_customers": 18,
+    "overdue_invoices": 393,
+    "amount_usd_total": 422143.97
+  },
+  {
+    "type": "pending_payment",
+    "file": "PP_20260818.xlsx",
+    "as_of": "2026-08-18",
+    "overdue_customers": 18,
+    "overdue_invoices": 456,
+    "amount_usd_total": 506254.38
+  },
+  {
+    "type": "pending_payment",
+    "file": "PP_20260828.xlsx",
+    "as_of": "2026-08-28",
+    "overdue_customers": 21,
+    "overdue_invoices": 716,
+    "amount_usd_total": 770251.47
+  }
+]

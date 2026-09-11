@@ -174,6 +174,7 @@ _INVOICE_OUT_FIELDS = (
     "received_date",
     "nopen",
     "nomor_aju",
+    "bc_date",
     "payment_date",
     "payment_bank_account",
     "payment_proof_url",

@@ -19,6 +19,7 @@ from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
 from app.services.notifications import create_notification_for_roles
 from app.services.numbering import next_number
+from app.services.erp_book import reject_erp_shopfloor_write
 
 router = APIRouter(tags=["qc"])
 
@@ -37,6 +38,7 @@ def create_qc_header(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "qc")),
 ) -> QcHeader:
+    reject_erp_shopfloor_write()
     if body.production_id:
         pr = db.get(ProductionOrder, body.production_id)
         if not pr:
@@ -103,6 +105,7 @@ def add_qc_detail(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "qc")),
 ) -> QcDetail:
+    reject_erp_shopfloor_write()
     hdr = db.get(QcHeader, qc_id)
     if not hdr:
         raise HTTPException(status_code=404, detail="QC header tidak ditemukan")
@@ -156,6 +159,7 @@ def update_qc_detail(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "qc")),
 ) -> QcDetail:
+    reject_erp_shopfloor_write()
     row = db.get(QcDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail QC tidak ditemukan")

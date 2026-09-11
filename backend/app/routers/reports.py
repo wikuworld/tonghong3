@@ -18,6 +18,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.db import get_db
+from app.timeutil import app_now
 from app.models import AuditLog, PoDetail, PoHeader, User
 from app.routers.auth import get_current_user, require_roles
 from app.services.accounts_receivable_report import build_rar_payload, render_rar_xlsx
@@ -585,8 +586,8 @@ def export_accounts_receivable_xlsx(
         offset=0,
     )
     body = render_rar_xlsx(payload)
-    yr = payload.get("year") or datetime.utcnow().year
-    fn = f"RAR_{yr}_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.xlsx"
+    yr = payload.get("year") or app_now().year
+    fn = f"RAR_{yr}_{app_now().strftime('%Y%m%d_%H%M')}.xlsx"
     return Response(
         content=body,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -617,7 +618,7 @@ def export_pending_payment_xlsx(
     _ = _user
     payload = build_pending_payment_payload(db, as_of=as_of, year=year)
     body = render_pending_payment_xlsx(payload)
-    d = payload.get("as_of") or datetime.utcnow().date().isoformat()
+    d = payload.get("as_of") or app_now().date().isoformat()
     fn = f"PendingPayment_{d.replace('-', '')}.xlsx"
     return Response(
         content=body,
@@ -793,7 +794,7 @@ def export_po_daily_marketing_csv(
     for row in payload.get("subcont_orders") or []:
         w.writerow(_row_to_csv_tuple("SUBKON", row))
 
-    fn = f"laporan_po_harian_marketing_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.csv"
+    fn = f"laporan_po_harian_marketing_{app_now().strftime('%Y%m%d_%H%M')}.csv"
     body = "\ufeff" + buf.getvalue()
     return Response(
         content=body,
@@ -820,7 +821,7 @@ def export_po_daily_marketing_xlsx(
 
     ws["A1"] = payload.get("report_title") or "LAPORAN PO HARIAN MARKETING"
     ws["A1"].font = Font(bold=True, size=14)
-    ws["A2"] = f"Generated at: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+    ws["A2"] = f"Generated at: {app_now().strftime('%Y-%m-%d %H:%M WIB')}"
 
     row_idx = 4
     row_idx = _append_marketing_section_xlsx(ws, row_idx, "REVISE THICKNESS", payload.get("revise_thickness") or [])
@@ -836,7 +837,7 @@ def export_po_daily_marketing_xlsx(
     out = io.BytesIO()
     wb.save(out)
     out.seek(0)
-    fn = f"laporan_po_harian_marketing_{datetime.utcnow().strftime('%Y%m%d_%H%M')}.xlsx"
+    fn = f"laporan_po_harian_marketing_{app_now().strftime('%Y%m%d_%H%M')}.xlsx"
     return Response(
         content=out.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -912,7 +913,7 @@ def _payload_from_headers(headers: list[PoHeader], *, report_date: Optional[date
     return {
         "report_title": "REKAP PO / SO MARKETING",
         "report_date": d.isoformat() if d else None,
-        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "generated_at": app_now().isoformat(),
         "order_count": len(orders),
         "line_count": len(lines),
         "pending_print_count": len(pending_ids),
@@ -947,7 +948,7 @@ def confirm_po_daily_recap_print(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Stamp rekap_printed setelah MKT mengonfirmasi cetak dari dialog HTML."""
+    """Stamp rekap_printed setelah MKT mengonfirmasi cetak dari dialog HTML (arsip, bukan gerbang)."""
     if body.po_ids:
         headers = _headers_for_recap_by_ids(db, list(body.po_ids))
         d = body.report_date or date.today()
@@ -958,13 +959,13 @@ def confirm_po_daily_recap_print(
         headers = _headers_for_daily_recap(db, d)
     stamped = stamp_rekap_printed_for_recap(db, headers, actor=user.username)
     for h in headers:
-        # Setelah konfirmasi cetak: hanya naik sampai rekap_printed.
-        # Jangan loncat with_ppic/outstanding hanya karena assign PPIC lama.
+        # Setelah cetak: serah terima PPIC otomatis + lanjut sampai outstanding
+        # (tanpa tombol assign/selesai di Daftar SO).
         sync_mkt_workflow_auto_advance(
             db,
             h.id,
             actor=user.username,
-            stop_at_stage="rekap_printed",
+            stop_at_stage="in_outstanding",
         )
     db.commit()
     return {
@@ -1018,7 +1019,7 @@ def export_po_daily_recap_csv(
                 h.rekap_printed_at.isoformat() if h.rekap_printed_at else "",
             ]
         )
-    fn = f"rekap_po_{d.isoformat()}_{datetime.utcnow().strftime('%H%M')}.csv"
+    fn = f"rekap_po_{d.isoformat()}_{app_now().strftime('%H%M')}.csv"
     return Response(
         content=buf.getvalue(),
         media_type="text/csv; charset=utf-8",

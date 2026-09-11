@@ -21,6 +21,11 @@ from app.models import (
 )
 from app.services.audit import log_change, mark_po_item_revised, po_detail_audit_snapshot
 from app.services.lot_numbers import infer_material_group
+from app.services.po_line_guards import (
+    assert_po_detail_not_in_wip,
+    assert_po_detail_update_allowed,
+    attach_po_line_locks,
+)
 from app.services.so_numbering import next_so_number, peek_so_number
 from app.schemas import (
     DeliveryScheduleItem,
@@ -66,6 +71,76 @@ from app.services.lot_numbers import (
 from app.services.notifications import create_notification_for_roles
 from app.services.buyer_price_resolve import resolve_unit_price_for_buyer
 from app.routers.auth import get_current_user, require_roles
+
+
+def _clear_mrp_sync_failure_notifications(db: Session, entity_id: int | None) -> None:
+    """Hapus badge mrp_sync_error setelah sync sukses."""
+    if entity_id is None:
+        return
+    from app.models import Notification
+
+    db.query(Notification).filter(
+        Notification.category == "mrp",
+        Notification.entity_type == "sales_order",
+        Notification.title == "MRP sync gagal",
+        Notification.entity_id == int(entity_id),
+    ).delete(synchronize_session=False)
+
+
+def _attach_mrp_sync(po, result: dict) -> dict:
+    """Stamp transient mrp_sync onto PO header for response serialization."""
+    payload = {
+        "ok": bool(result.get("ok")),
+        "error": (str(result["error"])[:400] if result.get("error") else None),
+        "attempts": int(result.get("attempts") or 1),
+    }
+    if po is not None:
+        po.mrp_sync = payload
+        if payload["ok"]:
+            po.mrp_sync_error = None
+        elif payload["error"]:
+            po.mrp_sync_error = payload["error"]
+    return payload
+
+
+def _try_sync_po_to_mrp(db: Session, *, po=None, **kwargs) -> dict:
+    result = try_sync_po_details_to_mrp(db, **kwargs)
+    entity_id = kwargs.get("po_id")
+    if entity_id is None and po is not None:
+        entity_id = getattr(po, "id", None)
+    if result.get("ok"):
+        if po is not None:
+            po.mrp_sync_error = None
+        try:
+            _clear_mrp_sync_failure_notifications(db, entity_id)
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+        return result
+    err = str(result.get("error") or "upstream error")[:400]
+    if po is not None:
+        po.mrp_sync_error = err
+    try:
+        create_notification_for_roles(
+            db,
+            ("admin", "marketing", "ppic"),
+            title="MRP sync gagal",
+            message=err,
+            category="mrp",
+            entity_type="sales_order",
+            entity_id=entity_id,
+            route_path="/admin/po",
+        )
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    return result
 
 _PRICING_FIELD_KEYS = frozenset(
     {
@@ -117,7 +192,7 @@ def _po_list_filter_kwargs(
     *,
     mkt_workflow_stage: Optional[str] = None,
     q: Optional[str] = None,
-    customer_id: Optional[int] = None,
+    customer_id: Optional[int] | Optional[list[int]] = None,
     buyer: Optional[str] = None,
     status: Optional[str] = None,
     po_category: Optional[str] = None,
@@ -191,11 +266,14 @@ _PO_DETAIL_DUPLICATE_FIELDS = (
 
 
 def _detail_loaded(db: Session, detail_id: int) -> Optional[PoDetail]:
-    return db.scalars(
+    row = db.scalars(
         select(PoDetail)
         .options(selectinload(PoDetail.delivery_schedules))
         .where(PoDetail.id == detail_id)
     ).first()
+    if row is not None:
+        attach_po_line_locks(db, [row])
+    return row
 
 
 def _normalize_po_customer_ref(raw: Optional[str]) -> str:
@@ -421,7 +499,7 @@ def check_po_customer_ref(
 def list_po(
     mkt_workflow_stage: Optional[str] = Query(None),
     q: Optional[str] = Query(None, description="Search PO no/customer/buyer"),
-    customer_id: Optional[int] = Query(None),
+    customer_id: Optional[list[int]] = Query(None),
     buyer: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     po_category: Optional[str] = Query(None),
@@ -453,7 +531,7 @@ def list_po(
 def list_po_page(
     mkt_workflow_stage: Optional[str] = Query(None),
     q: Optional[str] = Query(None, description="Search PO no/customer/buyer"),
-    customer_id: Optional[int] = Query(None),
+    customer_id: Optional[list[int]] = Query(None),
     buyer: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     po_category: Optional[str] = Query(None),
@@ -665,7 +743,7 @@ def create_po(
         )
         db.commit()
         db.refresh(row)
-        try_sync_po_details_to_mrp(db, po_id=row.id)
+        _try_sync_po_to_mrp(db, po=row, po_id=row.id)
         return row
     except HTTPException:
         db.rollback()
@@ -813,7 +891,7 @@ def duplicate_po(
         )
         db.commit()
         db.refresh(new_po)
-        try_sync_po_details_to_mrp(db, po_id=new_po.id)
+        _try_sync_po_to_mrp(db, po=new_po, po_id=new_po.id)
     except HTTPException:
         db.rollback()
         raise
@@ -864,13 +942,16 @@ def list_po_details(
 ) -> list[PoDetail]:
     if not db.get(PoHeader, po_id):
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
-    rows = db.scalars(
-        select(PoDetail)
-        .options(selectinload(PoDetail.delivery_schedules))
-        .where(PoDetail.po_id == po_id)
-        .order_by(PoDetail.id.asc())
-    ).all()
-    return list(rows)
+    rows = list(
+        db.scalars(
+            select(PoDetail)
+            .options(selectinload(PoDetail.delivery_schedules))
+            .where(PoDetail.po_id == po_id)
+            .order_by(PoDetail.id.asc())
+        ).all()
+    )
+    attach_po_line_locks(db, rows)
+    return rows
 
 
 @router.get("/po/{po_id}/audit-logs")
@@ -948,6 +1029,11 @@ def update_po(
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
     before = {"status": row.status, "mkt_workflow_stage": row.mkt_workflow_stage}
     data = body.model_dump(exclude_unset=True)
+    prev_status = (before.get("status") or "").strip().lower()
+    new_status = (
+        str(data["status"]).strip().lower() if "status" in data else prev_status
+    )
+    becoming_confirmed = new_status == "confirmed" and prev_status != "confirmed"
     if "order_date" in data:
         new_od = data["order_date"]
         old_od = row.order_date
@@ -981,9 +1067,13 @@ def update_po(
     for k, v in data.items():
         setattr(row, k, v)
     if "status" in data and data["status"] != before["status"]:
+        # Confirm → Outstanding mengirim notifikasi khusus ke semua PPIC (bukan dobel status).
+        status_roles = ("admin", "marketing", "production")
+        if str(data["status"]).strip().lower() != "confirmed":
+            status_roles = ("admin", "marketing", "ppic", "production")
         create_notification_for_roles(
             db,
-            ("admin", "marketing", "ppic", "production"),
+            status_roles,
             title=f"Status PO {row.po_number or row.id}: {data['status']}",
             message=f"Diubah oleh {user.username}",
             category="po_status",
@@ -1004,7 +1094,9 @@ def update_po(
     sync_mkt_workflow_auto_advance(db, po_id, actor=user.username)
     db.commit()
     db.refresh(row)
-    try_sync_po_details_to_mrp(db, po_id=po_id)
+    sync_result = _try_sync_po_to_mrp(db, po=row, po_id=po_id)
+    if becoming_confirmed or (row.status or "").strip().lower() == "confirmed":
+        _attach_mrp_sync(row, sync_result)
     return row
 
 
@@ -1132,7 +1224,7 @@ def marketing_revise_po(
         log.exception("marketing_revise_po failed po_id=%s", po_id)
         raise HTTPException(status_code=500, detail="Simpan revisi marketing gagal (database).") from e
     db.refresh(row)
-    try_sync_po_details_to_mrp(db, po_id=po_id)
+    _try_sync_po_to_mrp(db, po_id=po_id)
     return row
 
 
@@ -1162,7 +1254,7 @@ def delete_po(
     db.delete(row)
     db.commit()
     if detail_ids:
-        try_sync_po_details_to_mrp(db, cancelled_detail_ids=[int(x) for x in detail_ids])
+        _try_sync_po_to_mrp(db, po_id=po_id, cancelled_detail_ids=[int(x) for x in detail_ids])
     return StatusDeletedOut(status="deleted")
 
 
@@ -1225,7 +1317,7 @@ def add_po_detail(
         actor=user.username,
     )
     db.commit()
-    try_sync_po_details_to_mrp(db, detail_ids=[int(row.id)])
+    _try_sync_po_to_mrp(db, po_id=row.po_id, detail_ids=[int(row.id)])
     out = _detail_loaded(db, row.id)
     return out or row
 
@@ -1251,6 +1343,7 @@ def update_po_detail(
         )
 
     _apply_unit_price_on_update(db, po, row, data, user)
+    assert_po_detail_update_allowed(db, row, data)
 
     before = po_detail_audit_snapshot(row, include_schedules=True)
     for k, v in data.items():
@@ -1266,7 +1359,7 @@ def update_po_detail(
     )
     mark_po_item_revised(db, row.po_id, kind="update")
     db.commit()
-    try_sync_po_details_to_mrp(db, detail_ids=[int(detail_id)])
+    _try_sync_po_to_mrp(db, po_id=row.po_id, detail_ids=[int(detail_id)])
     out = _detail_loaded(db, detail_id)
     return out or row
 
@@ -1281,6 +1374,7 @@ def generate_lot_for_po_detail(
     row = db.get(PoDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail PO tidak ditemukan")
+    assert_po_detail_not_in_wip(db, detail_id, action="mengubah lot")
     try:
         before = po_detail_audit_snapshot(row, include_schedules=True)
         lot = generate_po_detail_lot_number(db, detail_id)
@@ -1341,16 +1435,7 @@ def delete_po_detail(
     row = db.get(PoDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail PO tidak ditemukan")
-    from app.models import ProductionDetail
-
-    in_prod = db.scalars(
-        select(ProductionDetail.id).where(ProductionDetail.po_detail_id == detail_id).limit(1)
-    ).first()
-    if in_prod is not None:
-        raise HTTPException(
-            status_code=400,
-            detail="Tidak dapat menghapus item yang sudah masuk produksi",
-        )
+    assert_po_detail_not_in_wip(db, detail_id, action="menghapus")
     log_change(
         db,
         entity_type="sales_order_line",
@@ -1363,7 +1448,7 @@ def delete_po_detail(
     deleted_id = int(row.id)
     db.delete(row)
     db.commit()
-    try_sync_po_details_to_mrp(db, cancelled_detail_ids=[deleted_id])
+    _try_sync_po_to_mrp(db, po_id=row.po_id, cancelled_detail_ids=[deleted_id])
     return StatusDeletedOut(status="deleted")
 
 

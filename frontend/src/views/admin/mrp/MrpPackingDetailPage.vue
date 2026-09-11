@@ -1,6 +1,7 @@
 <template>
   <AdminSection :title="title" :subtitle="t('pages.mrpPacking.detailSubtitle')">
     <template #actions>
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button @click="$router.push('/admin/mrp/packing')">{{ t('common.close') }}</el-button>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
       <el-button v-if="packing" @click="printLabel">{{ t('pages.mrpPacking.printList') }}</el-button>
@@ -16,6 +17,13 @@
 
     <div v-loading="loading" class="space-y-4">
       <div v-if="packing" class="admin-inner-card">
+        <div class="admin-inner-card__head">
+          <div>
+            <h3 class="admin-inner-card__title">{{ t('pages.mrpPacking.overviewTitle') }}</h3>
+            <p class="admin-inner-card__sub">{{ t('pages.mrpPacking.overviewSubtitle') }}</p>
+          </div>
+        </div>
+        <div class="mkt-section-body">
         <div class="mrp-pack-flow mb-3">
           <span
             class="mrp-pack-flow__step"
@@ -31,60 +39,60 @@
           </span>
         </div>
 
-        <div class="mrp-pack-stats">
-          <div class="mrp-pack-stat">
-            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.kodePacking') }}</span>
-            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.kode_packing) }}</span>
+        <div class="admin-stats-grid admin-stats-grid--4">
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpPacking.kodePacking') }}</span>
+            <span class="admin-stat-card__value">{{ dash(packing.kode_packing) }}</span>
           </div>
-          <div class="mrp-pack-stat">
-            <span class="mrp-pack-stat__label">WIP / WO</span>
-            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpPacking.wipWo') }}</span>
+            <span class="admin-stat-card__value">
               {{ dash(packing.work_order || packing.kode_wip) }}
             </span>
           </div>
-          <div class="mrp-pack-stat">
-            <span class="mrp-pack-stat__label">{{ t('pages.mrpRencana.poCustomerRef') }}</span>
-            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.no_po) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpRencana.poCustomerRef') }}</span>
+            <span class="admin-stat-card__value">{{ dash(packing.no_po) }}</span>
           </div>
-          <div class="mrp-pack-stat">
-            <span class="mrp-pack-stat__label">{{ t('common.status') }}</span>
-            <span class="mrp-pack-stat__value">
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('common.status') }}</span>
+            <span class="admin-stat-card__value">
               <el-tag :type="packing.status === 'finished' ? 'success' : 'warning'" size="small" effect="plain">
                 {{ packing.status === 'finished' ? t('pages.mrpPacking.statusFinished') : t('pages.mrpPacking.statusInProgress') }}
               </el-tag>
             </span>
           </div>
-          <div class="mrp-pack-stat">
-            <span class="mrp-pack-stat__label">{{ t('common.customer') }}</span>
-            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.customer) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('common.customer') }}</span>
+            <span class="admin-stat-card__value">{{ dash(packing.customer) }}</span>
           </div>
-          <div class="mrp-pack-stat mrp-pack-stat--wide">
-            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.description') }}</span>
-            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.description) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpPacking.description') }}</span>
+            <span class="admin-stat-card__value">{{ dash(packing.description) }}</span>
           </div>
-          <div class="mrp-pack-stat">
-            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.thickness') }}</span>
-            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.thickness) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpPacking.thickness') }}</span>
+            <span class="admin-stat-card__value">{{ dash(packing.thickness) }}</span>
           </div>
-          <div class="mrp-pack-stat">
-            <span class="mrp-pack-stat__label">{{ t('common.color') }}</span>
-            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.color) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('common.color') }}</span>
+            <span class="admin-stat-card__value">{{ dash(packing.color) }}</span>
           </div>
-          <div class="mrp-pack-stat">
-            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.colorSwatch') }}</span>
-            <span class="mrp-pack-stat__value mrp-pack-stat__value--text">{{ dash(packing.color_swatch) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpPacking.colorSwatch') }}</span>
+            <span class="admin-stat-card__value">{{ dash(packing.color_swatch) }}</span>
           </div>
-          <div class="mrp-pack-stat">
-            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.totalRolls') }}</span>
-            <span class="mrp-pack-stat__value">{{ packing.total_rolls ?? rolls.length }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpPacking.totalRolls') }}</span>
+            <span class="admin-stat-card__value">{{ packing.total_rolls ?? rolls.length }}</span>
           </div>
-          <div class="mrp-pack-stat">
-            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.totalPieces') }}</span>
-            <span class="mrp-pack-stat__value">{{ formatQty(packing.total_pieces ?? packing.total_lembar) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpPacking.totalPieces') }}</span>
+            <span class="admin-stat-card__value">{{ formatQty(packing.total_pieces ?? packing.total_lembar) }}</span>
           </div>
-          <div class="mrp-pack-stat">
-            <span class="mrp-pack-stat__label">{{ t('pages.mrpPacking.totalQty') }}</span>
-            <span class="mrp-pack-stat__value">
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpPacking.totalQty') }}</span>
+            <span class="admin-stat-card__value">
               {{ formatQty(packing.total_quantity ?? packing.total_ukuran) }}
               {{ packing.qty_unit || 'SF' }}
             </span>
@@ -107,13 +115,19 @@
           show-icon
           :title="t('pages.mrpPacking.finishedHint')"
         />
+        </div>
       </div>
 
       <div v-if="canUpdate && packing?.status === 'in_progress'" class="admin-inner-card">
-        <h3 class="admin-inner-card__title mb-2">{{ t('pages.mrpPacking.editHeader') }}</h3>
+        <div class="admin-inner-card__head">
+          <div>
+            <h3 class="admin-inner-card__title">{{ t('pages.mrpPacking.editHeader') }}</h3>
+          </div>
+        </div>
+        <div class="mkt-section-body">
         <div class="mrp-pack-form-row">
           <el-form-item :label="t('pages.mrpPacking.softness')" class="mb-0">
-            <el-input v-model="headerForm.softness" class="w-36" placeholder="SOFT" />
+            <el-input v-model="headerForm.softness" class="w-36" :placeholder="t('pages.mrpPacking.softPlaceholder')" />
           </el-form-item>
           <el-form-item :label="t('pages.mrpPacking.grossWeight')" class="mb-0">
             <el-input v-model="headerForm.gross_weight" type="number" class="w-32" />
@@ -123,10 +137,16 @@
           </el-form-item>
           <el-button type="primary" :loading="acting" @click="saveHeader">{{ t('common.save') }}</el-button>
         </div>
+        </div>
       </div>
 
       <div v-if="canUpdate && packing?.status === 'in_progress'" class="admin-inner-card">
-        <h3 class="admin-inner-card__title mb-2">{{ t('pages.mrpPacking.addRoll') }}</h3>
+        <div class="admin-inner-card__head">
+          <div>
+            <h3 class="admin-inner-card__title">{{ t('pages.mrpPacking.addRoll') }}</h3>
+          </div>
+        </div>
+        <div class="mkt-section-body">
         <div class="mrp-pack-form-row">
           <el-form-item :label="t('pages.mrpPacking.pieces')" class="mb-0">
             <el-input v-model="rollForm.lembar" type="number" class="w-28" />
@@ -139,11 +159,18 @@
           </el-form-item>
           <el-button type="primary" :loading="acting" @click="addRoll">{{ t('common.add') }}</el-button>
         </div>
+        </div>
       </div>
 
       <div class="admin-inner-card">
-        <h3 class="admin-inner-card__title mb-2">{{ t('pages.mrpPacking.rolls') }}</h3>
-        <el-table :data="rolls" border size="small" empty-text="—">
+        <div class="admin-inner-card__head">
+          <div>
+            <h3 class="admin-inner-card__title">{{ t('pages.mrpPacking.rolls') }}</h3>
+            <p class="admin-inner-card__sub">{{ t('pages.mrpPacking.rollsSubtitle') }}</p>
+          </div>
+        </div>
+        <div class="mkt-section-body">
+        <el-table :data="rolls" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpPacking.tableEmpty')">
           <el-table-column prop="roll_no" :label="t('pages.mrpPacking.artNo')" width="80" align="center" />
           <el-table-column :label="t('pages.mrpPacking.pieces')" width="100" align="right">
             <template #default="{ row }">{{ formatQty(row.lembar) }}</template>
@@ -166,11 +193,15 @@
             </template>
           </el-table-column>
         </el-table>
+        </div>
       </div>
 
       <div class="admin-inner-card">
-        <div class="mb-2 flex items-center justify-between gap-2 flex-wrap">
-          <h3 class="admin-inner-card__title mb-0">{{ t('pages.mrpPacking.poSection') }}</h3>
+        <div class="admin-inner-card__head">
+          <div>
+            <h3 class="admin-inner-card__title">{{ t('pages.mrpPacking.poSection') }}</h3>
+            <p class="admin-inner-card__sub">{{ t('pages.mrpPacking.poSectionSubtitle') }}</p>
+          </div>
           <el-button
             v-if="canUpdate && packing?.status === 'in_progress' && availablePos.length"
             size="small"
@@ -179,8 +210,9 @@
             {{ showAddPo ? t('common.close') : t('common.add') }}
           </el-button>
         </div>
+        <div class="mkt-section-body">
         <div v-if="showAddPo" class="mb-3">
-          <el-table :data="availablePos" border size="small" empty-text="—">
+          <el-table :data="availablePos" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpPacking.tableEmpty')">
             <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" />
             <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="100" />
             <el-table-column prop="item_name" :label="t('pages.mrpPacking.poItem')" min-width="130" show-overflow-tooltip />
@@ -194,7 +226,7 @@
             </el-table-column>
           </el-table>
         </div>
-        <el-table :data="packingPos" border size="small" empty-text="—">
+        <el-table :data="packingPos" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpPacking.tableEmpty')">
           <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" />
           <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="100" />
           <el-table-column prop="item_name" :label="t('pages.mrpPacking.poItem')" min-width="130" show-overflow-tooltip />
@@ -207,6 +239,7 @@
             </template>
           </el-table-column>
         </el-table>
+        </div>
       </div>
     </div>
   </AdminSection>
@@ -456,37 +489,12 @@ onMounted(reload)
   background: var(--el-color-primary-light-9);
   font-weight: 600;
 }
-.mrp-pack-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.6rem;
-}
-.mrp-pack-stat {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 0.65rem 0.75rem;
-  min-height: 3.4rem;
-}
-.mrp-pack-stat--wide {
-  grid-column: span 2;
-}
-.mrp-pack-stat__label {
-  display: block;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 0.2rem;
-}
-.mrp-pack-stat__value {
-  font-size: 1rem;
-  font-weight: 600;
-}
-.mrp-pack-stat__value--text {
-  font-size: 0.875rem;
-  font-weight: 500;
-  word-break: break-word;
-}
+
+
+
+
+
+
 .mrp-pack-form-row {
   display: flex;
   flex-wrap: wrap;
@@ -494,11 +502,7 @@ onMounted(reload)
   align-items: flex-end;
 }
 @media (max-width: 900px) {
-  .mrp-pack-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .mrp-pack-stat--wide {
-    grid-column: span 2;
-  }
+  
+  
 }
 </style>

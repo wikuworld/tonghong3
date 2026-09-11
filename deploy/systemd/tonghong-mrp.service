@@ -10,6 +10,8 @@ Group=developer
 WorkingDirectory=/home/developer/project/mrp
 EnvironmentFile=-/home/developer/project/.env
 Environment=PYTHONUNBUFFERED=1
+Environment=TZ=Asia/Jakarta
+Environment=APP_TIMEZONE=Asia/Jakarta
 Environment=MRP_PORT=5010
 ExecStart=/home/developer/project/mrp/.venv/bin/python -c "from app import app; app.run(host='127.0.0.1', port=5010, debug=False)"
 Restart=always

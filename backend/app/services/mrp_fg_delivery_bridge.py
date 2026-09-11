@@ -1,29 +1,26 @@
-"""Bridge Gudang FG OUT (MRP) → Packing stub + Delivery draft ERP."""
+"""FG OUT MRP: taut ke packing/delivery yang sudah ada. Surat Jalan hanya dari Outstanding."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
+import httpx
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import (
-    DeliveryDetail,
     DeliveryHeader,
     PackingHeader,
-    PoDetail,
-    PoHeader,
     ProductionDetail,
 )
-from app.services.audit import log_change
-from app.services.numbering import next_number
-from app.services.po_delivery_balance import (
-    sync_po_detail_balance_qty,
-    validate_delivery_qty_against_po_balance,
+from app.services.mrp_packing_bridge import kode_packing_from_erp
+
+FG_OUT_MUST_USE_OUTSTANDING = (
+    "Surat jalan dibuat dari Outstanding (susun kirim), bukan dari Gudang FG OUT."
 )
 
 
@@ -53,6 +50,27 @@ def _dec(v: Any) -> Decimal:
     if isinstance(v, Decimal):
         return v
     return Decimal(str(v))
+
+
+def _resolve_production_detail_for_wip(
+    db: Session,
+    *,
+    kode_wip: str | None,
+    erp_production_detail_id: int | None,
+) -> ProductionDetail | None:
+    wip = (kode_wip or "").strip()
+    if wip:
+        pd = db.scalars(
+            select(ProductionDetail).where(ProductionDetail.lot_number == wip).limit(1)
+        ).first()
+        if pd:
+            return pd
+    if erp_production_detail_id:
+        try:
+            return db.get(ProductionDetail, int(erp_production_detail_id))
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def _parse_lines(raw_lines: list[dict[str, Any]]) -> list[BridgeLine]:
@@ -89,6 +107,25 @@ def _parse_lines(raw_lines: list[dict[str, Any]]) -> list[BridgeLine]:
     return lines
 
 
+def _result_from_delivery(db: Session, dh: DeliveryHeader, pk: PackingHeader | None) -> BridgeResult:
+    packing_id = int(pk.id) if pk and pk.id else int(dh.packing_id or 0)
+    return BridgeResult(
+        delivery_id=int(dh.id),
+        delivery_number=dh.delivery_number,
+        packing_id=packing_id,
+        packing_number=pk.packing_number if pk else None,
+        created=False,
+        line_count=0,
+    )
+
+
+def _stamp_fg(pk: PackingHeader | None, dh: DeliveryHeader | None, mrp_fg_id: int) -> None:
+    if pk is not None:
+        pk.mrp_fg_id = int(mrp_fg_id)
+    if dh is not None and dh.mrp_fg_id is None:
+        dh.mrp_fg_id = int(mrp_fg_id)
+
+
 def bridge_fg_out_to_delivery(
     db: Session,
     *,
@@ -99,177 +136,211 @@ def bridge_fg_out_to_delivery(
     lines: list[dict[str, Any]],
     actor: str | None = None,
     keterangan: str | None = None,
+    kode_wip: str | None = None,
+    erp_production_detail_id: int | None = None,
 ) -> BridgeResult:
-    """Buat/temukan packing stub + delivery draft untuk satu FG OUT MRP (idempotent)."""
+    """Idempotent taut mrp_fg_id ke packing/SJ yang sudah ada. Tidak membuat Delivery baru."""
+    _ = (customer_name, lines, actor, keterangan, kode_wip, erp_production_detail_id)
     if not mrp_fg_id:
         raise HTTPException(status_code=400, detail="mrp_fg_id wajib")
+    fg_id = int(mrp_fg_id)
 
     existing = db.scalars(
-        select(DeliveryHeader).where(DeliveryHeader.mrp_fg_id == int(mrp_fg_id)).limit(1)
+        select(DeliveryHeader).where(DeliveryHeader.mrp_fg_id == fg_id).limit(1)
     ).first()
     if existing:
         pk = db.get(PackingHeader, existing.packing_id) if existing.packing_id else None
-        return BridgeResult(
-            delivery_id=int(existing.id),
-            delivery_number=existing.delivery_number,
-            packing_id=int(existing.packing_id or 0),
-            packing_number=pk.packing_number if pk else None,
-            created=False,
-            line_count=0,
-        )
+        _stamp_fg(pk, existing, fg_id)
+        return _result_from_delivery(db, existing, pk)
 
     existing_pk = db.scalars(
-        select(PackingHeader).where(PackingHeader.mrp_fg_id == int(mrp_fg_id)).limit(1)
+        select(PackingHeader).where(PackingHeader.mrp_fg_id == fg_id).limit(1)
     ).first()
     if existing_pk:
         existing_dh = db.scalars(
             select(DeliveryHeader).where(DeliveryHeader.packing_id == existing_pk.id).limit(1)
         ).first()
         if existing_dh:
-            return BridgeResult(
-                delivery_id=int(existing_dh.id),
-                delivery_number=existing_dh.delivery_number,
-                packing_id=int(existing_pk.id),
-                packing_number=existing_pk.packing_number,
-                created=False,
-                line_count=0,
-            )
+            _stamp_fg(existing_pk, existing_dh, fg_id)
+            return _result_from_delivery(db, existing_dh, existing_pk)
 
-    parsed = _parse_lines(lines)
-    if not parsed:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Tidak ada baris PO dengan source_detail_id untuk bridge. "
-                "Jalankan Sync PO lalu pastikan packing/rencana terhubung ke master PO."
-            ),
-        )
-
-    # Aggregate qty per po_detail
-    qty_by_pod: dict[int, BridgeLine] = {}
-    for ln in parsed:
-        prev = qty_by_pod.get(ln.source_detail_id)
-        if prev is None:
-            qty_by_pod[ln.source_detail_id] = ln
-        else:
-            prev.qty_out += ln.qty_out
-            if ln.qty_roll:
-                prev.qty_roll = (prev.qty_roll or 0) + ln.qty_roll
-            if ln.qty_pcs:
-                prev.qty_pcs = (prev.qty_pcs or 0) + ln.qty_pcs
-
-    customer_id: Optional[int] = None
-    resolved: list[tuple[PoDetail, BridgeLine]] = []
-    for sid, ln in qty_by_pod.items():
-        pod = db.get(PoDetail, sid)
-        if not pod:
-            raise HTTPException(
-                status_code=400,
-                detail=f"po_details #{sid} tidak ditemukan (source_detail_id)",
-            )
-        ph = db.get(PoHeader, pod.po_id) if pod.po_id else None
-        if ph and (ph.status or "").lower() in {"cancelled", "canceled", "void"}:
-            raise HTTPException(
-                status_code=400,
-                detail=f"PO {ph.po_number or ph.id} berstatus {ph.status}",
-            )
-        if customer_id is None and ph and ph.customer_id:
-            customer_id = int(ph.customer_id)
-        validate_delivery_qty_against_po_balance(
-            db,
-            po_detail_id=int(pod.id),
-            qty=ln.qty_out,
-        )
-        resolved.append((pod, ln))
-
-    packing_number = next_number(db, "PACK", "PACK")
-    if kode_packing:
-        packing_number = f"MRP-{kode_packing}"[:100]
-        clash = db.scalars(
-            select(PackingHeader).where(PackingHeader.packing_number == packing_number).limit(1)
-        ).first()
-        if clash:
-            packing_number = next_number(db, "PACK", "PACK")
-
-    pk = PackingHeader(
-        packing_number=packing_number,
-        production_id=None,
-        qc_header_id=None,
-        status="done",
-        source="mrp",
-        mrp_packing_id=int(mrp_packing_id) if mrp_packing_id else None,
-        mrp_fg_id=int(mrp_fg_id),
-    )
-    db.add(pk)
-    db.flush()
-
-    delivery_number = next_number(db, "DEL", "DEL")
-    dest = (keterangan or "").strip() or None
-    if customer_name and not dest:
-        dest = f"MRP FG OUT — {customer_name}"
-    elif customer_name and dest:
-        dest = f"{dest} ({customer_name})"
-
-    hdr = DeliveryHeader(
-        delivery_number=delivery_number,
-        customer_id=customer_id,
-        packing_id=pk.id,
-        delivery_date=date.today(),
-        delivery_type="production",
-        delivery_zone="outtown",
-        destination=dest,
-        status="draft",
-        mrp_fg_id=int(mrp_fg_id),
-    )
-    db.add(hdr)
-    db.flush()
-
-    touched_pods: list[int] = []
-    for pod, ln in resolved:
-        pd_mirror = db.scalars(
-            select(ProductionDetail)
-            .where(ProductionDetail.po_detail_id == int(pod.id))
-            .order_by(ProductionDetail.id.desc())
+    pk: PackingHeader | None = None
+    if mrp_packing_id:
+        pk = db.scalars(
+            select(PackingHeader)
+            .where(PackingHeader.mrp_packing_id == int(mrp_packing_id))
+            .order_by(PackingHeader.id.desc())
             .limit(1)
         ).first()
-        db.add(
-            DeliveryDetail(
-                delivery_id=hdr.id,
-                production_detail_id=int(pd_mirror.id) if pd_mirror else None,
-                packing_detail_id=None,
-                po_detail_id=int(pod.id),
-                qty=ln.qty_out,
-                qty_roll=ln.qty_roll,
-                qty_pcs=ln.qty_pcs,
-                weight=ln.weight,
-            )
-        )
-        touched_pods.append(int(pod.id))
-    db.flush()
-    for pod_id in touched_pods:
-        sync_po_detail_balance_qty(db, pod_id)
+    if pk is None and kode_packing:
+        num = f"MRP-{(kode_packing or '').strip()}"[:100]
+        pk = db.scalars(
+            select(PackingHeader).where(PackingHeader.packing_number == num).limit(1)
+        ).first()
+    if pk:
+        dh = db.scalars(
+            select(DeliveryHeader).where(DeliveryHeader.packing_id == pk.id).limit(1)
+        ).first()
+        if dh:
+            _stamp_fg(pk, dh, fg_id)
+            db.flush()
+            return _result_from_delivery(db, dh, pk)
 
-    log_change(
-        db,
-        entity_type="delivery",
-        entity_id=hdr.id,
-        action="create_from_mrp_fg_out",
-        after={
-            "mrp_fg_id": mrp_fg_id,
-            "mrp_packing_id": mrp_packing_id,
-            "packing_id": pk.id,
-            "line_count": len(resolved),
-            "kode_packing": kode_packing,
-        },
-        actor=actor or "system",
-    )
+    raise HTTPException(status_code=400, detail=FG_OUT_MUST_USE_OUTSTANDING)
+
+
+def _mrp_base() -> str:
+    return (settings.mrp_upstream_url or "http://127.0.0.1:5010").rstrip("/")
+
+
+def _mrp_timeout() -> float:
+    return max(float(settings.mrp_sync_timeout_seconds or 8.0), 30.0)
+
+
+def _http_detail(resp: httpx.Response) -> str:
+    try:
+        data = resp.json()
+        if isinstance(data, dict):
+            d = data.get("detail") or data.get("message")
+            if isinstance(d, str) and d.strip():
+                return d.strip()
+            return str(data)[:400]
+    except Exception:
+        pass
+    return (resp.text or f"HTTP {resp.status_code}")[:400]
+
+
+def _rollback_fg_outs(client: httpx.Client, base: str, fg_ids: list[int], reason: str) -> None:
+    for fid in reversed(fg_ids):
+        try:
+            client.post(
+                f"{base}/api/mrp/gudang-fg/{fid}/rollback-out",
+                json={"reason": (reason or "ship batch failed")[:255]},
+            )
+        except Exception:
+            pass
+
+
+def _kode_packing_for(pk: PackingHeader, client: httpx.Client, base: str) -> str:
+    kode = kode_packing_from_erp(pk)
+    if isinstance(kode, str) and kode.strip() and not kode.upper().startswith("PACK-"):
+        return kode.strip()
+    mid = getattr(pk, "mrp_packing_id", None)
+    if mid:
+        try:
+            r = client.get(f"{base}/api/mrp/packing/{int(mid)}")
+            if r.status_code == 200:
+                data = r.json() or {}
+                packing = data.get("packing") if isinstance(data, dict) else None
+                src = packing if isinstance(packing, dict) else (data if isinstance(data, dict) else {})
+                kode2 = str((src or {}).get("kode_packing") or "").strip()
+                if kode2:
+                    return kode2
+        except Exception:
+            pass
+    return kode.strip() if isinstance(kode, str) else ""
+
+
+def _find_fg_id_by_kode(client: httpx.Client, base: str, kode: str) -> int | None:
+    r = client.get(f"{base}/api/mrp/gudang-fg", params={"q": kode})
+    if r.status_code != 200:
+        return None
+    rows = r.json() if r.content else []
+    if not isinstance(rows, list):
+        return None
+    for row in rows:
+        if str((row or {}).get("kode_packing") or "").strip() == kode:
+            try:
+                return int(row["id"])
+            except (TypeError, ValueError, KeyError):
+                continue
+    return None
+
+
+def trigger_mrp_fg_out_for_packings(
+    db: Session,
+    *,
+    packings: list[PackingHeader],
+    delivery: DeliveryHeader,
+    keterangan: str | None = None,
+    actor: str | None = None,
+) -> list[int]:
+    """OUT stok FG MRP setelah SJ Outstanding tersimpan (idempotent). Rollback FG bila gagal."""
+    _ = actor
+    usable: list[PackingHeader] = []
+    for pk in packings or []:
+        src = pk.source if isinstance(getattr(pk, "source", None), str) else ""
+        if src.lower() != "mrp":
+            continue
+        usable.append(pk)
+    if not usable:
+        return []
+
+    base = _mrp_base()
+    timeout = _mrp_timeout()
+    done: list[int] = []
+    note = (keterangan or "").strip() or "Outstanding ship"
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            for pk in usable:
+                kode = _kode_packing_for(pk, client, base)
+                if not kode:
+                    _rollback_fg_outs(client, base, done, "kode_packing packing MRP kosong")
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Packing MRP tanpa kode_packing untuk FG OUT",
+                    )
+                existing_id = int(pk.mrp_fg_id) if pk.mrp_fg_id else None
+                fg_id: int | None = existing_id
+                if existing_id is None:
+                    r = client.post(
+                        f"{base}/api/mrp/gudang-fg/out",
+                        json={"kode_packing": kode, "keterangan": note},
+                    )
+                    if r.status_code >= 400:
+                        text = _http_detail(r)
+                        if "sudah out" in text.lower():
+                            fg_id = _find_fg_id_by_kode(client, base, kode)
+                            if fg_id is None:
+                                _rollback_fg_outs(client, base, done, text)
+                                raise HTTPException(
+                                    status_code=400,
+                                    detail=f"FG OUT MRP gagal: {text}",
+                                )
+                        else:
+                            _rollback_fg_outs(client, base, done, text)
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"FG OUT MRP gagal: {text}",
+                            )
+                    else:
+                        body = r.json() if r.content else {}
+                        try:
+                            fg_id = int((body or {}).get("id"))
+                        except (TypeError, ValueError):
+                            _rollback_fg_outs(client, base, done, "respons FG OUT tanpa id")
+                            raise HTTPException(
+                                status_code=400,
+                                detail="FG OUT MRP tanpa id",
+                            )
+                pk.mrp_fg_id = int(fg_id)
+                if delivery.mrp_fg_id is None:
+                    delivery.mrp_fg_id = int(fg_id)
+                try:
+                    client.post(
+                        f"{base}/api/mrp/gudang-fg/{int(fg_id)}/bridge-result",
+                        json={
+                            "delivery_id": delivery.id,
+                            "delivery_number": delivery.delivery_number,
+                            "bridge_status": "ok",
+                        },
+                    )
+                except Exception:
+                    pass
+                done.append(int(fg_id))
+    except HTTPException:
+        raise
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"MRP upstream unavailable: {e}") from e
     db.flush()
-    return BridgeResult(
-        delivery_id=int(hdr.id),
-        delivery_number=hdr.delivery_number,
-        packing_id=int(pk.id),
-        packing_number=pk.packing_number,
-        created=True,
-        line_count=len(resolved),
-        po_detail_ids=list(touched_pods),
-    )
+    return done

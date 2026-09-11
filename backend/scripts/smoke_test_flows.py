@@ -30,8 +30,8 @@ sys.path.insert(0, str(BACKEND))
 
 PREFIX = "/api/v1"
 DEFAULT_BASE = os.environ.get("SMOKE_API_BASE", "http://127.0.0.1:8000").rstrip("/")
-DEFAULT_USER = os.environ.get("SMOKE_USER", "admin")
-DEFAULT_PASSWORD = os.environ.get("SMOKE_PASSWORD", "admin123")
+DEFAULT_USER = os.environ.get("SMOKE_USER", "Cre@tiv3")
+DEFAULT_PASSWORD = os.environ.get("SMOKE_PASSWORD", "TonghongDemo2026")
 
 Status = str  # pass | fail | skip
 
@@ -401,13 +401,6 @@ def smoke_delivery_details(ctx: FlowContext) -> CaseResult:
     return _expect_status("delivery_details", "Detail delivery sample", status, 200, detail=raw)
 
 
-def smoke_outstanding_materials(ctx: FlowContext) -> CaseResult:
-    status, body, raw = ctx.client.get(f"{PREFIX}/workflow/outstanding-materials", params={"limit": 10})
-    if status == 200 and isinstance(body, list):
-        return CaseResult("outstanding_materials", "Outstanding materials (PPIC)", "pass", f"{len(body)} baris")
-    return _expect_status("outstanding_materials", "Outstanding materials (PPIC)", status, 200, detail=raw)
-
-
 def _get_binary(client: ApiClient, path: str, *, params: Optional[dict[str, Any]] = None) -> tuple[int, bytes, str]:
     """GET endpoint yang mengembalikan body biner (XLSX, dll.)."""
     url = f"{client.base_url}{path}"
@@ -529,7 +522,6 @@ FLOW_CASES: list[tuple[str, str, Callable[[FlowContext], CaseResult]]] = [
     ("delivery_list", "Daftar delivery", smoke_delivery_list),
     ("delivery_ready", "Siap kirim", smoke_delivery_ready_shipments),
     ("delivery_details", "Detail delivery", smoke_delivery_details),
-    ("outstanding_materials", "Outstanding materials", smoke_outstanding_materials),
     ("rar_json", "Preview piutang RAR", smoke_rar_json),
     ("rar_xlsx", "Export piutang RAR XLSX", smoke_rar_xlsx),
     ("pending_payment_json", "Preview Pending Payment", smoke_pending_payment_json),

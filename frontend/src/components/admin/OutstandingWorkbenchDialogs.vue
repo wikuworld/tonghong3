@@ -33,6 +33,9 @@
       <el-table-column prop="system_reference" :label="t('pages.marketingFlow.colSystemNo')" min-width="120" />
       <el-table-column prop="material_name" :label="t('common.material')" min-width="140" />
       <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="90" />
+      <el-table-column :label="t('pages.marketingFlow.outstandingColQtyWip')" width="88">
+        <template #default="{ row }">{{ row.mrp_qty_wip || '—' }}</template>
+      </el-table-column>
       <el-table-column :label="t('pages.po.lineEtd')" width="110">
         <template #default="{ row }">{{ row.line_etd || '—' }}</template>
       </el-table-column>
@@ -112,6 +115,15 @@
   >
     <p class="out-dlg-hint">{{ t('pages.marketingFlow.shipDialogHint') }}</p>
     <el-alert
+      v-if="shipSoCount > 1"
+      type="success"
+      :closable="false"
+      show-icon
+      class="mb-3"
+    >
+      {{ t('pages.marketingFlow.shipConsolidateHint', { n: shipSoCount }) }}
+    </el-alert>
+    <el-alert
       v-if="!loadingPacking && !packingOptions.length"
       :title="t('pages.marketingFlow.shipPackingEmptyTitle')"
       type="info"
@@ -131,6 +143,9 @@
         <el-table-column prop="material_name" :label="t('common.material')" min-width="130" />
         <el-table-column :label="t('pages.marketingFlow.colBalance')" width="88" align="right">
           <template #default="{ row }">{{ row.balance_qty || '—' }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.marketingFlow.outstandingColQtyWip')" width="80" align="right">
+          <template #default="{ row }">{{ row.mrp_qty_wip || '—' }}</template>
         </el-table-column>
         <el-table-column :label="t('pages.marketingFlow.shipPackingPick')" min-width="230">
           <template #default="{ row }">
@@ -206,7 +221,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 
 import {
@@ -244,6 +259,7 @@ const packingOptions = ref([])
 const shipRows = ref([])
 
 const uniquePoIds = computed(() => [...new Set(props.rows.map((r) => r.po_id).filter(Boolean))])
+const shipSoCount = computed(() => uniquePoIds.value.length)
 
 const piCustomerWarn = computed(() => {
   const names = [...new Set(props.rows.map((r) => (r.customer_name || '').trim()).filter(Boolean))]
@@ -278,13 +294,23 @@ function parseNum(v) {
   return Number.isFinite(n) ? n : null
 }
 
+function suggestedScheduleQty(r) {
+  const unalloc = parseNum(r.schedule_unallocated_qty)
+  const bal = parseNum(r.balance_qty)
+  const wip = parseNum(r.mrp_qty_wip)
+  const base = unalloc != null ? unalloc : bal
+  if (base == null) return r.schedule_unallocated_qty || r.balance_qty || ''
+  if (wip != null && wip > 0) return Math.min(base, wip)
+  return base
+}
+
 function suggestedShipQty(row, opt) {
   const avail = parseNum(opt?.qty_available)
   const bal = parseNum(row.balance_qty)
-  if (avail != null && bal != null) return Math.min(avail, bal)
-  if (avail != null) return avail
-  if (bal != null) return bal
-  return ''
+  const wip = parseNum(row.mrp_qty_wip)
+  const nums = [avail, bal, wip != null && wip > 0 ? wip : null].filter((x) => x != null)
+  if (!nums.length) return ''
+  return Math.min(...nums)
 }
 
 function onPickPacking(row) {
@@ -361,6 +387,7 @@ watch(
       system_reference: r.system_reference || r.thi_order,
       material_name: r.material_name,
       balance_qty: r.balance_qty,
+      mrp_qty_wip: r.mrp_qty_wip || '',
       pickedKey: '',
       packing_id: null,
       packing_detail_id: null,
@@ -387,9 +414,10 @@ watch(
       material_name: r.material_name,
       balance_qty: r.balance_qty,
       line_etd: r.line_etd || null,
-      qty: r.schedule_unallocated_qty || r.balance_qty || '',
+      qty: suggestedScheduleQty(r),
       delivery_date: today,
       schedule_full: Number(r.schedule_unallocated_qty) === 0 && Number(r.schedule_qty_total) > 0,
+      mrp_qty_wip: r.mrp_qty_wip || '',
     }))
     const fullCount = scheduleRows.value.filter((r) => r.schedule_full).length
     if (fullCount && fullCount === scheduleRows.value.length) {
@@ -423,6 +451,14 @@ async function submitSchedule() {
   if (missingDate) {
     ElMessage.warning(t('pages.marketingFlow.scheduleDateRequired'))
     return
+  }
+  const overWip = activeRows.filter((r) => {
+    const q = parseNum(r.qty)
+    const wip = parseNum(r.mrp_qty_wip)
+    return q != null && wip != null && wip > 0 && q > wip
+  })
+  if (overWip.length) {
+    ElMessage.warning(t('pages.marketingFlow.scheduleQtyOverWip', { n: overWip.length }))
   }
   savingSchedule.value = true
   try {
@@ -494,12 +530,50 @@ async function submitShip() {
     ElMessage.warning(t('pages.marketingFlow.shipPickRequired'))
     return
   }
+  const overWip = shipRows.value.filter((r) => {
+    if (!r.packing_id) return false
+    const q = parseNum(r.qty)
+    const wip = parseNum(r.mrp_qty_wip)
+    return q != null && wip != null && wip > 0 && q > wip
+  })
+  if (overWip.length) {
+    ElMessage.warning(t('pages.marketingFlow.scheduleQtyOverWip', { n: overWip.length }))
+  }
+  if (shipSoCount.value > 1) {
+    try {
+      await ElMessageBox.confirm(
+        t('pages.marketingFlow.shipOneSjConfirm', { n: shipSoCount.value }),
+        t('pages.marketingFlow.shipDialogTitle'),
+        { type: 'info', confirmButtonText: t('pages.marketingFlow.shipConfirm') },
+      )
+    } catch {
+      return
+    }
+  }
   savingShip.value = true
   try {
     const res = await createOutstandingShipBatch({ lines })
     ElMessage.success(res.message || t('pages.marketingFlow.shipSaved'))
     emit('update:shipVisible', false)
     emit('done')
+    const ids = Array.isArray(res.delivery_ids) ? res.delivery_ids : []
+    if (ids.length) {
+      try {
+        await ElMessageBox.confirm(
+          t('pages.marketingFlow.shipPrintSjInvplConfirm'),
+          t('pages.marketingFlow.shipPrintSjInvpl'),
+          { type: 'success' },
+        )
+        for (const id of ids) {
+          await fetchAuthenticatedDocument(`/documents/surat-jalan/${id}`, { mode: 'open' })
+          await fetchAuthenticatedDocument(`/documents/invpl-by-delivery/${id}`, { mode: 'open' })
+        }
+      } catch (printErr) {
+        if (printErr !== 'cancel' && printErr !== 'close') {
+          ElMessage.error(printErr?.message || t('common.errorGeneric'))
+        }
+      }
+    }
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {

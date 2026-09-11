@@ -113,7 +113,29 @@
           <p class="filter-panel__title">{{ t('common.filter') }}</p>
           <el-form class="filter-form" label-position="top">
             <el-row :gutter="12">
-              <el-col :xs="24" :sm="12" :md="8" :lg="6">
+              <el-col :xs="24" :sm="12" :md="8" :lg="5">
+                <el-form-item :label="t('pages.invoice.filterKeyword')">
+                  <el-input v-model="outstandingQ" clearable :placeholder="t('pages.invoice.filterKeyword')" @keyup.enter="loadOutstanding" />
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="12" :md="8" :lg="5">
+                <el-form-item :label="t('pages.invoice.filterCustomer')">
+                  <el-select v-model="outstandingCustomerId" clearable filterable class="w-full" @change="loadOutstanding">
+                    <el-option v-for="c in customers" :key="c.id" :label="c.name" :value="c.id" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="12" :md="8" :lg="4">
+                <el-form-item :label="t('pages.invoice.colStatusAr')">
+                  <el-select v-model="outstandingArStatus" clearable class="w-full" @change="onArStatusChange">
+                    <el-option :label="t('pages.invoice.modeStatusAll')" value="" />
+                    <el-option :label="t('pages.invoice.statusNotOverdue')" value="not_overdue" />
+                    <el-option :label="t('pages.invoice.statusOverdue')" value="overdue" />
+                    <el-option :label="t('pages.invoice.statusClosed')" value="closed" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="12" :md="8" :lg="4">
                 <el-form-item :label="t('pages.invoice.filter')">
                   <el-select v-model="outstandingMode" class="w-full" @change="loadOutstanding">
                     <el-option :label="t('pages.invoice.modeAll')" value="all" />
@@ -122,12 +144,13 @@
                   </el-select>
                 </el-form-item>
               </el-col>
-              <el-col :xs="24" :sm="12" :md="8" :lg="6">
+              <el-col :xs="24" :sm="12" :md="8" :lg="4">
                 <el-form-item :label="t('pages.invoice.displayOptions')">
+                  <el-checkbox v-model="openOnly" @change="loadOutstanding">{{ t('pages.invoice.openOnly') }}</el-checkbox>
                   <el-checkbox v-model="hidePo" @change="loadOutstanding">{{ t('pages.invoice.hidePo') }}</el-checkbox>
                 </el-form-item>
               </el-col>
-              <el-col :xs="24" :sm="8" :md="6" :lg="3" class="invoice-filter-action-col">
+              <el-col :xs="24" :sm="8" :md="6" :lg="2" class="invoice-filter-action-col">
                 <el-form-item label="&nbsp;">
                   <el-button class="w-full" :icon="RefreshLeft" @click="resetOutstandingFilters">{{ t('common.reset') }}</el-button>
                 </el-form-item>
@@ -136,18 +159,37 @@
           </el-form>
         </div>
 
+        <div class="admin-action-bar mb-3">
+          <p class="admin-action-bar__hint">{{ t('pages.invoice.printTandaTerima') }} — {{ outstandingSelected.length }} dipilih</p>
+          <div class="admin-action-bar__buttons">
+            <el-button
+              v-if="canUpdate"
+              type="primary"
+              :disabled="!outstandingSelected.length"
+              :loading="tandaTerimaSaving"
+              @click="openTandaTerima"
+            >
+              {{ t('pages.invoice.printTandaTerima') }}
+            </el-button>
+          </div>
+        </div>
+
         <div class="invoice-stats mb-4">
           <div class="invoice-stat">
             <span class="invoice-stat__value">{{ outstandingStats.total }}</span>
             <span class="invoice-stat__label">{{ t('common.total') }}</span>
           </div>
           <div class="invoice-stat invoice-stat--unpaid">
-            <span class="invoice-stat__value">{{ outstandingStats.unpaid }}</span>
+            <span class="invoice-stat__value">{{ outstandingStats.open }}</span>
             <span class="invoice-stat__label">{{ t('pages.invoice.unpaid') }}</span>
           </div>
           <div class="invoice-stat invoice-stat--paid">
-            <span class="invoice-stat__value">{{ outstandingStats.paid }}</span>
-            <span class="invoice-stat__label">{{ t('pages.invoice.paid') }}</span>
+            <span class="invoice-stat__value">{{ outstandingStats.closed }}</span>
+            <span class="invoice-stat__label">{{ t('pages.invoice.statusClosed') }}</span>
+          </div>
+          <div class="invoice-stat invoice-stat--amount">
+            <span class="invoice-stat__value">{{ formatNum(outstandingStats.balance) }}</span>
+            <span class="invoice-stat__label">{{ t('pages.invoice.colBalance') }}</span>
           </div>
         </div>
 
@@ -160,46 +202,58 @@
             size="small"
             class="admin-table invoice-outstanding-table"
             :empty-text="t('pages.invoice.tableEmpty')"
+            row-key="id"
+            @selection-change="onOutstandingSelection"
           >
-            <el-table-column type="index" :label="t('common.noLabel')" width="50" align="center" fixed="left" />
-            <el-table-column prop="invoice_number" :label="t('common.invoiceNo')" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="po_number" :label="t('pages.mrpRencana.soRef')" min-width="150" show-overflow-tooltip>
-              <template #default="{ row }">
-                <el-button v-if="row.po_id" link type="primary" @click="goPo(row.po_id)">
-                  {{ row.po_number || `#${row.po_id}` }}
-                </el-button>
-                <span v-else>{{ row.po_number || '—' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="customer_name" :label="t('common.customer')" min-width="180" show-overflow-tooltip />
-            <el-table-column :label="t('common.date')" width="120">
+            <el-table-column type="selection" width="44" fixed="left" />
+            <el-table-column type="index" :label="t('common.noLabel')" width="48" align="center" fixed="left" />
+            <el-table-column prop="invoice_number" :label="t('common.invoiceNo')" min-width="140" show-overflow-tooltip fixed="left" />
+            <el-table-column :label="t('common.date')" width="110">
               <template #default="{ row }">{{ formatDate(row.invoice_date) }}</template>
             </el-table-column>
-            <el-table-column :label="t('pages.invoice.dueDate')" width="120">
+            <el-table-column :label="t('pages.invoice.colQty')" width="90" align="right">
+              <template #default="{ row }">{{ formatQty(row.qty_total) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.invoice.colAmount')" width="110" align="right">
+              <template #default="{ row }">{{ formatNum(row.total_amount) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.invoice.colDeduction')" width="100" align="right">
+              <template #default="{ row }">{{ formatNum(row.deduction_amount) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.invoice.paymentAmount')" width="110" align="right">
+              <template #default="{ row }">{{ formatNum(row.payment_amount) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.invoice.paymentDate')" width="110">
+              <template #default="{ row }">{{ formatDate(row.payment_date) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.invoice.colBalance')" width="110" align="right">
+              <template #default="{ row }">{{ formatNum(row.balance_after_deduct) }}</template>
+            </el-table-column>
+            <el-table-column prop="term_of_payment" :label="t('pages.invoice.colTerms')" min-width="120" show-overflow-tooltip />
+            <el-table-column :label="t('pages.invoice.dueDate')" width="110">
               <template #default="{ row }">{{ formatDate(row.due_date) }}</template>
             </el-table-column>
-            <el-table-column prop="tax_invoice_no" :label="t('pages.invoice.taxInvoiceNo')" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="receipt_no" :label="t('pages.invoice.receiptNo')" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="nomor_aju" :label="t('pages.invoice.nomorAju')" min-width="140" show-overflow-tooltip />
-            <el-table-column :label="t('pages.invoice.paymentStatus')" width="130" align="center">
+            <el-table-column :label="t('pages.invoice.colStatusAr')" width="120" align="center">
               <template #default="{ row }">
-                <el-tag size="small" :type="statusType(row.payment_status)">
-                  {{ statusLabel(row.payment_status, { paid: t('pages.invoice.paid'), unpaid: t('pages.invoice.unpaid') }) }}
-                </el-tag>
+                <el-tag size="small" :type="arStatusType(row.ar_status)">{{ arStatusLabel(row.ar_status) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column :label="t('common.actions')" width="88" fixed="right" align="center">
+            <el-table-column prop="tax_invoice_no" :label="t('pages.invoice.taxInvoiceNo')" min-width="120" show-overflow-tooltip />
+            <el-table-column :label="t('pages.invoice.colDokumenBc')" min-width="120" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.dokumen_bc || row.bc_number || row.nopen || '—' }}</template>
+            </el-table-column>
+            <el-table-column prop="received_by" :label="t('pages.invoice.colReceivedBy')" min-width="140" show-overflow-tooltip />
+            <el-table-column :label="t('pages.invoice.colReceivedDate')" width="110">
+              <template #default="{ row }">{{ formatDate(row.received_date) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('common.actions')" width="168" fixed="right" align="center">
               <template #default="{ row }">
-                <el-tooltip v-if="canUpdate" :content="t('common.edit')" placement="top">
-                  <el-button
-                    :icon="EditPen"
-                    link
-                    type="primary"
-                    size="small"
-                    :aria-label="t('common.edit')"
-                    @click="openEditOutstanding(row)"
-                  />
-                </el-tooltip>
+                <el-button v-if="canUpdate" link type="primary" size="small" @click="openExtraDetails(row)">
+                  {{ t('pages.invoice.actionExtraDetails') }}
+                </el-button>
+                <el-button v-if="canUpdate" link type="success" size="small" @click="openReceivePayment(row)">
+                  {{ t('pages.invoice.actionReceivePayment') }}
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -275,70 +329,88 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="outstandingEditVisible" :title="t('pages.invoice.editOutstanding')" width="560px" destroy-on-close align-center>
+    <el-dialog v-model="extraDetailsVisible" :title="t('pages.invoice.extraDetailsTitle')" width="520px" destroy-on-close align-center>
       <el-form label-position="top">
-        <el-form-item :label="t('pages.invoice.dueDate')">
-          <el-date-picker v-model="outstandingEdit.due_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
-        </el-form-item>
         <el-form-item :label="t('pages.invoice.taxInvoiceNo')">
-          <el-input v-model="outstandingEdit.tax_invoice_no" />
+          <el-input v-model="extraDetails.tax_invoice_no" />
         </el-form-item>
         <el-form-item :label="t('pages.invoice.taxInvoiceDate')">
-          <el-date-picker v-model="outstandingEdit.tax_invoice_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
+          <el-date-picker v-model="extraDetails.tax_invoice_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
         </el-form-item>
-        <el-form-item :label="t('pages.invoice.receiptNo')">
-          <el-input v-model="outstandingEdit.receipt_no" />
+        <el-form-item :label="t('pages.invoice.colDokumenBc')">
+          <el-input v-model="extraDetails.nopen" :placeholder="t('pages.invoice.nopen')" />
         </el-form-item>
-        <el-form-item :label="t('pages.invoice.receivedBy')">
-          <el-input v-model="outstandingEdit.received_by" />
-        </el-form-item>
-        <el-form-item :label="t('pages.invoice.receivedDate')">
-          <el-date-picker v-model="outstandingEdit.received_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
-        </el-form-item>
-        <el-form-item :label="t('pages.invoice.nopen')">
-          <el-input v-model="outstandingEdit.nopen" />
+        <el-form-item :label="t('pages.invoice.colBcDate')">
+          <el-date-picker v-model="extraDetails.bc_date" type="date" class="w-full" value-format="YYYY-MM-DD" clearable />
         </el-form-item>
         <el-form-item :label="t('pages.invoice.nomorAju')">
-          <el-input v-model="outstandingEdit.nomor_aju" />
+          <el-input v-model="extraDetails.nomor_aju" />
         </el-form-item>
-        <el-form-item :label="t('pages.invoice.paymentStatus')">
-          <el-select v-model="outstandingEdit.payment_status" class="w-full">
-            <el-option :label="t('pages.invoice.unpaid')" value="unpaid" />
-            <el-option :label="t('pages.invoice.paid')" value="paid" />
-          </el-select>
+        <el-form-item :label="t('pages.invoice.colReceivedBy')">
+          <el-input v-model="extraDetails.received_by" />
         </el-form-item>
-        <el-form-item :label="t('pages.invoice.paymentAmount')">
-          <el-input v-model="outstandingEdit.payment_amount" type="number" step="0.01" />
+        <el-form-item :label="t('pages.invoice.colReceivedDate')">
+          <el-date-picker v-model="extraDetails.received_date" type="date" class="w-full" value-format="YYYY-MM-DD" clearable />
         </el-form-item>
-        <el-form-item :label="t('pages.invoice.paymentDate')">
-          <el-date-picker v-model="outstandingEdit.payment_date" type="date" value-format="YYYY-MM-DD" class="w-full" clearable />
+        <el-form-item :label="t('pages.invoice.receiptNo')">
+          <el-input v-model="extraDetails.receipt_no" clearable />
         </el-form-item>
-        <el-form-item :label="t('pages.invoice.paymentRemark')">
-          <el-input v-model="outstandingEdit.payment_remark" maxlength="120" clearable />
-        </el-form-item>
-        <el-form-item :label="t('pages.invoice.paymentBankAccount')">
-          <el-input v-model="outstandingEdit.payment_bank_account" maxlength="100" />
-        </el-form-item>
-        <el-form-item :label="t('pages.invoice.paymentProof')">
-          <el-input v-model="outstandingEdit.payment_proof_url" maxlength="500" placeholder="URL atau path file" />
+        <el-form-item :label="t('pages.invoice.dueDate')">
+          <el-date-picker v-model="extraDetails.due_date" type="date" class="w-full" value-format="YYYY-MM-DD" clearable />
         </el-form-item>
         <el-divider content-position="left">{{ t('pages.invoice.creditNoteSection') }}</el-divider>
-        <el-form-item :label="t('pages.invoice.creditNoteNo')">
-          <el-input v-model="outstandingEdit.credit_note_no" maxlength="120" clearable />
-        </el-form-item>
-        <el-form-item :label="t('pages.invoice.creditNoteDate')">
-          <el-date-picker v-model="outstandingEdit.credit_note_date" type="date" value-format="YYYY-MM-DD" class="w-full" clearable />
-        </el-form-item>
         <el-form-item :label="t('pages.invoice.creditNoteAmount')">
-          <el-input v-model="outstandingEdit.credit_note_amount" type="number" step="0.01" />
+          <el-input v-model="extraDetails.credit_note_amount" type="number" step="0.01" />
         </el-form-item>
         <el-form-item :label="t('pages.invoice.oiaExportUsd')">
-          <el-input v-model="outstandingEdit.oia_export_usd" type="number" step="0.01" />
+          <el-input v-model="extraDetails.oia_export_usd" type="number" step="0.01" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button :icon="Close" @click="outstandingEditVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button v-if="canUpdate" type="primary" :icon="Check" :loading="outstandingSaving" @click="saveOutstanding">{{ t('common.save') }}</el-button>
+        <el-button :icon="Close" @click="extraDetailsVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button v-if="canUpdate" type="primary" :icon="Check" :loading="extraDetailsSaving" @click="saveExtraDetails">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="paymentVisible" :title="t('pages.invoice.receivePaymentTitle')" width="440px" destroy-on-close align-center>
+      <el-form label-position="top">
+        <el-alert v-if="paymentForm.invoice_number" type="info" :closable="false" class="mb-3" :title="paymentForm.invoice_number" />
+        <el-form-item :label="t('pages.invoice.paymentAmount')" required>
+          <el-input v-model="paymentForm.payment_amount" type="number" step="0.01" />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.paymentDate')" required>
+          <el-date-picker v-model="paymentForm.payment_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.paymentRemark')">
+          <el-input v-model="paymentForm.payment_remark" maxlength="120" clearable />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.paymentBankAccount')">
+          <el-input v-model="paymentForm.payment_bank_account" maxlength="100" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :icon="Close" @click="paymentVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button v-if="canUpdate" type="success" :icon="Check" :loading="paymentSaving" @click="savePayment">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="tandaTerimaVisible" :title="t('pages.invoice.tandaTerimaDialogTitle')" width="480px" destroy-on-close align-center>
+      <el-form label-position="top">
+        <p class="mb-3 text-sm text-slate-600">{{ outstandingSelected.length }} invoice · {{ tandaTerimaForm.customer_name || '—' }}</p>
+        <el-form-item :label="t('pages.invoice.colReceivedBy')">
+          <el-input v-model="tandaTerimaForm.received_by" clearable />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.colReceivedDate')">
+          <el-date-picker v-model="tandaTerimaForm.received_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.receiptNo')">
+          <el-input v-model="tandaTerimaForm.receipt_no" clearable :placeholder="'Auto: NNN/MM/YYYY'" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button :icon="Close" @click="tandaTerimaVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="default" :loading="tandaTerimaSaving" @click="submitTandaTerima('html')">HTML</el-button>
+        <el-button type="primary" :loading="tandaTerimaSaving" @click="submitTandaTerima('pdf')">PDF</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -349,18 +421,21 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { EditPen, Plus, View, Check, Close, Refresh, RefreshLeft } from '@element-plus/icons-vue'
+import { Plus, View, Check, Close, Refresh, RefreshLeft } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import { can } from '../../security/permissions'
-import { formatCurrency, formatDate, statusType, statusLabel } from '../../utils/format'
+import { formatCurrency, formatDate, formatNumber } from '../../utils/format'
 import {
   createInvoice,
+  fetchAuthenticatedDocument,
   listCustomers,
   listDelivery,
   listDeliveryDetails,
   listInvoice,
   listOutstandingInvoice,
   listPo,
+  tandaTerimaBatchHtmlPath,
+  tandaTerimaBatchPdfPath,
   toIsoDate,
   updateInvoice,
 } from '../../api/client'
@@ -377,30 +452,46 @@ const rows = ref([])
 const tab = ref('list')
 const outstandingRows = ref([])
 const outstandingLoading = ref(false)
-const outstandingMode = ref('overdue')
+const outstandingMode = ref('all')
+const outstandingArStatus = ref('')
+const outstandingCustomerId = ref(null)
+const outstandingQ = ref('')
+const openOnly = ref(true)
 const hidePo = ref(false)
-const outstandingEditVisible = ref(false)
-const outstandingSaving = ref(false)
-const outstandingEdit = reactive({
+const outstandingSelected = ref([])
+const extraDetailsVisible = ref(false)
+const extraDetailsSaving = ref(false)
+const extraDetails = reactive({
   id: null,
-  due_date: '',
   tax_invoice_no: '',
   tax_invoice_date: '',
-  receipt_no: '',
+  nopen: '',
+  bc_date: '',
+  nomor_aju: '',
   received_by: '',
   received_date: '',
-  nopen: '',
-  nomor_aju: '',
-  payment_status: 'unpaid',
+  receipt_no: '',
+  due_date: '',
+  credit_note_amount: '',
+  oia_export_usd: '',
+})
+const paymentVisible = ref(false)
+const paymentSaving = ref(false)
+const paymentForm = reactive({
+  id: null,
+  invoice_number: '',
   payment_amount: '',
   payment_date: '',
   payment_remark: '',
   payment_bank_account: '',
-  payment_proof_url: '',
-  credit_note_no: '',
-  credit_note_date: '',
-  credit_note_amount: '',
-  oia_export_usd: '',
+})
+const tandaTerimaVisible = ref(false)
+const tandaTerimaSaving = ref(false)
+const tandaTerimaForm = reactive({
+  customer_name: '',
+  received_by: '',
+  received_date: '',
+  receipt_no: '',
 })
 const poList = ref([])
 const customers = ref([])
@@ -410,6 +501,24 @@ const tabLoading = computed(() => (tab.value === 'list' ? loading.value : outsta
 
 function formatNum(v) {
   return formatCurrency(v, 'USD')
+}
+
+function formatQty(v) {
+  return formatNumber(v, 2)
+}
+
+function arStatusLabel(st) {
+  const key = String(st || '').toLowerCase()
+  if (key === 'closed') return t('pages.invoice.statusClosed')
+  if (key === 'overdue') return t('pages.invoice.statusOverdue')
+  return t('pages.invoice.statusNotOverdue')
+}
+
+function arStatusType(st) {
+  const key = String(st || '').toLowerCase()
+  if (key === 'closed') return 'success'
+  if (key === 'overdue') return 'danger'
+  return 'warning'
 }
 
 const deliveriesReady = computed(() =>
@@ -462,10 +571,19 @@ onMounted(async () => {
 async function loadOutstanding() {
   outstandingLoading.value = true
   try {
-    const params = { hide_po: hidePo.value }
+    const params = {
+      hide_po: hidePo.value,
+      open_only: openOnly.value,
+    }
     if (outstandingMode.value === 'overdue') params.overdue_only = true
     if (outstandingMode.value === 'due7') params.due_within_days = 7
+    if (outstandingArStatus.value) params.ar_status = outstandingArStatus.value
+    if (outstandingCustomerId.value) params.customer_id = outstandingCustomerId.value
+    if (outstandingQ.value.trim()) params.q = outstandingQ.value.trim()
+    // If filtering specifically for closed, don't force open_only
+    if (outstandingArStatus.value === 'closed') params.open_only = false
     outstandingRows.value = await listOutstandingInvoice(params)
+    outstandingSelected.value = []
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
@@ -473,67 +591,157 @@ async function loadOutstanding() {
   }
 }
 
+function onArStatusChange() {
+  if (outstandingArStatus.value === 'closed') openOnly.value = false
+  loadOutstanding()
+}
+
 function resetOutstandingFilters() {
-  outstandingMode.value = 'overdue'
+  outstandingMode.value = 'all'
+  outstandingArStatus.value = ''
+  outstandingCustomerId.value = null
+  outstandingQ.value = ''
+  openOnly.value = true
   hidePo.value = false
   loadOutstanding()
 }
 
-function openEditOutstanding(row) {
-  outstandingEdit.id = row.id
-  outstandingEdit.due_date = row.due_date || ''
-  outstandingEdit.tax_invoice_no = row.tax_invoice_no || ''
-  outstandingEdit.tax_invoice_date = row.tax_invoice_date || ''
-  outstandingEdit.receipt_no = row.receipt_no || ''
-  outstandingEdit.received_by = row.received_by || ''
-  outstandingEdit.received_date = row.received_date || ''
-  outstandingEdit.nopen = row.nopen || ''
-  outstandingEdit.nomor_aju = row.nomor_aju || ''
-  outstandingEdit.payment_status = row.payment_status || 'unpaid'
-  outstandingEdit.payment_amount = row.payment_amount ?? ''
-  outstandingEdit.payment_date = row.payment_date || ''
-  outstandingEdit.payment_remark = row.payment_remark || ''
-  outstandingEdit.payment_bank_account = row.payment_bank_account || ''
-  outstandingEdit.payment_proof_url = row.payment_proof_url || ''
-  outstandingEdit.credit_note_no = row.credit_note_no || ''
-  outstandingEdit.credit_note_date = row.credit_note_date || ''
-  outstandingEdit.credit_note_amount = row.credit_note_amount ?? ''
-  outstandingEdit.oia_export_usd = row.oia_export_usd ?? ''
-  outstandingEditVisible.value = true
+function onOutstandingSelection(rows) {
+  outstandingSelected.value = rows || []
 }
 
-async function saveOutstanding() {
-  if (!outstandingEdit.id) return
-  outstandingSaving.value = true
+function openExtraDetails(row) {
+  extraDetails.id = row.id
+  extraDetails.tax_invoice_no = row.tax_invoice_no || ''
+  extraDetails.tax_invoice_date = row.tax_invoice_date || ''
+  extraDetails.nopen = row.dokumen_bc || row.bc_number || row.nopen || ''
+  extraDetails.bc_date = row.bc_date || ''
+  extraDetails.nomor_aju = row.nomor_aju || ''
+  extraDetails.received_by = row.received_by || ''
+  extraDetails.received_date = row.received_date || ''
+  extraDetails.receipt_no = row.receipt_no || ''
+  extraDetails.due_date = row.due_date || ''
+  extraDetails.credit_note_amount = row.credit_note_amount ?? ''
+  extraDetails.oia_export_usd = row.oia_export_usd ?? ''
+  extraDetailsVisible.value = true
+}
+
+async function saveExtraDetails() {
+  if (!extraDetails.id) return
+  extraDetailsSaving.value = true
   try {
-    await updateInvoice(outstandingEdit.id, {
-      due_date: toIsoDate(outstandingEdit.due_date) || undefined,
-      tax_invoice_no: outstandingEdit.tax_invoice_no || undefined,
-      tax_invoice_date: toIsoDate(outstandingEdit.tax_invoice_date) || undefined,
-      receipt_no: outstandingEdit.receipt_no || undefined,
-      received_by: outstandingEdit.received_by || undefined,
-      received_date: toIsoDate(outstandingEdit.received_date) || undefined,
-      nopen: outstandingEdit.nopen || undefined,
-      nomor_aju: outstandingEdit.nomor_aju || undefined,
-      payment_status: outstandingEdit.payment_status || undefined,
-      payment_amount: outstandingEdit.payment_amount === '' ? undefined : Number(outstandingEdit.payment_amount),
-      payment_date: toIsoDate(outstandingEdit.payment_date) || undefined,
-      payment_remark: outstandingEdit.payment_remark || undefined,
-      payment_bank_account: outstandingEdit.payment_bank_account || undefined,
-      payment_proof_url: outstandingEdit.payment_proof_url || undefined,
-      credit_note_no: outstandingEdit.credit_note_no || undefined,
-      credit_note_date: toIsoDate(outstandingEdit.credit_note_date) || undefined,
+    await updateInvoice(extraDetails.id, {
+      tax_invoice_no: extraDetails.tax_invoice_no || undefined,
+      tax_invoice_date: toIsoDate(extraDetails.tax_invoice_date) || undefined,
+      nopen: extraDetails.nopen || undefined,
+      bc_date: toIsoDate(extraDetails.bc_date) || undefined,
+      nomor_aju: extraDetails.nomor_aju || undefined,
+      received_by: extraDetails.received_by || undefined,
+      received_date: toIsoDate(extraDetails.received_date) || undefined,
+      receipt_no: extraDetails.receipt_no || undefined,
+      due_date: toIsoDate(extraDetails.due_date) || undefined,
       credit_note_amount:
-        outstandingEdit.credit_note_amount === '' ? undefined : Number(outstandingEdit.credit_note_amount),
-      oia_export_usd: outstandingEdit.oia_export_usd === '' ? undefined : Number(outstandingEdit.oia_export_usd),
+        extraDetails.credit_note_amount === '' ? undefined : Number(extraDetails.credit_note_amount),
+      oia_export_usd: extraDetails.oia_export_usd === '' ? undefined : Number(extraDetails.oia_export_usd),
     })
-    ElMessage.success(t('common.save'))
-    outstandingEditVisible.value = false
+    ElMessage.success(t('pages.invoice.detailsSaved'))
+    extraDetailsVisible.value = false
     await loadOutstanding()
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
-    outstandingSaving.value = false
+    extraDetailsSaving.value = false
+  }
+}
+
+function openReceivePayment(row) {
+  paymentForm.id = row.id
+  paymentForm.invoice_number = row.invoice_number || `#${row.id}`
+  paymentForm.payment_amount = row.payment_amount ?? row.balance_after_deduct ?? ''
+  paymentForm.payment_date = row.payment_date || toIsoDate(new Date())
+  paymentForm.payment_remark = row.payment_remark || ''
+  paymentForm.payment_bank_account = row.payment_bank_account || ''
+  paymentVisible.value = true
+}
+
+async function savePayment() {
+  if (!paymentForm.id) return
+  const amt = Number(paymentForm.payment_amount)
+  if (!Number.isFinite(amt) || amt < 0) {
+    ElMessage.warning(t('pages.invoice.paymentAmount'))
+    return
+  }
+  if (!paymentForm.payment_date) {
+    ElMessage.warning(t('pages.invoice.paymentDate'))
+    return
+  }
+  paymentSaving.value = true
+  try {
+    await updateInvoice(paymentForm.id, {
+      payment_amount: amt,
+      payment_date: toIsoDate(paymentForm.payment_date),
+      payment_remark: paymentForm.payment_remark || undefined,
+      payment_bank_account: paymentForm.payment_bank_account || undefined,
+    })
+    ElMessage.success(t('pages.invoice.paymentSaved'))
+    paymentVisible.value = false
+    await loadOutstanding()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    paymentSaving.value = false
+  }
+}
+
+function openTandaTerima() {
+  if (!outstandingSelected.value.length) {
+    ElMessage.warning(t('pages.invoice.tandaTerimaPickWarning'))
+    return
+  }
+  const custKeys = new Set(
+    outstandingSelected.value.map((r) => String(r.customer_id || r.customer_name || '')),
+  )
+  if (custKeys.size > 1) {
+    ElMessage.warning(t('pages.invoice.tandaTerimaSameCustomer'))
+    return
+  }
+  const first = outstandingSelected.value[0]
+  tandaTerimaForm.customer_name = first.customer_name || ''
+  tandaTerimaForm.received_by = first.received_by || ''
+  tandaTerimaForm.received_date = toIsoDate(new Date())
+  tandaTerimaForm.receipt_no = ''
+  tandaTerimaVisible.value = true
+}
+
+async function submitTandaTerima(mode) {
+  const ids = outstandingSelected.value.map((r) => r.id).filter(Boolean)
+  if (!ids.length) {
+    ElMessage.warning(t('pages.invoice.tandaTerimaPickWarning'))
+    return
+  }
+  tandaTerimaSaving.value = true
+  try {
+    const body = {
+      invoice_ids: ids,
+      received_by: tandaTerimaForm.received_by || undefined,
+      received_date: toIsoDate(tandaTerimaForm.received_date) || undefined,
+      receipt_no: tandaTerimaForm.receipt_no || undefined,
+      stamp_invoices: true,
+    }
+    const path = mode === 'pdf' ? tandaTerimaBatchPdfPath() : tandaTerimaBatchHtmlPath()
+    await fetchAuthenticatedDocument(path, {
+      method: 'POST',
+      body,
+      mode: mode === 'pdf' ? 'download' : 'open',
+      downloadFallbackName: 'tanda_terima.pdf',
+    })
+    ElMessage.success(t('pages.invoice.tandaTerimaSuccess'))
+    tandaTerimaVisible.value = false
+    await loadOutstanding()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    tandaTerimaSaving.value = false
   }
 }
 
@@ -567,15 +775,19 @@ const listStats = computed(() => ({
   amount: filteredTotalAmount.value,
 }))
 
-const outstandingStats = computed(() => ({
-  total: outstandingRows.value.length,
-  unpaid: outstandingRows.value.filter((r) => r.payment_status !== 'paid').length,
-  paid: outstandingRows.value.filter((r) => r.payment_status === 'paid').length,
-}))
+const outstandingStats = computed(() => {
+  const rows = outstandingRows.value || []
+  return {
+    total: rows.length,
+    open: rows.filter((r) => r.ar_status !== 'closed').length,
+    closed: rows.filter((r) => r.ar_status === 'closed').length,
+    balance: rows.reduce((s, r) => s + (Number(r.balance_after_deduct) || 0), 0),
+  }
+})
 
 const invoiceListCount = computed(() => rows.value.length)
 
-const outstandingCount = computed(() => outstandingRows.value.filter((r) => r.payment_status !== 'paid').length)
+const outstandingCount = computed(() => outstandingRows.value.filter((r) => r.ar_status !== 'closed').length)
 
 const detailVisible = ref(false)
 const detailRow = ref(null)

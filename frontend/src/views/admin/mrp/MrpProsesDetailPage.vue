@@ -1,6 +1,7 @@
 <template>
   <AdminSection :title="title" :subtitle="t('pages.mrpProses.detailSubtitle')">
     <template #actions>
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button @click="$router.push('/admin/mrp/proses')">{{ t('common.close') }}</el-button>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
       <el-button v-if="canUpdate && persiapan?.status === 'draft'" type="primary" @click="act('start')">
@@ -19,6 +20,13 @@
 
     <div v-loading="loading" class="space-y-4">
       <div v-if="persiapan" class="admin-inner-card">
+        <div class="admin-inner-card__head">
+          <div>
+            <h3 class="admin-inner-card__title">{{ t('pages.mrpProses.overviewTitle') }}</h3>
+            <p class="admin-inner-card__sub">{{ t('pages.mrpProses.overviewSubtitle') }}</p>
+          </div>
+        </div>
+        <div class="mkt-section-body">
         <div class="mrp-proses-flow mb-3">
           <span
             v-for="step in flowSteps"
@@ -33,61 +41,61 @@
           </span>
         </div>
 
-        <div class="mrp-proses-stats">
-          <div class="mrp-proses-stat">
-            <span class="mrp-proses-stat__label">{{ t('pages.mrpProses.kodeProses') }}</span>
-            <span class="mrp-proses-stat__value mrp-proses-stat__value--text">{{ dash(persiapan.kode_proses) }}</span>
+        <div class="admin-stats-grid admin-stats-grid--4">
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpProses.kodeProses') }}</span>
+            <span class="admin-stat-card__value">{{ dash(persiapan.kode_proses) }}</span>
           </div>
-          <div class="mrp-proses-stat">
-            <span class="mrp-proses-stat__label">{{ t('pages.mrpProses.kodeRpi') }}</span>
-            <span class="mrp-proses-stat__value mrp-proses-stat__value--text">{{ dash(persiapan.kode_rencana) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpProses.kodeRpi') }}</span>
+            <span class="admin-stat-card__value">{{ dash(persiapan.kode_rencana) }}</span>
           </div>
-          <div class="mrp-proses-stat">
-            <span class="mrp-proses-stat__label">WIP</span>
-            <span class="mrp-proses-stat__value mrp-proses-stat__value--text">{{ dash(persiapan.kode_wip) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpProses.wip') }}</span>
+            <span class="admin-stat-card__value">{{ dash(persiapan.kode_wip) }}</span>
           </div>
-          <div class="mrp-proses-stat">
-            <span class="mrp-proses-stat__label">{{ t('pages.mrpRencana.poCustomerRef') }}</span>
-            <span class="mrp-proses-stat__value mrp-proses-stat__value--text">{{ dash(persiapan.no_po) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpRencana.poCustomerRef') }}</span>
+            <span class="admin-stat-card__value">{{ dash(persiapan.no_po) }}</span>
           </div>
-          <div class="mrp-proses-stat">
-            <span class="mrp-proses-stat__label">{{ t('pages.mrpRencana.soRef') }}</span>
-            <span class="mrp-proses-stat__value mrp-proses-stat__value--text">{{ dash(persiapan.no_so) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpRencana.soRef') }}</span>
+            <span class="admin-stat-card__value">{{ dash(persiapan.no_so) }}</span>
           </div>
-          <div class="mrp-proses-stat">
-            <span class="mrp-proses-stat__label">{{ t('common.status') }}</span>
-            <span class="mrp-proses-stat__value">
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('common.status') }}</span>
+            <span class="admin-stat-card__value">
               <el-tag :type="statusType(persiapan.status)" size="small" effect="plain">
                 {{ statusLabel(persiapan.status) }}
               </el-tag>
             </span>
           </div>
-          <div class="mrp-proses-stat">
-            <span class="mrp-proses-stat__label">{{ t('pages.mrpProses.checkpointStatus') }}</span>
-            <span class="mrp-proses-stat__value">
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpProses.checkpointStatus') }}</span>
+            <span class="admin-stat-card__value">
               <el-tag v-if="persiapan.checkpoint_status" size="small" effect="plain">
                 {{ persiapan.checkpoint_status }}
               </el-tag>
-              <span v-else class="text-gray-400">—</span>
+              <span v-else class="text-slate-400">—</span>
             </span>
           </div>
-          <div class="mrp-proses-stat">
-            <span class="mrp-proses-stat__label">{{ t('common.color') }}</span>
-            <span class="mrp-proses-stat__value mrp-proses-stat__value--text">{{ dash(persiapan.warna) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('common.color') }}</span>
+            <span class="admin-stat-card__value">{{ dash(persiapan.warna) }}</span>
           </div>
-          <div class="mrp-proses-stat">
-            <span class="mrp-proses-stat__label">{{ t('pages.mrpProses.thickness') }}</span>
-            <span class="mrp-proses-stat__value mrp-proses-stat__value--text">{{ dash(persiapan.tebal) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpProses.thickness') }}</span>
+            <span class="admin-stat-card__value">{{ dash(persiapan.tebal) }}</span>
           </div>
-          <div class="mrp-proses-stat mrp-proses-stat--wide">
-            <span class="mrp-proses-stat__label">{{ t('pages.mrpProses.treatmentList') }}</span>
-            <span class="mrp-proses-stat__value mrp-proses-stat__value--text">
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpProses.treatmentList') }}</span>
+            <span class="admin-stat-card__value">
               {{ dash(persiapan.treatment_jenis) }} — {{ dash(persiapan.treatment_list) }}
             </span>
           </div>
-          <div class="mrp-proses-stat">
-            <span class="mrp-proses-stat__label">{{ t('pages.mrpProses.totalSize') }}</span>
-            <span class="mrp-proses-stat__value">{{ formatQty(persiapan.total_size) }}</span>
+          <div class="admin-stat-card">
+            <span class="admin-stat-card__label">{{ t('pages.mrpProses.totalSize') }}</span>
+            <span class="admin-stat-card__value">{{ formatQty(persiapan.total_size) }}</span>
           </div>
         </div>
 
@@ -107,17 +115,23 @@
           show-icon
           :title="t('pages.mrpProses.doneHint')"
         />
+        </div>
       </div>
 
       <div v-if="canUpdate && persiapan?.status === 'started'" class="admin-inner-card">
-        <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpProses.kySession') }}</h3>
-        <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpProses.kyHint') }}</p>
+        <div class="admin-inner-card__head">
+          <div>
+            <h3 class="admin-inner-card__title">{{ t('pages.mrpProses.kySession') }}</h3>
+            <p class="admin-inner-card__sub">{{ t('pages.mrpProses.kySectionSubtitle') }}</p>
+          </div>
+        </div>
+        <div class="mkt-section-body">
 
         <div class="mrp-proses-form-row mb-3">
           <el-form-item :label="t('pages.mrpPalet.kodePalet')" class="mb-0">
             <el-input v-model="kyForm.kode_palet" class="w-40" />
           </el-form-item>
-          <el-form-item label="YL" class="mb-0">
+          <el-form-item :label="t('pages.mrpPalet.yl')" class="mb-0">
             <el-input v-model="kyForm.kode_yl" class="w-36" />
           </el-form-item>
           <el-form-item :label="t('pages.mrpProses.targetQty')" class="mb-0">
@@ -135,13 +149,20 @@
           <el-button @click="addUkur">{{ t('pages.mrpProses.addUkur') }}</el-button>
           <el-button type="warning" @click="selesaiKy">{{ t('pages.mrpProses.finishKy') }}</el-button>
         </div>
+        </div>
       </div>
 
       <div class="admin-inner-card">
-        <h3 class="admin-inner-card__title mb-2">{{ t('pages.mrpProses.kySessions') }}</h3>
-        <el-table :data="kySessions" border size="small" empty-text="—">
+        <div class="admin-inner-card__head">
+          <div>
+            <h3 class="admin-inner-card__title">{{ t('pages.mrpProses.kyListTitle') }}</h3>
+            <p class="admin-inner-card__sub">{{ t('pages.mrpProses.kyListSubtitle') }}</p>
+          </div>
+        </div>
+        <div class="mkt-section-body">
+        <el-table :data="kySessions" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpProses.tableEmpty')">
           <el-table-column prop="kode_palet" :label="t('pages.mrpPalet.kodePalet')" min-width="110" />
-          <el-table-column prop="kode_yl" label="YL" min-width="100" />
+          <el-table-column prop="kode_yl" :label="t('pages.mrpPalet.yl')" min-width="100" />
           <el-table-column :label="t('pages.mrpProses.targetQty')" width="90" align="right">
             <template #default="{ row }">{{ formatQty(row.target_qty) }}</template>
           </el-table-column>
@@ -159,13 +180,20 @@
             </template>
           </el-table-column>
         </el-table>
+        </div>
       </div>
 
       <div class="admin-inner-card">
-        <h3 class="admin-inner-card__title mb-2">{{ t('pages.mrpProses.ukur') }}</h3>
-        <el-table :data="ukurs" border size="small" empty-text="—">
+        <div class="admin-inner-card__head">
+          <div>
+            <h3 class="admin-inner-card__title">{{ t('pages.mrpProses.ukurSectionTitle') }}</h3>
+            <p class="admin-inner-card__sub">{{ t('pages.mrpProses.ukurSectionSubtitle') }}</p>
+          </div>
+        </div>
+        <div class="mkt-section-body">
+        <el-table :data="ukurs" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpProses.tableEmpty')">
           <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
-          <el-table-column prop="ky_id" label="KY ID" width="80" />
+          <el-table-column prop="ky_id" :label="t('pages.mrpProses.kyId')" width="80" />
           <el-table-column :label="t('pages.mrpProses.sizeUkur')" width="110" align="right">
             <template #default="{ row }">{{ formatQty(row.size_val) }}</template>
           </el-table-column>
@@ -181,6 +209,7 @@
             </template>
           </el-table-column>
         </el-table>
+        </div>
       </div>
     </div>
   </AdminSection>
@@ -395,38 +424,12 @@ onMounted(reload)
   background: var(--el-color-primary-light-9);
   font-weight: 600;
 }
-.mrp-proses-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.6rem;
-}
-.mrp-proses-stat {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 0.65rem 0.75rem;
-  min-height: 3.4rem;
-}
-.mrp-proses-stat--wide {
-  grid-column: span 2;
-}
-.mrp-proses-stat__label {
-  display: block;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 0.2rem;
-}
-.mrp-proses-stat__value {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-.mrp-proses-stat__value--text {
-  font-size: 0.875rem;
-  font-weight: 500;
-  word-break: break-word;
-}
+
+
+
+
+
+
 .mrp-proses-form-row {
   display: flex;
   flex-wrap: wrap;
@@ -438,11 +441,7 @@ onMounted(reload)
   padding-top: 0.85rem;
 }
 @media (max-width: 900px) {
-  .mrp-proses-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .mrp-proses-stat--wide {
-    grid-column: span 2;
-  }
+  
+  
 }
 </style>

@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.timeutil import app_now, utc_now
 from app.db import SessionLocal, get_db
 from app.models import User
 from app.schemas import LoginIn, TokenOut, UserCreate, UserOut, UserUpdate
@@ -32,7 +33,7 @@ def verify_password(pw: str, pw_hash: str) -> bool:
 
 
 def _create_access_token(sub: str, role: str) -> str:
-    exp = datetime.utcnow() + timedelta(minutes=int(settings.jwt_exp_minutes))
+    exp = utc_now() + timedelta(minutes=int(settings.jwt_exp_minutes))
     payload = {"sub": sub, "role": role, "exp": exp}
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
@@ -164,7 +165,7 @@ def update_user(
         row.is_active = bool(data["is_active"])
     if data.get("password"):
         row.password_hash = hash_password(str(data["password"]))
-    row.updated_at = datetime.utcnow()
+    row.updated_at = app_now()
     db.commit()
     db.refresh(row)
     return row

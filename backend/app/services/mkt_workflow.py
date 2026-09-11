@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from app.timeutil import app_now
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
@@ -163,6 +163,68 @@ def po_has_invoice_for_po(db: "Session", po_id: int) -> bool:
     return row is not None
 
 
+AUTO_PPIC_PREFIX = "[auto]"
+
+CONFIRMED_STATUSES = frozenset({"confirmed", "production", "completed"})
+PRE_OUTSTANDING_STAGES = frozenset({"input_system", "rekap_printed", "with_ppic"})
+
+
+def _status_is_confirmed(status: str | None) -> bool:
+    return (status or "").strip().lower() in CONFIRMED_STATUSES
+
+
+def _first_active_ppic_user(db: "Session"):
+    """User aktif dengan role atau department PPIC (pool, bukan pilih per orang)."""
+    from app.models import User
+
+    return db.scalars(
+        select(User)
+        .where(
+            User.is_active.is_(True),
+            or_(
+                func.lower(func.coalesce(User.role, "")) == "ppic",
+                func.lower(func.coalesce(User.department, "")) == "ppic",
+            ),
+        )
+        .order_by(User.id.asc())
+    ).first()
+
+
+def ensure_rekap_stamped_if_confirmed(db: "Session", po) -> bool:
+    """Stempel arsip rekap saat SO sudah confirm — bukan gerbang tahap.
+
+    Return True jika stempel baru ditulis.
+    """
+    if po is None or po.rekap_printed_at is not None:
+        return False
+    if not _status_is_confirmed(po.status):
+        return False
+    po.rekap_printed_at = app_now()
+    return True
+
+
+def _notify_ppic_entered_outstanding(db: "Session", po, *, actor: str) -> None:
+    try:
+        from app.services.notifications import create_notification_for_ppic_users
+
+        pn = (po.po_number or "").strip() or str(po.id)
+        q = {"po_id": po.id}
+        if po.po_number:
+            q["q"] = po.po_number
+        create_notification_for_ppic_users(
+            db,
+            title=f"SO {pn} masuk Outstanding",
+            message=f"SO dikonfirmasi dan siap dikerjakan PPIC ({actor}).",
+            category="outstanding",
+            entity_type="sales_order",
+            entity_id=int(po.id) if po.id else None,
+            route_path="/admin/marketing-flow/outstanding",
+            route_query=q,
+        )
+    except Exception:
+        pass
+
+
 def po_has_ppic_assignment(db: "Session", po_id: int) -> bool:
     from app.models import PpicsAssignment
 
@@ -186,6 +248,60 @@ def po_ppic_is_complete(db: "Session", po_id: int) -> bool:
         .limit(1)
     ).first()
     return row is not None
+
+
+def ensure_auto_ppic_handoff(db: "Session", po_id: int) -> bool:
+    """Serah terima PPIC otomatis (pool) + tandai selesai — tanpa tombol di Daftar SO.
+
+    Gerbang Outstanding = SO sudah confirm. Assignment pool opsional (audit);
+    tidak ada user PPIC aktif tidak menahan tahap.
+    """
+    from app.models import PoHeader, PpicsAssignment
+
+    po = db.get(PoHeader, po_id)
+    if not po:
+        return False
+    if not _status_is_confirmed(po.status):
+        return False
+
+    active = db.scalars(
+        select(PpicsAssignment)
+        .where(
+            PpicsAssignment.po_id == po_id,
+            PpicsAssignment.status.in_(("pending", "in_progress", "completed")),
+        )
+        .order_by(PpicsAssignment.id.desc())
+        .limit(1)
+    ).first()
+    now = app_now()
+    if active:
+        if active.status == "completed":
+            return True
+        active.status = "completed"
+        active.completed_at = now
+        note = (active.notes or "").strip()
+        tag = f"{AUTO_PPIC_PREFIX} Selesai otomatis"
+        if tag not in note:
+            active.notes = f"{note}; {tag}".strip("; ") if note else tag
+        db.flush()
+        return True
+
+    ppic_user = _first_active_ppic_user(db)
+    if not ppic_user:
+        return True
+
+    db.add(
+        PpicsAssignment(
+            po_id=po_id,
+            ppic_user_id=int(ppic_user.id),
+            notes=f"{AUTO_PPIC_PREFIX} Serah terima & selesai otomatis ke tim PPIC",
+            status="completed",
+            assigned_at=now,
+            completed_at=now,
+        )
+    )
+    db.flush()
+    return True
 
 
 def invalidate_ppic_assignments_for_rollback(db: "Session", po_id: int, target_stage: str) -> None:
@@ -256,19 +372,8 @@ def _stuck_reason_for_header(
         return None
 
     if nxt == "rekap_printed":
-        if not row.rekap_printed_at:
-            return "Menunggu rekap PO diprint"
-        status_norm = (row.status or "").strip().lower()
-        if status_norm not in {"confirmed", "production", "completed"}:
+        if not _status_is_confirmed(row.status):
             return "PO belum di-confirm"
-
-    elif nxt == "with_ppic":
-        if not has_ppic:
-            return "Belum di-assign ke PPIC"
-
-    elif nxt == "in_outstanding":
-        if not ppic_complete:
-            return "Menunggu PPIC menyelesaikan tugas"
 
     elif nxt == "delivery_arranged":
         if not has_delivery:
@@ -430,6 +535,13 @@ def auto_advance_if_ready(db: "Session", po_id: int) -> str | None:
     if nxt is None:
         return None
 
+    if nxt == "rekap_printed":
+        ensure_rekap_stamped_if_confirmed(db, row)
+
+    # Assignment pool opsional — tidak menahan Confirm → Outstanding.
+    if nxt in ("with_ppic", "in_outstanding"):
+        ensure_auto_ppic_handoff(db, po_id)
+
     stuck_reason = get_stuck_reason(db, po_id)
     if stuck_reason is not None:
         return None
@@ -438,13 +550,12 @@ def auto_advance_if_ready(db: "Session", po_id: int) -> str | None:
     if nxt == "material_followup" and not po_has_schedule_for_po(db, po_id):
         return None
 
-    now = datetime.utcnow()
+    now = app_now()
     row.mkt_workflow_stage = nxt
     row.mkt_workflow_updated_at = now
     if mkt_stage_index(nxt) >= mkt_stage_index("delivery_arranged"):
         row.material_followup_done = True
 
-    # rekap_printed_at hanya via konfirmasi cetak dialog (stamp_rekap_printed_for_recap)
     return nxt
 
 
@@ -455,12 +566,15 @@ def sync_mkt_workflow_auto_advance(
     actor: str = "system",
     max_steps: int | None = None,
     stop_at_stage: str | None = None,
+    notify_ppic: bool = True,
 ) -> list[str]:
     """Naikkan tahap MKT berurutan selama syarat terpenuhi.
 
     max_steps: batasi jumlah loncatan (None = satu putaran penuh pipeline).
     stop_at_stage: berhenti setelah mencapai tahap ini (tidak lanjut berikutnya).
+    notify_ppic: kirim notifikasi ke semua user PPIC saat masuk Outstanding.
     """
+    from app.models import PoHeader
     from app.services.audit import log_change
 
     limit = max_steps if max_steps is not None else len(MKT_STAGES_ORDER)
@@ -481,7 +595,40 @@ def sync_mkt_workflow_auto_advance(
         )
         if stop and normalize_mkt_stage(new_stage) == stop:
             break
+    if notify_ppic and "in_outstanding" in advanced:
+        po = db.get(PoHeader, po_id)
+        if po:
+            _notify_ppic_entered_outstanding(db, po, actor=actor)
     return advanced
+
+
+def backfill_confirmed_to_outstanding(db: "Session", *, actor: str = "system") -> int:
+    """Naikkan SO confirmed+ yang masih sebelum Outstanding (sekali, tanpa notifikasi)."""
+    from app.models import PoHeader
+
+    rows = list(
+        db.scalars(
+            select(PoHeader).where(
+                func.lower(func.coalesce(PoHeader.status, "")).in_(tuple(CONFIRMED_STATUSES)),
+                PoHeader.mkt_workflow_stage.in_(tuple(PRE_OUTSTANDING_STAGES)),
+            )
+        ).all()
+    )
+    moved = 0
+    for row in rows:
+        ensure_rekap_stamped_if_confirmed(db, row)
+        sync_mkt_workflow_auto_advance(
+            db,
+            int(row.id),
+            actor=actor,
+            stop_at_stage="in_outstanding",
+            notify_ppic=False,
+        )
+        if normalize_mkt_stage(row.mkt_workflow_stage) == "in_outstanding":
+            moved += 1
+    if moved:
+        db.commit()
+    return moved
 
 
 def sync_mkt_for_delivery(
@@ -543,10 +690,6 @@ def validate_mkt_advance(
     if stuck:
         raise HTTPException(status_code=400, detail=stuck)
 
-    # Sabuk pengaman: naik ke rekap_printed hanya setelah konfirmasi cetak dialog.
-    if target_norm == "rekap_printed" and row.rekap_printed_at is None:
-        raise HTTPException(status_code=400, detail="Menunggu rekap PO diprint")
-
 
 def validate_mkt_rollback(
     db: "Session",
@@ -606,7 +749,7 @@ def apply_mkt_stage(
     row = db.get(PoHeader, po_id)
     if not row:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
-    now = datetime.utcnow()
+    now = app_now()
     row.mkt_workflow_stage = normalize_mkt_stage(target)
     row.mkt_workflow_updated_at = now
     if mkt_stage_index(row.mkt_workflow_stage) >= mkt_stage_index("delivery_arranged"):
@@ -623,7 +766,7 @@ def stamp_rekap_printed_for_recap(
     """Tandai rekap PO sudah dicetak (konfirmasi dari dialog HTML) untuk header tanpa timestamp."""
     from app.models import PoHeader
 
-    now = datetime.utcnow()
+    now = app_now()
     stamped = 0
     for row in headers:
         if not isinstance(row, PoHeader):
@@ -655,7 +798,7 @@ def sync_invoice_billing_from_delivery(db: "Session", delivery_id: int) -> None:
     from app.services.business_rules import po_numbers_from_delivery
 
     pns = po_numbers_from_delivery(db, delivery_id)
-    now = datetime.utcnow()
+    now = app_now()
     for pn in pns:
         ph = db.scalars(select(PoHeader).where(PoHeader.po_number == pn).limit(1)).first()
         if ph and mkt_stage_index(ph.mkt_workflow_stage) < mkt_stage_index("invoice_billing"):

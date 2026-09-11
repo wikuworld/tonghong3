@@ -1,0 +1,3 @@
+# Tonghong: zona waktu bisnis GMT+7 (Asia/Jakarta)
+[mysqld]
+default-time-zone = '+07:00'

@@ -4,7 +4,10 @@ export const STUCK_REASON_I18N_KEYS = {
   'Menunggu rekap PO diprint': 'pages.marketingFlow.stuckReasons.waitRekapPrint',
   'PO belum di-confirm': 'pages.marketingFlow.stuckReasons.poNotConfirmed',
   'Belum di-assign ke PPIC': 'pages.marketingFlow.stuckReasons.ppicNotAssigned',
+  'Belum ada user PPIC aktif untuk serah terima otomatis':
+    'pages.marketingFlow.stuckReasons.ppicNotAssigned',
   'Menunggu PPIC menyelesaikan tugas': 'pages.marketingFlow.stuckReasons.ppicNotComplete',
+  'Menunggu Marketing menandai PPIC selesai': 'pages.marketingFlow.stuckReasons.ppicNotComplete',
   'Material belum di-follow up': 'pages.marketingFlow.stuckReasons.materialNotFollowedUp',
   'Material belum selesai di-follow up': 'pages.marketingFlow.stuckReasons.materialFollowUpIncomplete',
   'Delivery belum dibuat': 'pages.marketingFlow.stuckReasons.deliveryNotCreated',

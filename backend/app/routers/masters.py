@@ -28,6 +28,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.timeutil import app_now
 from app.models import (
     BrandBuyerMap,
     Brand,
@@ -263,7 +264,7 @@ def update_brand(
         row.name = brand_name
         # Tetap sinkronkan code dari nama agar modul lama tidak putus.
         row.code = brand_name
-        row.updated_at = datetime.utcnow()
+        row.updated_at = app_now()
     if "customer_ids" in data:
         customer_ids = sorted({int(x) for x in (data.get("customer_ids") or []) if x is not None})
         db.query(CustomerBrandMapping).filter(CustomerBrandMapping.brand_id == brand_id).delete()
@@ -605,7 +606,7 @@ def update_fluorescent_color(
         row.brand_id = brand.id if brand else None
     else:
         row.brand_id = None
-    row.updated_at = datetime.utcnow()
+    row.updated_at = app_now()
     db.commit()
     db.refresh(row)
     return row
@@ -621,7 +622,7 @@ def delete_fluorescent_color(
     if not row:
         raise HTTPException(status_code=404, detail="Master fluorescent tidak ditemukan")
     row.is_active = False
-    row.updated_at = datetime.utcnow()
+    row.updated_at = app_now()
     db.commit()
     return {"status": "deactivated"}
 

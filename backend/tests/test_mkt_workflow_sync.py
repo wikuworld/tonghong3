@@ -52,7 +52,7 @@ def test_material_followup_waits_for_delivery_not_toggle():
     assert _stuck_reason_for_header(po, **flags) is None
 
 
-def test_with_ppic_stuck_only_requires_assignment(db_session):
+def test_with_ppic_not_stuck_without_assignment(db_session):
     po = MagicMock(spec=PoHeader)
     po.id = 1
     po.mkt_workflow_stage = "rekap_printed"
@@ -62,11 +62,43 @@ def test_with_ppic_stuck_only_requires_assignment(db_session):
     db_session.get.return_value = po
 
     with patch("app.services.mkt_workflow.po_has_ppic_assignment", return_value=False):
-        assert get_stuck_reason(db_session, 1) == "Belum di-assign ke PPIC"
+        assert get_stuck_reason(db_session, 1) is None
 
-    with patch("app.services.mkt_workflow.po_has_ppic_assignment", return_value=True):
-        with patch("app.services.mkt_workflow.po_ppic_is_complete", return_value=False):
-            assert get_stuck_reason(db_session, 1) is None
+
+def test_confirmed_input_system_not_stuck_without_rekap_print():
+    po = MagicMock(spec=PoHeader)
+    po.mkt_workflow_stage = "input_system"
+    po.status = "confirmed"
+    po.rekap_printed_at = None
+    assert (
+        _stuck_reason_for_header(
+            po,
+            has_ppic=False,
+            ppic_complete=False,
+            has_delivery=False,
+            has_sj_invpl=False,
+            has_invoice=False,
+        )
+        is None
+    )
+
+
+def test_draft_input_system_waits_for_confirm():
+    po = MagicMock(spec=PoHeader)
+    po.mkt_workflow_stage = "input_system"
+    po.status = "draft"
+    po.rekap_printed_at = None
+    assert (
+        _stuck_reason_for_header(
+            po,
+            has_ppic=False,
+            ppic_complete=False,
+            has_delivery=False,
+            has_sj_invpl=False,
+            has_invoice=False,
+        )
+        == "PO belum di-confirm"
+    )
 
 
 def test_validate_mkt_advance_uses_stuck_reason(db_session):
@@ -81,7 +113,7 @@ def test_validate_mkt_advance_uses_stuck_reason(db_session):
         assert "PO belum di-confirm" in exc_info.value.detail
 
 
-def test_validate_blocks_rekap_without_print_stamp(db_session):
+def test_validate_allows_rekap_without_print_stamp(db_session):
     po = MagicMock(spec=PoHeader)
     po.id = 1
     po.mkt_workflow_stage = "input_system"
@@ -90,9 +122,7 @@ def test_validate_blocks_rekap_without_print_stamp(db_session):
     db_session.get.return_value = po
 
     with patch("app.services.mkt_workflow.get_stuck_reason", return_value=None):
-        with pytest.raises(HTTPException) as exc_info:
-            validate_mkt_advance(db_session, po_id=1, target="rekap_printed")
-        assert "rekap" in str(exc_info.value.detail).lower()
+        validate_mkt_advance(db_session, po_id=1, target="rekap_printed")
 
 
 def test_apply_mkt_stage_does_not_auto_stamp_rekap(db_session):
@@ -249,3 +279,61 @@ def test_invalidate_ppic_reopens_when_back_to_with_ppic(db_session):
 
     assert a.status == "pending"
     assert a.completed_at is None
+
+
+def test_auto_advance_from_confirmed_stamps_rekap(db_session):
+    po = MagicMock(spec=PoHeader)
+    po.id = 11
+    po.mkt_workflow_stage = "input_system"
+    po.status = "confirmed"
+    po.rekap_printed_at = None
+    db_session.get.return_value = po
+
+    with patch("app.services.mkt_workflow.get_stuck_reason", return_value=None):
+        with patch("app.services.mkt_workflow.ensure_auto_ppic_handoff", return_value=True):
+            assert auto_advance_if_ready(db_session, 11) == "rekap_printed"
+
+    assert po.rekap_printed_at is not None
+    assert po.mkt_workflow_stage == "rekap_printed"
+
+
+def test_ensure_auto_ppic_handoff_without_user_still_ok(db_session):
+    from app.services.mkt_workflow import ensure_auto_ppic_handoff
+
+    po = MagicMock(spec=PoHeader)
+    po.id = 12
+    po.status = "confirmed"
+    db_session.get.return_value = po
+    db_session.scalars.return_value.first.return_value = None
+
+    assert ensure_auto_ppic_handoff(db_session, 12) is True
+    db_session.add.assert_not_called()
+
+
+def test_sync_notifies_ppic_when_entering_outstanding(db_session):
+    stages = iter(["rekap_printed", "with_ppic", "in_outstanding"])
+    po = MagicMock(spec=PoHeader)
+    po.id = 9
+    po.po_number = "SO-9"
+    db_session.get.return_value = po
+    with patch(
+        "app.services.mkt_workflow.auto_advance_if_ready",
+        side_effect=lambda *_a, **_k: next(stages, None),
+    ):
+        with patch("app.services.audit.log_change"):
+            with patch("app.services.mkt_workflow._notify_ppic_entered_outstanding") as notify:
+                advanced = sync_mkt_workflow_auto_advance(db_session, 9, actor="tester")
+    assert advanced == ["rekap_printed", "with_ppic", "in_outstanding"]
+    notify.assert_called_once()
+
+
+def test_sync_skip_ppic_notify_when_flag_false(db_session):
+    stages = iter(["in_outstanding"])
+    with patch(
+        "app.services.mkt_workflow.auto_advance_if_ready",
+        side_effect=lambda *_a, **_k: next(stages, None),
+    ):
+        with patch("app.services.audit.log_change"):
+            with patch("app.services.mkt_workflow._notify_ppic_entered_outstanding") as notify:
+                sync_mkt_workflow_auto_advance(db_session, 9, actor="tester", notify_ppic=False)
+    notify.assert_not_called()

@@ -28,13 +28,13 @@
         <div v-show="!isSidebarCollapsed" class="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
           {{ t('common.nav.erp') }}
         </div>
-        
-        <el-sub-menu v-if="filteredErpFlowMenus.length" index="erp-flow">
+
+        <el-sub-menu v-if="filteredErpSalesMenus.length" index="erp-sales">
           <template #title>
             <el-icon><Share /></el-icon>
-            <span>{{ t('common.nav.flow') }}</span>
+            <span>{{ t('common.nav.sales') }}</span>
           </template>
-          <template v-for="item in filteredErpFlowMenus" :key="item.path">
+          <template v-for="item in filteredErpSalesMenus" :key="item.path">
             <el-sub-menu v-if="item.children?.length" :index="item.path">
               <template #title>
                 <span class="admin-subgroup-title">
@@ -53,36 +53,62 @@
             </el-sub-menu>
             <el-menu-item v-else :index="item.path">
               <el-icon><component :is="item.icon" /></el-icon>
-              <span>
-                {{ t(item.labelKey) }}
-                <span v-if="item.erpBook" class="admin-menu-hint">{{ t('common.nav.erpBook') }}</span>
-              </span>
+              <span>{{ t(item.labelKey) }}</span>
             </el-menu-item>
           </template>
         </el-sub-menu>
 
-        <el-sub-menu v-if="filteredErpFinanceMenus.length" index="erp-finance">
+        <el-sub-menu v-if="filteredErpFulfillmentMenus.length" index="erp-fulfillment">
           <template #title>
-            <el-icon><Coin /></el-icon>
-            <span>{{ t('common.nav.finance') }}</span>
+            <el-icon><Van /></el-icon>
+            <span>{{ t('common.nav.fulfillment') }}</span>
           </template>
-          <el-menu-item v-for="item in filteredErpFinanceMenus" :key="item.path" :index="item.path">
+          <el-menu-item v-for="item in filteredErpFulfillmentMenus" :key="item.path" :index="item.path">
             <el-icon><component :is="item.icon" /></el-icon>
             <span>{{ t(item.labelKey) }}</span>
           </el-menu-item>
         </el-sub-menu>
-        
+
+        <el-sub-menu v-if="filteredErpBookMenus.length" index="erp-book">
+          <template #title>
+            <el-icon><Operation /></el-icon>
+            <span>{{ t('common.nav.erpBookGroup') }}</span>
+          </template>
+          <el-menu-item v-for="item in filteredErpBookMenus" :key="item.path" :index="item.path">
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ t(item.labelKey) }}</span>
+          </el-menu-item>
+        </el-sub-menu>
+
         <el-sub-menu v-if="filteredErpMasterMenus.length" index="erp-master">
           <template #title>
             <el-icon><Files /></el-icon>
             <span>{{ t('common.nav.masterData') }}</span>
           </template>
-          <el-menu-item v-for="item in filteredErpMasterMenus" :key="item.path" :index="item.path">
-            <el-icon><component :is="item.icon" /></el-icon>
-            <span>{{ t(item.labelKey) }}</span>
-          </el-menu-item>
+          <template v-for="group in filteredErpMasterMenus" :key="group.path">
+            <el-sub-menu v-if="group.children?.length" :index="group.path">
+              <template #title>
+                <span class="admin-subgroup-title">
+                  <el-icon><component :is="group.icon" /></el-icon>
+                  <span>{{ t(group.labelKey) }}</span>
+                </span>
+              </template>
+              <el-menu-item
+                v-for="item in group.children"
+                :key="item.path"
+                :index="item.path"
+              >
+                <el-icon><component :is="item.icon" /></el-icon>
+                <span>{{ t(item.labelKey) }}</span>
+              </el-menu-item>
+            </el-sub-menu>
+            <el-menu-item v-else :index="group.path">
+              <el-icon><component :is="group.icon" /></el-icon>
+              <span>{{ t(group.labelKey) }}</span>
+            </el-menu-item>
+          </template>
         </el-sub-menu>
-        
+
         <el-sub-menu v-if="filteredErpSystemMenus.length" index="erp-system">
           <template #title>
             <el-icon><Setting /></el-icon>
@@ -351,50 +377,70 @@ function toggleSidebar() {
 
 watch(isSidebarCollapsed, applySidebarWidthVar, { immediate: true })
 
-const erpFlowMenus = [
+const erpSalesMenus = [
   { path: '/admin/dashboard', labelKey: 'menu.dashboard', icon: DataAnalysis },
-  // quotations: disembunyikan (data kosong / belum convert → SO)
   { path: '/admin/po', labelKey: 'menu.po', icon: ShoppingCart },
   {
     path: '/admin/marketing-flow',
     labelKey: 'menu.marketingFlow',
     icon: Guide,
     children: [
-      { path: '/admin/marketing-flow/po-list', labelKey: 'menu.marketingFlowPoList', icon: Guide },
       { path: '/admin/marketing-flow/outstanding', labelKey: 'menu.marketingFlowOutstanding', icon: Document },
       { path: '/admin/marketing-flow/planning', labelKey: 'menu.marketingFlowPlanning', icon: Files },
     ],
   },
   { path: '/admin/ppic-dashboard', labelKey: 'menu.ppicDashboard', icon: Operation },
-  // outstanding-materials: disembunyikan (tabel kosong; beda dari outstanding marketing)
-  { path: '/admin/production', labelKey: 'menu.production', icon: Operation, erpBook: true },
-  { path: '/admin/qc', labelKey: 'menu.qc', icon: CircleCheck, erpBook: true },
-  { path: '/admin/packing', labelKey: 'menu.packing', icon: Box, erpBook: true },
+]
+
+const erpFulfillmentMenus = [
   { path: '/admin/delivery', labelKey: 'menu.delivery', icon: Van },
   { path: '/admin/invoice', labelKey: 'menu.invoice', icon: Tickets },
   { path: '/admin/reports', labelKey: 'menu.reports', icon: Document },
 ]
 
-const erpFinanceMenus = []
+const erpBookMenus = [
+  { path: '/admin/production', labelKey: 'menu.production', icon: Operation },
+  { path: '/admin/qc', labelKey: 'menu.qc', icon: CircleCheck },
+  { path: '/admin/packing', labelKey: 'menu.packing', icon: Box },
+]
 
 const erpMasterMenus = [
-  { path: '/admin/customers', labelKey: 'menu.customers', icon: User },
-  { path: '/admin/buyer-prices', labelKey: 'menu.buyerPrices', icon: Sell },
-  // special-prices / customer-prices: disembunyikan (API broken — tabel belum migrasi)
-  { path: '/admin/bulk-price-update', labelKey: 'menu.bulkPriceUpdate', icon: Coin },
-  { path: '/admin/customer-brand-mapping', labelKey: 'menu.customerBrandMapping', icon: CollectionTag },
-  { path: '/admin/brands', labelKey: 'menu.brandMaster', icon: CollectionTag },
-  { path: '/admin/master-items', labelKey: 'menu.masterItems', icon: Box },
-  { path: '/admin/fluorescent-colors', labelKey: 'menu.fluorescentColors', icon: CollectionTag },
-  { path: '/admin/csi-colors', labelKey: 'menu.csiColors', icon: CollectionTag },
-  { path: '/admin/color-swatch', labelKey: 'menu.colorSwatch', icon: CollectionTag },
+  {
+    path: 'erp-master-customer-brand',
+    labelKey: 'common.nav.masterCustomerBrand',
+    icon: User,
+    children: [
+      { path: '/admin/customers', labelKey: 'menu.customers', icon: User },
+      { path: '/admin/brands', labelKey: 'menu.brandMaster', icon: CollectionTag },
+      { path: '/admin/customer-brand-mapping', labelKey: 'menu.customerBrandMapping', icon: CollectionTag },
+    ],
+  },
+  {
+    path: 'erp-master-pricing',
+    labelKey: 'common.nav.masterPricing',
+    icon: Sell,
+    children: [
+      { path: '/admin/buyer-prices', labelKey: 'menu.buyerPrices', icon: Sell },
+      { path: '/admin/bulk-price-update', labelKey: 'menu.bulkPriceUpdate', icon: Coin },
+    ],
+  },
+  {
+    path: 'erp-master-items-colors',
+    labelKey: 'common.nav.masterItemsColors',
+    icon: Box,
+    children: [
+      { path: '/admin/master-items', labelKey: 'menu.masterItems', icon: Box },
+      { path: '/admin/color-swatch', labelKey: 'menu.colorSwatch', icon: CollectionTag },
+      { path: '/admin/fluorescent-colors', labelKey: 'menu.fluorescentColors', icon: CollectionTag },
+      { path: '/admin/csi-colors', labelKey: 'menu.csiColors', icon: CollectionTag },
+    ],
+  },
 ]
 
 const inventoryMenus = [
   { path: '/admin/inventory?tab=material', labelKey: 'menu.inventoryMaterial', icon: Box, permissionKey: 'menu.inventory' },
   { path: '/admin/inventory?tab=stock', labelKey: 'menu.inventoryStock', icon: Goods, permissionKey: 'menu.inventory' },
   { path: '/admin/inventory?tab=warehouse', labelKey: 'menu.inventoryWarehouse', icon: FolderOpened, permissionKey: 'menu.inventory' },
-  // receipt: disembunyikan (belum dipakai / data kosong)
 ]
 
 const erpSystemMenus = [
@@ -432,42 +478,32 @@ const mrpReportMenus = [
   { path: '/admin/mrp/reports/persiapan', labelKey: 'menu.mrpReportPersiapan', icon: Document },
 ]
 
-const filteredErpFlowMenus = computed(() => {
+function filterMenuTree(menus) {
   permissionMatrixVersion.value
-  return erpFlowMenus
+  return menus
     .map((m) => {
-      if (!m.children?.length) return m
-      const children = m.children.filter((c) => roleAllowsMenu(currentRole.value, c.labelKey))
+      if (!m.children?.length) {
+        const key = m.permissionKey || m.labelKey
+        return roleAllowsMenu(currentRole.value, key) ? m : null
+      }
+      const children = m.children.filter((c) =>
+        roleAllowsMenu(currentRole.value, c.permissionKey || c.labelKey)
+      )
       return children.length ? { ...m, children } : null
     })
-    .filter((m) => m && (m.children?.length || roleAllowsMenu(currentRole.value, m.labelKey)))
-})
-const filteredErpFinanceMenus = computed(() => {
-  permissionMatrixVersion.value
-  return erpFinanceMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
-})
-const filteredErpMasterMenus = computed(() => {
-  permissionMatrixVersion.value
-  return erpMasterMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
-})
-const filteredErpSystemMenus = computed(() => {
-  permissionMatrixVersion.value
-  return erpSystemMenus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
-})
-const filteredInventoryMenus = computed(() => {
-  permissionMatrixVersion.value
-  return inventoryMenus.filter((m) =>
-    roleAllowsMenu(currentRole.value, m.permissionKey || m.labelKey)
-  )
-})
-function filterMrpMenuList(menus) {
-  permissionMatrixVersion.value
-  return menus.filter((m) => roleAllowsMenu(currentRole.value, m.labelKey))
+    .filter(Boolean)
 }
-const filteredMrpFlowMenus = computed(() => filterMrpMenuList(mrpFlowMenus))
-const filteredMrpMaterialMenus = computed(() => filterMrpMenuList(mrpMaterialMenus))
-const filteredMrpMasterMenus = computed(() => filterMrpMenuList(mrpMasterMenus))
-const filteredMrpReportMenus = computed(() => filterMrpMenuList(mrpReportMenus))
+
+const filteredErpSalesMenus = computed(() => filterMenuTree(erpSalesMenus))
+const filteredErpFulfillmentMenus = computed(() => filterMenuTree(erpFulfillmentMenus))
+const filteredErpBookMenus = computed(() => filterMenuTree(erpBookMenus))
+const filteredErpMasterMenus = computed(() => filterMenuTree(erpMasterMenus))
+const filteredErpSystemMenus = computed(() => filterMenuTree(erpSystemMenus))
+const filteredInventoryMenus = computed(() => filterMenuTree(inventoryMenus))
+const filteredMrpFlowMenus = computed(() => filterMenuTree(mrpFlowMenus))
+const filteredMrpMaterialMenus = computed(() => filterMenuTree(mrpMaterialMenus))
+const filteredMrpMasterMenus = computed(() => filterMenuTree(mrpMasterMenus))
+const filteredMrpReportMenus = computed(() => filterMenuTree(mrpReportMenus))
 
 const activeMenuPath = computed(() => {
   if (route.path === '/admin/inventory') {
@@ -477,8 +513,25 @@ const activeMenuPath = computed(() => {
   return route.path
 })
 
+const MENU_GROUP_INDEXES = new Set([
+  'erp-sales',
+  'erp-fulfillment',
+  'erp-book',
+  'erp-master',
+  'erp-master-customer-brand',
+  'erp-master-pricing',
+  'erp-master-items-colors',
+  'erp-system',
+  'inventory-master',
+  'mrp-flow',
+  'mrp-material',
+  'mrp-master',
+  'mrp-reports',
+  '/admin/marketing-flow',
+])
+
 const goTo = (path) => {
-  if (!path || path === 'erp-flow' || path === 'erp-finance' || path === 'erp-master' || path === 'erp-system' || path === 'inventory-master' || path === 'mrp-flow' || path === 'mrp-material' || path === 'mrp-master' || path === 'mrp-reports') {
+  if (!path || MENU_GROUP_INDEXES.has(path)) {
     return
   }
   if (path.includes('?')) {

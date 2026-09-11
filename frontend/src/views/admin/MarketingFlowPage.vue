@@ -107,6 +107,27 @@
               />
             </label>
             <label class="mkt-out-field">
+              <span class="mkt-out-field__label">{{ t('common.customer') }}</span>
+              <el-select
+                v-model="flowCustomerIds"
+                clearable
+                filterable
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
+                class="mkt-out-field__control"
+                :placeholder="t('pages.marketingFlow.filterCustomerMulti')"
+                @change="onFlowCustomerChange"
+              >
+                <el-option
+                  v-for="c in marketingCustomers"
+                  :key="c.id"
+                  :label="c.name || c.code || c.id"
+                  :value="c.id"
+                />
+              </el-select>
+            </label>
+            <label class="mkt-out-field">
               <span class="mkt-out-field__label">{{ t('pages.marketingFlow.filterSoStatus') }}</span>
               <el-select
                 v-model="flowSoStatus"
@@ -279,10 +300,6 @@
                       command="rekap"
                     >{{ t('pages.marketingFlow.rekapPrintAction') }}</el-dropdown-item>
                     <el-dropdown-item
-                      v-if="canEditPoDetail && soListNextStepKind(row) !== 'assign_ppic'"
-                      command="assign"
-                    >{{ t('ppicWorkflow.assignToPpic') }}</el-dropdown-item>
-                    <el-dropdown-item
                       v-if="soListNextStepKind(row) !== 'outstanding'"
                       command="outstanding"
                     >{{ t('pages.marketingFlow.viewOutstandingSo') }}</el-dropdown-item>
@@ -419,11 +436,35 @@
             </label>
 
             <label class="mkt-out-field">
+              <span class="mkt-out-field__label">{{ t('common.customer') }}</span>
+              <el-select
+                v-model="outstandingCustomerIds"
+                clearable
+                filterable
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
+                class="mkt-out-field__control"
+                :placeholder="t('pages.marketingFlow.filterCustomerMulti')"
+                @change="onOutstandingFactoryChange"
+              >
+                <el-option
+                  v-for="c in marketingCustomers"
+                  :key="c.id"
+                  :label="c.name || c.code || c.id"
+                  :value="c.id"
+                />
+              </el-select>
+            </label>
+            <label class="mkt-out-field">
               <span class="mkt-out-field__label">{{ t('pages.marketingFlow.filterFactoryCode') }}</span>
               <el-select
                 v-model="factoryCode"
                 clearable
                 filterable
+                multiple
+                collapse-tags
+                collapse-tags-tooltip
                 class="mkt-out-field__control"
                 :placeholder="t('pages.marketingFlow.filterFactoryCodePlaceholder')"
                 @change="onOutstandingFactoryChange"
@@ -465,18 +506,6 @@
                 <el-radio-button label="pu">{{ t('pages.marketingFlow.outstandingMaterialGroupPu') }}</el-radio-button>
                 <el-radio-button label="suede">{{ t('pages.marketingFlow.outstandingMaterialGroupSuede') }}</el-radio-button>
               </el-radio-group>
-            </div>
-            <div class="mkt-out-field mkt-out-field--segment">
-              <span class="mkt-out-field__label">{{ t('pages.marketingFlow.outstandingMktStageFilter') }}</span>
-              <el-radio-group
-                v-model="outstandingMktStageMin"
-                class="mkt-out-segment"
-                @change="onOutstandingSheetChange"
-              >
-                <el-radio-button label="">{{ t('pages.marketingFlow.outstandingMktStageAll') }}</el-radio-button>
-                <el-radio-button label="in_outstanding">{{ t('pages.marketingFlow.outstandingMktStageReady') }}</el-radio-button>
-              </el-radio-group>
-              <p class="mkt-out-field__hint">{{ t('pages.marketingFlow.outstandingMktStageHint') }}</p>
             </div>
           </div>
         </div>
@@ -534,11 +563,16 @@
           <el-table-column :label="t('common.orderDate')" width="110" fixed="left">
             <template #default="{ row }">{{ formatOutstandingDate(row.order_date) }}</template>
           </el-table-column>
-          <el-table-column :label="t('common.poNo')" min-width="132" fixed="left" show-overflow-tooltip>
+          <el-table-column :label="t('common.poNo')" min-width="140" fixed="left" show-overflow-tooltip>
             <template #default="{ row }">
               <el-button link type="primary" @click="goPo(row.po_id)">
                 {{ row.thi_order || t('common.emptyValue') }}
               </el-button>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('pages.marketingFlow.colLotNo')" min-width="130" fixed="left" show-overflow-tooltip>
+            <template #default="{ row }">
+              {{ outstandingLotNo(row) || t('common.emptyValue') }}
             </template>
           </el-table-column>
           <el-table-column :label="t('pages.marketingFlow.colPoCustomer')" min-width="120" show-overflow-tooltip>
@@ -549,6 +583,21 @@
           <el-table-column prop="customer_name" :label="t('common.customerName')" min-width="160" show-overflow-tooltip />
           <el-table-column prop="material_name" :label="t('common.material')" min-width="160" show-overflow-tooltip />
           <el-table-column prop="qty_sf" :label="t('pages.marketingFlow.colQtySf')" width="92" align="right" />
+          <el-table-column prop="stock_wh_qty" :label="t('pages.marketingFlow.colStockWh')" width="96" align="right">
+            <template #default="{ row }">
+              {{ formatOutstandingCell(row.stock_wh_qty) }}
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('pages.marketingFlow.outstandingColQtyPlan')" width="104" align="right">
+            <template #default="{ row }">
+              <span class="out-mrp-qty">{{ formatMrpQtyCell(row.mrp_qty_processed) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('pages.marketingFlow.outstandingColQtyWip')" width="96" align="right">
+            <template #default="{ row }">
+              <span class="out-mrp-qty">{{ formatMrpQtyCell(row.mrp_qty_wip) }}</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="delivered_qty" :label="t('pages.marketingFlow.colDeliveredQty')" width="92" align="right" />
           <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="92" align="right" />
           <el-table-column :label="t('pages.marketingFlow.outWorkCol')" width="150">
@@ -622,6 +671,9 @@
             <span v-else-if="col.kind === 'date'">{{ formatOutstandingDate(row[col.prop]) }}</span>
             <span v-else-if="col.kind === 'mkt_stage'">{{ labelFor(row.mkt_stage) }}</span>
             <span v-else-if="col.kind === 'mrp_alloc'">{{ formatMrpAllocCell(row) }}</span>
+            <span v-else-if="col.kind === 'mrp_qty'" class="out-mrp-qty">
+              {{ formatMrpQtyCell(row[col.prop]) }}
+            </span>
             <span v-else>{{ formatOutstandingCell(row[col.prop]) }}</span>
           </template>
         </el-table-column>
@@ -744,28 +796,50 @@
                   </label>
                   <label class="mkt-out-field">
                     <span class="mkt-out-field__label">{{ t('pages.marketingFlow.factoryFilterOptional') }}</span>
-                    <el-input
+                    <el-select
                       v-model="planningFactory"
                       clearable
+                      filterable
+                      multiple
+                      collapse-tags
+                      collapse-tags-tooltip
                       class="mkt-out-field__control"
-                    />
-                  </label>
-                  <div class="mkt-out-field mkt-out-field--segment">
-                    <span class="mkt-out-field__label">{{ t('pages.marketingFlow.outstandingMktStageFilter') }}</span>
-                    <el-radio-group
-                      v-model="planningMktStageMin"
-                      class="mkt-out-segment"
+                      :placeholder="t('pages.marketingFlow.filterFactoryCodePlaceholder')"
                       @change="loadPlanning"
                     >
-                      <el-radio-button label="">{{ t('pages.marketingFlow.outstandingMktStageAll') }}</el-radio-button>
-                      <el-radio-button label="in_outstanding">{{ t('pages.marketingFlow.outstandingMktStageReady') }}</el-radio-button>
-                    </el-radio-group>
-                  </div>
+                      <el-option
+                        v-for="code in planningFactoryOptions"
+                        :key="code"
+                        :label="code"
+                        :value="code"
+                      />
+                    </el-select>
+                  </label>
+                  <label class="mkt-out-field">
+                    <span class="mkt-out-field__label">{{ t('common.customer') }}</span>
+                    <el-select
+                      v-model="planningCustomerIds"
+                      clearable
+                      filterable
+                      multiple
+                      collapse-tags
+                      collapse-tags-tooltip
+                      class="mkt-out-field__control"
+                      :placeholder="t('pages.marketingFlow.filterCustomerMulti')"
+                    >
+                      <el-option
+                        v-for="c in marketingCustomers"
+                        :key="c.id"
+                        :label="c.name || c.code || c.id"
+                        :value="c.id"
+                      />
+                    </el-select>
+                  </label>
                 </div>
                 <div class="mkt-plan-filter__footer">
                   <div class="mkt-plan-stat-chips">
                     <span class="mkt-plan-stat-chip">
-                      {{ t('common.total') }}: <strong>{{ planningRows.length }}</strong>
+                      {{ t('common.total') }}: <strong>{{ planningDisplayRows.length }}</strong>
                     </span>
                   </div>
                   <div class="mkt-plan-filter__actions">
@@ -780,7 +854,7 @@
             <div class="mkt-plan-block">
               <div class="admin-table-scroll">
                 <el-table
-                  :data="planningRows"
+                  :data="planningDisplayRows"
                   border
                   stripe
                   size="small"
@@ -814,6 +888,14 @@
                   <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip />
                   <el-table-column prop="thi_line_ref" :label="t('pages.marketingFlow.planningColThiLine')" min-width="140" show-overflow-tooltip />
                   <el-table-column prop="qty" :label="t('pages.marketingFlow.colQtyShip')" width="88" />
+                  <el-table-column :label="t('pages.marketingFlow.outstandingColQtyPlan')" width="96" align="right">
+                    <template #default="{ row }">{{ formatMrpQtyCell(row.mrp_qty_processed) }}</template>
+                  </el-table-column>
+                  <el-table-column :label="t('pages.marketingFlow.outstandingColQtyWip')" width="88" align="right">
+                    <template #default="{ row }">
+                      <span class="out-mrp-qty">{{ formatMrpQtyCell(row.mrp_qty_wip) }}</span>
+                    </template>
+                  </el-table-column>
                   <el-table-column prop="delivered_qty" :label="t('pages.marketingFlow.planningColDelivered')" width="88" />
                   <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="88" />
                   <el-table-column prop="line_etd" :label="t('pages.po.lineEtd')" width="110" />
@@ -935,6 +1017,14 @@
                     <el-table-column prop="po_customer_ref" :label="t('pages.marketingFlow.colPoCustomer')" min-width="110" show-overflow-tooltip />
                     <el-table-column prop="material_name" :label="t('common.material')" min-width="130" show-overflow-tooltip />
                     <el-table-column prop="qty" :label="t('pages.marketingFlow.colQtyShip')" width="80" />
+                    <el-table-column :label="t('pages.marketingFlow.outstandingColQtyPlan')" width="88" align="right">
+                      <template #default="{ row }">{{ formatMrpQtyCell(row.mrp_qty_processed) }}</template>
+                    </el-table-column>
+                    <el-table-column :label="t('pages.marketingFlow.outstandingColQtyWip')" width="80" align="right">
+                      <template #default="{ row }">
+                        <span class="out-mrp-qty">{{ formatMrpQtyCell(row.mrp_qty_wip) }}</span>
+                      </template>
+                    </el-table-column>
                     <el-table-column prop="delivered_qty" :label="t('pages.marketingFlow.planningColDelivered')" width="80" />
                     <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="80" />
                     <el-table-column prop="line_etd" :label="t('pages.po.lineEtd')" width="110" />
@@ -1206,33 +1296,6 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="assignDialogVisible" :title="t('ppicWorkflow.assignToPpic')" width="600px" destroy-on-close align-center>
-      <el-alert
-        class="mb-3"
-        type="info"
-        :closable="false"
-        show-icon
-        :title="t('ppicWorkflow.assignPrerequisite')"
-      />
-      <el-form label-width="120px">
-        <el-form-item :label="t('common.poNo')">
-          <el-input :model-value="selectedPoForAssignment?.po_number" disabled />
-        </el-form-item>
-        <el-form-item :label="t('ppicWorkflow.ppicUser')" required>
-          <el-select v-model="assignForm.ppic_user_id" class="w-full" clearable :placeholder="t('ppicWorkflow.ppicUser')">
-            <el-option v-for="u in ppicUsers" :key="u.id" :label="u.username" :value="u.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item :label="t('ppicWorkflow.notes')">
-          <el-input v-model="assignForm.notes" type="textarea" :rows="3" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button :icon="Close" @click="assignDialogVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :icon="Check" :loading="assigning" @click="submitAssignment">{{ t('common.save') }}</el-button>
-      </template>
-    </el-dialog>
-
     <el-dialog v-model="materialFollowUpDialogVisible" :title="t('pages.marketingFlow.materialFollowUp')" width="500px" destroy-on-close align-center>
       <el-form label-position="top">
         <el-form-item :label="t('common.poNo')">
@@ -1265,19 +1328,17 @@ import PoRekapPrintDialog from '../../components/admin/PoRekapPrintDialog.vue'
 import {
   advanceMktWorkflow,
   rollbackMktWorkflow,
-  assignPoToPpic,
   createMarketingOutstandingSnapshot,
   fetchAuthenticatedDocument,
   getMarketingDeliveryToday,
   getMarketingOutstandingSnapshot,
-  getPpicDashboard,
+  listCustomers,
   listMarketingDeliveryLines,
   listMarketingDeliveryPlanning,
   listMarketingOutstandingLines,
   listMarketingOutstandingSnapshots,
   listPoMktStages,
   listPoPage,
-  listPpicUsers,
   marketingDeliveryCsvUrl,
   marketingDeliveryXlsxPath,
   marketingOutstandingCsvUrl,
@@ -1335,6 +1396,8 @@ const stageCountMap = ref({})
 const stageList = ref([])
 const filterStage = ref(null)
 const flowSoStatus = ref('')
+const flowCustomerIds = ref([])
+const marketingCustomers = ref([])
 const flowKeyword = ref('')
 let flowWatchReady = false
 let flowKeywordTimer = null
@@ -1423,11 +1486,11 @@ const rekapPoNumber = ref('')
 const balanceFilter = ref('exclude_zero')
 const shipmentTab = ref('all')
 const poSearch = ref('')
-const factoryCode = ref('')
+const factoryCode = ref([])
+const outstandingCustomerIds = ref([])
 const outstandingFactoryOptions = ref([])
 const outstandingPoCategory = ref('')
 const outstandingMaterialGroup = ref('')
-const outstandingMktStageMin = ref('in_outstanding')
 const outstandingViewMode = ref('work')
 const outstandingCompactView = computed(() => outstandingViewMode.value === 'work')
 const workbenchOverride = ref(null)
@@ -1458,6 +1521,13 @@ function formatOutstandingCell(val) {
   return val
 }
 
+function outstandingLotNo(row) {
+  const raw = row?.lot_no || row?.thi_line_ref || row?.system_reference || ''
+  const s = String(raw).trim()
+  if (!s || s === '—') return ''
+  return s
+}
+
 function formatMrpAllocLabel(status) {
   const key = {
     unsynced: 'pages.marketingFlow.outstandingMrpUnsynced',
@@ -1469,20 +1539,22 @@ function formatMrpAllocLabel(status) {
   return t(key || 'pages.marketingFlow.outstandingMrpUnsynced')
 }
 
+/** Qty asal MRP: kosong = baris belum tersinkron ke MRP, bukan angka nol. */
+function formatMrpQtyCell(value) {
+  const s = String(value ?? '').trim()
+  return s === '' ? t('common.emptyValue') : s
+}
+
 function formatMrpAllocCell(row) {
   const status = row?.mrp_alloc_status || 'unsynced'
   const label = formatMrpAllocLabel(status)
   const rem = row?.mrp_qty_remaining
-  if (status === 'unsynced' || rem == null || rem === '') return label
-  return `${label} · ${rem}`
+  const ship = row?.mrp_qty_ship_remaining
+  if (status === 'unsynced') return label
+  if (rem == null || rem === '') return label
+  if (ship == null || ship === '') return `${label} · ${rem}`
+  return t('pages.marketingFlow.outstandingMrpPlanShip', { label, plan: rem, ship })
 }
-
-const ppicUsers = ref([])
-const ppicAssignments = ref({})
-const assignDialogVisible = ref(false)
-const assignForm = ref({ ppic_user_id: null, notes: '' })
-const selectedPoForAssignment = ref(null)
-const assigning = ref(false)
 
 const materialFollowUpDialogVisible = ref(false)
 const materialFollowUpForm = reactive({ remark: '' })
@@ -1532,6 +1604,7 @@ const outstandingTableColumnDefs = computed(() => {
   const cols = [
     { prop: 'order_date', label: 'DATE', width: 120, fixed: 'left', kind: 'date' },
     { prop: 'thi_order', label: 'THI ORDER', width: 140, fixed: 'left', kind: 'text' },
+    { prop: 'lot_no', label: t('pages.marketingFlow.colLotNo'), minWidth: 130, fixed: 'left', kind: 'text' },
     { prop: 'customer_name', label: 'CUSTOMER NAME', minWidth: 180, kind: 'text' },
     { prop: 'brand', label: 'BRAND', minWidth: 110, kind: 'text' },
     { prop: 'order_type', label: 'ORDER TYPE', width: 110, kind: 'text' },
@@ -1543,6 +1616,20 @@ const outstandingTableColumnDefs = computed(() => {
     { prop: 'color', label: 'COLOR', width: 90, kind: 'text' },
     { prop: 'softness', label: 'SOFTNESS', width: 90, kind: 'text' },
     { prop: 'qty_sf', label: 'QTY (S/F)', width: 100, align: 'right', kind: 'text' },
+    {
+      prop: 'mrp_qty_processed',
+      label: t('pages.marketingFlow.outstandingColQtyPlan'),
+      width: 108,
+      align: 'right',
+      kind: 'mrp_qty',
+    },
+    {
+      prop: 'mrp_qty_wip',
+      label: t('pages.marketingFlow.outstandingColQtyWip'),
+      width: 100,
+      align: 'right',
+      kind: 'mrp_qty',
+    },
     { prop: 'unit_price', label: 'PRICE', width: 88, align: 'right', kind: 'text' },
     { prop: 'color_reference', label: 'COLOR S/W', minWidth: 110, kind: 'text' },
     { prop: 'color_standard', label: 'COLOR STD', minWidth: 100, kind: 'text' },
@@ -1656,10 +1743,12 @@ function buildOutstandingQueryParams(extra = {}) {
     po_q: poSearch.value,
     shipment_status: shipmentTab.value,
     material_status: materialStatus.value || undefined,
-    factory_code: factoryCode.value || undefined,
+    factory_code: Array.isArray(factoryCode.value) && factoryCode.value.length ? factoryCode.value : undefined,
+    customer_ids: Array.isArray(outstandingCustomerIds.value) && outstandingCustomerIds.value.length
+      ? outstandingCustomerIds.value
+      : undefined,
     po_category: outstandingPoCategory.value || undefined,
     material_group: outstandingMaterialGroup.value || undefined,
-    mkt_stage_min: outstandingMktStageMin.value || undefined,
     skip: (page - 1) * size,
     limit: Math.min(size, OUTSTANDING_LINES_LIMIT),
     ...buildOutstandingDateParams(),
@@ -1889,12 +1978,28 @@ function planningDefaultRange() {
   return [isoDateLocal(s), isoDateLocal(e)]
 }
 const planningDateRange = ref(planningDefaultRange())
-const planningFactory = ref('')
+const planningFactory = ref([])
+const planningCustomerIds = ref([])
 const planningPoSearch = ref('')
-const planningMktStageMin = ref('in_outstanding')
 const planningRows = ref([])
 const planningLoading = ref(false)
 const planningShipRows = ref([])
+
+const planningFactoryOptions = computed(() => {
+  const set = new Set()
+  for (const r of planningRows.value || []) {
+    const c = String(r.factory_code || '').trim()
+    if (c) set.add(c)
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+})
+
+const planningDisplayRows = computed(() => {
+  const ids = Array.isArray(planningCustomerIds.value) ? planningCustomerIds.value.map(Number) : []
+  if (!ids.length) return planningRows.value
+  const idSet = new Set(ids)
+  return planningRows.value.filter((r) => r.customer_id != null && idSet.has(Number(r.customer_id)))
+})
 
 const todayOnDate = ref(isoDateLocal(new Date()))
 const deliveryDateRange = ref(null)
@@ -2025,6 +2130,9 @@ function buildFlowPageParams() {
   if (flowSoStatus.value) {
     params.status = flowSoStatus.value
   }
+  if (Array.isArray(flowCustomerIds.value) && flowCustomerIds.value.length) {
+    params.customer_id = flowCustomerIds.value
+  }
   if (flowKeyword.value.trim()) {
     params.q = flowKeyword.value.trim()
   }
@@ -2040,9 +2148,9 @@ const flowStats = computed(() => ({
   actionable: rows.value.filter((row) => soListNextStepActionable(soListNextStepKind(row))).length,
 }))
 
-function needsRekapPrintConfirm(row) {
-  const nxt = nextFlowStage(row?.mkt_workflow_stage)
-  return nxt === 'rekap_printed' && !row?.rekap_printed_at
+function needsRekapPrintConfirm(_row) {
+  // Cetak RKPO bukan gerbang: Confirm SO langsung Outstanding.
+  return false
 }
 
 function canAdvanceRow(row) {
@@ -2096,7 +2204,10 @@ async function loadOutstanding() {
   outstandingLoading.value = true
   try {
     const resp = await listMarketingOutstandingLines(buildOutstandingQueryParams())
-    outstandingRows.value = unwrapOutstandingLines(resp)
+    outstandingRows.value = unwrapOutstandingLines(resp).map((row) => ({
+      ...row,
+      lot_no: outstandingLotNo(row),
+    }))
     outstandingTotal.value = Number(resp?.total ?? outstandingRows.value.length) || 0
     editingOutstandingId.value = null
     outstandingEditSnapshot.value = null
@@ -2116,7 +2227,7 @@ function syncOutstandingFactoryOptions(rows) {
     .filter(Boolean)
   const set = new Set([...(outstandingFactoryOptions.value || []), ...fromRows])
   // Saat filter pabrik kosong, refresh opsi dari data terbaru agar daftar lengkap
-  if (!(factoryCode.value || '').trim()) {
+  if (!Array.isArray(factoryCode.value) || !factoryCode.value.length) {
     outstandingFactoryOptions.value = fromRows.length
       ? [...new Set(fromRows)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
       : [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
@@ -2151,10 +2262,10 @@ function resetOutstandingFilters() {
   outstandingDateRange.value = null
   outstandingPoCategory.value = ''
   outstandingMaterialGroup.value = ''
-  outstandingMktStageMin.value = 'in_outstanding'
   balanceFilter.value = 'exclude_zero'
   poSearch.value = ''
-  factoryCode.value = ''
+  factoryCode.value = []
+  outstandingCustomerIds.value = []
   materialStatus.value = ''
   outstandingPage.value = 1
   workbenchOverride.value = null
@@ -2265,11 +2376,17 @@ function resetFlowFilters() {
   flowKeyword.value = ''
   filterStage.value = null
   flowSoStatus.value = ''
+  flowCustomerIds.value = []
   flowPage.value = 1
   load()
 }
 
 function onFlowSoStatusChange() {
+  flowPage.value = 1
+  load()
+}
+
+function onFlowCustomerChange() {
   flowPage.value = 1
   load()
 }
@@ -2315,8 +2432,9 @@ async function loadPlanning() {
     const r = await listMarketingDeliveryPlanning({
       date_from: df,
       date_to: dt,
-      factory_code: planningFactory.value?.trim() || undefined,
-      mkt_stage_min: planningMktStageMin.value || undefined,
+      factory_code: Array.isArray(planningFactory.value) && planningFactory.value.length
+        ? planningFactory.value
+        : undefined,
       po_q: planningPoSearch.value?.trim() || undefined,
     })
     planningRows.value = Array.isArray(r?.data) ? r.data : []
@@ -2373,10 +2491,14 @@ async function saveOutstandingSnapshot() {
         po_q: poSearch.value?.trim() || null,
         shipment_status: q.shipment_status,
         material_status: materialStatus.value || null,
-        factory_code: factoryCode.value?.trim() || null,
+        factory_code: Array.isArray(factoryCode.value) && factoryCode.value.length
+          ? factoryCode.value.join(',')
+          : null,
+        customer_ids: Array.isArray(outstandingCustomerIds.value) && outstandingCustomerIds.value.length
+          ? outstandingCustomerIds.value.join(',')
+          : null,
         po_category: outstandingPoCategory.value?.trim() || null,
         material_group: outstandingMaterialGroup.value?.trim() || null,
-        mkt_stage_min: outstandingMktStageMin.value?.trim() || null,
         ...buildOutstandingDateParams(),
       },
     })
@@ -2402,6 +2524,12 @@ async function openSnapshotDetail(id) {
 }
 
 onMounted(async () => {
+  try {
+    const cust = await listCustomers()
+    marketingCustomers.value = Array.isArray(cust) ? cust : (cust?.data || [])
+  } catch {
+    marketingCustomers.value = []
+  }
   if (section.value === 'flow') {
     try {
       const data = await listPoMktStages()
@@ -2411,8 +2539,6 @@ onMounted(async () => {
     }
     await Promise.all([
       load(),
-      loadPpicUsers(),
-      loadAssignments(),
     ])
     flowWatchReady = true
     return
@@ -2453,61 +2579,12 @@ watch([flowPage, flowPageSize], () => {
   load()
 })
 
-async function loadPpicUsers() {
-  try {
-    ppicUsers.value = await listPpicUsers()
-  } catch {
-    ppicUsers.value = []
-  }
-}
-
-async function loadAssignments() {
-  try {
-    const data = await getPpicDashboard()
-    const map = {}
-    for (const a of data) {
-      map[a.po_id] = a
-    }
-    ppicAssignments.value = map
-  } catch {
-    ppicAssignments.value = {}
-  }
-}
-
-function openAssignDialog(row) {
-  selectedPoForAssignment.value = row
-  assignForm.value = { ppic_user_id: null, notes: '' }
-  assignDialogVisible.value = true
-}
-
-async function submitAssignment() {
-  if (!assignForm.value.ppic_user_id) {
-    ElMessage.warning(t('common.fillRequired'))
-    return
-  }
-  assigning.value = true
-  try {
-    await assignPoToPpic(selectedPoForAssignment.value.id, {
-      po_id: selectedPoForAssignment.value.id,
-      ppic_user_id: assignForm.value.ppic_user_id,
-      notes: assignForm.value.notes || null,
-    })
-    ElMessage.success(t('common.saveSuccess'))
-    assignDialogVisible.value = false
-    await Promise.all([load(), loadAssignments()])
-  } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
-  } finally {
-    assigning.value = false
-  }
-}
-
 function stuckReasonLabel(reason) {
   return translateStuckReason(reason, t)
 }
 
 function soListNextStepKind(row) {
-  return soListNextStep(row, { hasPpic: Boolean(ppicAssignments.value[row?.id]) })
+  return soListNextStep(row)
 }
 
 function soListNextStepLabel(row) {
@@ -2552,7 +2629,6 @@ function soListPrimaryVisible(row) {
   const kind = soListNextStepKind(row)
   if (kind === 'wait' || kind === 'done') return false
   if (kind === 'advance' && !canAdvance) return false
-  if (kind === 'assign_ppic' && !canEditPoDetail) return false
   return true
 }
 
@@ -2563,12 +2639,13 @@ function soListPrimaryLabel(row) {
 function soListPrimaryType(row) {
   const kind = soListNextStepKind(row)
   if (kind === 'rekap' || kind === 'delivery' || kind === 'invoice') return 'success'
-  if (kind === 'assign_ppic' || kind === 'planning') return 'warning'
+  if (kind === 'planning') return 'warning'
   return 'primary'
 }
 
 function soListPrimaryLoading(row) {
-  return advancing.value === row?.id && soListNextStepKind(row) === 'advance'
+  if (soListNextStepKind(row) === 'advance') return advancing.value === row?.id
+  return false
 }
 
 function soListPrimaryDisabled(row) {
@@ -2580,7 +2657,6 @@ function soListPrimaryDisabled(row) {
 function runSoListPrimary(row) {
   const kind = soListNextStepKind(row)
   if (kind === 'rekap') openRekapPrintDialog(row)
-  else if (kind === 'assign_ppic') openAssignDialog(row)
   else if (kind === 'advance') advance(row)
   else if (kind === 'outstanding') goOutstandingFromPo(row)
   else if (kind === 'planning') goPlanningFromPo(row)
@@ -2590,7 +2666,6 @@ function runSoListPrimary(row) {
 function onSoListMore(row, command) {
   if (command === 'detail') goPo(row.id)
   else if (command === 'rekap') openRekapPrintDialog(row)
-  else if (command === 'assign') openAssignDialog(row)
   else if (command === 'outstanding') goOutstandingFromPo(row)
   else if (command === 'planning') goPlanningFromPo(row)
   else if (command === 'delivery') goDeliveryFromPo(row)
@@ -3440,7 +3515,7 @@ function handleOutstandingExportCommand(command) {
 }
 
 .marketing-outstanding-table.outstanding-table--work {
-  min-width: 1180px;
+  min-width: 1280px;
 }
 
 .marketing-outstanding-table :deep(tr.out-row--g0 > td.el-table__cell) {
@@ -3483,6 +3558,13 @@ function handleOutstandingExportCommand(command) {
 
 .marketing-outstanding-table :deep(tr.out-row--group-start > td.el-table__cell) {
   border-top: 1px solid #e2e8f0;
+}
+
+/* Angka yang berasal dari MRP, bukan dari order ERP. */
+.out-mrp-qty {
+  color: #7c3aed;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .marketing-outstanding-table :deep(tr.out-row--g0:hover > td.el-table__cell) {

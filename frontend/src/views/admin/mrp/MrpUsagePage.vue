@@ -1,14 +1,20 @@
 <template>
   <AdminSection :title="t('pages.mrpUsage.title')" :subtitle="t('pages.mrpUsage.subtitle')">
     <template #actions>
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
     </template>
 
     <el-tabs v-model="tab">
       <el-tab-pane :label="t('pages.mrpUsage.color')" name="color">
         <div v-if="canCreate" class="admin-inner-card mb-4">
-          <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpUsage.colorFormTitle') }}</h3>
-          <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpUsage.colorHint') }}</p>
+          <div class="admin-inner-card__head">
+            <div>
+              <h3 class="admin-inner-card__title">{{ t('pages.mrpUsage.colorFormTitle') }}</h3>
+              <p class="admin-inner-card__sub">{{ t('pages.mrpUsage.colorHint') }}</p>
+            </div>
+          </div>
+          <div class="mkt-section-body">
           <div class="flex flex-wrap gap-2 mb-3 items-center">
             <el-input
               v-model="colorForm.kode_lot_warna"
@@ -52,31 +58,37 @@
               {{ t('common.save') }}
             </el-button>
           </div>
-          <div v-if="lotInfo" class="mrp-usage-meta">
-            <div class="mrp-usage-meta__item">
-              <span class="mrp-usage-meta__label">{{ t('pages.mrpUsage.lot') }}</span>
+          <div v-if="lotInfo" class="admin-stats-grid admin-stats-grid--4 mb-3">
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('pages.mrpUsage.lot') }}</span>
               <span>{{ dash(lotInfo.kode_lot_warna) }}</span>
             </div>
-            <div class="mrp-usage-meta__item">
-              <span class="mrp-usage-meta__label">{{ t('common.name') }}</span>
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('common.name') }}</span>
               <span>{{ dash(lotInfo.nama_lot_warna) }}</span>
             </div>
-            <div class="mrp-usage-meta__item">
-              <span class="mrp-usage-meta__label">{{ t('pages.mrpUsage.qtyPembuatan') }}</span>
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('pages.mrpUsage.qtyPembuatan') }}</span>
               <span>{{ formatQty(lotInfo.qty_pembuatan) }}</span>
             </div>
-            <div class="mrp-usage-meta__item">
-              <span class="mrp-usage-meta__label">{{ t('common.status') }}</span>
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('common.status') }}</span>
               <el-tag size="small" effect="plain" type="success">{{ dash(lotInfo.status) }}</el-tag>
             </div>
           </div>
         </div>
+        </div>
         <div class="admin-inner-card">
-          <div class="mrp-usage-list-head mb-3">
-            <h3 class="admin-inner-card__title mb-0">{{ t('pages.mrpUsage.colorHistory') }}</h3>
-            <el-input v-model="searchColor" clearable size="small" class="w-52" :placeholder="t('pages.mrpUsage.searchPlaceholder')" />
+          <div class="admin-inner-card__head">
+            <div>
+              <h3 class="admin-inner-card__title">{{ t('pages.mrpUsage.colorHistory') }}</h3>
+              <p class="admin-inner-card__sub">{{ t('pages.mrpUsage.listSubtitle') }}</p>
+            </div>
+            <el-input v-model="searchColor" clearable size="small" class="mrp-toolbar-search" :placeholder="t('pages.mrpUsage.searchPlaceholder')" />
           </div>
-          <el-table :data="filteredColor" v-loading="loading" border stripe size="small" class="admin-table" empty-text="—">
+          <div class="mkt-section-body">
+          <div class="admin-table-scroll">
+          <el-table :data="filteredColor" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpUsage.tableEmpty')">
             <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
             <el-table-column prop="kode_wip" :label="t('pages.mrpUsage.wip')" min-width="120" show-overflow-tooltip />
             <el-table-column prop="kode_lot_warna" :label="t('pages.mrpUsage.lot')" min-width="120" show-overflow-tooltip />
@@ -93,13 +105,20 @@
               <template #default="{ row }">{{ formatDateTime(row.date_created) }}</template>
             </el-table-column>
           </el-table>
+          </div>
+          </div>
         </div>
       </el-tab-pane>
 
       <el-tab-pane :label="t('pages.mrpUsage.rp')" name="rp">
         <div v-if="canCreate" class="admin-inner-card mb-4">
-          <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpUsage.rpFormTitle') }}</h3>
-          <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpUsage.rpHint') }}</p>
+          <div class="admin-inner-card__head">
+            <div>
+              <h3 class="admin-inner-card__title">{{ t('pages.mrpUsage.rpFormTitle') }}</h3>
+              <p class="admin-inner-card__sub">{{ t('pages.mrpUsage.rpHint') }}</p>
+            </div>
+          </div>
+          <div class="mkt-section-body">
           <div class="flex flex-wrap gap-2 mb-3 items-center">
             <el-input
               v-model="rpForm.jenis_rp"
@@ -139,27 +158,33 @@
               {{ t('common.save') }}
             </el-button>
           </div>
-          <div v-if="rpInfo" class="mrp-usage-meta">
-            <div class="mrp-usage-meta__item">
-              <span class="mrp-usage-meta__label">{{ t('pages.mrpUsage.rp') }}</span>
+          <div v-if="rpInfo" class="admin-stats-grid admin-stats-grid--4 mb-3">
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('pages.mrpUsage.rp') }}</span>
               <span>{{ dash(rpInfo.kode_rp) }}</span>
             </div>
-            <div class="mrp-usage-meta__item">
-              <span class="mrp-usage-meta__label">{{ t('common.name') }}</span>
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('common.name') }}</span>
               <span>{{ dash(rpInfo.nama_jenis) }}</span>
             </div>
-            <div class="mrp-usage-meta__item">
-              <span class="mrp-usage-meta__label">{{ t('pages.mrpUsage.satuan') }}</span>
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('pages.mrpUsage.satuan') }}</span>
               <span>{{ dash(rpInfo.satuan) }}</span>
             </div>
           </div>
         </div>
+        </div>
         <div class="admin-inner-card">
-          <div class="mrp-usage-list-head mb-3">
-            <h3 class="admin-inner-card__title mb-0">{{ t('pages.mrpUsage.rpHistory') }}</h3>
-            <el-input v-model="searchRp" clearable size="small" class="w-52" :placeholder="t('pages.mrpUsage.searchPlaceholder')" />
+          <div class="admin-inner-card__head">
+            <div>
+              <h3 class="admin-inner-card__title">{{ t('pages.mrpUsage.rpHistory') }}</h3>
+              <p class="admin-inner-card__sub">{{ t('pages.mrpUsage.listSubtitle') }}</p>
+            </div>
+            <el-input v-model="searchRp" clearable size="small" class="mrp-toolbar-search" :placeholder="t('pages.mrpUsage.searchPlaceholder')" />
           </div>
-          <el-table :data="filteredRp" v-loading="loading" border stripe size="small" class="admin-table" empty-text="—">
+          <div class="mkt-section-body">
+          <div class="admin-table-scroll">
+          <el-table :data="filteredRp" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpUsage.tableEmpty')">
             <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
             <el-table-column prop="kode_wip" :label="t('pages.mrpUsage.wip')" min-width="120" show-overflow-tooltip />
             <el-table-column prop="jenis_rp" :label="t('pages.mrpUsage.rp')" min-width="140" show-overflow-tooltip />
@@ -173,13 +198,20 @@
               <template #default="{ row }">{{ formatDateTime(row.date_created) }}</template>
             </el-table-column>
           </el-table>
+          </div>
+          </div>
         </div>
       </el-tab-pane>
 
       <el-tab-pane :label="t('pages.mrpUsage.material')" name="material">
         <div v-if="canCreate" class="admin-inner-card mb-4">
-          <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpUsage.matFormTitle') }}</h3>
-          <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpUsage.matHint') }}</p>
+          <div class="admin-inner-card__head">
+            <div>
+              <h3 class="admin-inner-card__title">{{ t('pages.mrpUsage.matFormTitle') }}</h3>
+              <p class="admin-inner-card__sub">{{ t('pages.mrpUsage.matHint') }}</p>
+            </div>
+          </div>
+          <div class="mkt-section-body">
           <div class="flex flex-wrap gap-2 mb-3 items-center">
             <el-input
               v-model="matForm.kode_material"
@@ -219,27 +251,33 @@
               {{ t('common.save') }}
             </el-button>
           </div>
-          <div v-if="matInfo" class="mrp-usage-meta">
-            <div class="mrp-usage-meta__item">
-              <span class="mrp-usage-meta__label">{{ t('pages.mrpUsage.kode') }}</span>
+          <div v-if="matInfo" class="admin-stats-grid admin-stats-grid--4 mb-3">
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('pages.mrpUsage.kode') }}</span>
               <span>{{ dash(matInfo.kode_material) }}</span>
             </div>
-            <div class="mrp-usage-meta__item">
-              <span class="mrp-usage-meta__label">{{ t('common.name') }}</span>
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('common.name') }}</span>
               <span>{{ dash(matInfo.nama_material) }}</span>
             </div>
-            <div class="mrp-usage-meta__item">
-              <span class="mrp-usage-meta__label">{{ t('pages.mrpUsage.satuan') }}</span>
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('pages.mrpUsage.satuan') }}</span>
               <span>{{ dash(matInfo.satuan) }}</span>
             </div>
           </div>
         </div>
+        </div>
         <div class="admin-inner-card">
-          <div class="mrp-usage-list-head mb-3">
-            <h3 class="admin-inner-card__title mb-0">{{ t('pages.mrpUsage.matHistory') }}</h3>
-            <el-input v-model="searchMat" clearable size="small" class="w-52" :placeholder="t('pages.mrpUsage.searchPlaceholder')" />
+          <div class="admin-inner-card__head">
+            <div>
+              <h3 class="admin-inner-card__title">{{ t('pages.mrpUsage.matHistory') }}</h3>
+              <p class="admin-inner-card__sub">{{ t('pages.mrpUsage.listSubtitle') }}</p>
+            </div>
+            <el-input v-model="searchMat" clearable size="small" class="mrp-toolbar-search" :placeholder="t('pages.mrpUsage.searchPlaceholder')" />
           </div>
-          <el-table :data="filteredMat" v-loading="loading" border stripe size="small" class="admin-table" empty-text="—">
+          <div class="mkt-section-body">
+          <div class="admin-table-scroll">
+          <el-table :data="filteredMat" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpUsage.tableEmpty')">
             <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
             <el-table-column prop="kode_wip" :label="t('pages.mrpUsage.wip')" min-width="120" show-overflow-tooltip />
             <el-table-column prop="kode_material" :label="t('pages.mrpUsage.kode')" min-width="120" show-overflow-tooltip />
@@ -256,6 +294,8 @@
               <template #default="{ row }">{{ formatDateTime(row.date_created) }}</template>
             </el-table-column>
           </el-table>
+          </div>
+          </div>
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -548,50 +588,8 @@ onMounted(reload)
 </script>
 
 <style scoped>
-.w-24 {
-  width: 6rem;
-}
-.w-28 {
-  width: 7rem;
-}
-.w-52 {
-  width: 13rem;
-}
-.max-w-xs {
-  max-width: 16rem;
-}
-.max-w-sm {
-  max-width: 24rem;
-}
-.mrp-usage-list-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: center;
-  justify-content: space-between;
-}
-.mrp-usage-meta {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.55rem;
-}
-.mrp-usage-meta__item {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 0.55rem 0.7rem;
-  font-size: 0.875rem;
-}
-.mrp-usage-meta__label {
-  display: block;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 0.15rem;
-}
-@media (max-width: 900px) {
-  .mrp-usage-meta {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
+.w-24 { width: 6rem; }
+.w-28 { width: 7rem; }
+.max-w-xs { max-width: 16rem; }
+.max-w-sm { max-width: 24rem; }
 </style>

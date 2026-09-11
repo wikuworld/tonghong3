@@ -231,14 +231,14 @@
       <li>Melihat sisa order per <strong>baris material</strong> dari SO yang belum berstatus «Selesai».</li>
       <li>Mengisi <strong>remark marketing</strong> per baris.</li>
       <li>Mengunduh laporan (CSV / Excel / Excel RETUR / Excel manual). Dengan checklist → hanya baris tercentang; tanpa checklist → ikut filter.</li>
-      <li>Centang baris lalu: <strong>Buat PI</strong> (multi-SO, customer sama), <strong>Jadwal kirim</strong> (qty + tanggal per baris), <strong>Susun kirim</strong> dari packing list status <strong>done</strong> + QC OK (qty default full lot, boleh parsial → delivery draft di modul Delivery).</li>
+      <li>Centang baris lalu: <strong>Buat PI</strong> (multi-SO, customer sama), <strong>Jadwal kirim</strong> (qty + tanggal per baris), <strong>Susun kirim</strong> dari packing MRP yang sudah finish (ERP done + QC OK). Beberapa SO pelanggan sama boleh satu SJ. Gudang FG tidak membuat SJ.</li>
     </ul>
     <p class="note">
       <strong>Tidak ada</strong> di halaman ini: lanjut/mundur tahap Alur MKT, dan simpan snapshot.
       Lanjut tahap → menu <em>Alur &amp; daftar PO</em>.
       Snapshot → menu <em>Master &amp; perencanaan kirim</em>.
       <br />
-      Outstanding <strong>tidak wajib</strong> menunggu tahap MKT «Data outstanding» — yang penting SO belum «Selesai».
+      Outstanding muncul setelah <strong>Confirm</strong> (RKPO / PPIC bukan gerbang). Surat jalan hanya dari halaman ini.
     </p>
 
     <h2>2. Tampilan &amp; filter</h2>

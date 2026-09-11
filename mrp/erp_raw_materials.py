@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 import mysql.connector
 
-from db import root_db_config
+from db import erp_db_config
 
 _ERP_DB = os.getenv("ERP_DB_NAME", "tonghong")
 
@@ -22,7 +22,7 @@ _TYPE_ALIASES = {
 
 
 def _erp_connect():
-    cfg = root_db_config()
+    cfg = erp_db_config()
     cfg["database"] = _ERP_DB
     return mysql.connector.connect(**cfg)
 

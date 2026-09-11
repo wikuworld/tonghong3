@@ -71,6 +71,16 @@ def _has_qc_ok(db: Session, production_detail_id: int) -> bool:
     return row is not None
 
 
+def _qc_ok_for_ready_line(db: Session, pk: PackingHeader, pd: ProductionDetail) -> bool:
+    if _has_qc_ok(db, int(pd.id)):
+        return True
+    src = pk.source if isinstance(getattr(pk, "source", None), str) else ""
+    if src.lower() != "mrp":
+        return False
+    st = (pd.status or "").strip().lower()
+    return st in {"completed", "done", "finished"}
+
+
 def _resolve_po_chain(
     db: Session, production_detail_id: int
 ) -> tuple[ProductionDetail | None, PoDetail | None, PoHeader | None, Customer | None]:
@@ -149,7 +159,7 @@ def _packing_line_row(
     pd: ProductionDetail,
     pkd: PackingDetail | None,
 ) -> dict[str, Any] | None:
-    if not _has_qc_ok(db, int(pd.id)):
+    if not _qc_ok_for_ready_line(db, pk, pd):
         return None
     pod: PoDetail | None = db.get(PoDetail, pd.po_detail_id) if pd.po_detail_id else None
     ph: PoHeader | None = db.get(PoHeader, pod.po_id) if pod and pod.po_id else None

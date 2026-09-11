@@ -82,21 +82,17 @@ def test_gudang_fg_detail_has_rolls_and_pos(auth_headers):
         assert "packing_pos" in body
 
 
-def test_gudang_fg_out_rejects_unknown_code(auth_headers):
+def test_gudang_fg_out_blocked_use_outstanding(auth_headers):
     with _client() as client:
         bad = client.post(
             "/mrp/gudang-fg/out",
             headers=auth_headers,
             json={"kode_packing": "FG-TIDAK-ADA-XYZ", "keterangan": "test"},
         )
-        assert bad.status_code in (400, 404), bad.text
-        # pesan harus string jelas, bukan nested dict
+        assert bad.status_code == 400, bad.text
         try:
             detail = bad.json().get("detail")
         except Exception:
             detail = bad.text
-        assert detail
-        if isinstance(detail, dict):
-            assert "detail" not in detail or isinstance(detail.get("detail"), str)
         text = detail if isinstance(detail, str) else str(detail)
-        assert "tidak ditemukan" in text.lower() or "not found" in text.lower() or "packing" in text.lower()
+        assert "outstanding" in text.lower()

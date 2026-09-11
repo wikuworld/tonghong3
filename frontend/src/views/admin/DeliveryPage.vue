@@ -248,6 +248,9 @@
       <el-table-column :label="t('pages.delivery.columns.amount')" width="100" align="right">
         <template #default="{ row }">{{ formatNumber(row.amount, 0) }}</template>
       </el-table-column>
+      <el-table-column :label="t('pages.delivery.colReturnedQty')" width="72" align="right" fixed="right">
+        <template #default="{ row }">{{ formatNumber(row.returned_qty, 2) || '—' }}</template>
+      </el-table-column>
       <el-table-column :label="t('pages.delivery.columns.status')" width="90" fixed="right">
         <template #default="{ row }">
           <el-tag :type="statusType(row.delivery_status)" size="small">
@@ -255,9 +258,17 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="t('common.actions')" width="70" fixed="right" align="center">
+      <el-table-column :label="t('common.actions')" width="118" fixed="right" align="center">
         <template #default="{ row }">
           <el-button :icon="View" link type="primary" @click="openDetailFromLine(row)" />
+          <el-button
+            v-if="canShowReturn(row)"
+            link
+            type="warning"
+            @click="openReturnFromList(row)"
+          >
+            {{ t('pages.delivery.returnAction') }}
+          </el-button>
         </template>
       </el-table-column>
           </el-table>
@@ -555,17 +566,37 @@
             <el-table-column prop="qty" :label="t('common.quantity')" min-width="100" align="right">
               <template #default="{ row }">{{ formatNumber(row.qty, 2) }}</template>
             </el-table-column>
+            <el-table-column :label="t('pages.delivery.colReturnedQty')" width="88" align="right">
+              <template #default="{ row }">{{ formatNumber(row.returned_qty, 2) || '—' }}</template>
+            </el-table-column>
             <el-table-column prop="qty_roll" :label="t('pages.delivery.roll')" width="80" align="right" />
             <el-table-column prop="qty_pcs" :label="t('pages.delivery.pcs')" width="80" align="right" />
             <el-table-column prop="weight" :label="t('pages.delivery.weight')" width="100" align="right">
               <template #default="{ row }">{{ formatNumber(row.weight, 2) }}</template>
             </el-table-column>
+            <el-table-column v-if="canReturn" :label="t('common.actions')" width="90" align="center" fixed="right">
+              <template #default="{ row }">
+                <el-button
+                  v-if="canShowReturn(row, true)"
+                  link
+                  type="warning"
+                  size="small"
+                  @click="openReturnFromDetailLine(row)"
+                >
+                  {{ t('pages.delivery.returnAction') }}
+                </el-button>
+              </template>
+            </el-table-column>
           </el-table>
           <p v-if="detailLines.length === 0" class="mt-2 text-xs text-amber-600">{{ t('pages.delivery.needAtLeastOneLine') }}</p>
         </div>
 
-        <div class="flex flex-wrap gap-3">
+        <div class="flex flex-wrap items-center gap-3">
+          <el-checkbox v-if="canPrint" v-model="invplFoc" :title="t('pages.delivery.invplFocHint')">
+            {{ t('pages.delivery.invplFoc') }}
+          </el-checkbox>
           <el-button v-if="canPrint" type="default" @click="openSjPrint">{{ t('pages.delivery.printSj') }}</el-button>
+          <el-button v-if="canPrint" type="primary" plain @click="openSjAndInvpl">{{ t('pages.delivery.printSjAndInvpl') }}</el-button>
           <el-button v-if="canPrint" type="default" @click="openSjDotmatrix">{{ t('pages.delivery.printSjDotmatrix') }}</el-button>
           <el-button v-if="canPrint" type="default" @click="downloadSjPdf">{{ t('pages.delivery.downloadPdf') }}</el-button>
           <el-button v-if="canPrint" type="primary" plain @click="openCommercialInvoice">{{ t('pages.delivery.openCommercialInvoice') }}</el-button>
@@ -741,6 +772,60 @@
         </div>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="returnVisible"
+      :title="t('pages.delivery.returnDialogTitle')"
+      width="480px"
+      destroy-on-close
+      align-center
+      @closed="resetReturnForm"
+    >
+      <el-form v-if="returnCtx" label-position="top">
+        <el-descriptions :column="1" border size="small" class="mb-4">
+          <el-descriptions-item :label="t('pages.delivery.returnShippedQty')">
+            {{ formatNumber(returnCtx.shipped, 2) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.delivery.returnAlready')">
+            {{ formatNumber(returnCtx.already, 2) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.delivery.returnRemaining')">
+            {{ formatNumber(returnCtx.remaining, 2) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.delivery.returnUnitPrice')">
+            {{ formatNumber(returnCtx.unitPrice, 4) || '—' }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="returnCtx.invoiceNumber" :label="t('pages.delivery.columns.invNumber')">
+            {{ returnCtx.invoiceNumber }}
+          </el-descriptions-item>
+        </el-descriptions>
+        <el-form-item :label="t('pages.delivery.returnQtyLabel')" required>
+          <el-input
+            v-model="returnForm.qty"
+            type="number"
+            step="0.01"
+            min="0"
+            :placeholder="t('pages.delivery.returnQtyHint')"
+          />
+          <p class="delivery-field-hint mt-1">{{ t('pages.delivery.returnQtyHint') }}</p>
+        </el-form-item>
+        <el-form-item :label="t('pages.delivery.returnRemarkLabel')">
+          <el-input v-model="returnForm.remark" type="textarea" :rows="2" clearable />
+        </el-form-item>
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          :title="`${t('pages.delivery.returnCreditPreview')}: ${formatNumber(returnCreditPreview, 2)}`"
+        />
+      </el-form>
+      <template #footer>
+        <el-button @click="returnVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="warning" :loading="returnSaving" @click="submitReturn">
+          {{ t('pages.delivery.returnAction') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -772,6 +857,7 @@ import {
   markSuratJalanPrinted,
   marketingDeliveryXlsxPath,
   me,
+  returnDeliveryDetail,
   toIsoDate,
   updateDelivery,
 } from '../../api/client'
@@ -780,6 +866,8 @@ const { t, te } = useI18n()
 const canCreate = can('delivery', 'create')
 const canUpdate = can('delivery', 'update')
 const canPrint = can('delivery', 'print')
+/** Align with API roles: admin, warehouse, finance, marketing */
+const canReturn = canUpdate || can('invoice', 'update') || canPrint
 const route = useRoute()
 const router = useRouter()
 const loading = ref(false)
@@ -1154,6 +1242,12 @@ const prodDetailsLoading = ref(false)
 const markingSent = ref(false)
 const markingSj = ref(false)
 const addingLine = ref(false)
+const invplFoc = ref(false)
+
+function invplByDeliveryPath(deliveryId) {
+  const q = invplFoc.value ? '?foc=1' : ''
+  return `/documents/invpl-by-delivery/${deliveryId}${q}`
+}
 
 const lineForm = reactive({
   production_detail_id: null,
@@ -1184,6 +1278,140 @@ function resetDetail() {
   lineForm.bypass_qc = false
   bcForm.bc_number = ''
   bcForm.bc_date = ''
+}
+
+const returnVisible = ref(false)
+const returnSaving = ref(false)
+const returnCtx = ref(null)
+const returnForm = reactive({ qty: '', remark: '' })
+
+const returnCreditPreview = computed(() => {
+  const qty = Number(returnForm.qty)
+  const price = Number(returnCtx.value?.unitPrice || 0)
+  if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price)) return 0
+  return Math.round(qty * price * 100) / 100
+})
+
+function _num(v) {
+  const n = Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+
+function canShowReturn(row, fromDetail = false) {
+  if (!canReturn || !row) return false
+  const detailId = fromDetail ? row.id : row.delivery_detail_id
+  if (detailId == null) return false
+  const shipped = fromDetail ? _num(row.qty) : _num(row.qty_sf ?? row.qty)
+  const already = _num(row.returned_qty)
+  if (shipped - already <= 0) return false
+  let inv = String(row.invoice_number || '').trim()
+  if (!inv && fromDetail) {
+    const match = (lineRows.value || []).find((r) => r.delivery_detail_id === detailId)
+    inv = String(match?.invoice_number || '').trim()
+  }
+  const st = String(row.delivery_status || detailRow.value?.status || '').toLowerCase()
+  if (!inv && !['sent', 'delivered', 'completed'].includes(st)) return false
+  // Require invoice for actionable retur (credit note)
+  if (!inv) return false
+  return true
+}
+
+function resetReturnForm() {
+  returnCtx.value = null
+  returnForm.qty = ''
+  returnForm.remark = ''
+}
+
+function openReturnDialog({ detailId, shipped, already, unitPrice, invoiceNumber, deliveryId }) {
+  const rem = Math.max(shipped - already, 0)
+  if (rem <= 0) {
+    ElMessage.warning(t('pages.delivery.returnQtyExceed'))
+    return
+  }
+  returnCtx.value = {
+    detailId,
+    deliveryId,
+    shipped,
+    already,
+    remaining: rem,
+    unitPrice: unitPrice || 0,
+    invoiceNumber: invoiceNumber || '',
+  }
+  returnForm.qty = ''
+  returnForm.remark = ''
+  returnVisible.value = true
+}
+
+function openReturnFromList(row) {
+  if (!row?.delivery_detail_id) return
+  const shipped = _num(row.qty_sf ?? row.qty)
+  const already = _num(row.returned_qty)
+  const inv = String(row.invoice_number || '').trim()
+  if (!inv) {
+    ElMessage.warning(t('pages.delivery.returnNeedInvoice'))
+    return
+  }
+  openReturnDialog({
+    detailId: row.delivery_detail_id,
+    deliveryId: row.delivery_id,
+    shipped,
+    already,
+    unitPrice: _num(row.unit_price),
+    invoiceNumber: inv,
+  })
+}
+
+function openReturnFromDetailLine(row) {
+  if (!row?.id) return
+  const match = (lineRows.value || []).find((r) => r.delivery_detail_id === row.id)
+  const shipped = _num(row.qty)
+  const already = _num(row.returned_qty)
+  const inv = String(match?.invoice_number || '').trim()
+  if (!inv) {
+    ElMessage.warning(t('pages.delivery.returnNeedInvoice'))
+    return
+  }
+  openReturnDialog({
+    detailId: row.id,
+    deliveryId: detailRow.value?.id || match?.delivery_id,
+    shipped,
+    already,
+    unitPrice: _num(match?.unit_price),
+    invoiceNumber: inv,
+  })
+}
+
+async function submitReturn() {
+  if (!returnCtx.value?.detailId) return
+  const qty = _num(returnForm.qty)
+  if (qty <= 0) {
+    ElMessage.warning(t('pages.delivery.returnQtyRequired'))
+    return
+  }
+  if (qty > returnCtx.value.remaining + 1e-9) {
+    ElMessage.warning(t('pages.delivery.returnQtyExceed'))
+    return
+  }
+  returnSaving.value = true
+  try {
+    const body = { qty }
+    const remark = (returnForm.remark || '').trim()
+    if (remark) body.remark = remark
+    const res = await returnDeliveryDetail(returnCtx.value.detailId, body)
+    ElMessage.success(
+      `${t('pages.delivery.returnSuccess')} (−${formatNumber(res?.credit_amount, 2)})`,
+    )
+    returnVisible.value = false
+    await load()
+    if (detailVisible.value && detailRow.value?.id) {
+      const lines = await listDeliveryDetails(detailRow.value.id)
+      detailLines.value = lines
+    }
+  } catch (e) {
+    ElMessage.error(e?.message || String(e))
+  } finally {
+    returnSaving.value = false
+  }
 }
 
 function openDetailFromLine(row) {
@@ -1232,6 +1460,16 @@ async function openSjPrint() {
   if (!detailRow.value?.id) return
   try {
     await fetchAuthenticatedDocument(`/documents/surat-jalan/${detailRow.value.id}`, { mode: 'open' })
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function openSjAndInvpl() {
+  if (!detailRow.value?.id) return
+  try {
+    await fetchAuthenticatedDocument(`/documents/surat-jalan/${detailRow.value.id}`, { mode: 'open' })
+    await fetchAuthenticatedDocument(invplByDeliveryPath(detailRow.value.id), { mode: 'open' })
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   }

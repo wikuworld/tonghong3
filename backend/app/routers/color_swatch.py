@@ -13,6 +13,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.timeutil import app_now
 from app.models import ColorSwatchRecipe, CsiColorMaster, Customer, MasterItem
 from app.routers.auth import get_current_user, require_roles
 from app.services.color_swatch import (
@@ -483,7 +484,7 @@ def update_color_swatch(
         raise HTTPException(status_code=400, detail="Nama warna wajib (pilih CSI atau isi manual)")
     for k, v in data.items():
         setattr(row, k, v)
-    row.updated_at = datetime.utcnow()
+    row.updated_at = app_now()
     try:
         db.commit()
     except Exception as exc:
@@ -503,7 +504,7 @@ def delete_color_swatch(
     if not row:
         raise HTTPException(status_code=404, detail="Resep color swatch tidak ditemukan")
     row.is_active = False
-    row.updated_at = datetime.utcnow()
+    row.updated_at = app_now()
     db.commit()
     return {"status": "deactivated"}
 

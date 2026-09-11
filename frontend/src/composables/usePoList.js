@@ -9,7 +9,7 @@ import {
 /** State filter + pagination daftar PO. */
 export function usePoList({ t }) {
   const keyword = ref('')
-  const filterCustomerId = ref(null)
+  const filterCustomerId = ref([])
   const filterStatus = ref('')
   const filterBuyer = ref('')
   const filterPoCategory = ref('')
@@ -45,7 +45,7 @@ export function usePoList({ t }) {
   }
 
   function resetFilters(loadFn) {
-    filterCustomerId.value = null
+    filterCustomerId.value = []
     filterStatus.value = ''
     filterBuyer.value = ''
     filterPoCategory.value = ''

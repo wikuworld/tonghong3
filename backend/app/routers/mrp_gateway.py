@@ -15,7 +15,8 @@ from app.config import settings
 from app.db import get_db
 from app.models import QcDetail, QcHeader
 from app.routers.auth import get_current_user
-from app.services.mrp_fg_delivery_bridge import bridge_fg_out_to_delivery
+from app.services.mrp_fg_delivery_bridge import FG_OUT_MUST_USE_OUTSTANDING, bridge_fg_out_to_delivery
+from app.services.mrp_packing_bridge import ensure_erp_packing_from_mrp_finish
 from app.services.mrp_color_swatch_bridge import (
     combination_from_swatch,
     fields_from_swatch,
@@ -139,14 +140,46 @@ async def _mrp_json(
     return upstream.json()
 
 
+class MrpSyncPoIn(BaseModel):
+    po_id: Optional[int] = None
+
+
 @router.post("/sync/po")
 def sync_po_from_tonghong(
+    body: MrpSyncPoIn | None = None,
     _user=Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Pull PO details from Tonghong DB and upsert into MRP tbl_master_po."""
+    """Pull PO details from Tonghong DB and upsert into MRP tbl_master_po.
+
+    Body opsional ``{ "po_id": N }`` → sync satu SO (retry Confirm).
+    Tanpa body / tanpa po_id → sync penuh.
+    """
+    from app.models import Notification
+
+    po_id = None
+    if body is not None and body.po_id is not None:
+        try:
+            po_id = int(body.po_id)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="po_id tidak valid") from None
     try:
-        data = sync_po_details_to_mrp(db, full=True, raise_on_error=True)
+        if po_id is not None:
+            data = sync_po_details_to_mrp(db, po_id=po_id, raise_on_error=True)
+            db.query(Notification).filter(
+                Notification.category == "mrp",
+                Notification.entity_type == "sales_order",
+                Notification.title == "MRP sync gagal",
+                Notification.entity_id == po_id,
+            ).delete(synchronize_session=False)
+        else:
+            data = sync_po_details_to_mrp(db, full=True, raise_on_error=True)
+            db.query(Notification).filter(
+                Notification.category == "mrp",
+                Notification.entity_type == "sales_order",
+                Notification.title == "MRP sync gagal",
+            ).delete(synchronize_session=False)
+        db.commit()
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"MRP upstream unavailable: {e}") from e
     return data
@@ -178,7 +211,7 @@ def bridge_fg_out(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """Buat Delivery draft ERP dari FG OUT MRP (idempotent per mrp_fg_id)."""
+    """Taut mrp_fg_id ke packing/SJ yang sudah ada. Tidak membuat Surat Jalan baru."""
     result = bridge_fg_out_to_delivery(
         db,
         mrp_fg_id=body.mrp_fg_id,
@@ -300,38 +333,67 @@ async def _run_production_bridge_for_packing(
 ) -> dict | None:
     ctx = await _mrp_json(client, "GET", f"packing/{packing_id}/bridge-context")
     packing = ctx.get("packing") or {}
-    line = ctx.get("line") or {}
-    sid = line.get("source_detail_id")
+    lines = ctx.get("lines") or []
+    if not lines and ctx.get("line"):
+        lines = [ctx.get("line")]
     kode_wip = (packing.get("kode_wip") or "").strip()
-    if not sid or not kode_wip:
+    usable = [ln for ln in lines if ln and ln.get("source_detail_id")]
+    if not kode_wip or not usable:
+        if finish:
+            raise HTTPException(
+                status_code=400,
+                detail="Bridge production gagal: packing tanpa source_detail_id / kode_wip",
+            )
         return None
-    qty = line.get("qty_sq") or packing.get("total_ukuran")
-    result = upsert_production_mirror(
-        db,
-        source_detail_id=int(sid),
-        kode_wip=kode_wip,
-        mrp_packing_id=packing_id,
-        qty_planned=qty,
-        qty_actual=qty_actual if qty_actual is not None else (qty if finish else None),
-        finish=finish,
-        actor=getattr(user, "username", None),
-    )
+    mirrored: list[tuple[Any, dict, Any]] = []
+    last = None
+    for line in usable:
+        qty = line.get("qty_sq") or packing.get("total_ukuran")
+        last = upsert_production_mirror(
+            db,
+            source_detail_id=int(line["source_detail_id"]),
+            kode_wip=kode_wip,
+            mrp_packing_id=packing_id,
+            qty_planned=qty,
+            qty_actual=qty_actual if qty_actual is not None else (qty if finish else None),
+            finish=finish,
+            actor=getattr(user, "username", None),
+        )
+        mirrored.append((last, line, qty))
+    if last is None:
+        return None
+    packing_ready = None
+    if finish:
+        packing_ready = ensure_erp_packing_from_mrp_finish(
+            db,
+            mrp_packing_id=packing_id,
+            kode_packing=(packing.get("kode_packing") or "").strip() or None,
+            production_id=int(last.production_id),
+            lines=[(int(row.production_detail_id), qty) for row, _ln, qty in mirrored],
+            actor=getattr(user, "username", None),
+        )
     db.commit()
     await _mrp_json(
         client,
         "POST",
         f"packing/{packing_id}/production-result",
         json_body={
-            "erp_production_id": result.production_id,
-            "erp_production_detail_id": result.production_detail_id,
+            "erp_production_id": last.production_id,
+            "erp_production_detail_id": last.production_detail_id,
         },
     )
-    return {
-        "production_id": result.production_id,
-        "production_detail_id": result.production_detail_id,
-        "production_number": result.production_number,
-        "finished": result.finished,
+    out = {
+        "production_id": last.production_id,
+        "production_detail_id": last.production_detail_id,
+        "production_number": last.production_number,
+        "finished": last.finished,
+        "line_count": len(usable),
     }
+    if packing_ready is not None:
+        out["packing_id"] = packing_ready.packing_id
+        out["packing_number"] = packing_ready.packing_number
+        out["qc_header_id"] = packing_ready.qc_header_id
+    return out
 
 
 @router.post("/gudang-fg/out")
@@ -340,87 +402,9 @@ async def gudang_fg_out_with_bridge(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """FG OUT MRP + bridge Delivery draft ERP; rollback lokal jika bridge gagal."""
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    if not isinstance(body, dict):
-        body = {}
-    kode_packing = (body.get("kode_packing") or "").strip()
-    keterangan = body.get("keterangan") or ""
-    if not kode_packing:
-        raise HTTPException(status_code=400, detail="kode_packing wajib")
-
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            out_data = await _mrp_json(
-                client,
-                "POST",
-                "gudang-fg/out",
-                json_body={"kode_packing": kode_packing, "keterangan": keterangan},
-            )
-            fg_id = int(out_data.get("id"))
-            detail = await _mrp_json(client, "GET", f"gudang-fg/{fg_id}")
-            fg = detail.get("fg") or {}
-            packing = detail.get("packing") or {}
-            lines = _collect_bridge_lines(detail, fg)
-
-            try:
-                result = bridge_fg_out_to_delivery(
-                    db,
-                    mrp_fg_id=fg_id,
-                    mrp_packing_id=fg.get("packing_id") or packing.get("id"),
-                    kode_packing=kode_packing,
-                    customer_name=fg.get("customer"),
-                    lines=lines,
-                    actor=getattr(user, "username", None),
-                    keterangan=keterangan,
-                )
-                db.commit()
-                if result.po_detail_ids:
-                    try_sync_po_details_to_mrp(db, detail_ids=result.po_detail_ids)
-            except Exception as bridge_exc:
-                db.rollback()
-                reason = str(getattr(bridge_exc, "detail", None) or bridge_exc)[:255]
-                try:
-                    await _mrp_json(
-                        client,
-                        "POST",
-                        f"gudang-fg/{fg_id}/rollback-out",
-                        json_body={"reason": reason},
-                    )
-                except Exception:
-                    pass
-                if isinstance(bridge_exc, HTTPException):
-                    raise bridge_exc
-                raise HTTPException(status_code=400, detail=f"Bridge Delivery gagal: {reason}") from bridge_exc
-
-            await _mrp_json(
-                client,
-                "POST",
-                f"gudang-fg/{fg_id}/bridge-result",
-                json_body={
-                    "delivery_id": result.delivery_id,
-                    "delivery_number": result.delivery_number,
-                    "bridge_status": "ok",
-                },
-            )
-    except HTTPException:
-        raise
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"MRP upstream unavailable: {e}") from e
-
-    return {
-        "ok": True,
-        "id": fg_id,
-        "kode_packing": kode_packing,
-        "erp_delivery_id": result.delivery_id,
-        "erp_delivery_number": result.delivery_number,
-        "erp_packing_id": result.packing_id,
-        "bridge_created": result.created,
-        "bridge_status": "ok",
-    }
+    """FG OUT mandiri ditolak. Surat jalan hanya dari Outstanding (susun kirim)."""
+    _ = (request, db, user)
+    raise HTTPException(status_code=400, detail=FG_OUT_MUST_USE_OUTSTANDING)
 
 
 @router.post("/packing")
@@ -439,9 +423,15 @@ async def packing_create_with_production(
                 prod = await _run_production_bridge_for_packing(
                     client, db, int(packing_id), finish=False, qty_actual=None, user=user
                 )
-            except Exception:
+            except HTTPException:
                 db.rollback()
-                prod = None
+                raise
+            except Exception as exc:
+                db.rollback()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Bridge production gagal: {exc}",
+                ) from exc
     out = dict(data or {})
     if prod:
         out["erp_production"] = prod
@@ -477,9 +467,15 @@ async def packing_actions_with_production(
                     qty_actual=float(qty_actual) if qty_actual is not None else None,
                     user=user,
                 )
-            except Exception:
+            except HTTPException:
                 db.rollback()
-                prod = None
+                raise
+            except Exception as exc:
+                db.rollback()
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Bridge production gagal: {exc}",
+                ) from exc
     out = dict(data or {})
     if prod:
         out["erp_production"] = prod

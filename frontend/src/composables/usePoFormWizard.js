@@ -62,6 +62,7 @@ import {
   detailPayloadForUpdate,
   sanitizeNewDetailBody,
 } from '../utils/poDetailPayload.js'
+import { collectReservedLots, nextLotAfterReserved } from '../utils/poLot.js'
 import {
   addPoDetail,
   createPo,
@@ -84,6 +85,7 @@ import {
   toIsoDate,
   updatePo,
   updatePoDetail,
+  mrpSyncPo,
 } from '../api/client'
 
 function localTodayIsoDate() {
@@ -265,6 +267,12 @@ const editingDetailIds = ref([])
 const draftLines = ref([])
 const draftRiskOnly = ref(false)
 const editingDraftLineIndex = ref(-1)
+
+const currentLineLocked = computed(() => {
+  const idx = editingDraftLineIndex.value
+  if (idx < 0) return false
+  return Boolean(draftLines.value[idx]?.line_locked)
+})
 const onDraftLineAdded = ref(null)
 const draftLinesDisplay = computed(() => {
   if (!draftRiskOnly.value) return draftLines.value
@@ -357,7 +365,7 @@ const selectedSwatchRecipe = computed(() => {
 })
 
 const swatchFieldsLocked = computed(
-  () => Boolean(selectedSwatchId.value) && !swatchFieldsManualEdit.value,
+  () => currentLineLocked.value || (Boolean(selectedSwatchId.value) && !swatchFieldsManualEdit.value),
 )
 
 /** Color standart & backing tampil manual; disembunyikan saat resep swatch aktif (nilai ada di kartu resep). */
@@ -475,7 +483,12 @@ function cloneDraftLinePayload(row) {
 function copyDraftLine(row) {
   const idx = draftLines.value.indexOf(row)
   if (idx < 0) return
-  draftLines.value.splice(idx + 1, 0, cloneDraftLinePayload(row))
+  const clone = cloneDraftLinePayload(row)
+  const sourceLot = String(row.thi_line_ref || '').trim()
+  if (sourceLot) {
+    clone.thi_line_ref = nextLotAfterReserved(sourceLot, collectReservedLots(draftLines.value))
+  }
+  draftLines.value.splice(idx + 1, 0, clone)
   if (editingDraftLineIndex.value > idx) {
     editingDraftLineIndex.value += 1
   }
@@ -504,6 +517,8 @@ function resetCurrentLineForm() {
   autoFieldMeta.model = false
   formModel.detail_remark = ''
   formModel.thi_line_ref = ''
+  formModel.unit_price_input = null
+  selectedSwatchId.value = null
   clearEtdScheduleRows()
   resetMaterialFieldOverride()
   colorFamilyAutoMode.value = true
@@ -1254,7 +1269,10 @@ async function autoGenerateLotFromMaterial({ showSuccess = false, showError = fa
       vir_softness_type: formModel.vir_softness_type || undefined,
     })
     if (seq !== lotAutoSeq) return false
-    formModel.thi_line_ref = r.lot_number || ''
+    const reserved = collectReservedLots(draftLines.value, {
+      excludeIndex: editingDraftLineIndex.value,
+    })
+    formModel.thi_line_ref = nextLotAfterReserved(r.lot_number || '', reserved)
     lotAutoFromMaterial.value = true
     if (showSuccess) ElMessage.success('Lot draft berhasil digenerate.')
     return true
@@ -1268,6 +1286,13 @@ async function autoGenerateLotFromMaterial({ showSuccess = false, showError = fa
 }
 
 async function generateLotNumber(forceDetailId = null) {
+  const target = forceDetailId
+    ? draftLines.value.find((d) => d && d.id === forceDetailId)
+    : (editingDraftLineIndex.value >= 0 ? draftLines.value[editingDraftLineIndex.value] : null)
+  if (target?.line_locked) {
+    ElMessage.warning(target.line_lock_reason || t('pages.po.lineLockedHint'))
+    return
+  }
   const poId = editingPoId.value
   const isPersist = Boolean(poId && forceDetailId)
   if (!String(formModel.factory_code || '').trim()) {
@@ -1314,6 +1339,7 @@ function resetMaterialFieldOverride() {
 }
 
 function isMaterialFieldLocked(field) {
+  if (currentLineLocked.value) return true
   if (formModel.po_category === 'subcont') {
     if (!formModel.master_item_id) return false
     if (!['material_name', 'thickness_text', 'color'].includes(field)) return false
@@ -2185,12 +2211,30 @@ async function pushCurrentLine(copyCurrent = false) {
   }
   if (!copyCurrent) {
     resetCurrentLineForm()
+  } else if (formModel.thi_line_ref) {
+    formModel.thi_line_ref = nextLotAfterReserved(
+      formModel.thi_line_ref,
+      collectReservedLots(draftLines.value),
+    )
+    lotAutoFromMaterial.value = true
+  } else {
+    void autoGenerateLotFromMaterial({ showSuccess: false, showError: false })
   }
+}
+
+/** Tambah baris baru dari form, meskipun sedang mengedit baris draft. */
+async function pushCurrentLineAsNew(copyCurrent = false) {
+  editingDraftLineIndex.value = -1
+  await pushCurrentLine(copyCurrent)
 }
 
 async function removeDraftLine(index) {
   const row = draftLines.value[index]
   if (!row) return
+  if (row.line_locked) {
+    ElMessage.warning(row.line_lock_reason || t('pages.po.lineLockedHint'))
+    return
+  }
   const material = String(row.material_name || '').trim() || '—'
   const color = String(row.color || '').trim() || '—'
   const qty = row.quantity_order != null && row.quantity_order !== '' ? row.quantity_order : '—'
@@ -2271,59 +2315,36 @@ const openEditDialog = async (row) => {
       color_swatch_recipe_id: d.color_swatch_recipe_id || undefined,
       unit_price: d.unit_price != null ? Number(d.unit_price) : undefined,
       delivery_schedules: normalizeSchedulesFromApi(d.delivery_schedules),
+      line_locked: Boolean(d.line_locked),
+      line_lock_reason: d.line_lock_reason || '',
       manual_override: false,
       material_master_override: false,
       material_master_matched: Boolean(d.master_item_id),
     }))
     editingDetailIds.value = (details || []).map((d) => d.id)
-    const d0 = details?.[0]
-    if (!d0) {
-      loadedDetailMasterSnapshot.value = null
-      return
-    }
-
-    formModel.master_item_id = d0.master_item_id
-    formModel.material_name = d0.material_name || ''
-    formModel.thickness_text = d0.thickness_text || ''
-    formModel.color = d0.color || ''
-    formModel.color_family = d0.color_family || null
-    formModel.emboss = d0.emboss || ''
-    formModel.vir_softness_type = d0.vir_softness_type || ''
-    formModel.softness = d0.softness || ''
-    formModel.color_reference = d0.color_reference || ''
-    formModel.color_standard = d0.color_standard || ''
-    selectedSwatchId.value = d0.color_swatch_recipe_id ?? null
-    formModel.backing = d0.backing || ''
-    formModel.quantity_order = d0.quantity_order != null ? String(d0.quantity_order) : ''
-    formModel.style_article = d0.style_article || ''
-    formModel.model = d0.model || ''
-    formModel.detail_remark = d0.detail_remark || ''
-    formModel.thi_line_ref = d0.thi_line_ref || ''
-    etdScheduleRows.value = loadEtdScheduleRowsFromApi(d0.delivery_schedules || [])
-    editingDraftLineIndex.value = 0
-    loadedDetailMasterSnapshot.value = detailMasterSnapshot({
-      material_name: d0.material_name,
-      thickness_text: d0.thickness_text,
-      color: d0.color,
-      emboss: d0.emboss,
-      master_item_id: d0.master_item_id,
-    })
-    if (d0.master_item_id) {
-      const cacheIt = masterItems.value.find((x) => x.id === d0.master_item_id)
-      if (cacheIt) upsertMasterItemInCache(cacheIt)
-    }
-    formModel.item_category = inferItemCategory(d0, masterItems.value)
     draftLines.value = draftLines.value.map((line) => ({
       ...line,
       item_category: inferItemCategory(line, masterItems.value),
     }))
-    const linked0 = masterItems.value.find((x) => x.id === d0.master_item_id)
-    masterItemCodePicker.value = linked0?.item_code || ''
+
+    const d0 = details?.[0]
+    loadedDetailMasterSnapshot.value = d0
+      ? detailMasterSnapshot({
+          material_name: d0.material_name,
+          thickness_text: d0.thickness_text,
+          color: d0.color,
+          emboss: d0.emboss,
+          master_item_id: d0.master_item_id,
+        })
+      : null
+
+    // Jangan auto-edit baris pertama: form kosong agar tombol «Tambah» tersedia.
+    editingDraftLineIndex.value = -1
+    resetCurrentLineForm()
     lastResolveHadNoMaster.value = false
 
     formHydrating.value = false
     await Promise.all([
-      hydrateColorStandardFromLine(d0),
       refreshMaterialDimensionOptions(),
       refreshThicknessOptionsFromApi(),
       refreshColorOptionsFromApi(),
@@ -2412,11 +2433,34 @@ const submitForm = async () => {
       }
     } else {
       const created = await createPo(header)
-      for (const raw of bodiesFinal) {
-        const rowBody = { ...sanitizeNewDetailBody(raw) }
-        const schedules = rowBody.delivery_schedules || []
-        delete rowBody.delivery_schedules
-        await addPoDetail(created.id, { ...rowBody, delivery_schedules: schedules })
+      let savedLines = 0
+      try {
+        for (const raw of bodiesFinal) {
+          const rowBody = { ...sanitizeNewDetailBody(raw) }
+          const schedules = rowBody.delivery_schedules || []
+          delete rowBody.delivery_schedules
+          await addPoDetail(created.id, { ...rowBody, delivery_schedules: schedules })
+          savedLines += 1
+        }
+      } catch (e) {
+        // Header sudah tersimpan; pindah ke mode edit supaya percobaan ulang
+        // menambah baris ke SO yang sama, bukan membuat SO kedua.
+        isEditMode.value = true
+        editingPoId.value = created.id
+        editingDetailIds.value = []
+        formModel.po_number = created.po_number || formModel.po_number
+        draftLines.value = bodiesFinal.slice(savedLines)
+        clearPoDraftLocal()
+        await load()
+        ElMessage.error(
+          t('pages.po.partialLinesSaved', {
+            poNumber: created.po_number || created.id,
+            saved: savedLines,
+            total: bodiesFinal.length,
+            reason: parseApiErrorMessage(e, t('common.errorGeneric')),
+          }),
+        )
+        return
       }
       ElMessage.success(t('pages.customers.saved'))
       await offerConfirmAfterSave(created.id)
@@ -2444,10 +2488,37 @@ async function offerConfirmAfterSave(poId) {
     return
   }
   try {
-    await updatePo(poId, { status: 'confirmed' })
+    const confirmed = await updatePo(poId, { status: 'confirmed' })
     ElMessage.success(t('pages.po.statusChanged'))
+    await maybeRetryMrpSyncAfterConfirm(poId, confirmed)
   } catch (e) {
     ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
+  }
+}
+
+async function maybeRetryMrpSyncAfterConfirm(poId, confirmed) {
+  const sync = confirmed?.mrp_sync
+  if (!sync || sync.ok !== false) return
+  const detail = (sync.error || t('pages.po.mrpSyncError')).toString().slice(0, 280)
+  try {
+    await ElMessageBox.confirm(
+      t('pages.po.mrpSyncFailedAfterConfirm', { detail }),
+      t('pages.po.mrpSyncError'),
+      {
+        type: 'error',
+        confirmButtonText: t('pages.po.mrpSyncRetry'),
+        cancelButtonText: t('common.cancel'),
+        distinguishCancelAndClose: true,
+      },
+    )
+  } catch {
+    return
+  }
+  try {
+    await mrpSyncPo({ po_id: poId })
+    ElMessage.success(t('pages.po.mrpSyncRetryOk'))
+  } catch (e) {
+    ElMessage.error(parseApiErrorMessage(e, t('pages.po.mrpSyncError')))
   }
 }
 
@@ -2564,6 +2635,7 @@ function addCopiedItems() {
     onPickedMasterItemCode,
     enableMaterialOverride,
     isMaterialFieldLocked,
+    currentLineLocked,
     materialFieldOverride,
     resetMaterialFieldToMaster,
     activeSeasonLabel,
@@ -2618,6 +2690,7 @@ function addCopiedItems() {
     draftRiskOnly,
     draftRowClassName,
     pushCurrentLine,
+    pushCurrentLineAsNew,
     onDraftLineAdded,
     editingDraftLineIndex,
     cancelEditDraftLine,

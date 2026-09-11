@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from decimal import Decimal
 from typing import Any, Optional
 
@@ -14,7 +15,10 @@ from app.models import PoDetail, PoHeader
 
 log = logging.getLogger(__name__)
 
-_CANCELLED_STATUSES = frozenset({"cancelled", "void"})
+_CANCELLED_STATUSES = frozenset({"cancelled", "canceled", "void"})
+_SYNCABLE_STATUSES = frozenset({"confirmed", "production", "completed"})
+_PUSH_MAX_ATTEMPTS = 2
+_PUSH_RETRY_BACKOFF_SEC = 0.3
 
 
 def _num(v: Any) -> float:
@@ -79,24 +83,44 @@ def _upstream_url() -> str:
     return (settings.mrp_upstream_url or "http://mrp:5010").rstrip("/")
 
 
-def _push_items(items: list[dict], *, timeout: float = 30.0) -> dict:
+def _push_items(items: list[dict], *, timeout: float | None = None) -> dict:
     if not items:
-        return {"ok": True, "inserted": 0, "updated": 0, "total": 0, "detail": "no PO lines"}
+        return {
+            "ok": True,
+            "inserted": 0,
+            "updated": 0,
+            "total": 0,
+            "detail": "no PO lines",
+            "attempts": 1,
+        }
+    if timeout is None:
+        timeout = float(settings.mrp_sync_timeout_seconds or 8.0)
     target = f"{_upstream_url()}/api/mrp/masters/po/sync"
-    with httpx.Client(timeout=timeout) as client:
-        upstream = client.post(target, json={"items": items})
-    if upstream.status_code >= 400:
-        detail: Any
+    last_exc: Exception | None = None
+    for attempt in range(1, _PUSH_MAX_ATTEMPTS + 1):
         try:
-            detail = upstream.json()
-        except Exception:
-            detail = upstream.text
-        raise RuntimeError(f"MRP sync HTTP {upstream.status_code}: {detail}")
-    data = upstream.json() if upstream.content else {}
-    if not isinstance(data, dict):
-        data = {"ok": True, "raw": data}
-    data["pulled"] = len(items)
-    return data
+            with httpx.Client(timeout=timeout) as client:
+                upstream = client.post(target, json={"items": items})
+            if upstream.status_code >= 400:
+                detail: Any
+                try:
+                    detail = upstream.json()
+                except Exception:
+                    detail = upstream.text
+                raise RuntimeError(f"MRP sync HTTP {upstream.status_code}: {detail}")
+            data = upstream.json() if upstream.content else {}
+            if not isinstance(data, dict):
+                data = {"ok": True, "raw": data}
+            data["pulled"] = len(items)
+            data["attempts"] = attempt
+            return data
+        except Exception as exc:
+            last_exc = exc
+            log.warning("mrp_po_sync push attempt %s/%s failed: %s", attempt, _PUSH_MAX_ATTEMPTS, exc)
+            if attempt < _PUSH_MAX_ATTEMPTS:
+                time.sleep(_PUSH_RETRY_BACKOFF_SEC)
+    assert last_exc is not None
+    raise last_exc
 
 
 def _load_details(
@@ -122,9 +146,13 @@ def _load_details(
         q = q.filter(PoDetail.po_id == int(po_id))
     else:
         if header_status_mode == "active":
-            q = q.filter(PoHeader.status.notin_(list(_CANCELLED_STATUSES)))
+            q = q.filter(PoHeader.status.in_(list(_SYNCABLE_STATUSES)))
         elif header_status_mode == "cancelled":
             q = q.filter(PoHeader.status.in_(list(_CANCELLED_STATUSES)))
+        elif header_status_mode == "draft":
+            q = q.filter(
+                ~PoHeader.status.in_(list(_SYNCABLE_STATUSES | _CANCELLED_STATUSES))
+            )
         q = q.order_by(PoDetail.id.desc()).limit(limit)
     return list(q.all())
 
@@ -149,11 +177,15 @@ def sync_po_details_to_mrp(
         elif full or not cancelled_detail_ids:
             details = _load_details(db, header_status_mode="active", limit=2000)
             details.extend(_load_details(db, header_status_mode="cancelled", limit=2000))
+            details.extend(_load_details(db, header_status_mode="draft", limit=2000))
 
         for d in details:
             mapped = map_po_detail(d)
             if not mapped:
                 continue
+            st = ((d.po.status if d.po else "") or "").strip().lower()
+            if st in _CANCELLED_STATUSES or st not in _SYNCABLE_STATUSES:
+                mapped["cancelled"] = True
             sid = int(d.id)
             items.append(mapped)
             seen.add(sid)
@@ -170,12 +202,20 @@ def sync_po_details_to_mrp(
 
         result = _push_items(items)
         result["ok"] = True
+        result.setdefault("attempts", 1)
         return result
     except Exception as exc:
         log.warning("mrp_po_sync failed: %s", exc)
         if raise_on_error:
             raise
-        return {"ok": False, "error": str(exc), "inserted": 0, "updated": 0, "total": 0}
+        return {
+            "ok": False,
+            "error": str(exc),
+            "inserted": 0,
+            "updated": 0,
+            "total": 0,
+            "attempts": _PUSH_MAX_ATTEMPTS,
+        }
 
 
 def try_sync_po_details_to_mrp(db: Session, **kwargs: Any) -> dict:

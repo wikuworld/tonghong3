@@ -2,27 +2,50 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, require_roles
+from app.schemas import TandaTerimaBatchIn
 from app.services import marketing_documents as md
 from app.services import proforma_invoice_documents as pi
 from app.services import sales_contract_documents as sc
+from app.services import tanda_terima_documents as tt
+from app.services.audit import log_change
 
 router = APIRouter(tags=["documents"])
 
 
-def _invpl_ctx(db: Session, packing_id: int) -> dict:
+def _invpl_ctx(
+    db: Session,
+    packing_id: int,
+    *,
+    delivery_id: int | None = None,
+    foc: bool = False,
+) -> dict:
     try:
-        return md.gather_invpl_rows(db, packing_id)
+        ctx = md.gather_invpl_rows(db, packing_id, delivery_id=delivery_id)
     except ValueError as e:
         if str(e) == "packing_not_found":
             raise HTTPException(status_code=404, detail="Packing tidak ditemukan") from e
+        if str(e) == "delivery_not_found":
+            raise HTTPException(status_code=404, detail="Delivery tidak ditemukan") from e
         raise
+    return md.apply_invpl_foc_title(ctx, foc)
 
+
+def _invpl_ctx_delivery(db: Session, delivery_id: int, *, foc: bool = False) -> dict:
+    try:
+        ctx = md.gather_invpl_for_delivery(db, delivery_id)
+    except ValueError as e:
+        if str(e) == "delivery_not_found":
+            raise HTTPException(status_code=404, detail="Delivery tidak ditemukan") from e
+        if str(e) == "packing_not_found":
+            raise HTTPException(status_code=404, detail="Packing tidak ditemukan") from e
+        raise
+    return md.apply_invpl_foc_title(ctx, foc)
 
 def _sj_ctx(db: Session, delivery_id: int) -> dict:
     try:
@@ -273,9 +296,12 @@ def document_surat_jalan_dotmatrix(
 
 @router.get("/documents/invpl/{packing_id}/xlsx")
 def document_invpl_xlsx(
-    packing_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+    packing_id: int,
+    foc: bool = Query(False),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
 ) -> Response:
-    ctx = _invpl_ctx(db, packing_id)
+    ctx = _invpl_ctx(db, packing_id, foc=foc)
     data = md.render_invpl_xlsx(ctx)
     fn = f"invpl_{ctx['packing_number']}.xlsx"
     return Response(
@@ -287,9 +313,12 @@ def document_invpl_xlsx(
 
 @router.get("/documents/invpl/{packing_id}/pdf")
 def document_invpl_pdf(
-    packing_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+    packing_id: int,
+    foc: bool = Query(False),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
 ) -> Response:
-    ctx = _invpl_ctx(db, packing_id)
+    ctx = _invpl_ctx(db, packing_id, foc=foc)
     data = md.render_invpl_pdf(ctx)
     fn = f"invpl_{ctx['packing_number']}.pdf"
     return Response(
@@ -301,7 +330,114 @@ def document_invpl_pdf(
 
 @router.get("/documents/invpl/{packing_id}")
 def document_invpl(
-    packing_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+    packing_id: int,
+    foc: bool = Query(False),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
 ) -> HTMLResponse:
-    ctx = _invpl_ctx(db, packing_id)
+    ctx = _invpl_ctx(db, packing_id, foc=foc)
     return HTMLResponse(md.render_invpl_html(ctx))
+
+
+@router.get("/documents/invpl-by-delivery/{delivery_id}/xlsx")
+def document_invpl_by_delivery_xlsx(
+    delivery_id: int,
+    foc: bool = Query(False),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> Response:
+    ctx = _invpl_ctx_delivery(db, delivery_id, foc=foc)
+    data = md.render_invpl_xlsx(ctx)
+    fn = f"invpl_{ctx['packing_number']}.xlsx"
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
+
+
+@router.get("/documents/invpl-by-delivery/{delivery_id}/pdf")
+def document_invpl_by_delivery_pdf(
+    delivery_id: int,
+    foc: bool = Query(False),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> Response:
+    ctx = _invpl_ctx_delivery(db, delivery_id, foc=foc)
+    data = md.render_invpl_pdf(ctx)
+    fn = f"invpl_{ctx['packing_number']}.pdf"
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )
+
+
+@router.get("/documents/invpl-by-delivery/{delivery_id}")
+def document_invpl_by_delivery(
+    delivery_id: int,
+    foc: bool = Query(False),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> HTMLResponse:
+    ctx = _invpl_ctx_delivery(db, delivery_id, foc=foc)
+    return HTMLResponse(md.render_invpl_html(ctx))
+
+
+@router.post("/documents/tanda-terima/batch/html")
+def document_tanda_terima_batch_html(
+    body: TandaTerimaBatchIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "finance")),
+) -> HTMLResponse:
+    ctx = tt.gather_tanda_terima_ctx(
+        db,
+        body.invoice_ids,
+        received_by=body.received_by,
+        received_date=body.received_date,
+        receipt_no=body.receipt_no,
+        stamp_invoices=body.stamp_invoices,
+    )
+    log_change(
+        db,
+        entity_type="tanda_terima",
+        entity_id=None,
+        action="print_html",
+        after={"receipt_no": ctx["receipt_no"], "invoice_ids": ctx["invoice_ids"]},
+        actor=user.username,
+    )
+    db.commit()
+    return HTMLResponse(tt.render_tanda_terima_html(ctx))
+
+
+@router.post("/documents/tanda-terima/batch/pdf")
+def document_tanda_terima_batch_pdf(
+    body: TandaTerimaBatchIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "finance")),
+) -> Response:
+    ctx = tt.gather_tanda_terima_ctx(
+        db,
+        body.invoice_ids,
+        received_by=body.received_by,
+        received_date=body.received_date,
+        receipt_no=body.receipt_no,
+        stamp_invoices=body.stamp_invoices,
+    )
+    log_change(
+        db,
+        entity_type="tanda_terima",
+        entity_id=None,
+        action="print_pdf",
+        after={"receipt_no": ctx["receipt_no"], "invoice_ids": ctx["invoice_ids"]},
+        actor=user.username,
+    )
+    db.commit()
+    data = tt.render_tanda_terima_pdf(ctx)
+    safe = str(ctx["receipt_no"]).replace("/", "-")
+    fn = f"tanda_terima_{safe}.pdf"
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fn}"'},
+    )

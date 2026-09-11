@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import DocumentSequence
+from app.timeutil import app_now_aware
 
 # Selaras format marketing: Production=PS, Sample=S, Claim=PSC, Return prod=PSR, Return sample=SR, PU Coated=THIPM.
 _SO_PREFIX_BY_CATEGORY: dict[str, str] = {
@@ -48,7 +49,7 @@ def _resolve_at(*, order_date: date | None = None, at: datetime | None = None) -
         return at
     if order_date is not None:
         return datetime.combine(order_date, datetime.min.time())
-    return datetime.now(timezone.utc)
+    return app_now_aware()
 
 
 def _sequence_key(prefix: str, at: datetime) -> tuple[str, str, str]:

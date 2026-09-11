@@ -1,6 +1,7 @@
 <template>
   <AdminSection :title="t('pages.mrpRencana.title')" :subtitle="t('pages.mrpRencana.subtitle')">
     <template #actions>
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button id="mrp-rencana-tour-guide" @click="startTour">
         {{ t('pages.mrpRencana.tourBtn') }}
       </el-button>
@@ -24,7 +25,16 @@
     </template>
 
     <div id="mrp-rencana-tour-list" class="admin-inner-card">
-      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table">
+      <div class="admin-inner-card__head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.mrpRencana.listSectionTitle') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.mrpRencana.listSubtitle') }}</p>
+        </div>
+      </div>
+      <div class="mkt-section-body">
+        <p class="admin-scroll-hint">{{ t('pages.mrpRencana.scrollHint') }}</p>
+        <div class="admin-table-scroll">
+      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpRencana.tableEmpty')">
         <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
         <el-table-column prop="kode_rencana" :label="t('pages.mrpRencana.code')" min-width="130" />
         <el-table-column prop="nama_rencana" :label="t('pages.mrpRencana.name')" min-width="160" show-overflow-tooltip />
@@ -51,6 +61,8 @@
           </template>
         </el-table-column>
       </el-table>
+        </div>
+      </div>
     </div>
 
     <el-tour
@@ -84,28 +96,28 @@
           <p class="text-sm text-slate-500 mb-2">
             {{ detail.rencana.kode_rencana }} · {{ detail.rencana.tanggal_rencana }} · {{ detail.rencana.status }}
           </p>
-          <div class="mrp-rencana-detail-stats">
-            <div class="mrp-rencana-detail-stat">
-              <span class="mrp-rencana-detail-stat__label">{{ t('pages.mrpRencana.itemCount') }}</span>
-              <span class="mrp-rencana-detail-stat__value">{{ detail.summary?.jml_item ?? detail.items?.length ?? 0 }}</span>
+          <div class="admin-stats-grid admin-stats-grid--3">
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('pages.mrpRencana.itemCount') }}</span>
+              <span class="admin-stat-card__value">{{ detail.summary?.jml_item ?? detail.items?.length ?? 0 }}</span>
             </div>
-            <div class="mrp-rencana-detail-stat">
-              <span class="mrp-rencana-detail-stat__label">{{ t('pages.mrpRencana.poCount') }}</span>
-              <span class="mrp-rencana-detail-stat__value">{{ detail.summary?.jml_po ?? 0 }}</span>
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('pages.mrpRencana.poCount') }}</span>
+              <span class="admin-stat-card__value">{{ detail.summary?.jml_po ?? 0 }}</span>
             </div>
-            <div class="mrp-rencana-detail-stat">
-              <span class="mrp-rencana-detail-stat__label">{{ t('pages.mrpRencana.qtyAllocated') }}</span>
-              <span class="mrp-rencana-detail-stat__value">{{ formatQty(detail.summary?.total_qty_alokasi) }}</span>
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('pages.mrpRencana.qtyAllocated') }}</span>
+              <span class="admin-stat-card__value">{{ formatQty(detail.summary?.total_qty_alokasi) }}</span>
             </div>
-            <div class="mrp-rencana-detail-stat mrp-rencana-detail-stat--wide">
-              <span class="mrp-rencana-detail-stat__label">{{ t('common.customer') }}</span>
-              <span class="mrp-rencana-detail-stat__value mrp-rencana-detail-stat__value--text">
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('common.customer') }}</span>
+              <span class="admin-stat-card__value">
                 {{ detail.summary?.customers || '—' }}
               </span>
             </div>
-            <div class="mrp-rencana-detail-stat mrp-rencana-detail-stat--wide">
-              <span class="mrp-rencana-detail-stat__label">{{ t('pages.mrpRencana.poNumbers') }}</span>
-              <span class="mrp-rencana-detail-stat__value mrp-rencana-detail-stat__value--text">
+            <div class="admin-stat-card">
+              <span class="admin-stat-card__label">{{ t('pages.mrpRencana.poNumbers') }}</span>
+              <span class="admin-stat-card__value">
                 {{ detail.summary?.po_numbers || '—' }}
               </span>
             </div>
@@ -114,12 +126,12 @@
 
         <div id="mrp-rencana-tour-detail-items">
           <h4 class="text-sm font-semibold mb-2">{{ t('pages.mrpRencana.items') }}</h4>
-          <el-table :data="detail.items || []" border size="small" row-key="id">
+          <el-table :data="detail.items || []" border stripe size="small" class="admin-table" row-key="id">
             <el-table-column type="expand">
               <template #default="{ row }">
                 <div class="mrp-rencana-alloc-wrap">
                   <p class="text-xs text-slate-500 mb-2">{{ t('pages.mrpRencana.poAllocationDetail') }}</p>
-                  <el-table :data="row.po_allocations || []" border size="small" empty-text="—">
+                  <el-table :data="row.po_allocations || []" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpRencana.tableEmpty')">
                     <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="120" />
                     <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="110" show-overflow-tooltip />
                     <el-table-column prop="item_name" :label="t('pages.mrpRencana.poItem')" min-width="150" show-overflow-tooltip />
@@ -150,10 +162,10 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="kode_rencana_item" label="Item" min-width="120" />
-            <el-table-column prop="kode_lot_wip" label="WIP" min-width="120" />
+            <el-table-column prop="kode_rencana_item" :label="t('pages.mrpRencana.itemLabel')" min-width="120" />
+            <el-table-column prop="kode_lot_wip" :label="t('pages.mrpRencana.wip')" min-width="120" />
             <el-table-column prop="nama_customer" :label="t('common.customer')" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="material_name" label="Material" min-width="130" show-overflow-tooltip />
+            <el-table-column prop="material_name" :label="t('pages.mrpRencana.material')" min-width="130" show-overflow-tooltip />
             <el-table-column :label="t('pages.mrpRencana.thickness')" width="90">
               <template #default="{ row }">{{ spekDisplay(row.thickness) }}</template>
             </el-table-column>
@@ -174,8 +186,8 @@
             <el-table-column :label="t('common.actions')" width="140" fixed="right">
               <template #default="{ row, $index }">
                 <span :id="$index === 0 ? 'mrp-rencana-tour-detail-actions' : undefined">
-                  <el-button link type="primary" @click="openPo(row)">PO</el-button>
-                  <el-button link @click="showBarcode(row)">Barcode</el-button>
+                  <el-button link type="primary" @click="openPo(row)">{{ t('pages.mrpRencana.actionPo') }}</el-button>
+                  <el-button link @click="showBarcode(row)">{{ t('pages.mrpRencana.actionBarcode') }}</el-button>
                 </span>
               </template>
             </el-table-column>
@@ -259,9 +271,9 @@
       <template v-if="printData">
         <h3 class="font-semibold mb-2">{{ printData.rencana?.nama_rencana }} ({{ printData.rencana?.kode_rencana }})</h3>
         <el-table :data="printData.items || []" border size="small">
-          <el-table-column prop="kode_rencana_item" label="Item" />
+          <el-table-column prop="kode_rencana_item" :label="t('pages.mrpRencana.itemLabel')" />
           <el-table-column prop="nama_customer" :label="t('common.customer')" />
-          <el-table-column prop="material_name" label="Material" />
+          <el-table-column prop="material_name" :label="t('pages.mrpRencana.material')" />
           <el-table-column prop="total_qty_so" :label="t('pages.mrpRencana.qtyAllocated')" width="110" />
           <el-table-column prop="schedule_text" :label="t('pages.mrpRencana.soRef')" min-width="120" />
         </el-table>
@@ -638,46 +650,17 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.mrp-rencana-detail-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.6rem;
-}
-.mrp-rencana-detail-stat {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 0.55rem 0.7rem;
-  background: var(--el-fill-color-blank);
-}
-.mrp-rencana-detail-stat--wide {
-  grid-column: span 3;
-}
-.mrp-rencana-detail-stat__label {
-  display: block;
-  font-size: 0.72rem;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 0.15rem;
-}
-.mrp-rencana-detail-stat__value {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--el-text-color-primary);
-}
-.mrp-rencana-detail-stat__value--text {
-  font-size: 0.88rem;
-  font-weight: 500;
-  line-height: 1.35;
-  word-break: break-word;
-}
+
+
+
+
+
+
 .mrp-rencana-alloc-wrap {
   padding: 0.35rem 0.75rem 0.75rem;
 }
 @media (max-width: 900px) {
-  .mrp-rencana-detail-stats {
-    grid-template-columns: 1fr 1fr;
-  }
-  .mrp-rencana-detail-stat--wide {
-    grid-column: span 2;
-  }
+  
+  
 }
 </style>

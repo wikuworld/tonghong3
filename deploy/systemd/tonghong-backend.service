@@ -10,6 +10,8 @@ Group=developer
 WorkingDirectory=/home/developer/project/backend
 EnvironmentFile=-/home/developer/project/.env
 Environment=PYTHONUNBUFFERED=1
+Environment=TZ=Asia/Jakarta
+Environment=APP_TIMEZONE=Asia/Jakarta
 ExecStartPre=/home/developer/project/backend/.venv/bin/alembic upgrade head
 ExecStart=/home/developer/project/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --loop asyncio
 Restart=always

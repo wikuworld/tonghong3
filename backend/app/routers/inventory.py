@@ -1,15 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from datetime import date, datetime
 
 from app.db import get_db
-from app.models import Warehouse, RawMaterial, MaterialStock, MaterialReceipt, MaterialReceiptDetail
+from app.models import Warehouse, RawMaterial, MaterialStock
 from app.schemas import (
     WarehouseCreate, WarehouseUpdate, WarehouseOut,
     RawMaterialCreate, RawMaterialUpdate, RawMaterialOut,
     MaterialStockOut,
-    MaterialReceiptCreate, MaterialReceiptUpdate, MaterialReceiptOut,
 )
 from app.routers.auth import get_current_user, require_roles
 
@@ -136,116 +134,3 @@ def stock_summary(db: Session = Depends(get_db), _user=Depends(get_current_user)
         "total_warehouses": db.query(Warehouse).count(),
     }
 
-
-# === MATERIAL RECEIPT ===
-@router.get("/receipts", response_model=list[MaterialReceiptOut])
-def list_receipts(
-    warehouse_id: int = None,
-    start_date: date = None,
-    end_date: date = None,
-    db: Session = Depends(get_db),
-    _user=Depends(get_current_user)
-):
-    query = select(MaterialReceipt)
-    if warehouse_id:
-        query = query.where(MaterialReceipt.warehouse_id == warehouse_id)
-    if start_date:
-        query = query.where(MaterialReceipt.receipt_date >= start_date)
-    if end_date:
-        query = query.where(MaterialReceipt.receipt_date <= end_date)
-    return db.scalars(query.order_by(MaterialReceipt.receipt_date.desc())).all()
-
-
-@router.post("/receipts", response_model=MaterialReceiptOut)
-def create_receipt(body: MaterialReceiptCreate, db: Session = Depends(get_db), _user=Depends(require_roles("admin", "warehouse"))):
-    # Generate receipt number
-    today = date.today()
-    prefix = f"GR-{today.strftime('%Y%m%d')}"
-    last = db.scalars(
-        select(MaterialReceipt)
-        .where(MaterialReceipt.receipt_number.like(f"{prefix}%"))
-        .order_by(MaterialReceipt.receipt_number.desc())
-    ).first()
-    
-    seq = 1
-    if last:
-        try:
-            seq = int(last.receipt_number.split("-")[-1]) + 1
-        except (ValueError, IndexError):
-            seq = 1
-    
-    receipt_number = f"{prefix}-{seq:04d}"
-    
-    # Create receipt
-    row = MaterialReceipt(
-        receipt_number=receipt_number,
-        supplier_name=body.supplier_name,
-        receipt_date=body.receipt_date,
-        warehouse_id=body.warehouse_id,
-        total_amount=body.total_amount,
-        remark=body.remark,
-        status="draft",
-    )
-    db.add(row)
-    db.flush()
-    
-    # Create details and update stock
-    for detail in body.details or []:
-        d = MaterialReceiptDetail(
-            receipt_id=row.id,
-            material_id=detail.material_id,
-            quantity=detail.quantity,
-            unit_cost=detail.unit_cost,
-            total_cost=detail.quantity * (detail.unit_cost or 0),
-            remark=detail.remark,
-        )
-        db.add(d)
-        
-        # Update stock
-        stock = db.scalars(
-            select(MaterialStock).where(
-                MaterialStock.material_id == detail.material_id,
-                MaterialStock.warehouse_id == body.warehouse_id
-            )
-        ).first()
-        
-        if stock:
-            stock.current_stock += detail.quantity
-            stock.updated_at = datetime.utcnow()
-        else:
-            stock = MaterialStock(
-                material_id=detail.material_id,
-                warehouse_id=body.warehouse_id,
-                current_stock=detail.quantity,
-            )
-            db.add(stock)
-    
-    db.commit()
-    db.refresh(row)
-    return row
-
-
-@router.put("/receipts/{receipt_id}", response_model=MaterialReceiptOut)
-def update_receipt(receipt_id: int, body: MaterialReceiptUpdate, db: Session = Depends(get_db), _user=Depends(require_roles("admin", "warehouse"))):
-    row = db.get(MaterialReceipt, receipt_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Receipt tidak ditemukan")
-    if row.status == "confirmed":
-        raise HTTPException(status_code=400, detail="Receipt sudah confirmed tidak bisa diubah")
-    for k, v in body.model_dump(exclude_unset=True).items():
-        setattr(row, k, v)
-    db.commit()
-    db.refresh(row)
-    return row
-
-
-@router.post("/receipts/{receipt_id}/confirm")
-def confirm_receipt(receipt_id: int, db: Session = Depends(get_db), _user=Depends(require_roles("admin", "warehouse"))):
-    row = db.get(MaterialReceipt, receipt_id)
-    if not row:
-        raise HTTPException(status_code=404, detail="Receipt tidak ditemukan")
-    if row.status == "confirmed":
-        raise HTTPException(status_code=400, detail="Receipt sudah confirmed")
-    row.status = "confirmed"
-    db.commit()
-    return {"status": "confirmed"}

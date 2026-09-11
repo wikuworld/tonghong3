@@ -24,6 +24,7 @@ from app.models import (
     ProductionDetail,
     ProductionOrder,
 )
+from app.timeutil import app_now
 from app.services.customs_import import declaration_to_api_dict
 from app.services.customs_templates import (
     DEFAULT_VERSI_TEMPLATE,
@@ -46,7 +47,7 @@ def generate_aju_number() -> str:
     """Nomor draft internal (26 digit CEISA diisi ulang saat submit ke portal)."""
     import random
 
-    now = datetime.utcnow()
+    now = app_now()
     suffix = random.randint(1000, 9999)
     return f"TH{now.strftime('%y%m%d%H%M%S')}{suffix}"
 
@@ -180,7 +181,7 @@ def _build_header_row(
     delivery: DeliveryHeader,
     customer: Customer | None,
 ) -> dict[str, str]:
-    export_date = _fmt_date(delivery.delivery_date or datetime.utcnow().date())
+    export_date = _fmt_date(delivery.delivery_date or app_now().date())
     kantor = ""
     if customer and customer.customs_office_code:
         kantor = customer.customs_office_code.strip()

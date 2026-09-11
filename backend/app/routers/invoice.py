@@ -11,16 +11,31 @@ from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.timeutil import app_now
 from app.config import settings
-from app.models import Customer, DeliveryHeader, Invoice, InvoiceDetail
-from app.schemas import InvoiceCreate, InvoiceDetailCreate, InvoiceDetailOut, InvoiceOut, InvoiceUpdate
-from app.services.business_rules import po_id_from_delivery, validate_invoice_against_delivery
+from app.models import Customer, DeliveryHeader, Invoice, InvoiceDetail, PoHeader
+from app.schemas import (
+    InvoiceCreate,
+    InvoiceDetailCreate,
+    InvoiceDetailOut,
+    InvoiceOut,
+    InvoiceUpdate,
+)
+from app.services.business_rules import (
+    joined_po_numbers_for_delivery,
+    po_id_from_delivery,
+    validate_invoice_against_delivery,
+)
 from app.services.mkt_workflow import sync_invoice_billing_from_delivery
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
 from app.services.notifications import create_notification_for_roles
-from app.services.numbering import next_number
-
+from app.services.document_numbers import allocate_invoice_number
+from app.services.invoice_outstanding import (
+    enrich_outstanding_invoice,
+    filter_outstanding_rows,
+    sync_payment_status_from_balance,
+)
 router = APIRouter(tags=["invoice"])
 
 
@@ -44,8 +59,18 @@ def create_invoice(
         if resolved:
             data["po_id"] = resolved
 
+    if not (data.get("po_number") or "").strip():
+        joined = joined_po_numbers_for_delivery(db, body.delivery_id)
+        if joined:
+            data["po_number"] = joined
+
     if not (data.get("invoice_number") or "").strip():
-        data["invoice_number"] = next_number(db, "INV", "INV")
+        po_for_num: PoHeader | None = None
+        po_id = data.get("po_id")
+        if po_id:
+            po_for_num = db.get(PoHeader, int(po_id))
+        inv_date = data.get("invoice_date") or (delivery.delivery_date if delivery else None)
+        data["invoice_number"] = allocate_invoice_number(db, po=po_for_num, on_date=inv_date)
 
     row = Invoice(**data)
     db.add(row)
@@ -123,8 +148,12 @@ def list_outstanding_invoice(
     overdue_only: bool = Query(False),
     due_within_days: Optional[int] = Query(None, ge=0, le=365),
     hide_po: bool = Query(False),
+    open_only: bool = Query(True, description="Sembunyikan status Closed (saldo 0)"),
+    ar_status: Optional[str] = Query(None, description="closed|overdue|not_overdue"),
+    customer_id: Optional[int] = Query(None),
+    q: Optional[str] = Query(None),
     _user=Depends(get_current_user),
-) -> list[Invoice]:
+) -> list[dict]:
     today = date.today()
     stmt = select(Invoice).order_by(Invoice.id.desc())
     if overdue_only:
@@ -137,13 +166,17 @@ def list_outstanding_invoice(
                 Invoice.due_date <= (today + timedelta(days=int(due_within_days))),
             )
         )
-    rows = db.scalars(stmt).all()
-    out: list[Invoice] = []
-    for r in rows:
-        if hide_po:
-            r.po_number = None
-        out.append(r)
-    return out
+    rows = list(db.scalars(stmt).all())
+    enriched = [enrich_outstanding_invoice(db, r, hide_po=hide_po) for r in rows]
+    # Jika overdue_only/due filter SQL sudah dipakai, jangan force open_only menutupi closed
+    # kecuali caller minta; default open_only=True untuk workbench outstanding.
+    return filter_outstanding_rows(
+        enriched,
+        ar_status=ar_status,
+        open_only=open_only,
+        customer_id=customer_id,
+        q=q,
+    )
 
 
 @router.post("/invoice/backfill-fks")
@@ -219,6 +252,13 @@ def update_invoice(
     }
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(row, k, v)
+    # Jika payment/CN diubah, sesuaikan payment_status dari saldo
+    if any(
+        f in body.model_dump(exclude_unset=True)
+        for f in ("payment_amount", "payment_date", "payment_status", "credit_note_amount", "oia_export_usd", "total_amount")
+    ):
+        if "payment_status" not in body.model_dump(exclude_unset=True):
+            sync_payment_status_from_balance(row)
     log_change(
         db,
         entity_type="invoice",
@@ -308,7 +348,7 @@ def run_invoice_reminders(
                 "",
                 "Mohon konfirmasi pembayaran / status penerimaan dokumen.",
                 "",
-                f"Generated at: {datetime.utcnow().isoformat()}Z",
+                f"Generated at: {app_now().isoformat()}Z",
             ]
         )
         try:

@@ -54,6 +54,7 @@ def test_production_mirror_idempotent_by_lot(monkeypatch):
     assert result.production_detail_id == 50
     assert result.finished is True
     assert existing_pd.status == "completed"
+    assert result.qc_header_id is None
 
 
 def test_production_mirror_requires_wip():

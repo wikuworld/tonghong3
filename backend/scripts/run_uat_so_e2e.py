@@ -55,6 +55,18 @@ def login(username: str, password: str) -> str:
     return tok
 
 
+def expect_http(fn, *, codes, step_name: str):
+    try:
+        out = fn()
+        raise StepFail(step_name, {"unexpected_ok": out})
+    except StepFail as e:
+        detail = e.detail if isinstance(e.detail, dict) else {}
+        http = detail.get("http")
+        if http not in codes:
+            raise StepFail(step_name, e.detail) from e
+        return detail
+
+
 def step(results: list, name: str, fn):
     try:
         data = fn()
@@ -221,14 +233,8 @@ def _require(value, label: str, step_name: str):
 
 
 def run_happy(tokens: dict, masters: dict, results: list) -> dict:
-    mkt, prod, qc, wh, fin, ppic = (
-        tokens["marketing"],
-        tokens["production"],
-        tokens["qc"],
-        tokens["warehouse"],
-        tokens["finance"],
-        tokens["ppic"],
-    )
+    mkt = tokens["marketing"]
+    prod = tokens["production"]
     ref = f"UAT-SL043-{STAMP}-A"
 
     def a1():
@@ -253,12 +259,25 @@ def run_happy(tokens: dict, masters: dict, results: list) -> dict:
 
     def a2():
         h = req("PUT", f"/po/{po_id}", mkt, {"status": "confirmed"})
-        return {"status": h.get("status"), "po_number": h.get("po_number")}
+        stage = h.get("mkt_workflow_stage")
+        if stage != "in_outstanding":
+            raise StepFail(
+                "A2 confirm SO",
+                f"expected in_outstanding after confirm, got {stage}",
+            )
+        return {"status": h.get("status"), "po_number": h.get("po_number"), "mkt": stage}
 
     a2d = step(results, "A2 confirm SO", a2)
 
     def a8_rekap_ppic():
-        """Rekap + PPIC saat status masih confirmed/production-ready (sebelum invoice)."""
+        """Confirm sudah Outstanding; cetak RKPO opsional; assignment pool selesai."""
+        so = req("GET", f"/po/{po_id}", mkt)
+        stages = [so.get("mkt_workflow_stage")]
+        if stages[-1] != "in_outstanding":
+            raise StepFail(
+                "A8 confirm→outstanding",
+                f"expected in_outstanding after confirm, got {stages[-1]}",
+            )
         req(
             "POST",
             "/reports/po-daily-recap/confirm-print",
@@ -266,42 +285,17 @@ def run_happy(tokens: dict, masters: dict, results: list) -> dict:
             {"po_ids": [po_id], "report_date": TODAY},
         )
         so = req("GET", f"/po/{po_id}", mkt)
-        stages = [so.get("mkt_workflow_stage")]
-        if stages[-1] != "rekap_printed":
+        if so.get("mkt_workflow_stage") != "in_outstanding":
             raise StepFail(
-                "A8 rekap",
-                f"expected rekap_printed after confirm-print, got {stages[-1]}",
+                "A8 optional rekap print",
+                f"expected still in_outstanding, got {so.get('mkt_workflow_stage')}",
             )
 
-        ppic_user = req("GET", "/auth/me", ppic)
-        if not ppic_user or not ppic_user.get("id"):
-            raise StepFail("A8 ppic user", "demo_ppic /auth/me gagal")
-        asg = req(
-            "POST",
-            f"/workflow/po/{po_id}/assign-to-ppic",
-            ppic,
-            {"po_id": po_id, "ppic_user_id": ppic_user["id"], "notes": "UAT"},
-        )
-        so = req("GET", f"/po/{po_id}", mkt)
-        stages.append(so.get("mkt_workflow_stage"))
-        if stages[-1] != "with_ppic":
+        asg = req("GET", f"/workflow/po/{po_id}/ppic-assignment", mkt)
+        if not asg or asg.get("status") != "completed":
             raise StepFail(
-                "A8 assign PPIC",
-                f"expected with_ppic, got {stages[-1]}",
-            )
-
-        req(
-            "PUT",
-            f"/workflow/ppic/assignments/{asg['id']}/status",
-            ppic,
-            {"status": "completed", "notes": "UAT complete"},
-        )
-        so = req("GET", f"/po/{po_id}", mkt)
-        stages.append(so.get("mkt_workflow_stage"))
-        if stages[-1] != "in_outstanding":
-            raise StepFail(
-                "A8 PPIC complete",
-                f"expected in_outstanding, got {stages[-1]}",
+                "A8 PPIC auto assignment",
+                f"expected completed auto assignment, got {asg}",
             )
 
         req(
@@ -316,208 +310,29 @@ def run_happy(tokens: dict, masters: dict, results: list) -> dict:
             pass
         so = req("GET", f"/po/{po_id}", mkt)
         stages.append(so.get("mkt_workflow_stage"))
-        return {"stage_trace": stages, "post_ppic_stage": so.get("mkt_workflow_stage")}
+        return {"stage_trace": stages, "post_ppic_stage": so.get("mkt_workflow_stage"), "ppic_status": asg.get("status")}
 
     a8_early = step(results, "A8 MKT rekap+PPIC", a8_rekap_ppic)
 
     def a3():
-        pr = req(
-            "POST",
-            "/production",
-            prod,
-            {"po_id": po_id, "start_date": TODAY, "status": "planned"},
+        blocked = expect_http(
+            lambda: req(
+                "POST",
+                "/production",
+                prod,
+                {"po_id": po_id, "start_date": TODAY, "status": "planned"},
+            ),
+            codes={403},
+            step_name="A3 production",
         )
-        pd = req(
-            "POST",
-            f"/production/{pr['id']}/details",
-            prod,
-            {
-                "po_detail_id": a1d["detail_id"],
-                "qty_planned": 100,
-                "qty_actual": 100,
-                "lot_number": a1d.get("lot"),
-                "status": "pending",
-            },
-        )
-        so = req("GET", f"/po/{po_id}", mkt)
-        return {
-            "production_id": pr["id"],
-            "production_number": pr.get("production_number"),
-            "production_detail_id": pd["id"],
-            "so_status": so.get("status"),
-        }
+        return {"http": blocked.get("http"), "erp_shopfloor_blocked": True}
 
-    a3d = step(results, "A3 production", a3)
-
-    def a4():
-        qh = req(
-            "POST",
-            "/qc",
-            qc,
-            {
-                "production_id": a3d["production_id"],
-                "po_id": po_id,
-                "qc_date": TODAY,
-                "operator_name": "UAT",
-            },
-        )
-        qd = req(
-            "POST",
-            f"/qc/{qh['id']}/details",
-            qc,
-            {
-                "production_detail_id": a3d["production_detail_id"],
-                "result": "OK",
-                "is_ok": True,
-                "qty_checked": 100,
-            },
-        )
-        qc_number = _require(qh.get("qc_number"), "qc_number", "A4")
-        return {
-            "qc_id": qh["id"],
-            "qc_number": qc_number,
-            "qc_detail_id": qd["id"],
-            "is_ok": qd.get("is_ok"),
-        }
-
-    a4d = step(results, "A4 QC OK", a4)
-
-    def a5():
-        pk = req(
-            "POST",
-            "/packing",
-            wh,
-            {
-                "production_id": a3d["production_id"],
-                "qc_header_id": a4d["qc_id"],
-                "status": "draft",
-            },
-        )
-        req(
-            "POST",
-            f"/packing/{pk['id']}/details/batch",
-            wh,
-            {
-                "lines": [
-                    {
-                        "production_detail_id": a3d["production_detail_id"],
-                        "qty_packed": 100,
-                    }
-                ]
-            },
-        )
-        pk = req("PUT", f"/packing/{pk['id']}", wh, {"status": "done"})
-        return {
-            "packing_id": pk["id"],
-            "packing_number": pk.get("packing_number"),
-            "status": pk.get("status"),
-        }
-
-    a5d = step(results, "A5 packing done", a5)
-
-    def a6():
-        dh = req(
-            "POST",
-            "/delivery-shipments/from-packing-lines",
-            wh,
-            {
-                "packing_id": a5d["packing_id"],
-                "customer_id": masters["customer"]["id"],
-                "delivery_date": TODAY,
-                "delivery_type": "production",
-                "lines": [
-                    {
-                        "production_detail_id": a3d["production_detail_id"],
-                        "qty": 100,
-                    }
-                ],
-            },
-        )
-        dh = req("PUT", f"/delivery/{dh['id']}", wh, {"status": "sent"})
-        details = req("GET", f"/delivery/{dh['id']}/details", wh)
-        delivery_number = _require(dh.get("delivery_number"), "delivery_number", "A6")
-        return {
-            "delivery_id": dh["id"],
-            "delivery_number": delivery_number,
-            "status": dh.get("status"),
-            "detail_count": len(details) if isinstance(details, list) else 0,
-        }
-
-    a6d = step(results, "A6 delivery sent", a6)
-
-    def a8_sj_invpl():
-        req("POST", f"/packing/{a5d['packing_id']}/mark-invpl-printed", wh)
-        req("POST", f"/delivery/{a6d['delivery_id']}/mark-surat-jalan-printed", wh)
-        for _ in range(3):
-            try:
-                req("POST", f"/po/{po_id}/mkt-workflow/advance", mkt)
-            except StepFail:
-                break
-        so = req("GET", f"/po/{po_id}", mkt)
-        stage = so.get("mkt_workflow_stage")
-        if stage not in {"sj_invpl", "delivery_arranged", "material_followup"}:
-            # material_followup may still be current if delivery gate differs
-            if stage == "invoice_billing":
-                raise StepFail("A8 SJ/INVPL", "sudah invoice_billing sebelum invoice dibuat")
-        return {
-            "stage_trace": (a8_early.get("stage_trace") or []) + [stage],
-            "pre_invoice_stage": stage,
-        }
-
-    a8pre = step(results, "A8 MKT SJ/INVPL", a8_sj_invpl)
-
-    def a7():
-        inv = req(
-            "POST",
-            "/invoice",
-            fin,
-            {
-                "delivery_id": a6d["delivery_id"],
-                "customer_id": masters["customer"]["id"],
-                "po_id": po_id,
-                "po_number": a2d.get("po_number") or a1d.get("po_number"),
-                "invoice_date": TODAY,
-            },
-        )
-        invoice_number = _require(inv.get("invoice_number"), "invoice_number", "A7")
-        return {
-            "invoice_id": inv["id"],
-            "invoice_number": invoice_number,
-            "po_number": inv.get("po_number"),
-        }
-
-    a7d = step(results, "A7 invoice", a7)
-
-    def a8_final():
-        so = req("GET", f"/po/{po_id}", mkt)
-        final_stage = so.get("mkt_workflow_stage")
-        if final_stage != "invoice_billing":
-            raise StepFail("A8 final", f"expected invoice_billing, got {final_stage}")
-        skip = None
-        try:
-            req("POST", f"/po/{po_id}/mkt-workflow/advance", mkt)
-            skip = "UNEXPECTED_ADVANCE_OK"
-        except StepFail as e:
-            skip = e.detail
-        return {
-            "final_stage": final_stage,
-            "stage_trace": (a8pre.get("stage_trace") or []) + [final_stage],
-            "pre_invoice_stage": a8pre.get("pre_invoice_stage"),
-            "skip_after_end": skip,
-        }
-
-    a8d = step(results, "A8 marketing flow final", a8_final)
+    a3d = step(results, "A3 ERP production ditolak (403)", a3)
     return {
         "a1": a1d,
         "a2": a2d,
         "a8_early": a8_early,
         "a3": a3d,
-        "a4": a4d,
-        "a5": a5d,
-        "a6": a6d,
-        "a8_pre": a8pre,
-        "a7": a7d,
-        "a8": a8d,
     }
 
 
@@ -551,57 +366,23 @@ def run_branches(tokens: dict, masters: dict, results: list) -> dict:
     def b3():
         h, d = create_so_line(mkt, masters, ref=f"UAT-SL043-{STAMP}-B3", source="swatch")
         req("PUT", f"/po/{h['id']}", mkt, {"status": "confirmed"})
-        pr = req("POST", "/production", tokens["production"], {"po_id": h["id"], "start_date": TODAY})
-        pd = req(
-            "POST",
-            f"/production/{pr['id']}/details",
-            tokens["production"],
-            {"po_detail_id": d["id"], "qty_planned": 100, "qty_actual": 100},
-        )
-        qh = req(
-            "POST",
-            "/qc",
-            tokens["qc"],
-            {"production_id": pr["id"], "po_id": h["id"], "qc_date": TODAY},
-        )
-        req(
-            "POST",
-            f"/qc/{qh['id']}/details",
-            tokens["qc"],
-            {
-                "production_detail_id": pd["id"],
-                "result": "NG",
-                "is_ok": False,
-                "qty_checked": 100,
-                "qty_reject": 100,
-                "reject_reason": "UAT NG",
-            },
-        )
-        pk = req(
-            "POST",
-            "/packing",
-            tokens["warehouse"],
-            {"production_id": pr["id"], "qc_header_id": qh["id"], "status": "draft"},
-        )
-        blocked = None
-        try:
-            req(
+        blocked = expect_http(
+            lambda: req(
                 "POST",
-                f"/packing/{pk['id']}/details/batch",
-                tokens["warehouse"],
-                {"lines": [{"production_detail_id": pd["id"], "qty_packed": 100}]},
-            )
-            blocked = "UNEXPECTED_OK"
-        except StepFail as e:
-            blocked = e.detail
+                "/production",
+                tokens["production"],
+                {"po_id": h["id"], "start_date": TODAY},
+            ),
+            codes={403},
+            step_name="B3 ERP production",
+        )
         return {
             "po_id": h["id"],
             "po_number": h.get("po_number"),
-            "qc_id": qh["id"],
-            "packing_blocked": blocked,
+            "erp_shopfloor_blocked": blocked,
         }
 
-    out["B3"] = step(results, "B3 QC NG blokir packing", b3)
+    out["B3"] = step(results, "B3 ERP production 403", b3)
     return out
 
 
@@ -673,7 +454,7 @@ def main() -> int:
         payload["stopped"] = True
         payload["stop_reason"] = str(e)
         results.append({"step": "crash", "ok": False, "error": str(e)})
-    out = Path("/home/developer/project/dokumentasi/uat-so-sl043-hasil.md")
+    out = Path(__file__).resolve().parents[2] / "dokumentasi" / "uat-so-sl043-hasil.md"
     write_report(payload, out)
     print(json.dumps({"ok": all(r.get("ok") for r in results), "report": str(out), "steps": [(r["step"], r["ok"]) for r in results]}, ensure_ascii=False, indent=2))
     return 0 if all(r.get("ok") for r in results) else 1

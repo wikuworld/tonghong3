@@ -25,24 +25,25 @@ describe('materialFollowUpAutoStatus', () => {
 })
 
 describe('soListNextStep', () => {
-  it('starts with recap; draft waits for Order Penjualan confirm', () => {
-    expect(soListNextStep({ mkt_workflow_stage: 'input_system' })).toBe('rekap')
-    expect(soListNextStep({ mkt_workflow_stage: 'input_system', rekap_printed_at: '2026-08-01', status: 'draft' })).toBe(
-      'wait',
-    )
-    expect(
-      soListNextStep({ mkt_workflow_stage: 'input_system', rekap_printed_at: '2026-08-01', status: 'confirmed' }),
-    ).toBe('advance')
-    expect(
-      soListNextStep({ mkt_workflow_stage: 'input_system', rekap_printed_at: '2026-08-01', status: 'production' }),
-    ).toBe('advance')
+  it('draft waits for Order Penjualan confirm; confirmed goes to outstanding', () => {
+    expect(soListNextStep({ mkt_workflow_stage: 'input_system' })).toBe('wait')
+    expect(soListNextStep({ mkt_workflow_stage: 'input_system', status: 'draft' })).toBe('wait')
+    expect(soListNextStep({ mkt_workflow_stage: 'input_system', status: 'confirmed' })).toBe('outstanding')
+    expect(soListNextStep({ mkt_workflow_stage: 'input_system', status: 'production' })).toBe('outstanding')
   })
 
-  it('assigns PPIC after recap, then waits on PPIC', () => {
-    expect(soListNextStep({ mkt_workflow_stage: 'rekap_printed' })).toBe('assign_ppic')
-    expect(soListNextStep({ mkt_workflow_stage: 'rekap_printed' }, { hasPpic: true })).toBe('advance')
-    expect(soListNextStep({ mkt_workflow_stage: 'with_ppic', stuck_reason: 'Menunggu PPIC' })).toBe('wait')
-    expect(soListNextStep({ mkt_workflow_stage: 'with_ppic' })).toBe('advance')
+  it('skips RKPO/PPIC gates — historical stages go to outstanding', () => {
+    expect(soListNextStep({ mkt_workflow_stage: 'rekap_printed' })).toBe('outstanding')
+    expect(soListNextStep({ mkt_workflow_stage: 'rekap_printed' }, { hasPpic: true })).toBe('outstanding')
+    expect(
+      soListNextStep(
+        { mkt_workflow_stage: 'with_ppic' },
+        { hasPpic: true, ppicStatus: 'pending' },
+      ),
+    ).toBe('outstanding')
+    expect(
+      soListNextStep({ mkt_workflow_stage: 'with_ppic' }, { hasPpic: true, ppicStatus: 'completed' }),
+    ).toBe('outstanding')
   })
 
   it('routes outstanding and ship work to the right page', () => {

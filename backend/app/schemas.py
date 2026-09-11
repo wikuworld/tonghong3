@@ -125,88 +125,6 @@ class CustomerPageOut(BaseModel):
     offset: int = 0
 
 
-# --- Quotations (penawaran) ---
-class QuotationLineCreate(BaseModel):
-    master_item_id: Optional[int] = None
-    item_code: Optional[str] = None
-    description: Optional[str] = None
-    color: Optional[str] = None
-    specification: Optional[str] = None
-    quantity: Optional[Decimal] = None
-    unit: Optional[str] = "S/F"
-    unit_price: Optional[Decimal] = None
-    discount_amount: Optional[Decimal] = None
-    tax_rate: Optional[Decimal] = None
-
-
-class QuotationLineUpdate(BaseModel):
-    item_code: Optional[str] = None
-    description: Optional[str] = None
-    color: Optional[str] = None
-    specification: Optional[str] = None
-    quantity: Optional[Decimal] = None
-    unit: Optional[str] = None
-    unit_price: Optional[Decimal] = None
-    discount_amount: Optional[Decimal] = None
-    tax_rate: Optional[Decimal] = None
-
-
-class QuotationLineOut(ORMBase):
-    id: int
-    quotation_id: int
-    line_no: int
-    master_item_id: Optional[int] = None
-    item_code: Optional[str] = None
-    description: Optional[str] = None
-    color: Optional[str] = None
-    specification: Optional[str] = None
-    quantity: Optional[Decimal] = None
-    unit: Optional[str] = None
-    unit_price: Optional[Decimal] = None
-    discount_amount: Optional[Decimal] = None
-    tax_rate: Optional[Decimal] = None
-    line_amount: Optional[Decimal] = None
-
-
-class QuotationHeaderCreate(BaseModel):
-    customer_id: Optional[int] = None
-    quotation_date: Optional[date] = None
-    currency: Optional[str] = "USD"
-    payment_terms: Optional[str] = None
-    valid_until: Optional[date] = None
-    salesperson: Optional[str] = None
-    remark: Optional[str] = None
-    status: str = "draft"
-
-
-class QuotationHeaderUpdate(BaseModel):
-    customer_id: Optional[int] = None
-    quotation_date: Optional[date] = None
-    currency: Optional[str] = None
-    payment_terms: Optional[str] = None
-    valid_until: Optional[date] = None
-    salesperson: Optional[str] = None
-    remark: Optional[str] = None
-    status: Optional[str] = None
-
-
-class QuotationHeaderOut(ORMBase):
-    id: int
-    quotation_number: Optional[str] = None
-    customer_id: Optional[int] = None
-    quotation_date: Optional[date] = None
-    currency: Optional[str] = None
-    payment_terms: Optional[str] = None
-    valid_until: Optional[date] = None
-    salesperson: Optional[str] = None
-    remark: Optional[str] = None
-    status: str = "draft"
-    total_amount: Optional[Decimal] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    lines: Optional[list[QuotationLineOut]] = None
-    customer_name: Optional[str] = None
-
 
 # --- Buyer price lists ---
 class BuyerPriceListCreate(BaseModel):
@@ -483,6 +401,14 @@ class PoDetailUpdate(BaseModel):
         return raw
 
 
+class MrpSyncStatusOut(BaseModel):
+    """Hasil sync ERP→MRP pada response Confirm (transient, bukan kolom DB)."""
+
+    ok: bool = True
+    error: Optional[str] = None
+    attempts: int = 1
+
+
 class PoHeaderOut(ORMBase):
     id: int
     po_number: Optional[str] = None
@@ -517,6 +443,8 @@ class PoHeaderOut(ORMBase):
     material_hint: Optional[str] = None
     detail_line_count: Optional[int] = None
     etd_display: Optional[str] = None
+    mrp_sync_error: Optional[str] = None
+    mrp_sync: Optional[MrpSyncStatusOut] = None
 
     @computed_field
     @property
@@ -591,6 +519,7 @@ class MarketingOutstandingSnapshotFilter(BaseModel):
     shipment_status: str = "all"
     material_status: Optional[str] = None
     factory_code: Optional[str] = None
+    customer_ids: Optional[str] = None
     po_category: Optional[str] = None
     material_group: Optional[str] = None
     mkt_stage_min: Optional[str] = None
@@ -622,6 +551,7 @@ class MarketingOutstandingLineOut(BaseModel):
     order_date: Optional[str] = None
     thi_order: Optional[str] = None
     customer_name: Optional[str] = None
+    customer_id: Optional[int] = None
     brand: Optional[str] = None
     order_type: Optional[str] = None
     no_po: Optional[str] = None
@@ -644,6 +574,7 @@ class MarketingOutstandingLineOut(BaseModel):
     stock_wh_qty: Optional[str] = None
     balance_qty: Optional[str] = None
     system_reference: Optional[str] = None
+    lot_no: Optional[str] = None
     detail_remark: Optional[str] = None
     remark_system: Optional[str] = None
     remark_marketing: Optional[str] = None
@@ -659,6 +590,8 @@ class MarketingOutstandingLineOut(BaseModel):
     mrp_alloc_status: Optional[str] = None
     mrp_qty_processed: Optional[str] = None
     mrp_qty_remaining: Optional[str] = None
+    mrp_qty_ship_remaining: Optional[str] = None
+    mrp_qty_wip: Optional[str] = None
     po_category: Optional[str] = None
     factory_code: Optional[str] = None
     delivery_1_qty: Optional[str] = None
@@ -767,6 +700,7 @@ class MarketingDeliveryPlanningSlotOut(BaseModel):
     po_number: Optional[str] = None
     po_customer_ref: Optional[str] = None
     customer_name: Optional[str] = None
+    customer_id: Optional[int] = None
     brand: Optional[str] = None
     factory_code: Optional[str] = None
     material_name: Optional[str] = None
@@ -781,6 +715,8 @@ class MarketingDeliveryPlanningSlotOut(BaseModel):
     balance_qty: Optional[str] = None
     ship_status: Optional[str] = None
     overdue: Optional[bool] = None
+    mrp_qty_processed: Optional[str] = None
+    mrp_qty_wip: Optional[str] = None
 
 
 class MarketingDeliveryPlanningPageOut(BaseModel):
@@ -842,6 +778,8 @@ class PoDetailOut(ORMBase):
     copied_from_detail_id: Optional[int] = None
     color_swatch_recipe_id: Optional[int] = None
     delivery_schedules: list[PoDetailDeliveryOut] = Field(default_factory=list)
+    line_locked: bool = False
+    line_lock_reason: Optional[str] = None
 
 
 class LotGenerateIn(BaseModel):
@@ -1069,6 +1007,25 @@ class DeliveryDetailOut(ORMBase):
     qty_roll: Optional[int] = None
     qty_pcs: Optional[int] = None
     weight: Optional[float] = None
+    returned_qty: Optional[float] = None
+
+
+class DeliveryDetailReturnIn(BaseModel):
+    qty: Decimal = Field(..., gt=0)
+    remark: Optional[str] = None
+
+
+class DeliveryDetailReturnOut(BaseModel):
+    delivery_detail_id: int
+    delivery_id: int
+    invoice_id: Optional[int] = None
+    invoice_number: Optional[str] = None
+    returned_qty: float
+    return_qty_this: float
+    unit_price: Optional[float] = None
+    credit_amount: float
+    credit_note_amount: Optional[float] = None
+    remaining_returnable: float
 
 
 class DeliveryDetailEnrichedOut(DeliveryDetailOut):
@@ -1104,6 +1061,9 @@ class PackingHeaderOut(ORMBase):
     status: str = "draft"
     created_at: Optional[datetime] = None
     invpl_printed_at: Optional[datetime] = None
+    source: Optional[str] = None
+    mrp_fg_id: Optional[int] = None
+    mrp_packing_id: Optional[int] = None
 
 
 class PackingDetailOut(ORMBase):
@@ -1211,6 +1171,9 @@ class InvoiceOut(ORMBase):
     received_date: Optional[date] = None
     nopen: Optional[str] = None
     nomor_aju: Optional[str] = None
+    bc_date: Optional[date] = None
+    bc_number: Optional[str] = None
+    dokumen_bc: Optional[str] = None
     payment_date: Optional[date] = None
     payment_bank_account: Optional[str] = None
     payment_proof_url: Optional[str] = None
@@ -1222,6 +1185,8 @@ class InvoiceOut(ORMBase):
     credit_note_amount: Optional[float] = None
     oia_export_usd: Optional[float] = None
     balance_after_deduct: Optional[float] = None
+    deduction_amount: Optional[float] = None
+    ar_status: Optional[str] = None
     remark: Optional[str] = None
     qty_total: Optional[float] = None
     payment_term_days: Optional[int] = None
@@ -1273,6 +1238,7 @@ class InvoiceCreate(BaseModel):
     received_date: Optional[date] = None
     nopen: Optional[str] = None
     nomor_aju: Optional[str] = None
+    bc_date: Optional[date] = None
     payment_date: Optional[date] = None
     payment_bank_account: Optional[str] = None
     payment_proof_url: Optional[str] = None
@@ -1311,6 +1277,7 @@ class InvoiceUpdate(BaseModel):
     received_date: Optional[date] = None
     nopen: Optional[str] = None
     nomor_aju: Optional[str] = None
+    bc_date: Optional[date] = None
     payment_date: Optional[date] = None
     payment_bank_account: Optional[str] = None
     payment_proof_url: Optional[str] = None
@@ -1321,6 +1288,14 @@ class InvoiceUpdate(BaseModel):
     credit_note_date: Optional[date] = None
     credit_note_amount: Optional[Decimal] = None
     oia_export_usd: Optional[Decimal] = None
+
+
+class TandaTerimaBatchIn(BaseModel):
+    invoice_ids: list[int] = Field(..., min_length=1)
+    received_by: Optional[str] = None
+    received_date: Optional[date] = None
+    receipt_no: Optional[str] = None
+    stamp_invoices: bool = True
 
 
 class AccountsReceivableReportOut(BaseModel):
@@ -1492,79 +1467,6 @@ class NotificationOut(ORMBase):
     read_at: Optional[datetime] = None
 
 
-class SpecialPriceCreate(BaseModel):
-    buyer_code: str
-    material_pattern: Optional[str] = None
-    emboss_pattern: Optional[str] = None
-    color_pattern: Optional[str] = None
-    discount_type: str = "percentage"
-    discount_value: Decimal
-    valid_from: Optional[date] = None
-    valid_to: Optional[date] = None
-    is_active: bool = True
-
-
-class SpecialPriceUpdate(BaseModel):
-    buyer_code: Optional[str] = None
-    material_pattern: Optional[str] = None
-    emboss_pattern: Optional[str] = None
-    color_pattern: Optional[str] = None
-    discount_type: Optional[str] = None
-    discount_value: Optional[Decimal] = None
-    valid_from: Optional[date] = None
-    valid_to: Optional[date] = None
-    is_active: Optional[bool] = None
-
-
-class SpecialPriceOut(ORMBase):
-    id: int
-    buyer_code: str
-    material_pattern: Optional[str] = None
-    emboss_pattern: Optional[str] = None
-    color_pattern: Optional[str] = None
-    discount_type: str
-    discount_value: Decimal
-    valid_from: Optional[date] = None
-    valid_to: Optional[date] = None
-    is_active: bool
-    created_at: Optional[datetime] = None
-
-
-class CustomerSpecialPriceCreate(BaseModel):
-    customer_id: int
-    buyer_code: str
-    material_pattern: Optional[str] = None
-    price_override: Optional[Decimal] = None
-    discount_percentage: Optional[Decimal] = None
-    valid_from: Optional[date] = None
-    valid_to: Optional[date] = None
-    is_active: bool = True
-
-
-class CustomerSpecialPriceUpdate(BaseModel):
-    customer_id: Optional[int] = None
-    buyer_code: Optional[str] = None
-    material_pattern: Optional[str] = None
-    price_override: Optional[Decimal] = None
-    discount_percentage: Optional[Decimal] = None
-    valid_from: Optional[date] = None
-    valid_to: Optional[date] = None
-    is_active: Optional[bool] = None
-
-
-class CustomerSpecialPriceOut(ORMBase):
-    id: int
-    customer_id: int
-    buyer_code: str
-    material_pattern: Optional[str] = None
-    price_override: Optional[Decimal] = None
-    discount_percentage: Optional[Decimal] = None
-    valid_from: Optional[date] = None
-    valid_to: Optional[date] = None
-    is_active: bool
-    created_at: Optional[datetime] = None
-    customer: Optional[CustomerOut] = None
-
 
 class BrandOut(ORMBase):
     id: int
@@ -1607,40 +1509,12 @@ class BrandConstraintOut(ORMBase):
     created_at: Optional[datetime] = None
 
 
-class SubconInvoiceCreate(BaseModel):
-    po_id: int
-    invoice_type: str
-    invoice_number: Optional[str] = None
-    amount: Decimal
-    description: Optional[str] = None
-
-
-class SubconInvoiceUpdate(BaseModel):
-    invoice_type: Optional[str] = None
-    invoice_number: Optional[str] = None
-    amount: Optional[Decimal] = None
-    description: Optional[str] = None
-    status: Optional[str] = None
-
-
-class SubconInvoiceOut(ORMBase):
-    id: int
-    po_id: int
-    invoice_type: str
-    invoice_number: Optional[str] = None
-    amount: Decimal
-    description: Optional[str] = None
-    status: str
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    po_number: Optional[str] = None
-    customer_name: Optional[str] = None
-
 
 class PpicsAssignmentCreate(BaseModel):
     po_id: int
     po_detail_id: Optional[int] = None
-    ppic_user_id: int
+    # Opsional: kosong = serah terima otomatis ke tim PPIC (monitoring pool).
+    ppic_user_id: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -1654,7 +1528,7 @@ class PpicsAssignmentOut(ORMBase):
     id: int
     po_id: int
     po_detail_id: Optional[int] = None
-    ppic_user_id: int
+    ppic_user_id: Optional[int] = None
     status: str
     notes: Optional[str] = None
     assigned_at: Optional[datetime] = None
@@ -1665,6 +1539,7 @@ class PpicsAssignmentOut(ORMBase):
     item_revised_at: Optional[datetime] = None
     item_revised_has_update: bool = False
     item_revised_has_delete: bool = False
+    assignment_mode: Optional[str] = None  # "auto" | "named"
 class OutstandingScheduleLineIn(BaseModel):
     po_detail_id: int
     delivery_date: date
@@ -1730,104 +1605,10 @@ class OutstandingShipBatchIn(BaseModel):
 class OutstandingShipBatchOut(BaseModel):
     ok: bool = True
     delivery_ids: list[int] = Field(default_factory=list)
+    delivery_numbers: list[str] = Field(default_factory=list)
     delivery_count: int = 0
     message: str = ""
 
-class OutstandingMaterialCreate(BaseModel):
-    po_detail_id: int
-    material_name: Optional[str] = None
-    total_qty: Optional[Decimal] = None
-    delivered_qty: Optional[Decimal] = None
-    balance_qty: Optional[Decimal] = None
-    status: str = "pending"
-
-
-class OutstandingMaterialUpdate(BaseModel):
-    material_name: Optional[str] = None
-    total_qty: Optional[Decimal] = None
-    delivered_qty: Optional[Decimal] = None
-    balance_qty: Optional[Decimal] = None
-    status: Optional[str] = None
-
-
-class OutstandingMaterialOut(ORMBase):
-    id: int
-    po_detail_id: int
-    material_name: Optional[str] = None
-    total_qty: Optional[Decimal] = None
-    delivered_qty: Optional[Decimal] = None
-    balance_qty: Optional[Decimal] = None
-    status: str
-    updated_at: Optional[datetime] = None
-    po_number: Optional[str] = None
-    customer_id: Optional[int] = None
-    customer_name: Optional[str] = None
-
-
-class AccountingMappingCreate(BaseModel):
-    transaction_type: str
-    status: Optional[str] = None
-    coa_code: str
-    coa_name: str
-    description: Optional[str] = None
-
-
-class AccountingMappingUpdate(BaseModel):
-    transaction_type: Optional[str] = None
-    status: Optional[str] = None
-    coa_code: Optional[str] = None
-    coa_name: Optional[str] = None
-    description: Optional[str] = None
-
-
-class AccountingMappingOut(ORMBase):
-    id: int
-    transaction_type: str
-    status: Optional[str] = None
-    coa_code: str
-    coa_name: str
-    description: Optional[str] = None
-    is_active: bool
-    created_at: Optional[datetime] = None
-
-
-class AccountingMappingResolveOut(BaseModel):
-    coa_code: Optional[str] = None
-    coa_name: Optional[str] = None
-    found: bool = False
-
-
-class JournalEntryOut(ORMBase):
-    id: int
-    transaction_type: str
-    transaction_id: int
-    coa_code: str
-    coa_name: str
-    debit: Decimal
-    credit: Decimal
-    description: Optional[str] = None
-    entry_date: date
-    created_at: Optional[datetime] = None
-
-
-class JournalEntryGenerate(BaseModel):
-    transaction_type: str
-    transaction_id: int
-
-
-class TrialBalanceRow(BaseModel):
-    coa_code: str
-    coa_name: str
-    total_debit: Decimal
-    total_credit: Decimal
-
-
-class TrialBalanceReport(BaseModel):
-    as_of_date: date
-    rows: list[TrialBalanceRow]
-    total_debit: Decimal
-    total_credit: Decimal
-    is_balanced: bool
 
 
 class WarehouseCreate(BaseModel):
@@ -1899,54 +1680,3 @@ class MaterialStockOut(ORMBase):
     warehouse: Optional[WarehouseOut] = None
 
 
-class MaterialReceiptDetailCreate(BaseModel):
-    material_id: int
-    quantity: Decimal
-    unit_cost: Optional[Decimal] = None
-    total_cost: Optional[Decimal] = None
-    remark: Optional[str] = None
-
-
-class MaterialReceiptCreate(BaseModel):
-    receipt_number: Optional[str] = None
-    supplier_name: Optional[str] = None
-    receipt_date: date
-    warehouse_id: int
-    total_amount: Optional[Decimal] = None
-    remark: Optional[str] = None
-    status: str = "draft"
-    details: list[MaterialReceiptDetailCreate] = Field(default_factory=list)
-
-
-class MaterialReceiptUpdate(BaseModel):
-    supplier_name: Optional[str] = None
-    receipt_date: Optional[date] = None
-    warehouse_id: Optional[int] = None
-    total_amount: Optional[Decimal] = None
-    remark: Optional[str] = None
-    status: Optional[str] = None
-
-
-class MaterialReceiptDetailOut(ORMBase):
-    id: int
-    receipt_id: int
-    material_id: int
-    quantity: Decimal
-    unit_cost: Optional[Decimal] = None
-    total_cost: Optional[Decimal] = None
-    remark: Optional[str] = None
-    material: Optional[RawMaterialOut] = None
-
-
-class MaterialReceiptOut(ORMBase):
-    id: int
-    receipt_number: str
-    supplier_name: Optional[str] = None
-    receipt_date: date
-    warehouse_id: int
-    total_amount: Optional[Decimal] = None
-    remark: Optional[str] = None
-    status: str
-    created_at: Optional[datetime] = None
-    warehouse: Optional[WarehouseOut] = None
-    details: list[MaterialReceiptDetailOut] = Field(default_factory=list)

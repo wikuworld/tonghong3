@@ -1,11 +1,21 @@
 <template>
   <AdminSection :title="t('pages.mrpProses.title')" :subtitle="t('pages.mrpProses.subtitle')">
     <template #actions>
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
     <div class="admin-inner-card">
+      <div class="admin-inner-card__head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.mrpProses.listSectionTitle') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.mrpProses.listSubtitle') }}</p>
+        </div>
+      </div>
+      <div class="mkt-section-body">
+        <p class="admin-scroll-hint">{{ t('pages.mrpProses.scrollHint') }}</p>
+        <div class="admin-table-scroll">
       <el-table
         :data="rows"
         v-loading="loading"
@@ -13,12 +23,12 @@
         stripe
         size="small"
         class="admin-table"
-        empty-text="—"
+        :empty-text="t('pages.mrpProses.tableEmpty')"
       >
         <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
         <el-table-column prop="kode_proses" :label="t('pages.mrpProses.kodeProses')" min-width="130" show-overflow-tooltip />
         <el-table-column prop="kode_rencana" :label="t('pages.mrpProses.kodeRpi')" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="kode_wip" label="WIP" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="kode_wip" :label="t('pages.mrpProses.wip')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" width="110" show-overflow-tooltip />
         <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="120" show-overflow-tooltip />
         <el-table-column :label="t('common.color')" width="110" show-overflow-tooltip>
@@ -42,7 +52,7 @@
             <el-tag v-if="row.checkpoint_status" size="small" effect="plain">
               {{ row.checkpoint_status }}
             </el-tag>
-            <span v-else class="text-gray-400">—</span>
+            <span v-else class="text-slate-400">—</span>
           </template>
         </el-table-column>
         <el-table-column :label="t('pages.mrpProses.totalSize')" width="100" align="right">
@@ -54,6 +64,8 @@
           </template>
         </el-table-column>
       </el-table>
+        </div>
+      </div>
     </div>
 
     <el-dialog
@@ -86,9 +98,9 @@
             />
           </el-select>
         </el-form-item>
-        <div v-if="scanned" class="mrp-proses-scan-card mb-3">
-          <span class="mrp-proses-scan-card__label">{{ t('common.detail') }}</span>
-          <span class="mrp-proses-scan-card__value">
+        <div v-if="scanned" class="admin-stat-card mb-3">
+          <span class="admin-stat-card__label">{{ t('common.detail') }}</span>
+          <span class="admin-stat-card__value">
             {{ scanned.kode_rencana_item }} — {{ dash(scanned.nama_customer) }} /
             {{ dash(scanned.color) }} / {{ dash(scanned.thickness) }}
           </span>
@@ -254,23 +266,7 @@ onMounted(reload)
 </script>
 
 <style scoped>
-.mrp-proses-scan-card {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 0.65rem 0.85rem;
-  background: var(--el-fill-color-blank);
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-.mrp-proses-scan-card__label {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--el-text-color-secondary);
-}
-.mrp-proses-scan-card__value {
-  font-size: 0.875rem;
-  color: var(--el-text-color-primary);
-}
+
+
+
 </style>

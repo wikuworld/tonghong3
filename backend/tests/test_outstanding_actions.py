@@ -278,6 +278,9 @@ def _stub_ship_stage(db_session, *, stage: str):
     ph.id = 10
     ph.po_number = "THIPM26071501"
     ph.mkt_workflow_stage = stage
+    ph.customer_id = 1
+    ph.brand_name_snapshot = "BRAND"
+    ph.buyer = "BRAND"
 
     def get_side(model, pid):
         if model is PoDetail:
@@ -311,6 +314,8 @@ def test_ship_batch_rejects_null_qty(db_session):
             return_value=(1, "BRAND"),
         ),
         patch("app.services.outstanding_actions._has_qc_ok", return_value=True),
+        patch("app.services.outstanding_actions.next_number", return_value="DEL-UAT"),
+        patch("app.services.outstanding_actions.trigger_mrp_fg_out_for_packings"),
     ):
         with pytest.raises(HTTPException) as ei:
             apply_outstanding_ship_batch(db_session, body, actor="mkt")
@@ -344,6 +349,8 @@ def test_ship_batch_rejects_over_available(db_session):
             "app.services.outstanding_actions.qty_available_for_packing_line",
             return_value=Decimal("40"),
         ),
+        patch("app.services.outstanding_actions.next_number", return_value="DEL-UAT"),
+        patch("app.services.outstanding_actions.trigger_mrp_fg_out_for_packings"),
     ):
         with pytest.raises(HTTPException) as ei:
             apply_outstanding_ship_batch(db_session, body, actor="mkt")
@@ -389,6 +396,7 @@ def test_ship_batch_partial_ok(db_session):
     )
     hdr = MagicMock()
     hdr.id = 99
+    hdr.delivery_number = "DEL-UAT"
     _stub_ship_stage(db_session, stage="in_outstanding")
 
     with (
@@ -404,8 +412,9 @@ def test_ship_batch_partial_ok(db_session):
         ),
         patch("app.services.outstanding_actions.validate_delivery_qty_against_po_balance"),
         patch("app.services.outstanding_actions.log_change"),
-        patch("app.services.outstanding_actions.po_numbers_from_delivery", return_value=[]),
-        patch("app.services.outstanding_actions.sync_mkt_workflow_auto_advance"),
+        patch("app.services.outstanding_actions.sync_mkt_for_delivery"),
+        patch("app.services.outstanding_actions.next_number", return_value="DEL-UAT"),
+        patch("app.services.outstanding_actions.trigger_mrp_fg_out_for_packings"),
         patch("app.services.outstanding_actions.create_notification_for_roles"),
         patch("app.services.outstanding_actions.DeliveryHeader", return_value=hdr),
         patch("app.services.outstanding_actions.DeliveryDetail"),
@@ -415,7 +424,92 @@ def test_ship_batch_partial_ok(db_session):
     assert result["ok"] is True
     assert result["delivery_count"] == 1
     assert result["delivery_ids"] == [99]
+    assert result["delivery_numbers"] == ["DEL-UAT"]
     db_session.commit.assert_called()
+
+
+def test_ship_batch_two_packings_same_customer_one_sj(db_session):
+    from app.models import PoDetail, PoHeader
+    from app.services.outstanding_actions import apply_outstanding_ship_batch
+
+    d1 = MagicMock()
+    d1.id = 1
+    d1.po_id = 10
+    d2 = MagicMock()
+    d2.id = 2
+    d2.po_id = 20
+    ph1 = MagicMock()
+    ph1.id = 10
+    ph1.po_number = "SO-A"
+    ph1.mkt_workflow_stage = "in_outstanding"
+    ph1.customer_id = 1
+    ph1.brand_name_snapshot = "BRAND"
+    ph1.buyer = "BRAND"
+    ph2 = MagicMock()
+    ph2.id = 20
+    ph2.po_number = "SO-B"
+    ph2.mkt_workflow_stage = "in_outstanding"
+    ph2.customer_id = 1
+    ph2.brand_name_snapshot = "BRAND"
+    ph2.buyer = "BRAND"
+
+    def get_side(model, pid):
+        if model is PoDetail:
+            return {1: d1, 2: d2}.get(pid)
+        if model is PoHeader:
+            return {10: ph1, 20: ph2}.get(pid)
+        return MagicMock()
+
+    db_session.get.side_effect = get_side
+    hdr = MagicMock()
+    hdr.id = 77
+    hdr.delivery_number = "DEL-UAT"
+    body = OutstandingShipBatchIn(
+        lines=[
+            OutstandingShipLineIn(
+                po_detail_id=1,
+                packing_id=9,
+                packing_detail_id=3,
+                production_detail_id=5,
+                qty=Decimal("10"),
+                delivery_date=date(2026, 7, 16),
+            ),
+            OutstandingShipLineIn(
+                po_detail_id=2,
+                packing_id=10,
+                packing_detail_id=4,
+                production_detail_id=6,
+                qty=Decimal("8"),
+                delivery_date=date(2026, 7, 16),
+            ),
+        ]
+    )
+    with (
+        patch("app.services.outstanding_actions.require_packing_ready"),
+        patch(
+            "app.services.outstanding_actions.validate_same_customer_and_brand",
+            return_value=(1, "BRAND"),
+        ),
+        patch("app.services.outstanding_actions._has_qc_ok", return_value=True),
+        patch(
+            "app.services.outstanding_actions.qty_available_for_packing_line",
+            return_value=Decimal("40"),
+        ),
+        patch("app.services.outstanding_actions.validate_delivery_qty_against_po_balance"),
+        patch("app.services.outstanding_actions.log_change"),
+        patch("app.services.outstanding_actions.sync_mkt_for_delivery"),
+        patch("app.services.outstanding_actions.next_number", return_value="DEL-UAT"),
+        patch("app.services.outstanding_actions.trigger_mrp_fg_out_for_packings"),
+        patch("app.services.outstanding_actions.create_notification_for_roles"),
+        patch("app.services.outstanding_actions.DeliveryHeader", return_value=hdr),
+        patch("app.services.outstanding_actions.DeliveryDetail"),
+    ):
+        result = apply_outstanding_ship_batch(db_session, body, actor="mkt")
+
+    assert result["ok"] is True
+    assert result["delivery_count"] == 1
+    assert result["delivery_ids"] == [77]
+    assert result["delivery_numbers"] == ["DEL-UAT"]
 
 
 def test_schedule_rejects_date_before_order(db_session):

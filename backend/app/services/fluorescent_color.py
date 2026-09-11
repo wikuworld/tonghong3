@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import FluorescentColorMaster
+from app.timeutil import app_now
 
 VALID_COLOR_CLASSES = frozenset({"fluorescent", "metallic"})
 
@@ -107,7 +108,7 @@ def upsert_fluorescent_rows(
                 existing.source_file = data["source_file"]
             existing.brand_id = data.get("brand_id")
             existing.is_active = True
-            existing.updated_at = datetime.utcnow()
+            existing.updated_at = app_now()
             updated += 1
         else:
             db.add(FluorescentColorMaster(**data))

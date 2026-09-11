@@ -34,7 +34,7 @@
 
       <div id="mrp-rencana-tour-create-items" class="mrp-rencana-create-items mb-3">
         <div class="admin-table-scroll">
-        <el-table :data="itemRows" border size="small" class="admin-table" empty-text="—">
+        <el-table :data="itemRows" border stripe size="small" class="admin-table" :empty-text="t('common.emptyValue')">
           <el-table-column type="index" :label="t('common.noLabel')" width="48" align="center" />
           <el-table-column :label="t('common.customer')" min-width="130">
             <template #default="{ row }">

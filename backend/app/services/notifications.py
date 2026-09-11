@@ -67,3 +67,48 @@ def create_notification_for_roles(
         )
         count += 1
     return count
+
+
+def create_notification_for_ppic_users(
+    db: Session,
+    *,
+    title: str,
+    message: str | None = None,
+    category: str = "outstanding",
+    entity_type: str | None = None,
+    entity_id: int | None = None,
+    route_path: str | None = None,
+    route_query: dict | None = None,
+) -> int:
+    """Notifikasi ke semua user aktif dengan role atau department PPIC."""
+    from sqlalchemy import func, or_
+
+    users = db.scalars(
+        select(User).where(
+            User.is_active.is_(True),
+            or_(
+                func.lower(func.coalesce(User.role, "")) == "ppic",
+                func.lower(func.coalesce(User.department, "")) == "ppic",
+            ),
+        )
+    ).all()
+    seen: set[int] = set()
+    count = 0
+    for user in users:
+        uid = int(user.id)
+        if uid in seen:
+            continue
+        seen.add(uid)
+        create_notification_for_user(
+            db,
+            uid,
+            title=title,
+            message=message,
+            category=category,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            route_path=route_path,
+            route_query=route_query,
+        )
+        count += 1
+    return count

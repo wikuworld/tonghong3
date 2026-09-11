@@ -6,6 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.timeutil import app_now
 from app.models import Brand, BrandConstraint, Customer, CustomerBrandMapping, CustomerPic
 from app.schemas import (
     BrandConstraintCreate,
@@ -146,7 +147,7 @@ def update_customer(
         row.position = first.title if first else None
         row.phone = first.phone if first else None
         row.email = first.email if first else None
-    row.updated_at = datetime.utcnow()
+    row.updated_at = app_now()
     db.commit()
     db.refresh(row)
     return row

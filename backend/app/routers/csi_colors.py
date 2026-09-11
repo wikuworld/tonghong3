@@ -12,6 +12,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.timeutil import app_now
 from app.models import CsiColorMaster
 from app.routers.auth import get_current_user, require_roles
 from app.services.buyer_registry import ensure_buyer_code, list_active_buyer_codes
@@ -234,7 +235,7 @@ def update_csi_color(
         raise HTTPException(status_code=400, detail="Kode CSI sudah ada untuk buyer ini")
     for k, v in data.items():
         setattr(row, k, v)
-    row.updated_at = datetime.utcnow()
+    row.updated_at = app_now()
     db.commit()
     db.refresh(row)
     return CsiColorOut.model_validate(row)
@@ -250,7 +251,7 @@ def delete_csi_color(
     if not row:
         raise HTTPException(status_code=404, detail="CSI tidak ditemukan")
     row.is_active = False
-    row.updated_at = datetime.utcnow()
+    row.updated_at = app_now()
     db.commit()
     return {"status": "ok"}
 

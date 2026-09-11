@@ -242,6 +242,14 @@
               <h3 class="po-wizard-panel__title">{{ t('pages.po.step2Title') }}</h3>
               <p class="po-wizard-panel__sub">{{ t('pages.po.wizardStep2Hint') }}</p>
             </div>
+            <el-alert
+              v-if="w.currentLineLocked"
+              type="warning"
+              show-icon
+              :closable="false"
+              class="mb-3"
+              :title="t('pages.po.lineLockedHint')"
+            />
             <div class="po-wizard-panel__body po-wizard-panel__body--stack">
           <section v-if="w.isSubkonPo" class="po-wizard-group">
             <header class="po-wizard-group__head">
@@ -833,6 +841,9 @@
             <el-col :xs="24" :md="6">
               <el-form-item :label="t('common.quantityOrder')" :error="w.formErrors.quantity_order">
                 <el-input v-model="w.formModel.quantity_order" type="number" />
+                <p v-if="w.currentLineLocked" class="el-form-item__help text-xs text-amber-700 mt-1">
+                  {{ t('pages.po.lineLockedQtyHint') }}
+                </p>
               </el-form-item>
             </el-col>
             <el-col :xs="24" :md="6">
@@ -869,6 +880,7 @@
                     v-model="w.formModel.thi_line_ref"
                     class="w-full"
                     clearable
+                    :disabled="w.currentLineLocked"
                     @input="w.lotAutoFromMaterial = false"
                   />
                   <el-button
@@ -876,6 +888,7 @@
                     type="primary"
                     class="self-start"
                     :loading="w.lotGenerateLoading"
+                    :disabled="w.currentLineLocked"
                     @click="w.generateLotNumber"
                   >
                     {{ t('pages.po.generateLotShort') }}
@@ -991,6 +1004,16 @@
               <el-button type="primary" :icon="Check" class="po-wizard-add-line-btn" @click="w.pushCurrentLine(false)">
                 {{ t('pages.po.saveDraftLine') }}
               </el-button>
+              <el-button
+                ref="addLineBtnRef"
+                type="success"
+                plain
+                :icon="Plus"
+                class="po-wizard-add-line-btn"
+                @click="w.pushCurrentLineAsNew(false)"
+              >
+                {{ t('pages.po.addDraftLineNew') }}
+              </el-button>
             </template>
             <el-button
               v-else
@@ -1090,8 +1113,9 @@
               <template #default="{ row }">
                 <div class="flex items-center gap-2">
                   <span class="truncate">{{ row.thi_line_ref || '—' }}</span>
+                  <el-tag v-if="row.line_locked" size="small" type="warning">{{ t('pages.po.lineLockedTag') }}</el-tag>
                   <el-button
-                    v-if="w.isEditMode && row.id"
+                    v-if="w.isEditMode && row.id && !row.line_locked"
                     size="small"
                     type="primary"
                     plain
@@ -1111,8 +1135,14 @@
                   <el-tooltip :content="t('pages.po.editDraftLine')" placement="top">
                     <el-button link type="primary" :icon="Edit" @click="w.editDraftLine(row)" />
                   </el-tooltip>
-                  <el-tooltip :content="t('common.delete')" placement="top">
-                    <el-button link type="danger" :icon="Delete" @click="w.removeDraftLine(w.draftLines.indexOf(row))" />
+                  <el-tooltip :content="row.line_locked ? (row.line_lock_reason || t('pages.po.lineLockedHint')) : t('common.delete')" placement="top">
+                    <el-button
+                      link
+                      type="danger"
+                      :icon="Delete"
+                      :disabled="Boolean(row.line_locked)"
+                      @click="w.removeDraftLine(w.draftLines.indexOf(row))"
+                    />
                   </el-tooltip>
                 </div>
               </template>

@@ -1,12 +1,24 @@
 <template>
   <AdminSection :title="t('pages.mrpPacking.title')" :subtitle="t('pages.mrpPacking.subtitle')">
     <template #actions>
+      <el-input
+        v-model="search"
+        clearable
+        class="mrp-toolbar-search"
+        :placeholder="t('pages.mrpPacking.searchPlaceholder')"
+      />
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
     </template>
 
     <div v-if="canCreate" class="admin-inner-card mb-4">
-      <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpPacking.scanWip') }}</h3>
-      <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpPacking.scanHint') }}</p>
+      <div class="admin-inner-card__head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.mrpPacking.scanSectionTitle') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.mrpPacking.scanSectionSubtitle') }}</p>
+        </div>
+      </div>
+      <div class="mkt-section-body">
       <div class="flex gap-2 mb-3 flex-wrap">
         <el-input
           v-model="wipCode"
@@ -19,34 +31,34 @@
         </el-button>
       </div>
 
-      <div v-if="prep" class="mrp-pack-prep mb-3">
-        <div class="mrp-pack-prep__item">
-          <span class="mrp-pack-prep__label">WIP</span>
-          <span>{{ dash(scannedWip) }}</span>
+      <div v-if="prep" class="admin-stats-grid admin-stats-grid--3 mb-3">
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__label">{{ t('pages.mrpPacking.wip') }}</span>
+          <span class="admin-stat-card__value">{{ dash(scannedWip) }}</span>
         </div>
-        <div class="mrp-pack-prep__item">
-          <span class="mrp-pack-prep__label">{{ t('pages.mrpPacking.prepCode') }}</span>
-          <span>{{ dash(prep.kode_proses) }}</span>
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__label">{{ t('pages.mrpPacking.prepCode') }}</span>
+          <span class="admin-stat-card__value">{{ dash(prep.kode_proses) }}</span>
         </div>
-        <div class="mrp-pack-prep__item">
-          <span class="mrp-pack-prep__label">{{ t('common.status') }}</span>
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__label">{{ t('common.status') }}</span>
           <el-tag size="small" type="success" effect="plain">{{ dash(prep.status) }}</el-tag>
         </div>
-        <div class="mrp-pack-prep__item">
-          <span class="mrp-pack-prep__label">{{ t('common.color') }}</span>
-          <span>{{ dash(prep.warna) }}</span>
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__label">{{ t('common.color') }}</span>
+          <span class="admin-stat-card__value">{{ dash(prep.warna) }}</span>
         </div>
-        <div class="mrp-pack-prep__item">
-          <span class="mrp-pack-prep__label">{{ t('pages.mrpPacking.thickness') }}</span>
-          <span>{{ dash(prep.tebal) }}</span>
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__label">{{ t('pages.mrpPacking.thickness') }}</span>
+          <span class="admin-stat-card__value">{{ dash(prep.tebal) }}</span>
         </div>
-        <div class="mrp-pack-prep__item">
-          <span class="mrp-pack-prep__label">{{ t('pages.mrpPacking.totalSize') }}</span>
-          <span>{{ formatQty(prep.total_size) }}</span>
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__label">{{ t('pages.mrpPacking.totalSize') }}</span>
+          <span class="admin-stat-card__value">{{ formatQty(prep.total_size) }}</span>
         </div>
       </div>
 
-      <el-table v-if="poList.length" :data="poList" border size="small" empty-text="—">
+      <el-table v-if="poList.length" :data="poList" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpPacking.tableEmpty')">
         <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="100" show-overflow-tooltip />
         <el-table-column prop="item_name" :label="t('pages.mrpPacking.poItem')" min-width="140" show-overflow-tooltip />
@@ -62,26 +74,35 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
     </div>
 
     <div class="admin-inner-card">
-      <div class="mrp-pack-list-head mb-3">
-        <h3 class="admin-inner-card__title mb-0">{{ t('pages.mrpPacking.listTitle') }}</h3>
-        <div class="flex gap-2 flex-wrap items-center">
-          <el-radio-group v-model="statusFilter" size="small" @change="reload">
-            <el-radio-button value="">{{ t('pages.mrpPacking.filterAll') }}</el-radio-button>
-            <el-radio-button value="in_progress">{{ t('pages.mrpPacking.statusInProgress') }}</el-radio-button>
-            <el-radio-button value="finished">{{ t('pages.mrpPacking.statusFinished') }}</el-radio-button>
-          </el-radio-group>
-          <el-input
-            v-model="search"
-            clearable
-            size="small"
-            class="w-52"
-            :placeholder="t('pages.mrpPacking.searchPlaceholder')"
-          />
+      <div class="admin-inner-card__head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.mrpPacking.listSectionTitle') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.mrpPacking.listSubtitle') }}</p>
         </div>
       </div>
+      <div class="mkt-section-body">
+        <div class="filter-panel mb-4">
+          <p class="filter-panel__title">{{ t('common.filter') }}</p>
+          <el-form class="filter-form" label-position="top">
+            <el-row :gutter="12">
+              <el-col :xs="24" :sm="12" :md="10" :lg="8">
+                <el-form-item :label="t('common.status')">
+                  <el-radio-group v-model="statusFilter" size="small" @change="reload">
+                    <el-radio-button value="">{{ t('pages.mrpPacking.filterAll') }}</el-radio-button>
+                    <el-radio-button value="in_progress">{{ t('pages.mrpPacking.statusInProgress') }}</el-radio-button>
+                    <el-radio-button value="finished">{{ t('pages.mrpPacking.statusFinished') }}</el-radio-button>
+                  </el-radio-group>
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </el-form>
+        </div>
+        <p class="admin-scroll-hint">{{ t('pages.mrpPacking.scrollHint') }}</p>
+        <div class="admin-table-scroll">
       <el-table
         :data="filteredRows"
         v-loading="loading"
@@ -89,11 +110,11 @@
         stripe
         size="small"
         class="admin-table"
-        empty-text="—"
+        :empty-text="t('pages.mrpPacking.tableEmpty')"
       >
         <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
         <el-table-column prop="kode_packing" :label="t('pages.mrpPacking.kodePacking')" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="kode_wip" label="WIP" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="kode_wip" :label="t('pages.mrpPacking.wip')" min-width="120" show-overflow-tooltip />
         <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" width="120" show-overflow-tooltip />
         <el-table-column prop="customer" :label="t('common.customer')" min-width="120" show-overflow-tooltip />
         <el-table-column :label="t('pages.mrpPacking.pieces')" width="90" align="right">
@@ -120,6 +141,8 @@
           </template>
         </el-table-column>
       </el-table>
+        </div>
+      </div>
     </div>
   </AdminSection>
 </template>
@@ -247,41 +270,5 @@ onMounted(reload)
 </script>
 
 <style scoped>
-.max-w-xs {
-  max-width: 20rem;
-}
-.w-52 {
-  width: 13rem;
-}
-.mrp-pack-list-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: center;
-  justify-content: space-between;
-}
-.mrp-pack-prep {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.55rem;
-}
-.mrp-pack-prep__item {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 0.55rem 0.7rem;
-  font-size: 0.875rem;
-}
-.mrp-pack-prep__label {
-  display: block;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--el-text-color-secondary);
-  margin-bottom: 0.15rem;
-}
-@media (max-width: 800px) {
-  .mrp-pack-prep {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
+.max-w-xs { max-width: 20rem; }
 </style>

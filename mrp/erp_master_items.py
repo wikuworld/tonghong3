@@ -6,7 +6,7 @@ import os
 import re
 from typing import Any, Optional
 
-from db import root_db_config
+from db import erp_db_config
 import mysql.connector
 
 _ERP_DB = os.getenv("ERP_DB_NAME", "tonghong")
@@ -47,7 +47,7 @@ def _row_thickness(row: dict) -> str:
 
 
 def _erp_connect():
-    cfg = root_db_config()
+    cfg = erp_db_config()
     cfg["database"] = _ERP_DB
     return mysql.connector.connect(**cfg)
 

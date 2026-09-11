@@ -127,6 +127,52 @@ def po_numbers_from_delivery(db: "Session", delivery_id: int) -> set[str]:
     return seen
 
 
+def joined_po_numbers_for_delivery(db: "Session", delivery_id: int, *, max_len: int = 100) -> str:
+    """Nomor SO gabungan untuk header invoice multi-SO (kolom po_number max 100)."""
+    pns = sorted(po_numbers_from_delivery(db, delivery_id))
+    if not pns:
+        return ""
+    return " / ".join(pns)[:max_len]
+
+
+def _packing_ids_for_delivery(
+    db: "Session",
+    hdr,
+    details: list | None = None,
+) -> set[int]:
+    from app.models import DeliveryDetail, PackingDetail
+
+    pids: set[int] = set()
+    if hdr and getattr(hdr, "packing_id", None):
+        pids.add(int(hdr.packing_id))
+    rows = details
+    if rows is None:
+        rows = list(
+            db.scalars(select(DeliveryDetail).where(DeliveryDetail.delivery_id == hdr.id)).all()
+        )
+    for d in rows:
+        pkd_id = getattr(d, "packing_detail_id", None)
+        if not pkd_id:
+            continue
+        pkd = db.get(PackingDetail, int(pkd_id))
+        if pkd and pkd.packing_id:
+            pids.add(int(pkd.packing_id))
+    return pids
+
+
+def delivery_has_invpl_printed(db: "Session", delivery_id: int, details: list | None = None) -> bool:
+    from app.models import DeliveryHeader, PackingHeader
+
+    hdr = db.get(DeliveryHeader, delivery_id)
+    if not hdr:
+        return False
+    for pid in _packing_ids_for_delivery(db, hdr, details):
+        ph = db.get(PackingHeader, pid)
+        if ph and ph.invpl_printed_at is not None:
+            return True
+    return False
+
+
 def validate_invoice_against_delivery(
     db: "Session",
     delivery_id: int,
@@ -137,11 +183,6 @@ def validate_invoice_against_delivery(
     hdr = db.get(DeliveryHeader, delivery_id)
     if not hdr:
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
-    if hdr.packing_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Delivery tanpa packing_id — tidak boleh ditagih",
-        )
     if (hdr.status or "").lower() != "sent":
         raise HTTPException(
             status_code=400,
@@ -155,10 +196,21 @@ def validate_invoice_against_delivery(
             status_code=400,
             detail="Delivery harus punya minimal satu baris detail sebelum invoice",
         )
-    if po_number:
-        pns = po_numbers_from_delivery(db, delivery_id)
-        if pns and po_number.strip() not in pns:
+    if hdr.packing_id is None:
+        related = _packing_ids_for_delivery(db, hdr, details)
+        if related and not delivery_has_invpl_printed(db, delivery_id, details):
             raise HTTPException(
                 status_code=400,
-                detail=f"po_number {po_number!r} tidak cocok dengan SO pada delivery ini: {sorted(pns)}",
+                detail="Delivery tanpa packing_id — cetak INVPL dulu sebelum invoice",
             )
+    if po_number:
+        pns = po_numbers_from_delivery(db, delivery_id)
+        raw = po_number.strip()
+        if pns and raw not in pns:
+            joined = joined_po_numbers_for_delivery(db, delivery_id)
+            parts = {p.strip() for p in raw.replace(",", "/").split("/") if p.strip()}
+            if raw != joined and (not parts or not parts.issubset(pns)):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"po_number {po_number!r} tidak cocok dengan SO pada delivery ini: {sorted(pns)}",
+                )

@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import (
-    accounting,
     audit,
     auth,
     buyer_prices,
@@ -17,7 +16,6 @@ from app.routers import (
     exchange_rates,
     invoice,
     inventory,
-    journal,
     marketing,
     masters,
     mrp_gateway,
@@ -27,11 +25,9 @@ from app.routers import (
     po,
     pricing,
     production,
-    quotations,
     qc,
     reports,
     sales_orders,
-    subcon,
     workflow,
     wilayah,
 )
@@ -54,8 +50,6 @@ app.include_router(customers.router, prefix=_PREFIX)
 app.include_router(wilayah.router, prefix=_PREFIX)
 app.include_router(sales_orders.router, prefix=_PREFIX)
 app.include_router(po.router, prefix=_PREFIX)
-app.include_router(quotations.router, prefix=_PREFIX)
-app.include_router(subcon.router, prefix=_PREFIX)
 app.include_router(marketing.router, prefix=_PREFIX)
 app.include_router(production.router, prefix=_PREFIX)
 app.include_router(qc.router, prefix=_PREFIX)
@@ -76,9 +70,7 @@ app.include_router(customs.router, prefix=_PREFIX)
 app.include_router(buyer_prices.router, prefix=_PREFIX)
 app.include_router(pricing.router, prefix=_PREFIX)
 app.include_router(workflow.router, prefix=_PREFIX)
-app.include_router(accounting.router, prefix=_PREFIX)
 app.include_router(inventory.router, prefix=_PREFIX)
-app.include_router(journal.router, prefix=_PREFIX)
 
 
 @app.on_event("startup")

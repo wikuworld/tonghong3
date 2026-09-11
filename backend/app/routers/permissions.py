@@ -29,12 +29,6 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "delete": [],
         "advance": ["marketing", "ppic"],
     },
-    "quotations": {
-        "view": ["marketing", "sales", "finance"],
-        "create": ["marketing", "sales"],
-        "update": ["marketing", "sales"],
-        "delete": ["marketing"],
-    },
     "marketingFlow": {
         "view": ["marketing", "ppic"],
         "update": ["marketing", "ppic"],
@@ -67,12 +61,6 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "create": ["finance"],
         "update": ["finance"],
     },
-    "subconInvoice": {
-        "view": ["finance"],
-        "create": ["finance"],
-        "update": ["finance"],
-        "delete": [],
-    },
     "reports": {
         "view": ["marketing", "ppic", "finance", "exim", "sales"],
         "export": ["marketing", "ppic", "finance", "exim", "sales"],
@@ -84,18 +72,6 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "delete": ["marketing"],
     },
     "brandMaster": {
-        "view": ["marketing", "sales"],
-        "create": ["marketing"],
-        "update": ["marketing"],
-        "delete": [],
-    },
-    "specialPrices": {
-        "view": ["marketing", "sales"],
-        "create": ["marketing"],
-        "update": ["marketing"],
-        "delete": [],
-    },
-    "customerPrices": {
         "view": ["marketing", "sales"],
         "create": ["marketing"],
         "update": ["marketing"],
@@ -137,21 +113,7 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
     },
     "ppicDashboard": {
         "view": ["ppic"],
-        "update": ["ppic"],
-    },
-    "outstandingMaterials": {
-        "view": ["marketing", "ppic"],
-        "update": ["marketing", "ppic"],
-    },
-    "accountingMappings": {
-        "view": ["finance"],
-        "create": ["finance"],
-        "update": ["finance"],
-        "delete": ["finance"],
-    },
-    "journalEntries": {
-        "view": ["finance"],
-        "create": ["finance"],
+        "update": [],
     },
     "inventory": {
         "view": ["warehouse"],

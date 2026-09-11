@@ -1,6 +1,7 @@
 <template>
   <AdminSection :title="t('pages.mrpStokKimia.title')" :subtitle="t('pages.mrpStokKimia.subtitle')">
     <template #actions>
+      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
     </template>
 
@@ -14,176 +15,216 @@
     </div>
 
     <div v-if="canCreate" class="admin-inner-card mb-4">
-      <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpStokKimia.inTitle') }}</h3>
-      <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpStokKimia.inHint') }}</p>
-      <div class="flex flex-wrap gap-2 items-center">
-        <el-select
-          v-model="inForm.kimia_id"
-          filterable
-          clearable
-          :placeholder="t('pages.mrpStokKimia.kimia')"
-          class="max-w-sm"
-        >
-          <el-option
-            v-for="k in kimiaList"
-            :key="k.id"
-            :label="`${k.kode_barang} — ${k.nama_barang}${k.satuan ? ` (${k.satuan})` : ''}`"
-            :value="k.id"
+      <div class="admin-inner-card__head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.mrpStokKimia.inTitle') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.mrpStokKimia.inHint') }}</p>
+        </div>
+      </div>
+      <div class="mkt-section-body">
+        <div class="flex flex-wrap gap-2 items-center">
+          <el-select
+            v-model="inForm.kimia_id"
+            filterable
+            clearable
+            :placeholder="t('pages.mrpStokKimia.kimia')"
+            class="max-w-sm"
+          >
+            <el-option
+              v-for="k in kimiaList"
+              :key="k.id"
+              :label="`${k.kode_barang} — ${k.nama_barang}${k.satuan ? ` (${k.satuan})` : ''}`"
+              :value="k.id"
+            />
+          </el-select>
+          <el-input
+            v-model="inForm.qty"
+            type="number"
+            :placeholder="t('pages.mrpStokKimia.qty')"
+            class="w-28"
+            @keyup.enter="doIn"
           />
-        </el-select>
-        <el-input
-          v-model="inForm.qty"
-          type="number"
-          :placeholder="t('pages.mrpStokKimia.qty')"
-          class="w-28"
-          @keyup.enter="doIn"
-        />
-        <el-input
-          v-model="inForm.jumlah_kemasan"
-          type="number"
-          :placeholder="t('pages.mrpStokKimia.kemasan')"
-          class="w-28"
-        />
-        <el-date-picker v-model="inForm.tanggal" type="date" value-format="YYYY-MM-DD" />
-        <el-button type="primary" :loading="saving" @click="doIn">{{ t('pages.mrpStokKimia.inBtn') }}</el-button>
+          <el-input
+            v-model="inForm.jumlah_kemasan"
+            type="number"
+            :placeholder="t('pages.mrpStokKimia.kemasan')"
+            class="w-28"
+          />
+          <el-date-picker v-model="inForm.tanggal" type="date" value-format="YYYY-MM-DD" />
+          <el-button type="primary" :loading="saving" @click="doIn">{{ t('pages.mrpStokKimia.inBtn') }}</el-button>
+        </div>
       </div>
     </div>
 
     <div v-if="canUpdate" class="admin-inner-card mb-4">
-      <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpStokKimia.outTitle') }}</h3>
-      <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpStokKimia.outHint') }}</p>
-      <div class="flex flex-wrap gap-2 items-center">
-        <el-select
-          v-model="outForm.stok_in_id"
-          filterable
-          clearable
-          :placeholder="t('pages.mrpStokKimia.lot')"
-          class="max-w-md"
-          @change="onLotPick"
-        >
-          <el-option
-            v-for="s in activeLots"
-            :key="s.id"
-            :label="lotLabel(s)"
-            :value="s.id"
-          />
-        </el-select>
-        <el-input
-          v-model="outForm.qty"
-          type="number"
-          :placeholder="t('pages.mrpStokKimia.qty')"
-          class="w-28"
-          @keyup.enter="doOut"
-        />
-        <el-select v-model="outForm.tujuan" class="w-36">
-          <el-option :label="t('pages.mrpStokKimia.tujuanMixing')" value="mixing" />
-          <el-option :label="t('pages.mrpStokKimia.tujuanProduksi')" value="produksi" />
-          <el-option :label="t('pages.mrpStokKimia.tujuanReturn')" value="return" />
-        </el-select>
-        <el-input v-model="outForm.kode_wip" :placeholder="t('pages.mrpStokKimia.wip')" class="max-w-xs" />
-        <el-button type="danger" :loading="saving" @click="doOut">{{ t('pages.mrpStokKimia.outBtn') }}</el-button>
+      <div class="admin-inner-card__head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.mrpStokKimia.outTitle') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.mrpStokKimia.outHint') }}</p>
+        </div>
       </div>
-      <p v-if="outForm.stok != null" class="text-xs text-slate-500 mt-2 mb-0">
-        {{ t('pages.mrpStokKimia.sisaHint', { qty: formatQty(outForm.stok), unit: outForm.satuan || 'kg' }) }}
-      </p>
+      <div class="mkt-section-body">
+        <div class="flex flex-wrap gap-2 items-center">
+          <el-select
+            v-model="outForm.stok_in_id"
+            filterable
+            clearable
+            :placeholder="t('pages.mrpStokKimia.lot')"
+            class="max-w-md"
+            @change="onLotPick"
+          >
+            <el-option
+              v-for="s in activeLots"
+              :key="s.id"
+              :label="lotLabel(s)"
+              :value="s.id"
+            />
+          </el-select>
+          <el-input
+            v-model="outForm.qty"
+            type="number"
+            :placeholder="t('pages.mrpStokKimia.qty')"
+            class="w-28"
+            @keyup.enter="doOut"
+          />
+          <el-select v-model="outForm.tujuan" class="w-36">
+            <el-option :label="t('pages.mrpStokKimia.tujuanMixing')" value="mixing" />
+            <el-option :label="t('pages.mrpStokKimia.tujuanProduksi')" value="produksi" />
+            <el-option :label="t('pages.mrpStokKimia.tujuanReturn')" value="return" />
+          </el-select>
+          <el-input v-model="outForm.kode_wip" :placeholder="t('pages.mrpStokKimia.wip')" class="max-w-xs" />
+          <el-button type="danger" :loading="saving" @click="doOut">{{ t('pages.mrpStokKimia.outBtn') }}</el-button>
+        </div>
+        <p v-if="outForm.stok != null" class="text-xs text-slate-500 mt-2 mb-0">
+          {{ t('pages.mrpStokKimia.sisaHint', { qty: formatQty(outForm.stok), unit: outForm.satuan || 'kg' }) }}
+        </p>
+      </div>
     </div>
 
     <div class="admin-inner-card mb-4">
-      <div class="mrp-sk-list-head mb-3">
+      <div class="admin-inner-card__head">
         <div>
-          <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpStokKimia.stokIn') }}</h3>
-          <p class="text-xs text-slate-500 mb-0">
-            {{ t('pages.mrpStokKimia.statsIn', { lots: stats.lots, qty: formatQty(stats.qty_sisa) }) }}
-          </p>
+          <h3 class="admin-inner-card__title">{{ t('pages.mrpStokKimia.stokIn') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.mrpStokKimia.stokInSubtitle') }}</p>
         </div>
         <el-input
           v-model="searchIn"
           clearable
           size="small"
-          class="w-56"
+          class="mrp-toolbar-search"
           :placeholder="t('pages.mrpStokKimia.searchPlaceholder')"
         />
       </div>
-      <el-table
-        :data="filteredIn"
-        v-loading="loading"
-        border
-        stripe
-        size="small"
-        class="admin-table"
-        empty-text="—"
-      >
-        <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
-        <el-table-column prop="kode_internal" :label="t('pages.mrpStokKimia.bc')" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="kode_barang" :label="t('pages.mrpStokKimia.kode')" width="120" show-overflow-tooltip />
-        <el-table-column prop="nama_barang" :label="t('common.name')" min-width="150" show-overflow-tooltip />
-        <el-table-column :label="t('pages.mrpStokKimia.sisa')" width="100" align="right">
-          <template #default="{ row }">
-            {{ formatQty(row.qty_sisa) }}
-            <span class="text-slate-400 text-xs">{{ dash(row.satuan) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpStokKimia.gudang')" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag size="small" effect="plain">{{ dash(row.gudang) }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpStokKimia.expired')" width="120">
-          <template #default="{ row }">
-            <span :class="{ 'text-amber-700 font-medium': isExpiredSoon(row.expired_date) }">
-              {{ formatDate(row.expired_date) }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('common.date')" width="120">
-          <template #default="{ row }">{{ formatDate(row.tanggal_in) }}</template>
-        </el-table-column>
-        <el-table-column v-if="canUpdate" :label="t('common.actions')" width="90" fixed="right">
-          <template #default="{ row }">
-            <el-button
-              v-if="Number(row.qty_sisa) > 0"
-              link
-              type="danger"
-              @click="outFromRow(row)"
-            >
-              OUT
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+      <div class="admin-stats-grid admin-stats-grid--3">
+        <div class="admin-stat-card admin-stat-card--info">
+          <span class="admin-stat-card__value">{{ stats.lots }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.mrpStokKimia.statLots') }}</span>
+        </div>
+        <div class="admin-stat-card">
+          <span class="admin-stat-card__value">{{ formatQty(stats.qty_sisa) }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.mrpStokKimia.statQty') }}</span>
+        </div>
+        <div class="admin-stat-card admin-stat-card--warn">
+          <span class="admin-stat-card__value">{{ stats.out_rows }}</span>
+          <span class="admin-stat-card__label">{{ t('pages.mrpStokKimia.statOutRows') }}</span>
+        </div>
+      </div>
+      <div class="mkt-section-body">
+        <p class="admin-scroll-hint">{{ t('pages.mrpStokKimia.scrollHint') }}</p>
+        <div class="admin-table-scroll">
+          <el-table
+            :data="filteredIn"
+            v-loading="loading"
+            border
+            stripe
+            size="small"
+            class="admin-table"
+            :empty-text="t('pages.mrpStokKimia.tableEmpty')"
+          >
+            <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
+            <el-table-column prop="kode_internal" :label="t('pages.mrpStokKimia.bc')" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="kode_barang" :label="t('pages.mrpStokKimia.kode')" width="120" show-overflow-tooltip />
+            <el-table-column prop="nama_barang" :label="t('common.name')" min-width="150" show-overflow-tooltip />
+            <el-table-column :label="t('pages.mrpStokKimia.sisa')" width="100" align="right">
+              <template #default="{ row }">
+                {{ formatQty(row.qty_sisa) }}
+                <span class="text-slate-400 text-xs">{{ dash(row.satuan) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpStokKimia.gudang')" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag size="small" effect="plain">{{ dash(row.gudang) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpStokKimia.expired')" width="120">
+              <template #default="{ row }">
+                <span :class="{ 'text-amber-700 font-medium': isExpiredSoon(row.expired_date) }">
+                  {{ formatDate(row.expired_date) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('common.date')" width="120">
+              <template #default="{ row }">{{ formatDate(row.tanggal_in) }}</template>
+            </el-table-column>
+            <el-table-column v-if="canUpdate" :label="t('common.actions')" width="100" fixed="right">
+              <template #default="{ row }">
+                <el-tooltip v-if="Number(row.qty_sisa) > 0" :content="t('pages.mrpStokKimia.outBtn')" placement="top">
+                  <el-button link type="danger" @click="outFromRow(row)">
+                    {{ t('pages.mrpStokKimia.outBtn') }}
+                  </el-button>
+                </el-tooltip>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
     </div>
 
     <div class="admin-inner-card">
-      <div class="mrp-sk-list-head mb-3">
-        <h3 class="admin-inner-card__title mb-0">{{ t('pages.mrpStokKimia.stokOut') }}</h3>
+      <div class="admin-inner-card__head">
+        <div>
+          <h3 class="admin-inner-card__title">{{ t('pages.mrpStokKimia.stokOut') }}</h3>
+          <p class="admin-inner-card__sub">{{ t('pages.mrpStokKimia.stokOutSubtitle') }}</p>
+        </div>
         <el-input
           v-model="searchOut"
           clearable
           size="small"
-          class="w-56"
+          class="mrp-toolbar-search"
           :placeholder="t('pages.mrpStokKimia.searchOutPlaceholder')"
         />
       </div>
-      <el-table :data="filteredOut" border stripe size="small" class="admin-table" empty-text="—">
-        <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
-        <el-table-column prop="nama_barang" :label="t('common.name')" min-width="150" show-overflow-tooltip />
-        <el-table-column :label="t('pages.mrpStokKimia.qty')" width="90" align="right">
-          <template #default="{ row }">{{ formatQty(row.qty) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpStokKimia.tujuan')" width="110" align="center">
-          <template #default="{ row }">
-            <el-tag :type="tujuanType(row.tujuan)" size="small" effect="plain">
-              {{ tujuanLabel(row.tujuan) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpStokKimia.wip')" min-width="120" show-overflow-tooltip>
-          <template #default="{ row }">{{ dash(row.kode_wip) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('common.date')" width="120">
-          <template #default="{ row }">{{ formatDate(row.tanggal) }}</template>
-        </el-table-column>
-      </el-table>
+      <div class="mkt-section-body">
+        <div class="admin-table-scroll">
+          <el-table
+            :data="filteredOut"
+            border
+            stripe
+            size="small"
+            class="admin-table"
+            :empty-text="t('pages.mrpStokKimia.tableEmpty')"
+          >
+            <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
+            <el-table-column prop="nama_barang" :label="t('common.name')" min-width="150" show-overflow-tooltip />
+            <el-table-column :label="t('pages.mrpStokKimia.qty')" width="90" align="right">
+              <template #default="{ row }">{{ formatQty(row.qty) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpStokKimia.tujuan')" width="110" align="center">
+              <template #default="{ row }">
+                <el-tag :type="tujuanType(row.tujuan)" size="small" effect="plain">
+                  {{ tujuanLabel(row.tujuan) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpStokKimia.wip')" min-width="120" show-overflow-tooltip>
+              <template #default="{ row }">{{ dash(row.kode_wip) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('common.date')" width="120">
+              <template #default="{ row }">{{ formatDate(row.tanggal) }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
     </div>
   </AdminSection>
 </template>
@@ -442,9 +483,6 @@ onMounted(reload)
 .w-36 {
   width: 9rem;
 }
-.w-56 {
-  width: 14rem;
-}
 .max-w-sm {
   max-width: 24rem;
 }
@@ -453,12 +491,5 @@ onMounted(reload)
 }
 .max-w-xs {
   max-width: 16rem;
-}
-.mrp-sk-list-head {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  align-items: flex-start;
-  justify-content: space-between;
 }
 </style>

@@ -22,10 +22,16 @@ class Settings(BaseSettings):
     # User demo per role (dev/staging — lihat ensure_demo_role_users)
     demo_users_password: str = "TonghongDemo2026"
 
-    # MRP Flask upstream (Docker service hostname)
-    mrp_upstream_url: str = "http://mrp:5010"
+    # MRP Flask upstream (native: 127.0.0.1; Docker: mrp)
+    mrp_upstream_url: str = "http://127.0.0.1:5010"
     # Warehouse ERP untuk buku stok shopfloor (kimia/RP issue)
     mrp_shopfloor_warehouse_code: str = "SHOPFLOOR"
+    # Sync PO → MRP bersifat best-effort dan berjalan di dalam request user,
+    # jadi batasnya harus jauh di bawah toleransi tunggu operator.
+    mrp_sync_timeout_seconds: float = 8.0
+
+    # Zona waktu bisnis (lot, rekap harian, timestamp aplikasi) — GMT+7
+    app_timezone: str = "Asia/Jakarta"
 
     # Email (invoice reminders)
     smtp_host: str = ""

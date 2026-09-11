@@ -19,6 +19,7 @@ from app.schemas import (
 from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
 from app.services.notifications import create_notification_for_roles
+from app.services.erp_book import reject_erp_shopfloor_write
 
 router = APIRouter(tags=["production"])
 
@@ -39,6 +40,7 @@ def create_production(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "production", "ppic")),
 ) -> ProductionOrderOut:
+    reject_erp_shopfloor_write()
     if body.po_id is None:
         raise HTTPException(status_code=400, detail="po_id wajib")
     po = db.get(PoHeader, body.po_id)
@@ -122,6 +124,7 @@ def add_production_detail(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "production")),
 ) -> ProductionDetailOut:
+    reject_erp_shopfloor_write()
     pr = db.get(ProductionOrder, production_id)
     if not pr:
         raise HTTPException(status_code=404, detail="Production tidak ditemukan")
@@ -155,6 +158,7 @@ def update_production_detail(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "production")),
 ) -> ProductionDetailOut:
+    reject_erp_shopfloor_write()
     row = db.get(ProductionDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail production tidak ditemukan")

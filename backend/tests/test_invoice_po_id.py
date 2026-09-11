@@ -79,3 +79,65 @@ def test_po_id_none_when_no_chain():
     db.scalars.return_value.all.return_value = []
     db.get.return_value = None
     assert po_id_from_delivery(db, 99) is None
+
+
+def test_joined_po_numbers_multi_so():
+    from unittest.mock import patch
+
+    from app.services.business_rules import joined_po_numbers_for_delivery
+
+    db = MagicMock()
+    with patch(
+        "app.services.business_rules.po_numbers_from_delivery",
+        return_value={"THIPM26090102", "THIPM26090101"},
+    ):
+        assert joined_po_numbers_for_delivery(db, 6) == "THIPM26090101 / THIPM26090102"
+
+
+def test_validate_invoice_allows_null_packing_when_invpl_printed():
+    from datetime import datetime
+
+    from app.models import DeliveryHeader, PackingDetail, PackingHeader
+    from app.services.business_rules import validate_invoice_against_delivery
+
+    hdr = SimpleNamespace(id=6, packing_id=None, status="sent")
+    dd = SimpleNamespace(packing_detail_id=4, po_detail_id=1, production_detail_id=None)
+    pkd = SimpleNamespace(packing_id=8)
+    ph = SimpleNamespace(invpl_printed_at=datetime(2026, 9, 1))
+
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [dd]
+    db.get.side_effect = lambda model, pk: {
+        (DeliveryHeader, 6): hdr,
+        (PackingDetail, 4): pkd,
+        (PackingHeader, 8): ph,
+    }.get((model, pk))
+
+    validate_invoice_against_delivery(db, 6, None)
+
+
+def test_validate_invoice_rejects_null_packing_without_invpl():
+    from fastapi import HTTPException
+
+    from app.models import DeliveryHeader, PackingDetail, PackingHeader
+    from app.services.business_rules import validate_invoice_against_delivery
+
+    hdr = SimpleNamespace(id=6, packing_id=None, status="sent")
+    dd = SimpleNamespace(packing_detail_id=4, po_detail_id=1, production_detail_id=None)
+    pkd = SimpleNamespace(packing_id=8)
+    ph = SimpleNamespace(invpl_printed_at=None)
+
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [dd]
+    db.get.side_effect = lambda model, pk: {
+        (DeliveryHeader, 6): hdr,
+        (PackingDetail, 4): pkd,
+        (PackingHeader, 8): ph,
+    }.get((model, pk))
+
+    try:
+        validate_invoice_against_delivery(db, 6, None)
+        raise AssertionError("expected HTTPException")
+    except HTTPException as ei:
+        assert ei.status_code == 400
+        assert "INVPL" in ei.detail

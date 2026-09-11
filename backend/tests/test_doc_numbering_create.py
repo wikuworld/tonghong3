@@ -6,6 +6,7 @@ from datetime import date
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 
 from app.models import DeliveryHeader, Invoice, QcHeader
 from app.routers import delivery as delivery_router
@@ -64,13 +65,14 @@ def test_qc_create_auto_number(monkeypatch, user):
     monkeypatch.setattr(qc_router, "next_number", lambda _db, doc, prefix: f"{prefix}-202609-00001")
     monkeypatch.setattr(qc_router, "log_change", lambda *a, **k: None)
 
-    row = qc_router.create_qc_header(
-        QcHeaderCreate(production_id=None, qc_date=date(2026, 9, 5)),
-        db=db,
-        user=user,
-    )
-    assert isinstance(row, QcHeader)
-    assert row.qc_number == "QC-202609-00001"
+    with pytest.raises(HTTPException) as exc:
+        qc_router.create_qc_header(
+            QcHeaderCreate(production_id=None, qc_date=date(2026, 9, 5)),
+            db=db,
+            user=user,
+        )
+    assert exc.value.status_code == 403
+    assert "buku" in str(exc.value.detail).lower() or "mrp" in str(exc.value.detail).lower()
 
 
 def test_qc_create_keeps_explicit_number(monkeypatch, user):
@@ -82,12 +84,13 @@ def test_qc_create_keeps_explicit_number(monkeypatch, user):
     )
     monkeypatch.setattr(qc_router, "log_change", lambda *a, **k: None)
 
-    row = qc_router.create_qc_header(
-        QcHeaderCreate(qc_number="QC-CUSTOM-1", qc_date=date(2026, 9, 5)),
-        db=db,
-        user=user,
-    )
-    assert row.qc_number == "QC-CUSTOM-1"
+    with pytest.raises(HTTPException) as exc:
+        qc_router.create_qc_header(
+            QcHeaderCreate(qc_number="QC-CUSTOM-1", qc_date=date(2026, 9, 5)),
+            db=db,
+            user=user,
+        )
+    assert exc.value.status_code == 403
 
 
 def test_delivery_create_auto_number(monkeypatch, user):

@@ -7,7 +7,9 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 
+from app.models import PackingHeader, ProductionDetail
 from app.services.delivery_shipment import (
+    _qc_ok_for_ready_line,
     brand_key,
     lot_number_for_line,
     so_number_for_line,
@@ -82,3 +84,13 @@ def test_validate_same_customer_and_brand_rejects_mixed_brands():
         validate_same_customer_and_brand(db, [1, 2])
     assert exc.value.status_code == 400
     assert "brand" in exc.value.detail.lower()
+
+
+def test_qc_ok_mrp_completed_without_qc_row():
+    db = MagicMock()
+    db.scalars.return_value.first.return_value = None
+    pk = PackingHeader(id=1, source="mrp", production_id=9, status="done")
+    pd = ProductionDetail(id=2, status="completed")
+    assert _qc_ok_for_ready_line(db, pk, pd) is True
+    pk_erp = PackingHeader(id=2, source="erp", production_id=9, status="done")
+    assert _qc_ok_for_ready_line(db, pk_erp, pd) is False

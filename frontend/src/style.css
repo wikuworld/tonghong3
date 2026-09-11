@@ -126,6 +126,7 @@ body {
 /* Input pencarian di toolbar: tidak memaksa overflow horizontal */
 .customer-toolbar-search,
 .po-toolbar-search,
+.mrp-toolbar-search,
 .buyer-price-toolbar-search,
 .brand-master-toolbar-search,
 .master-items-toolbar-search,
@@ -148,12 +149,13 @@ body {
 @media (min-width: 640px) {
   .customer-toolbar-search,
   .po-toolbar-search,
+  .mrp-toolbar-search,
   .buyer-price-toolbar-search,
-.brand-master-toolbar-search,
-.master-items-toolbar-search,
-.fluorescent-toolbar-search,
-.color-swatch-toolbar-search,
-.user-access-toolbar-search,
+  .brand-master-toolbar-search,
+  .master-items-toolbar-search,
+  .fluorescent-toolbar-search,
+  .color-swatch-toolbar-search,
+  .user-access-toolbar-search,
   .production-toolbar-search,
   .qc-toolbar-search,
   .delivery-toolbar-search,
@@ -175,6 +177,10 @@ body {
 }
 
 .admin-inner-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   padding: 14px 16px;
   border-bottom: 1px solid #e2e8f0;
   background: linear-gradient(180deg, #f8fafc 0%, #fff 100%);

@@ -48,9 +48,6 @@ def test_admin_routes_require_auth_token():
         _assert_status(client, "GET", "/api/v1/customs/declarations", 401)
         _assert_status(client, "GET", "/api/v1/exchange-rates", 401)
         _assert_status(client, "GET", "/api/v1/buyer-prices/lists", 401)
-        _assert_status(client, "GET", "/api/v1/pricing/special-prices", 401)
-        _assert_status(client, "GET", "/api/v1/accounting/mappings", 401)
-        _assert_status(client, "GET", "/api/v1/journal/entries", 401)
         _assert_status(client, "GET", "/api/v1/wilayah/provinces", 401)
         _assert_status(client, "GET", "/api/v1/workflow/ppic/dashboard", 401)
         _assert_status(client, "GET", "/api/v1/masters/brands", 401)
@@ -93,32 +90,9 @@ def test_write_routes_reject_guest_role_with_403():
         _assert_status(
             client,
             "POST",
-            "/api/v1/pricing/special-prices",
+            "/api/v1/pricing/bulk-update",
             403,
-            {
-                "buyer_code": "NB",
-                "material_pattern": "SUEDE",
-                "discount_value": "0",
-                "currency": "USD",
-            },
-        )
-        _assert_status(
-            client,
-            "POST",
-            "/api/v1/accounting/mappings",
-            403,
-            {
-                "transaction_type": "po_created",
-                "coa_code": "1100",
-                "coa_name": "Piutang",
-            },
-        )
-        _assert_status(
-            client,
-            "POST",
-            "/api/v1/journal/entries/generate-from-transaction",
-            403,
-            {"transaction_type": "po_created", "transaction_id": 1},
+            {"updates": []},
         )
         _assert_status(
             client,

@@ -8,12 +8,15 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.timeutil import app_now
 from app.models import DeliveryDetail, DeliveryHeader, PoDetail, PoHeader, ProductionDetail, QcDetail
 from app.services.po_delivery_balance import validate_delivery_qty_against_po_balance
 from app.schemas import (
     DeliveryDetailCreate,
     DeliveryDetailEnrichedOut,
     DeliveryDetailOut,
+    DeliveryDetailReturnIn,
+    DeliveryDetailReturnOut,
     DeliveryDetailUpdate,
     DeliveryFromPackingLinesIn,
     DeliveryHeaderCreate,
@@ -27,7 +30,8 @@ from app.services.audit import log_change
 from app.services.notifications import create_notification_for_roles
 from app.services.mkt_workflow import sync_mkt_for_delivery, sync_mkt_workflow_auto_advance
 from app.services.business_rules import po_numbers_from_delivery
-from app.services.numbering import next_number
+from app.services.document_numbers import allocate_surat_jalan_number
+from app.services.delivery_return import apply_delivery_line_return
 from app.services.delivery_shipment import (
     list_ready_to_ship,
     lot_number_for_line,
@@ -132,7 +136,7 @@ def mark_surat_jalan_printed(
     if not row:
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
     before = {"surat_jalan_printed_at": row.surat_jalan_printed_at}
-    row.surat_jalan_printed_at = datetime.utcnow()
+    row.surat_jalan_printed_at = app_now()
     log_change(
         db,
         entity_type="delivery",
@@ -180,8 +184,17 @@ def create_delivery_from_packing_lines(
     customer_id, _brand = validate_same_customer_and_brand(
         db, pd_ids, expected_customer_id=body.customer_id
     )
+    po_for_num: PoHeader | None = None
+    if pd_ids:
+        pd0 = db.get(ProductionDetail, int(pd_ids[0]))
+        if pd0 and pd0.po_detail_id:
+            pod0 = db.get(PoDetail, int(pd0.po_detail_id))
+            if pod0 and pod0.po_id:
+                po_for_num = db.get(PoHeader, int(pod0.po_id))
     hdr = DeliveryHeader(
-        delivery_number=next_number(db, "DEL", "DEL"),
+        delivery_number=allocate_surat_jalan_number(
+            db, po=po_for_num, on_date=body.delivery_date
+        ),
         customer_id=customer_id or body.customer_id,
         packing_id=body.packing_id,
         delivery_date=body.delivery_date,
@@ -263,7 +276,17 @@ def create_delivery(
     require_packing_ready(db, body.packing_id)
     data = body.model_dump(exclude_unset=True)
     if not (data.get("delivery_number") or "").strip():
-        data["delivery_number"] = next_number(db, "DEL", "DEL")
+        po_for_num: PoHeader | None = None
+        from app.models import PackingHeader, ProductionOrder
+
+        ph_pack = db.get(PackingHeader, body.packing_id)
+        if ph_pack and ph_pack.production_id:
+            pr = db.get(ProductionOrder, ph_pack.production_id)
+            if pr and pr.po_id:
+                po_for_num = db.get(PoHeader, int(pr.po_id))
+        data["delivery_number"] = allocate_surat_jalan_number(
+            db, po=po_for_num, on_date=data.get("delivery_date")
+        )
     row = DeliveryHeader(**data)
     db.add(row)
     db.flush()
@@ -357,6 +380,8 @@ def update_delivery(
         after={"status": row.status, "packing_id": row.packing_id},
         actor=user.username,
     )
+    if (row.status or "").lower() == "sent":
+        sync_mkt_for_delivery(db, row.id, actor=user.username)
     db.commit()
     db.refresh(row)
     return row
@@ -476,3 +501,38 @@ def update_delivery_detail(
     db.commit()
     db.refresh(row)
     return row
+
+
+@router.post("/delivery-detail/{detail_id}/return", response_model=DeliveryDetailReturnOut)
+def return_delivery_detail(
+    detail_id: int,
+    body: DeliveryDetailReturnIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "warehouse", "finance", "marketing")),
+) -> DeliveryDetailReturnOut:
+    """Retur qty baris SJ → credit note invoice (mengurangi outstanding AR)."""
+    result = apply_delivery_line_return(
+        db,
+        detail_id=detail_id,
+        qty=body.qty,
+        remark=body.remark,
+        actor=user.username,
+    )
+    log_change(
+        db,
+        entity_type="delivery_line",
+        entity_id=detail_id,
+        action="return",
+        after={
+            "return_qty": result["return_qty_this"],
+            "credit_amount": result["credit_amount"],
+            "invoice_id": result.get("invoice_id"),
+            "returned_qty": result["returned_qty"],
+            "remark": result.get("remark"),
+        },
+        actor=user.username,
+    )
+    db.commit()
+    return DeliveryDetailReturnOut(
+        **{k: v for k, v in result.items() if k in DeliveryDetailReturnOut.model_fields}
+    )

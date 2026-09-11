@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import MasterItem
+from app.timeutil import app_now
 from app.services.subkon_master_items import (
     EMPTY_MARKERS,
     _clean_text,
@@ -196,7 +197,7 @@ def import_pu_suede_master_items(
                     setattr(existing, field, val)
                     changed = True
             if changed:
-                existing.updated_at = datetime.utcnow()
+                existing.updated_at = app_now()
                 updated += 1
             else:
                 skipped += 1

@@ -2,7 +2,6 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AdminLayout from '../layouts/AdminLayout.vue'
 import DashboardPage from '../views/admin/DashboardPage.vue'
 import CustomersPage from '../views/admin/CustomersPage.vue'
-import QuotationPage from '../views/admin/QuotationPage.vue'
 import PurchaseOrderPage from '../views/admin/PurchaseOrderPage.vue'
 import ProductionPage from '../views/admin/ProductionPage.vue'
 import QualityControlPage from '../views/admin/QualityControlPage.vue'
@@ -12,8 +11,6 @@ import ReportsPage from '../views/admin/ReportsPage.vue'
 import PackingPage from '../views/admin/PackingPage.vue'
 import BuyerPricePage from '../views/admin/BuyerPricePage.vue'
 import BrandMasterPage from '../views/admin/BrandMasterPage.vue'
-import SpecialPricesPage from '../views/admin/SpecialPricesPage.vue'
-import CustomerPricesPage from '../views/admin/CustomerPricesPage.vue'
 import BulkPriceUpdatePage from '../views/admin/BulkPriceUpdatePage.vue'
 import MarketingFlowPage from '../views/admin/MarketingFlowPage.vue'
 import MasterItemsPage from '../views/admin/MasterItemsPage.vue'
@@ -22,11 +19,7 @@ import CsiColorMasterPage from '../views/admin/CsiColorMasterPage.vue'
 import ColorSwatchMasterPage from '../views/admin/ColorSwatchMasterPage.vue'
 import UserAccessPage from '../views/admin/UserAccessPage.vue'
 import CustomerBrandMappingPage from '../views/admin/CustomerBrandMappingPage.vue'
-import SubconInvoicePage from '../views/admin/SubconInvoicePage.vue'
 import PpicsDashboardPage from '../views/admin/PpicsDashboardPage.vue'
-import OutstandingMaterialsPage from '../views/admin/OutstandingMaterialsPage.vue'
-import AccountingMappingsPage from '../views/admin/AccountingMappingsPage.vue'
-import JournalEntriesPage from '../views/admin/JournalEntriesPage.vue'
 import InventoryPage from '../views/admin/InventoryPage.vue'
 import MrpRencanaProduksiPage from '../views/admin/mrp/MrpRencanaProduksiPage.vue'
 import MrpPaletPage from '../views/admin/mrp/MrpPaletPage.vue'
@@ -67,24 +60,14 @@ const router = createRouter({
         { path: '', redirect: '/admin/dashboard' },
         { path: 'dashboard', component: DashboardPage, meta: { titleKey: 'menu.dashboard', module: 'dashboard' } },
         { path: 'customers', component: CustomersPage, meta: { titleKey: 'menu.customers', module: 'customers' } },
-        {
-          path: 'quotations',
-          component: QuotationPage,
-          meta: { titleKey: 'menu.quotations', module: 'quotations' },
-        },
         { path: 'po', component: PurchaseOrderPage, meta: { titleKey: 'menu.po', module: 'po' } },
         {
           path: 'marketing-flow',
-          redirect: '/admin/marketing-flow/po-list',
+          redirect: '/admin/marketing-flow/outstanding',
         },
         {
           path: 'marketing-flow/po-list',
-          component: MarketingFlowPage,
-          meta: {
-            titleKey: 'menu.marketingFlowPoList',
-            module: 'marketingFlow',
-            marketingSection: 'flow',
-          },
+          redirect: '/admin/po',
         },
         {
           path: 'marketing-flow/outstanding',
@@ -117,8 +100,6 @@ const router = createRouter({
         { path: 'reports', component: ReportsPage, meta: { titleKey: 'menu.reports', module: 'reports' } },
         { path: 'buyer-prices', component: BuyerPricePage, meta: { titleKey: 'menu.buyerPrices', module: 'buyerPrices' } },
         { path: 'brands', component: BrandMasterPage, meta: { titleKey: 'menu.brandMaster', module: 'brandMaster' } },
-        { path: 'special-prices', component: SpecialPricesPage, meta: { titleKey: 'menu.specialPrices', module: 'specialPrices' } },
-        { path: 'customer-prices', component: CustomerPricesPage, meta: { titleKey: 'menu.customerPrices', module: 'customerPrices' } },
         { path: 'bulk-price-update', component: BulkPriceUpdatePage, meta: { titleKey: 'menu.bulkPriceUpdate', module: 'bulkPriceUpdate' } },
         { path: 'master-items', component: MasterItemsPage, meta: { titleKey: 'menu.masterItems', module: 'masterItems' } },
         { path: 'fluorescent-colors', component: FluorescentColorMasterPage, meta: { titleKey: 'menu.fluorescentColors', module: 'fluorescentColors' } },
@@ -126,11 +107,7 @@ const router = createRouter({
         { path: 'color-swatch', component: ColorSwatchMasterPage, meta: { titleKey: 'menu.colorSwatch', module: 'colorSwatch' } },
         { path: 'user-access', component: UserAccessPage, meta: { titleKey: 'menu.userAccess', module: 'userAccess' } },
         { path: 'customer-brand-mapping', component: CustomerBrandMappingPage, meta: { titleKey: 'menu.customerBrandMapping', module: 'customerBrandMapping' } },
-        { path: 'subcon-invoices', component: SubconInvoicePage, meta: { titleKey: 'menu.subconInvoice', module: 'subconInvoice' } },
         { path: 'ppic-dashboard', component: PpicsDashboardPage, meta: { titleKey: 'menu.ppicDashboard', module: 'ppicDashboard' } },
-        { path: 'outstanding-materials', component: OutstandingMaterialsPage, meta: { titleKey: 'menu.outstandingMaterials', module: 'outstandingMaterials' } },
-        { path: 'accounting-mappings', component: AccountingMappingsPage, meta: { titleKey: 'menu.accountingMappings', module: 'accountingMappings' } },
-        { path: 'journal-entries', component: JournalEntriesPage, meta: { titleKey: 'menu.journalEntries', module: 'journalEntries' } },
         { path: 'inventory', component: InventoryPage, meta: { titleKey: 'menu.inventory', module: 'inventory' } },
         {
           path: 'mrp/rencana-produksi',

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.timeutil import app_now
 from app.models import PackingDetail, PackingHeader, PoDetail, PoHeader, ProductionDetail
 from app.schemas import (
     PackingDetailBatchIn,
@@ -27,6 +28,7 @@ from app.routers.auth import get_current_user, require_roles
 from app.services.audit import log_change
 from app.services.mkt_workflow import sync_mkt_for_packing
 from app.services.notifications import create_notification_for_roles
+from app.services.erp_book import reject_erp_shopfloor_write
 
 router = APIRouter(tags=["packing"])
 
@@ -100,7 +102,7 @@ def mark_invpl_printed(
     if not row:
         raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
     before = {"invpl_printed_at": row.invpl_printed_at}
-    row.invpl_printed_at = datetime.utcnow()
+    row.invpl_printed_at = app_now()
     log_change(
         db,
         entity_type="packing",
@@ -122,6 +124,7 @@ def create_packing(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse")),
 ) -> PackingHeader:
+    reject_erp_shopfloor_write()
     validate_packing_links(db, body.production_id, body.qc_header_id)
     num = next_number(db, "PACK", "PACK")
     row = PackingHeader(
@@ -152,6 +155,7 @@ def update_packing(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse")),
 ) -> PackingHeader:
+    reject_erp_shopfloor_write()
     row = db.get(PackingHeader, packing_id)
     if not row:
         raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
@@ -268,6 +272,7 @@ def save_packing_details_batch(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse")),
 ) -> list[PackingDetail]:
+    reject_erp_shopfloor_write()
     hdr = db.get(PackingHeader, packing_id)
     if not hdr:
         raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
@@ -327,6 +332,7 @@ def add_packing_detail(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse")),
 ) -> PackingDetail:
+    reject_erp_shopfloor_write()
     hdr = db.get(PackingHeader, packing_id)
     if not hdr:
         raise HTTPException(status_code=404, detail="Packing tidak ditemukan")
@@ -362,6 +368,7 @@ def update_packing_detail(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse")),
 ) -> PackingDetail:
+    reject_erp_shopfloor_write()
     row = db.get(PackingDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Baris packing tidak ditemukan")
@@ -378,6 +385,7 @@ def delete_packing_detail(
     db: Session = Depends(get_db),
     user=Depends(require_roles("admin", "warehouse")),
 ) -> dict:
+    reject_erp_shopfloor_write()
     row = db.get(PackingDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Baris packing tidak ditemukan")

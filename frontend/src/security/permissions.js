@@ -19,12 +19,6 @@ export const ACTION_MATRIX = {
     delete: ['admin'],
     advance: ['admin', 'marketing', 'ppic'],
   },
-  quotations: {
-    view: ['admin', 'marketing', 'sales', 'finance'],
-    create: ['admin', 'marketing', 'sales'],
-    update: ['admin', 'marketing', 'sales'],
-    delete: ['admin', 'marketing'],
-  },
   marketingFlow: {
     view: ['admin', 'marketing', 'ppic'],
     update: ['admin', 'marketing', 'ppic'],
@@ -57,12 +51,6 @@ export const ACTION_MATRIX = {
     create: ['admin', 'finance'],
     update: ['admin', 'finance'],
   },
-  subconInvoice: {
-    view: ['admin', 'finance'],
-    create: ['admin', 'finance'],
-    update: ['admin', 'finance'],
-    delete: ['admin'],
-  },
   reports: {
     view: ['admin', 'marketing', 'ppic', 'finance', 'exim', 'sales'],
     export: ['admin', 'marketing', 'ppic', 'finance', 'exim', 'sales'],
@@ -74,18 +62,6 @@ export const ACTION_MATRIX = {
     delete: ['admin', 'marketing'],
   },
   brandMaster: {
-    view: ['admin', 'marketing', 'sales'],
-    create: ['admin', 'marketing'],
-    update: ['admin', 'marketing'],
-    delete: ['admin'],
-  },
-  specialPrices: {
-    view: ['admin', 'marketing', 'sales'],
-    create: ['admin', 'marketing'],
-    update: ['admin', 'marketing'],
-    delete: ['admin'],
-  },
-  customerPrices: {
     view: ['admin', 'marketing', 'sales'],
     create: ['admin', 'marketing'],
     update: ['admin', 'marketing'],
@@ -127,21 +103,7 @@ export const ACTION_MATRIX = {
   },
   ppicDashboard: {
     view: ['admin', 'ppic'],
-    update: ['admin', 'ppic'],
-  },
-  outstandingMaterials: {
-    view: ['admin', 'marketing', 'ppic'],
-    update: ['admin', 'marketing', 'ppic'],
-  },
-  accountingMappings: {
-    view: ['admin', 'finance'],
-    create: ['admin', 'finance'],
-    update: ['admin', 'finance'],
-    delete: ['admin', 'finance'],
-  },
-  journalEntries: {
-    view: ['admin', 'finance'],
-    create: ['admin', 'finance'],
+    update: ['admin'],
   },
   inventory: {
     view: ['admin', 'warehouse'],
