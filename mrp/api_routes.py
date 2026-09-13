@@ -660,6 +660,7 @@ def master_po_sync():
         if not no_po or not item_name:
             continue
         no_so = (item.get("no_so") or "").strip() or None
+        lot_number = (item.get("lot_number") or "").strip() or None
         customer = (item.get("customer") or "").strip() or None
         try:
             erp_customer_id = (
@@ -694,12 +695,13 @@ def master_po_sync():
             else:
                 status = "outstanding"
             cur.execute(
-                "UPDATE tbl_master_po SET no_po=%s, no_so=%s, customer=%s, customer_id=%s, warna=%s, tebal=%s, emboss=%s, "
+                "UPDATE tbl_master_po SET no_po=%s, no_so=%s, lot_number=%s, customer=%s, customer_id=%s, warna=%s, tebal=%s, emboss=%s, "
                 "color_swatch=%s, source_detail_id=%s, sq_ft=%s, qty_order=%s, "
                 "qty_balance_erp=%s, status=%s WHERE id=%s",
                 (
                     no_po,
                     no_so,
+                    lot_number,
                     customer,
                     erp_customer_id,
                     warna or None,
@@ -718,12 +720,13 @@ def master_po_sync():
         else:
             cur.execute(
                 "INSERT INTO tbl_master_po "
-                "(no_po, no_so, customer, customer_id, item_name, warna, tebal, emboss, color_swatch, "
+                "(no_po, no_so, lot_number, customer, customer_id, item_name, warna, tebal, emboss, color_swatch, "
                 "source_detail_id, sq_ft, qty_order, qty_balance_erp, qty_processed, status) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,'outstanding')",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,'outstanding')",
                 (
                     no_po,
                     no_so,
+                    lot_number,
                     customer,
                     erp_customer_id,
                     item_name,
@@ -847,7 +850,7 @@ def rencana_detail(rencana_id: int):
         placeholders = ",".join(["%s"] * len(item_ids))
         cur.execute(
             f"SELECT p.id, p.item_id, p.po_id, p.qty_outstanding, p.qty_proses, "
-            f"po.no_po, po.no_so, po.customer, po.item_name, po.tebal, po.warna, po.emboss, "
+            f"po.no_po, po.no_so, po.lot_number, po.customer, po.item_name, po.tebal, po.warna, po.emboss, "
             f"po.color_swatch, po.qty_order, po.qty_processed, po.qty_balance_erp, "
             f"po.source_detail_id, po.status AS po_status, "
             f"(po.qty_order - po.qty_processed) AS qty_sisa_alokasi "
@@ -3896,6 +3899,7 @@ def usage_material_list():
 @api.post("/usage-material-lain")
 def usage_material_create():
     from app import ensure_extended_tables
+    from erp_raw_materials import fetch_material_by_code
 
     body = request.get_json(silent=True) or {}
     kode_wip = (body.get("kode_wip") or "").strip()
@@ -3924,9 +3928,15 @@ def usage_material_create():
     )
     mat = cur.fetchone()
     if not mat:
-        cur.close()
-        conn.close()
-        return _err("Material tidak ditemukan", 404)
+        erp = fetch_material_by_code(kode_material, material_type="material_lain")
+        if not erp:
+            cur.close()
+            conn.close()
+            return _err("Material tidak ditemukan di ERP", 404)
+        mat = {
+            "nama_material": erp.get("name"),
+            "satuan": erp.get("unit") or "pcs",
+        }
     if stok_in_id:
         cur.execute("SELECT * FROM tbl_stok_material_lain_in WHERE id=%s", (stok_in_id,))
         stok = cur.fetchone()
@@ -4056,7 +4066,7 @@ def rencana_po_by_combination():
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
     cur.execute(
-        "SELECT id, no_po, no_so, customer, item_name, tebal, warna, emboss, color_swatch, "
+        "SELECT id, no_po, no_so, lot_number, customer, item_name, tebal, warna, emboss, color_swatch, "
         "sq_ft, qty_order, qty_processed, qty_balance_erp, "
         "(qty_order - qty_processed) AS qty_outstanding "
         "FROM tbl_master_po "
@@ -4198,7 +4208,7 @@ def rencana_item_list_po_get(item_id: int):
     t_swatch = _po_field_or_dash(item.get("color_swatch"))
 
     cur.execute(
-        f"SELECT po.id, po.no_po, po.no_so, po.customer, po.item_name, po.tebal, po.warna, "
+        f"SELECT po.id, po.no_po, po.no_so, po.lot_number, po.customer, po.item_name, po.tebal, po.warna, "
         f"po.emboss, po.color_swatch, po.sq_ft, po.qty_order, po.qty_processed, "
         f"po.qty_balance_erp, po.source_detail_id, po.status, "
         f"(po.qty_order - po.qty_processed) AS qty_outstanding, "
@@ -4222,7 +4232,7 @@ def rencana_item_list_po_get(item_id: int):
 
     cur.execute(
         "SELECT p.id, p.item_id, p.po_id, p.qty_outstanding, p.qty_proses, "
-        "po.no_po, po.no_so, po.customer, po.item_name, po.tebal, po.warna, po.emboss, "
+        "po.no_po, po.no_so, po.lot_number, po.customer, po.item_name, po.tebal, po.warna, po.emboss, "
         "po.color_swatch, po.qty_order, po.qty_processed, po.qty_balance_erp, "
         "po.source_detail_id, po.status AS po_status, "
         "(po.qty_order - po.qty_processed) AS qty_sisa_alokasi, "

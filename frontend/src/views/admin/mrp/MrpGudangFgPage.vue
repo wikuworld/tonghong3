@@ -24,29 +24,11 @@
       <div class="admin-inner-card__head">
         <div>
           <h3 class="admin-inner-card__title">{{ t('pages.mrpGudangFg.outTitle') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpGudangFg.outSectionSubtitle') }}</p>
+          <p class="admin-inner-card__sub">{{ t('pages.mrpGudangFg.outHint') }}</p>
         </div>
       </div>
       <div class="mkt-section-body">
-      <div class="flex gap-2 flex-wrap items-center">
-        <el-input
-          v-model="outForm.kode_packing"
-          :placeholder="t('pages.mrpGudangFg.outPlaceholder')"
-          class="max-w-xs"
-          clearable
-          @keyup.enter="doOut"
-        />
-        <el-input
-          v-model="outForm.keterangan"
-          :placeholder="t('common.notes')"
-          class="max-w-xs"
-          clearable
-          @keyup.enter="doOut"
-        />
-        <el-button type="danger" :loading="outing" @click="doOut">
-          {{ t('pages.mrpGudangFg.outBtn') }}
-        </el-button>
-      </div>
+        <el-button type="primary" @click="goOutstanding">{{ t('pages.mrpGudangFg.goOutstanding') }}</el-button>
       </div>
     </div>
 
@@ -157,10 +139,10 @@
             <el-button
               v-if="canUpdate && row.status === 'in_stock'"
               link
-              type="danger"
-              @click="fillOut(row)"
+              type="primary"
+              @click="goOutstanding"
             >
-              {{ t('pages.mrpGudangFg.outBtn') }}
+              {{ t('pages.mrpGudangFg.goOutstanding') }}
             </el-button>
           </template>
         </el-table-column>
@@ -217,8 +199,8 @@
         </div>
 
         <div v-if="canUpdate && detail.fg.status === 'in_stock'" class="mb-4">
-          <el-button type="danger" size="small" :loading="outing" @click="outFromDetail">
-            {{ t('pages.mrpGudangFg.outBtn') }}
+          <el-button type="primary" size="small" @click="goOutstanding">
+            {{ t('pages.mrpGudangFg.goOutstanding') }}
           </el-button>
         </div>
 
@@ -266,26 +248,24 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import { can } from '../../../security/permissions'
-import { mrpGetGudangFg, mrpGudangFgOut, mrpListGudangFg } from '../../../api/client'
+import { mrpGetGudangFg, mrpListGudangFg } from '../../../api/client'
 
 const { t } = useI18n()
 const router = useRouter()
 const loading = ref(false)
-const outing = ref(false)
 const rows = ref([])
 const search = ref('')
 const statusFilter = ref('')
 const detailOpen = ref(false)
 const detail = ref(null)
 const canUpdate = computed(() => can('mrpShopfloor', 'update'))
-const outForm = reactive({ kode_packing: '', keterangan: '' })
 
 const filteredRows = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -369,17 +349,8 @@ function goDelivery(id) {
   router.push({ path: '/admin/delivery', query: { delivery_id: id } })
 }
 
-function fillOut(row) {
-  outForm.kode_packing = row?.kode_packing || ''
-  if (row?.bridge_error) {
-    ElMessage.warning(row.bridge_error)
-  }
-}
-
-function outFromDetail() {
-  if (!detail.value?.fg) return
-  fillOut(detail.value.fg)
-  doOut()
+function goOutstanding() {
+  router.push({ path: '/admin/marketing-flow/outstanding' })
 }
 
 async function reload() {
@@ -392,43 +363,6 @@ async function reload() {
     ElMessage.error(errMsg(e))
   } finally {
     loading.value = false
-  }
-}
-
-async function doOut() {
-  const kode = outForm.kode_packing.trim()
-  if (!kode) {
-    ElMessage.warning(t('pages.mrpGudangFg.outPlaceholder'))
-    return
-  }
-  try {
-    await ElMessageBox.confirm(
-      t('pages.mrpGudangFg.outConfirm', { kode }),
-      t('pages.mrpGudangFg.outBtn'),
-      { type: 'warning', confirmButtonText: t('pages.mrpGudangFg.outBtn'), cancelButtonText: t('common.cancel') },
-    )
-  } catch {
-    return
-  }
-  outing.value = true
-  try {
-    const res = await mrpGudangFgOut({
-      kode_packing: kode,
-      keterangan: outForm.keterangan.trim(),
-    })
-    const dn = res?.erp_delivery_number || (res?.erp_delivery_id ? `#${res.erp_delivery_id}` : '')
-    ElMessage.success(
-      dn ? t('pages.mrpGudangFg.outBridged', { delivery: dn }) : t('common.saved'),
-    )
-    outForm.kode_packing = ''
-    outForm.keterangan = ''
-    detailOpen.value = false
-    await reload()
-  } catch (e) {
-    ElMessage.error(errMsg(e))
-    await reload()
-  } finally {
-    outing.value = false
   }
 }
 

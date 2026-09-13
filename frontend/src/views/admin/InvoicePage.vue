@@ -10,7 +10,7 @@
       />
       <span v-if="tabLoading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="tabLoading" @click="refreshCurrentTab">{{ t('common.refresh') }}</el-button>
-      <el-button v-if="tab === 'list' && canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
+      <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
     <el-alert type="info" :closable="false" show-icon class="invoice-flow-hint mb-4">
@@ -241,6 +241,9 @@
             <el-table-column prop="tax_invoice_no" :label="t('pages.invoice.taxInvoiceNo')" min-width="120" show-overflow-tooltip />
             <el-table-column :label="t('pages.invoice.colDokumenBc')" min-width="120" show-overflow-tooltip>
               <template #default="{ row }">{{ row.dokumen_bc || row.bc_number || row.nopen || '—' }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.invoice.colBcDate')" width="110">
+              <template #default="{ row }">{{ formatDate(row.bc_date) }}</template>
             </el-table-column>
             <el-table-column prop="received_by" :label="t('pages.invoice.colReceivedBy')" min-width="140" show-overflow-tooltip />
             <el-table-column :label="t('pages.invoice.colReceivedDate')" width="110">
@@ -557,15 +560,41 @@ function onTabChange(name) {
   if (name === 'outstanding') loadOutstanding()
 }
 
-onMounted(async () => {
-  await load()
-  const invoiceIdRaw = route.query.invoice_id
-  const invoiceId = Number(invoiceIdRaw)
+function tabFromRoute() {
+  return String(route.query.tab || '') === 'outstanding' ? 'outstanding' : 'list'
+}
+
+async function applyRouteQuery() {
+  const nextTab = tabFromRoute()
+  if (nextTab !== tab.value) tab.value = nextTab
+  if (tab.value === 'outstanding') await loadOutstanding()
+
+  const invoiceId = Number(route.query.invoice_id)
   if (!Number.isNaN(invoiceId) && invoiceId > 0) {
     tab.value = 'list'
     const target = rows.value.find((r) => Number(r.id) === invoiceId)
     if (target) openDetail(target)
+    return
   }
+
+  const deliveryId = Number(route.query.delivery_id)
+  if (Number.isNaN(deliveryId) || deliveryId <= 0) return
+  const existing = (rows.value || []).find((r) => Number(r.delivery_id) === deliveryId)
+  if (existing) {
+    tab.value = 'outstanding'
+    outstandingQ.value = String(existing.invoice_number || '').trim()
+    openOnly.value = false
+    await loadOutstanding()
+    return
+  }
+  if (!canCreate) return
+  if (formVisible.value && Number(form.delivery_id) === deliveryId) return
+  await openCreateFromDelivery(deliveryId, route.query.amount)
+}
+
+onMounted(async () => {
+  await load()
+  await applyRouteQuery()
 })
 
 async function loadOutstanding() {
@@ -850,6 +879,9 @@ async function onDeliveryPick(did) {
     const c = customers.value.find((x) => x.id === d.customer_id)
     form.customer_name = c?.name || ''
   }
+  if (!form.invoice_date) {
+    form.invoice_date = toIsoDate(d?.delivery_date || new Date())
+  }
   form.po_id = null
   try {
     const lines = await listDeliveryDetails(did)
@@ -863,7 +895,7 @@ async function onDeliveryPick(did) {
   }
 }
 
-function openCreate() {
+function resetCreateForm() {
   form.delivery_id = null
   form.customer_id = null
   form.po_id = null
@@ -873,7 +905,21 @@ function openCreate() {
   form.due_date = ''
   form.total_amount = ''
   form.term_of_payment = ''
+}
+
+function openCreate() {
+  resetCreateForm()
   formVisible.value = true
+}
+
+async function openCreateFromDelivery(deliveryId, amountRaw) {
+  resetCreateForm()
+  form.delivery_id = deliveryId
+  form.invoice_date = toIsoDate(new Date())
+  const amt = Number(amountRaw)
+  if (Number.isFinite(amt) && amt > 0) form.total_amount = String(amt)
+  formVisible.value = true
+  await onDeliveryPick(deliveryId)
 }
 
 async function submit() {
@@ -899,6 +945,8 @@ async function submit() {
     ElMessage.success(t('pages.invoice.saved'))
     formVisible.value = false
     await load()
+    tab.value = 'outstanding'
+    await loadOutstanding()
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
@@ -907,14 +955,9 @@ async function submit() {
 }
 
 watch(
-  () => route.query.invoice_id,
-  (invoiceIdRaw) => {
-    const invoiceId = Number(invoiceIdRaw)
-    if (!Number.isNaN(invoiceId) && invoiceId > 0) {
-      tab.value = 'list'
-      const target = rows.value.find((r) => Number(r.id) === invoiceId)
-      if (target) openDetail(target)
-    }
+  () => [route.query.invoice_id, route.query.tab, route.query.delivery_id, route.query.amount],
+  async () => {
+    await applyRouteQuery()
   },
 )
 </script>

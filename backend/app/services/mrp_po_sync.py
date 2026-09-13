@@ -58,11 +58,13 @@ def map_po_detail(d: PoDetail, *, force_cancelled: bool = False) -> Optional[dic
         swatch = (d.color_reference or d.color_standard or "").strip()
     qty_order = _num(d.quantity_order)
     qty_balance = _num(d.balance_qty) if d.balance_qty is not None else qty_order
+    lot_number = (d.thi_line_ref or d.system_reference or "").strip() or None
     cancelled = force_cancelled or (po.status or "").strip().lower() in _CANCELLED_STATUSES
     payload = {
         "source_detail_id": d.id,
         "no_po": no_po,
         "no_so": no_so or None,
+        "lot_number": lot_number,
         "customer": (po.customer_name_snapshot or po.customer_code or "").strip() or None,
         "customer_id": int(po.customer_id) if po.customer_id else None,
         "item_name": item_name,

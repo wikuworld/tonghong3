@@ -21,4 +21,4 @@ Menu MRP Master (kecuali Treatment) = **lihat saja** dari ERP (`master_items` / 
 - Finance: Subcon / Mapping Akuntansi / Journal
 - Dihapus UI: Customs, Kurs, Master Import ZIP
 
-Lihat juga: [`dokumentasi/adr-erp-only-masters.md`](adr-erp-only-masters.md).
+Lihat juga: [`dokumentasi/adr-erp-only-masters.md`](adr-erp-only-masters.md), peta fungsi shopfloor [`dokumentasi/mrp-peta-fungsi.md`](mrp-peta-fungsi.md).

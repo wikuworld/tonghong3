@@ -1000,8 +1000,15 @@ export function savePackingDetailsBatch(packingId, lines) {
 }
 
 // --- Invoice ---
-export function listInvoice() {
-  return apiFetch('/invoice')
+export function listInvoice(params = {}) {
+  const q = new URLSearchParams()
+  if (params.delivery_id != null) q.set('delivery_id', String(params.delivery_id))
+  if (params.customer_id != null) q.set('customer_id', String(params.customer_id))
+  if (params.po_id != null) q.set('po_id', String(params.po_id))
+  if (params.payment_status) q.set('payment_status', String(params.payment_status))
+  if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/invoice${suffix}`)
 }
 
 export function listOutstandingInvoice(params = {}) {

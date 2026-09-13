@@ -39,6 +39,7 @@ def test_map_po_detail_includes_balance_and_source():
     assert mapped["qty_balance_erp"] == 80.0
     assert mapped["no_so"] == "PO-TEST-1"
     assert mapped["no_po"] == "CUST-1"
+    assert mapped["lot_number"] is None
     assert "cancelled" not in mapped
 
 
@@ -48,6 +49,13 @@ def test_map_po_detail_no_po_falls_back_to_so_number():
     mapped = sync.map_po_detail(pod)
     assert mapped["no_so"] == "PO-TEST-1"
     assert mapped["no_po"] == "PO-TEST-1"
+
+
+def test_map_po_detail_includes_lot_from_thi_line_ref():
+    pod = _detail()
+    pod.thi_line_ref = "PUMTH26001260913004"
+    mapped = sync.map_po_detail(pod)
+    assert mapped["lot_number"] == "PUMTH26001260913004"
 
 
 def test_map_po_detail_cancelled_header():

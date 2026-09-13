@@ -207,11 +207,30 @@
       />
       <el-table-column
         v-if="showFullCols"
-        prop="invoice_number"
         :label="t('pages.delivery.columns.invNumber')"
-        min-width="120"
+        min-width="140"
         show-overflow-tooltip
-      />
+      >
+        <template #default="{ row }">
+          <el-button
+            v-if="String(row.invoice_number || '').trim()"
+            link
+            type="primary"
+            @click.stop="goViewOutstandingFromLine(row)"
+          >
+            {{ row.invoice_number }}
+          </el-button>
+          <el-button
+            v-else-if="canCreateInvoiceFromLine(row)"
+            link
+            type="primary"
+            @click.stop="goCreateInvoiceFromLine(row)"
+          >
+            {{ t('pages.delivery.createArInvoice') }}
+          </el-button>
+          <span v-else>{{ row.invoice_number || '—' }}</span>
+        </template>
+      </el-table-column>
       <el-table-column v-if="showFullCols" prop="pi_no" :label="t('pages.delivery.columns.piNo')" width="100" show-overflow-tooltip />
       <el-table-column
         v-if="showFullCols"
@@ -258,9 +277,25 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="t('common.actions')" width="118" fixed="right" align="center">
+      <el-table-column :label="t('common.actions')" width="168" fixed="right" align="center">
         <template #default="{ row }">
           <el-button :icon="View" link type="primary" @click="openDetailFromLine(row)" />
+          <el-button
+            v-if="canCreateInvoiceFromLine(row)"
+            link
+            type="success"
+            @click.stop="goCreateInvoiceFromLine(row)"
+          >
+            {{ t('pages.delivery.createArInvoice') }}
+          </el-button>
+          <el-button
+            v-else-if="isDeliverySent(row) && String(row.invoice_number || '').trim()"
+            link
+            type="primary"
+            @click.stop="goViewOutstandingFromLine(row)"
+          >
+            {{ t('pages.delivery.viewOutstandingInvoice') }}
+          </el-button>
           <el-button
             v-if="canShowReturn(row)"
             link
@@ -601,6 +636,12 @@
           <el-button v-if="canPrint" type="default" @click="downloadSjPdf">{{ t('pages.delivery.downloadPdf') }}</el-button>
           <el-button v-if="canPrint" type="primary" plain @click="openCommercialInvoice">{{ t('pages.delivery.openCommercialInvoice') }}</el-button>
           <el-button v-if="canPrint" type="primary" plain @click="downloadCommercialInvoicePdf">{{ t('pages.delivery.commercialInvoicePdf') }}</el-button>
+          <el-button v-if="showCreateInvoiceCta" type="success" @click="goCreateInvoiceFromDetail">
+            {{ t('pages.delivery.createArInvoice') }}
+          </el-button>
+          <el-button v-else-if="showViewOutstandingCta" type="primary" plain @click="goViewOutstandingFromDetail">
+            {{ t('pages.delivery.viewOutstandingInvoice') }}
+          </el-button>
           <el-button v-if="canUpdate" type="success" plain :loading="markingSj" @click="markSjPrinted">{{ t('pages.delivery.markSjPrinted') }}</el-button>
         </div>
 
@@ -849,6 +890,7 @@ import {
   getPo,
   getProduction,
   listCustomers,
+  listInvoice,
   listDeliveryDetails,
   listMarketingDeliveryLines,
   listPacking,
@@ -866,6 +908,7 @@ const { t, te } = useI18n()
 const canCreate = can('delivery', 'create')
 const canUpdate = can('delivery', 'update')
 const canPrint = can('delivery', 'print')
+const canCreateInvoice = can('invoice', 'create')
 /** Align with API roles: admin, warehouse, finance, marketing */
 const canReturn = canUpdate || can('invoice', 'update') || canPrint
 const route = useRoute()
@@ -1235,6 +1278,7 @@ async function submit() {
 
 const detailVisible = ref(false)
 const detailRow = ref(null)
+const detailInvoice = ref(null)
 const detailLines = ref([])
 const candidateProdDetails = ref([])
 const detailLoading = ref(false)
@@ -1272,12 +1316,64 @@ function deliveryZoneLabel(z) {
 
 function resetDetail() {
   detailLines.value = []
+  detailInvoice.value = null
   candidateProdDetails.value = []
   lineForm.production_detail_id = null
   lineForm.qty = ''
   lineForm.bypass_qc = false
   bcForm.bc_number = ''
   bcForm.bc_date = ''
+}
+
+function isDeliverySent(row) {
+  return String(row?.delivery_status || row?.status || '').toLowerCase() === 'sent'
+}
+
+function deliveryLineAmount(deliveryId) {
+  return (lineRows.value || [])
+    .filter((r) => Number(r.delivery_id) === Number(deliveryId))
+    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0)
+}
+
+function canCreateInvoiceFromLine(row) {
+  return canCreateInvoice && isDeliverySent(row) && !String(row?.invoice_number || '').trim()
+}
+
+function goCreateInvoiceFromLine(row) {
+  if (!row?.delivery_id) return
+  goInvoiceFromDelivery(row.delivery_id, { create: true, amount: deliveryLineAmount(row.delivery_id) })
+}
+
+function goViewOutstandingFromLine(row) {
+  if (!row?.delivery_id) return
+  goInvoiceFromDelivery(row.delivery_id, { create: false })
+}
+
+function goInvoiceFromDelivery(deliveryId, { create = false, amount = 0 } = {}) {
+  const query = { tab: 'outstanding', delivery_id: String(deliveryId) }
+  if (create && Number(amount) > 0) query.amount = String(amount)
+  router.push({ path: '/admin/invoice', query })
+}
+
+const showCreateInvoiceCta = computed(() => {
+  return isDeliverySent(detailRow.value) && canCreateInvoice && !detailInvoice.value
+})
+
+const showViewOutstandingCta = computed(() => {
+  return isDeliverySent(detailRow.value) && Boolean(detailInvoice.value)
+})
+
+function goCreateInvoiceFromDetail() {
+  if (!detailRow.value?.id) return
+  goInvoiceFromDelivery(detailRow.value.id, {
+    create: true,
+    amount: deliveryLineAmount(detailRow.value.id),
+  })
+}
+
+function goViewOutstandingFromDetail() {
+  if (!detailRow.value?.id) return
+  goInvoiceFromDelivery(detailRow.value.id, { create: false })
 }
 
 const returnVisible = ref(false)
@@ -1446,6 +1542,12 @@ async function openDetailById(deliveryId) {
     bcForm.bc_date = full.bc_date ? String(full.bc_date).slice(0, 10) : ''
     const lines = await listDeliveryDetails(deliveryId)
     detailLines.value = lines
+    try {
+      const invoices = await listInvoice({ delivery_id: deliveryId })
+      detailInvoice.value = Array.isArray(invoices) && invoices.length ? invoices[0] : null
+    } catch {
+      detailInvoice.value = null
+    }
     if (full.packing_id) {
       await loadProductionDetails(full.packing_id)
     }

@@ -8,7 +8,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.services.invoice_outstanding import invoice_ar_status, invoice_deduction
+from app.services.invoice_outstanding import (
+    filter_outstanding_rows,
+    invoice_ar_status,
+    invoice_deduction,
+)
 from app.services.tanda_terima_documents import (
     allocate_tanda_terima_number,
     render_tanda_terima_html,
@@ -84,6 +88,58 @@ def test_render_tanda_terima_html_and_pdf():
     assert "THIN-C260908006" in html
     pdf = render_tanda_terima_pdf(ctx)
     assert pdf[:4] == b"%PDF"
+
+
+def test_filter_outstanding_ar_status_and_q():
+    rows = [
+        {
+            "ar_status": "overdue",
+            "invoice_number": "THIN-AAA",
+            "customer_name": "PT ALPHA",
+            "customer_id": 1,
+            "po_number": "PS1",
+            "tax_invoice_no": "FP-1",
+            "receipt_no": "",
+            "bc_number": "BC-1",
+            "nopen": "BC-1",
+            "nomor_aju": "",
+            "received_by": "Budi",
+        },
+        {
+            "ar_status": "not_overdue",
+            "invoice_number": "THIN-BBB",
+            "customer_name": "PT BETA",
+            "customer_id": 2,
+            "po_number": "PS2",
+            "tax_invoice_no": "",
+            "receipt_no": "",
+            "bc_number": "",
+            "nopen": "",
+            "nomor_aju": "",
+            "received_by": "",
+        },
+        {
+            "ar_status": "closed",
+            "invoice_number": "THIN-CCC",
+            "customer_name": "PT ALPHA",
+            "customer_id": 1,
+            "po_number": "PS3",
+            "tax_invoice_no": "",
+            "receipt_no": "001/09/2026",
+            "bc_number": "",
+            "nopen": "",
+            "nomor_aju": "",
+            "received_by": "Sari",
+        },
+    ]
+    overdue = filter_outstanding_rows(rows, ar_status="overdue")
+    assert [r["invoice_number"] for r in overdue] == ["THIN-AAA"]
+    by_q = filter_outstanding_rows(rows, q="BBB")
+    assert [r["invoice_number"] for r in by_q] == ["THIN-BBB"]
+    open_only = filter_outstanding_rows(rows, open_only=True)
+    assert [r["invoice_number"] for r in open_only] == ["THIN-AAA", "THIN-BBB"]
+    by_recv = filter_outstanding_rows(rows, q="sari")
+    assert [r["invoice_number"] for r in by_recv] == ["THIN-CCC"]
 
 
 def test_gather_requires_same_customer():

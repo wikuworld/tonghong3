@@ -77,11 +77,27 @@ def _pick_rencana_item(client: httpx.Client, headers: dict):
     return None
 
 
+def _pick_pu_treatment(client: httpx.Client, headers: dict) -> str | None:
+    r = client.get("/mrp/masters/treatment", headers=headers)
+    if r.status_code != 200:
+        return None
+    rows = r.json()
+    if isinstance(rows, dict):
+        rows = rows.get("items") or rows.get("treatments") or []
+    for row in rows or []:
+        if str(row.get("jenis") or "").upper() == "PU" and (row.get("nama_treatment") or "").strip():
+            return str(row["nama_treatment"]).strip()
+    return None
+
+
 def test_proses_requires_start_before_ky(auth_headers):
     with _client() as client:
         item = _pick_rencana_item(client, auth_headers)
         if not item:
             pytest.skip("butuh item rencana ber-WIP")
+        treatment = _pick_pu_treatment(client, auth_headers)
+        if not treatment:
+            pytest.skip("tidak ada master treatment jenis PU")
 
         created = client.post(
             "/mrp/proses",
@@ -89,7 +105,7 @@ def test_proses_requires_start_before_ky(auth_headers):
             json={
                 "rencana_item_id": item["id"],
                 "treatment_jenis": "PU",
-                "treatment_list": ["Treatment A"],
+                "treatment_list": [treatment],
             },
         )
         if created.status_code >= 500:
@@ -116,6 +132,9 @@ def test_proses_consume_yl_and_complete(auth_headers):
         item = _pick_rencana_item(client, auth_headers)
         if not item:
             pytest.skip("butuh item rencana ber-WIP")
+        treatment = _pick_pu_treatment(client, auth_headers)
+        if not treatment:
+            pytest.skip("tidak ada master treatment jenis PU")
 
         suffix = date.today().strftime("%m%d%H%M%S")
         kode_palet = f"KY-T{suffix}"
@@ -129,7 +148,7 @@ def test_proses_consume_yl_and_complete(auth_headers):
             json={
                 "rencana_item_id": item["id"],
                 "treatment_jenis": "PU",
-                "treatment_list": ["Treatment A"],
+                "treatment_list": [treatment],
             },
         )
         assert created.status_code in (200, 201), created.text

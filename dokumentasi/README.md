@@ -21,3 +21,7 @@ scp ~/Downloads/Master\ List\ Item\ PU,\ Suede,\ Subcont.xlsx developer@10.227.8
 ```
 
 Atau drag-and-drop ke folder `dokumentasi/master-items/` lewat Cursor / SFTP.
+
+## MRP shopfloor
+
+Peta fungsi yang sudah ada (rencana → proses → packing → gudang FG): [`mrp-peta-fungsi.md`](mrp-peta-fungsi.md). Dual path menu ERP vs MRP: [`menu-erp-mrp-status.md`](menu-erp-mrp-status.md).

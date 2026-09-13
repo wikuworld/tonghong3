@@ -231,7 +231,12 @@ def test_recompute_processed_matches_sum_allocations(auth_headers):
                 by_po[pid] = by_po.get(pid, 0.0) + float(al.get("qty_proses") or 0)
         if not by_po:
             pytest.skip("rencana tanpa alokasi")
-        masters_map = {int(r["id"]): r for r in masters.json()}
+        masters_map = {}
+        for st in ("outstanding", "partial", "completed"):
+            listed = client.get("/mrp/masters/po", headers=auth_headers, params={"status": st})
+            assert listed.status_code == 200, listed.text
+            for r in listed.json() or []:
+                masters_map[int(r["id"])] = r
         for pid, qty_sum in by_po.items():
             row = masters_map.get(pid)
             assert row is not None, f"master PO {pid} hilang"

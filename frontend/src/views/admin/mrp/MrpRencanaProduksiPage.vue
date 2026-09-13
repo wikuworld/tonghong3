@@ -47,7 +47,7 @@
           <template #default="{ row }">{{ formatQty(row.total_qty_alokasi) }}</template>
         </el-table-column>
         <el-table-column prop="status" :label="t('common.status')" width="100" />
-        <el-table-column :label="t('common.actions')" width="150" fixed="right">
+        <el-table-column :label="t('common.actions')" width="230" fixed="right">
           <template #default="{ row, $index }">
             <el-button
               :id="$index === 0 ? 'mrp-rencana-tour-detail' : undefined"
@@ -55,7 +55,7 @@
               type="primary"
               @click="openDetail(row)"
             >
-              {{ t('common.detail') }}
+              {{ t('pages.mrpRencana.actionView') }}
             </el-button>
             <el-button link @click="printRencana(row)">{{ t('pages.mrpRencana.print') }}</el-button>
           </template>
@@ -87,7 +87,7 @@
       id="mrp-rencana-tour-detail-drawer"
       v-model="detailOpen"
       size="72%"
-      :title="detail?.rencana?.nama_rencana || t('common.detail')"
+      :title="detail?.rencana?.nama_rencana || t('pages.mrpRencana.actionView')"
       append-to-body
       :z-index="3000"
     >
@@ -132,8 +132,9 @@
                 <div class="mrp-rencana-alloc-wrap">
                   <p class="text-xs text-slate-500 mb-2">{{ t('pages.mrpRencana.poAllocationDetail') }}</p>
                   <el-table :data="row.po_allocations || []" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpRencana.tableEmpty')">
+                    <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" width="130" fixed="left" show-overflow-tooltip />
+                    <el-table-column prop="lot_number" :label="t('pages.mrpRencana.itemLot')" width="180" fixed="left" show-overflow-tooltip />
                     <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="120" />
-                    <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="110" show-overflow-tooltip />
                     <el-table-column prop="item_name" :label="t('pages.mrpRencana.poItem')" min-width="150" show-overflow-tooltip />
                     <el-table-column :label="t('pages.mrpRencana.color')" width="100" show-overflow-tooltip>
                       <template #default="{ row: al }">{{ spekDisplay(al.warna) }}</template>
@@ -183,10 +184,12 @@
             <el-table-column :label="t('pages.mrpRencana.qtyAllocated')" width="100" align="right">
               <template #default="{ row }">{{ formatQty(row.total_qty_so) }}</template>
             </el-table-column>
-            <el-table-column :label="t('common.actions')" width="140" fixed="right">
+            <el-table-column :label="t('common.actions')" width="240" fixed="right">
               <template #default="{ row, $index }">
                 <span :id="$index === 0 ? 'mrp-rencana-tour-detail-actions' : undefined">
-                  <el-button link type="primary" @click="openPo(row)">{{ t('pages.mrpRencana.actionPo') }}</el-button>
+                  <el-button v-if="canUpdate" link type="primary" @click="openPo(row)">
+                    {{ t('pages.mrpRencana.actionPo') }}
+                  </el-button>
                   <el-button link @click="showBarcode(row)">{{ t('pages.mrpRencana.actionBarcode') }}</el-button>
                 </span>
               </template>
@@ -226,9 +229,10 @@
         row-key="id"
         @selection-change="onPoSelect"
       >
-        <el-table-column type="selection" width="40" />
+        <el-table-column type="selection" width="40" fixed="left" />
+        <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" width="130" fixed="left" show-overflow-tooltip />
+        <el-table-column prop="lot_number" :label="t('pages.mrpRencana.itemLot')" width="180" fixed="left" show-overflow-tooltip />
         <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" />
-        <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="100" show-overflow-tooltip />
         <el-table-column prop="item_name" :label="t('pages.mrpRencana.poItem')" min-width="130" show-overflow-tooltip />
         <el-table-column :label="t('pages.mrpRencana.emboss')" width="80">
           <template #default="{ row }">{{ spekDisplay(row.emboss) }}</template>
@@ -257,7 +261,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="barcodeOpen" title="Barcode" width="420px" append-to-body :z-index="4600">
+    <el-dialog v-model="barcodeOpen" :title="t('pages.mrpRencana.actionBarcode')" width="420px" append-to-body :z-index="4600">
       <div v-if="barcodeData" class="text-center space-y-2">
         <div class="text-2xl font-mono font-bold">{{ barcodeData.barcode }}</div>
         <div class="text-sm">{{ barcodeData.item?.kode_rencana_item }} · {{ barcodeData.item?.nama_customer }}</div>
@@ -330,6 +334,7 @@ const currentItemId = ref(null)
 const barcodeData = ref(null)
 const printData = ref(null)
 const canCreate = computed(() => can('mrpShopfloor', 'create'))
+const canUpdate = computed(() => can('mrpShopfloor', 'update'))
 
 const tourSteps = computed(() => {
   const steps = [
