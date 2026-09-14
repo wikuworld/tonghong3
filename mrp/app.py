@@ -332,6 +332,10 @@ def ensure_extended_tables(cur):
         cur.execute(
             "ALTER TABLE tbl_master_po ADD COLUMN qty_balance_erp DECIMAL(12,2) DEFAULT NULL"
         )
+    if "lot_number" not in po_cols_ext:
+        cur.execute(
+            "ALTER TABLE tbl_master_po ADD COLUMN lot_number VARCHAR(100) DEFAULT NULL"
+        )
     packing_cols2 = _col_names(cur, "tbl_packing")
     if packing_cols2:
         if "erp_production_id" not in packing_cols2:

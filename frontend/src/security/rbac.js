@@ -72,6 +72,7 @@ export const MENU_MODULE_MAP = {
   'menu.mrpPacking': 'mrpShopfloor',
   'menu.mrpGudangFg': 'mrpShopfloor',
   'menu.mrpCheckpoint': 'mrpShopfloor',
+  'menu.mrpMonitoring': 'mrpShopfloor',
   'menu.mrpStokKimia': 'mrpShopfloor',
   'menu.mrpStokRp': 'mrpShopfloor',
   'menu.mrpStokMaterialLain': 'mrpShopfloor',

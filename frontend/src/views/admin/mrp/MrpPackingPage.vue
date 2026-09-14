@@ -35,6 +35,8 @@
             <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
             <el-table-column prop="kode_packing" :label="t('pages.mrpPacking.kodePacking')" min-width="140" show-overflow-tooltip />
             <el-table-column prop="kode_wip" label="WIP" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="110" show-overflow-tooltip />
+            <el-table-column prop="lot_no" :label="t('pages.mrpPacking.lotNo')" min-width="110" show-overflow-tooltip />
             <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" width="120" show-overflow-tooltip />
             <el-table-column prop="customer" :label="t('common.customer')" min-width="120" show-overflow-tooltip />
             <el-table-column :label="t('pages.mrpPacking.pieces')" width="90" align="right">
@@ -89,7 +91,7 @@ const filteredHistoryRows = computed(() => {
   const q = historySearch.value.trim().toLowerCase()
   if (!q) return historyRows.value
   return historyRows.value.filter((r) =>
-    [r.kode_packing, r.kode_wip, r.no_po, r.customer, r.status]
+    [r.kode_packing, r.kode_wip, r.no_so, r.lot_no, r.no_po, r.customer, r.status]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()

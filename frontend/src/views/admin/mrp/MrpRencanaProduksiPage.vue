@@ -141,6 +141,9 @@
                   <el-table :data="row.po_allocations || []" border size="small" empty-text="—">
                     <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="120" />
                     <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="110" show-overflow-tooltip />
+                    <el-table-column prop="lot_no" :label="t('common.lotNo')" min-width="140" show-overflow-tooltip>
+                      <template #default="{ row: al }">{{ al.lot_no || '—' }}</template>
+                    </el-table-column>
                     <el-table-column prop="item_name" :label="t('pages.mrpRencana.poItem')" min-width="150" show-overflow-tooltip />
                     <el-table-column :label="t('pages.mrpRencana.color')" width="100" show-overflow-tooltip>
                       <template #default="{ row: al }">{{ spekDisplay(al.warna) }}</template>
@@ -212,7 +215,7 @@
     <el-dialog
       v-model="poOpen"
       :title="canEditPo ? t('pages.mrpRencana.listPo') : t('pages.mrpRencana.viewPoTitle')"
-      width="920px"
+      width="1040px"
       destroy-on-close
       append-to-body
       :z-index="4600"
@@ -220,8 +223,8 @@
       <p v-if="currentPoItem" class="text-sm text-slate-500 mb-2">
         {{ t('pages.mrpRencana.poFilterHint', {
           material: spekDisplay(currentPoItem.material_name),
-          color: spekDisplay(currentPoItem.color),
           emboss: spekDisplay(currentPoItem.emboss),
+          thickness: spekDisplay(currentPoItem.thickness),
         }) }}
       </p>
       <p v-if="!canEditPo" class="text-sm text-amber-700 mb-2">{{ t('pages.mrpRencana.poViewOnlyHint') }}</p>
@@ -242,6 +245,9 @@
         />
         <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" />
         <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="lot_no" :label="t('common.lotNo')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.lot_no || '—' }}</template>
+        </el-table-column>
         <el-table-column prop="item_name" :label="t('pages.mrpRencana.poItem')" min-width="130" show-overflow-tooltip />
         <el-table-column :label="t('pages.mrpRencana.color')" width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ spekDisplay(row.warna) }}</template>

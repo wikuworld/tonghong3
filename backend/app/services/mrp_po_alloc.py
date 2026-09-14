@@ -32,6 +32,7 @@ def unsynced_mrp_alloc() -> dict[str, str]:
         "mrp_qty_remaining": "",
         "mrp_qty_ship_remaining": "",
         "mrp_qty_wip": "",
+        "stock_wh_qty": "",
     }
 
 
@@ -60,12 +61,17 @@ def parse_mrp_alloc_row(item: dict[str, Any] | None) -> dict[str, str]:
     status = str(item.get("status") or "").strip().lower()
     if status not in _ALLOC_STATUSES:
         status = MRP_UNSYNCED
+    try:
+        stock_wh = max(0.0, float(item.get("stock_wh_qty") or 0))
+    except (TypeError, ValueError):
+        stock_wh = 0.0
     return {
         "mrp_alloc_status": status,
         "mrp_qty_processed": _qty_str(qty_processed) if status != MRP_UNSYNCED else "",
         "mrp_qty_remaining": _qty_str(remaining) if status != MRP_UNSYNCED else "",
         "mrp_qty_ship_remaining": ship if status != MRP_UNSYNCED else "",
         "mrp_qty_wip": _qty_str(qty_wip) if status != MRP_UNSYNCED else "",
+        "stock_wh_qty": _qty_str(stock_wh) if status != MRP_UNSYNCED else "",
     }
 
 
@@ -117,4 +123,8 @@ def enrich_outstanding_mrp_alloc(rows: list[dict[str, Any]]) -> None:
         except (TypeError, ValueError):
             row.update(blank)
             continue
-        row.update(found.get(sid_i) or blank)
+        alloc = found.get(sid_i) or blank
+        row.update(alloc)
+        mrp_stock = alloc.get("stock_wh_qty")
+        if mrp_stock not in (None, ""):
+            row["stock_wh_qty"] = mrp_stock

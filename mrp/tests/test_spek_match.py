@@ -57,3 +57,34 @@ def test_filter_master_po_cargo_khaki_case():
         emboss="AR-206 M",
     )
     assert [r["id"] for r in hits] == [34]
+
+
+def test_filter_soho_nubuck_lot_line():
+    rows = [
+        {
+            "id": 53,
+            "no_so": "PS26091402",
+            "item_name": "SOHO NUBUCK",
+            "tebal": "1.2 - 1.4",
+            "warna": "BLACK (001)",
+            "emboss": "R-231 M",
+            "lot_number": "PUMTH26001260914003",
+        },
+        {
+            "id": 54,
+            "no_so": "PS26091402",
+            "item_name": "SOFT PU COATED LEATHER (MAP-SOFT PU)",
+            "tebal": "1.2 - 1.4",
+            "warna": "ALUMINA (ADAT)",
+            "emboss": "DE-7 SM",
+            "lot_number": "PUMTH26001260914004",
+        },
+    ]
+    hits = filter_master_po_by_spek(
+        rows,
+        material_name="SOHO NUBUCK",
+        thickness="1.2-1.4",
+        emboss="R-231 M",
+    )
+    assert [r["id"] for r in hits] == [53]
+    assert hits[0]["lot_number"] == "PUMTH26001260914003"

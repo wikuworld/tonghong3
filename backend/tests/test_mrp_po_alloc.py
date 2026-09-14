@@ -77,3 +77,28 @@ def test_qty_wip_absent_or_invalid_is_zero():
 def test_qty_wip_blank_when_unsynced():
     out = parse_mrp_alloc_row({"status": "", "qty_order": 10, "qty_wip": 5})
     assert out["mrp_qty_wip"] == ""
+
+
+def test_parse_mrp_alloc_row_stock_wh():
+    out = parse_mrp_alloc_row(
+        {"status": "partial", "qty_order": 800, "qty_processed": 500, "stock_wh_qty": 120}
+    )
+    assert out["stock_wh_qty"] == "120"
+
+
+def test_enrich_overlays_stock_wh_from_mrp():
+    rows = [{"po_detail_id": 1, "stock_wh_qty": "5"}]
+    found = {
+        1: {
+            "mrp_alloc_status": "partial",
+            "mrp_qty_processed": "1",
+            "mrp_qty_remaining": "1999",
+            "mrp_qty_ship_remaining": "",
+            "mrp_qty_wip": "200",
+            "stock_wh_qty": "150",
+        }
+    }
+    with patch("app.services.mrp_po_alloc.fetch_mrp_alloc_by_detail_ids", return_value=found):
+        enrich_outstanding_mrp_alloc(rows)
+    assert rows[0]["stock_wh_qty"] == "150"
+    assert rows[0]["mrp_qty_wip"] == "200"

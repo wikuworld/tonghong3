@@ -505,6 +505,77 @@ def master_treatment_list():
     return jsonify(data)
 
 
+def _qty_wip_by_source_detail_ids(cur, source_ids: list[int]) -> dict[int, float]:
+    """QTY WIP = total ukuran persiapan proses yang sudah terbentuk (saved/completed)."""
+    if not source_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(source_ids))
+    cur.execute(
+        f"SELECT po.source_detail_id, COALESCE(SUM(pk.total_size), 0) AS qty_wip "
+        f"FROM tbl_master_po po "
+        f"JOIN tbl_rencana_item_po rip ON rip.po_id = po.id "
+        f"JOIN tbl_rencana_item i ON i.id = rip.item_id "
+        f"JOIN tbl_persiapan_kulit pk ON pk.rencana_item_id = i.id "
+        f"WHERE po.source_detail_id IN ({placeholders}) "
+        f"AND pk.status IN ('started', 'saved', 'completed') "
+        f"AND COALESCE(pk.kode_wip, '') <> '' "
+        f"AND COALESCE(pk.total_size, 0) > 0 "
+        f"GROUP BY po.source_detail_id",
+        source_ids,
+    )
+    out: dict[int, float] = {}
+    for row in cur.fetchall() or []:
+        sid = row.get("source_detail_id")
+        if sid is None:
+            continue
+        out[int(sid)] = float(row.get("qty_wip") or 0)
+    return out
+
+
+def _stock_wh_by_source_detail_ids(cur, source_ids: list[int]) -> dict[int, float]:
+    """Stock WH = packing finished + surat jalan (erp_delivery_id) per baris PO ERP."""
+    if not source_ids:
+        return {}
+    placeholders = ",".join(["%s"] * len(source_ids))
+    cur.execute(
+        f"SELECT sid.source_detail_id, COALESCE(SUM(sid.qty_sq), 0) AS stock_wh_qty "
+        f"FROM ( "
+        f"  SELECT po.source_detail_id, "
+        f"    COALESCE(NULLIF(pp.qty_sq, 0), p.total_ukuran) AS qty_sq "
+        f"  FROM tbl_packing p "
+        f"  JOIN tbl_gudang_fg fg ON fg.packing_id = p.id "
+        f"  JOIN tbl_packing_po pp ON pp.packing_id = p.id "
+        f"  JOIN tbl_master_po po ON po.id = COALESCE(pp.po_id, ( "
+        f"    SELECT id FROM tbl_master_po WHERE no_po = pp.no_po ORDER BY id DESC LIMIT 1 "
+        f"  )) "
+        f"  WHERE p.status = 'finished' "
+        f"    AND fg.erp_delivery_id IS NOT NULL "
+        f"    AND po.source_detail_id IN ({placeholders}) "
+        f"  UNION ALL "
+        f"  SELECT po.source_detail_id, p.total_ukuran AS qty_sq "
+        f"  FROM tbl_packing p "
+        f"  JOIN tbl_gudang_fg fg ON fg.packing_id = p.id "
+        f"  JOIN tbl_rencana_item i ON i.kode_lot_wip = p.kode_wip "
+        f"  JOIN tbl_rencana_item_po rip ON rip.item_id = i.id "
+        f"  JOIN tbl_master_po po ON po.id = rip.po_id "
+        f"  WHERE p.status = 'finished' "
+        f"    AND fg.erp_delivery_id IS NOT NULL "
+        f"    AND po.source_detail_id IN ({placeholders}) "
+        f"    AND NOT EXISTS (SELECT 1 FROM tbl_packing_po x WHERE x.packing_id = p.id) "
+        f") sid "
+        f"WHERE sid.source_detail_id IS NOT NULL "
+        f"GROUP BY sid.source_detail_id",
+        (*source_ids, *source_ids),
+    )
+    out: dict[int, float] = {}
+    for row in cur.fetchall() or []:
+        sid = row.get("source_detail_id")
+        if sid is None:
+            continue
+        out[int(sid)] = float(row.get("stock_wh_qty") or 0)
+    return out
+
+
 @api.get("/masters/po")
 def master_po_list():
     from app import ensure_rencana_tables, ensure_extended_tables
@@ -534,6 +605,17 @@ def master_po_list():
             "ORDER BY no_po, item_name LIMIT 500"
         )
     data = _rows(cur.fetchall())
+    if source_ids:
+        wip_map = _qty_wip_by_source_detail_ids(cur, source_ids)
+        stock_map = _stock_wh_by_source_detail_ids(cur, source_ids)
+        for row in data:
+            sid = row.get("source_detail_id")
+            try:
+                sid_i = int(sid)
+            except (TypeError, ValueError):
+                continue
+            row["qty_wip"] = wip_map.get(sid_i, 0.0)
+            row["stock_wh_qty"] = stock_map.get(sid_i, 0.0)
     cur.close()
     conn.close()
     return jsonify(data)
@@ -621,6 +703,7 @@ def master_po_sync():
             except Exception:
                 pass
         color_swatch = (item.get("color_swatch") or "").strip() or None
+        lot_number = (item.get("lot_number") or "").strip() or None
         qty_order = float(item.get("qty_order") or item.get("sq_ft") or 0)
         sq_ft = float(item.get("sq_ft") or qty_order or 0)
         if item.get("qty_balance_erp") is not None:
@@ -638,7 +721,7 @@ def master_po_sync():
                 status = "outstanding"
             cur.execute(
                 "UPDATE tbl_master_po SET no_po=%s, no_so=%s, customer=%s, customer_id=%s, warna=%s, tebal=%s, emboss=%s, "
-                "color_swatch=%s, source_detail_id=%s, sq_ft=%s, qty_order=%s, "
+                "color_swatch=%s, source_detail_id=%s, lot_number=%s, sq_ft=%s, qty_order=%s, "
                 "qty_balance_erp=%s, status=%s WHERE id=%s",
                 (
                     no_po,
@@ -650,6 +733,7 @@ def master_po_sync():
                     emboss or None,
                     color_swatch,
                     source_detail_id,
+                    lot_number,
                     sq_ft,
                     qty_order,
                     qty_balance_erp,
@@ -662,8 +746,8 @@ def master_po_sync():
             cur.execute(
                 "INSERT INTO tbl_master_po "
                 "(no_po, no_so, customer, customer_id, item_name, warna, tebal, emboss, color_swatch, "
-                "source_detail_id, sq_ft, qty_order, qty_balance_erp, qty_processed, status) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,'outstanding')",
+                "source_detail_id, lot_number, sq_ft, qty_order, qty_balance_erp, qty_processed, status) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,'outstanding')",
                 (
                     no_po,
                     no_so,
@@ -675,6 +759,7 @@ def master_po_sync():
                     emboss or None,
                     color_swatch,
                     source_detail_id,
+                    lot_number,
                     sq_ft,
                     qty_order,
                     qty_balance_erp,
@@ -758,11 +843,12 @@ def rencana_list():
 
 @api.get("/rencana-produksi/<int:rencana_id>")
 def rencana_detail(rencana_id: int):
-    from app import ensure_rencana_tables
+    from app import ensure_extended_tables, ensure_rencana_tables
 
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
     ensure_rencana_tables(cur)
+    ensure_extended_tables(cur)
     conn.commit()
     cur.execute("SELECT * FROM tbl_rencana_produksi WHERE id = %s", (rencana_id,))
     rencana = cur.fetchone()
@@ -792,7 +878,7 @@ def rencana_detail(rencana_id: int):
             f"SELECT p.id, p.item_id, p.po_id, p.qty_outstanding, p.qty_proses, "
             f"po.no_po, po.no_so, po.customer, po.item_name, po.tebal, po.warna, po.emboss, "
             f"po.color_swatch, po.qty_order, po.qty_processed, po.qty_balance_erp, "
-            f"po.source_detail_id, po.status AS po_status, "
+            f"po.source_detail_id, po.lot_number, po.status AS po_status, "
             f"(po.qty_order - po.qty_processed) AS qty_sisa_alokasi "
             f"FROM tbl_rencana_item_po p "
             f"JOIN tbl_master_po po ON po.id = p.po_id "
@@ -803,6 +889,8 @@ def rencana_detail(rencana_id: int):
         for row in _rows(cur.fetchall()):
             iid = int(row["item_id"])
             allocations_by_item.setdefault(iid, []).append(row)
+        for rows in allocations_by_item.values():
+            _attach_erp_lot_no(rows)
     for item in items:
         iid = int(item["id"])
         item["po_allocations"] = allocations_by_item.get(iid, [])
@@ -2296,33 +2384,89 @@ def lab_create():
 
 
 # ---- packing FG ----
-def _erp_lot_no_for_source_detail(source_detail_id: int | None) -> str:
+def _erp_lot_nos_for_source_details(source_ids) -> dict[int, str]:
     """Lot No dari baris item SO ERP (po_details.thi_line_ref / system_reference)."""
-    if not source_detail_id:
-        return ""
+    out: dict[int, str] = {}
+    ids: list[int] = []
+    seen: set[int] = set()
+    for sid in source_ids or []:
+        try:
+            i = int(sid)
+        except (TypeError, ValueError):
+            continue
+        if i and i not in seen:
+            seen.add(i)
+            ids.append(i)
+    if not ids:
+        return out
     try:
         from erp_customers import _connect
 
         erp = _connect()
         ecur = erp.cursor(dictionary=True)
+        placeholders = ",".join(["%s"] * len(ids))
         ecur.execute(
-            "SELECT pod.thi_line_ref, pod.system_reference, pd.lot_number "
-            "FROM po_details pod "
-            "LEFT JOIN production_details pd ON pd.po_detail_id = pod.id "
-            "WHERE pod.id = %s "
-            "ORDER BY pd.id DESC LIMIT 1",
-            (int(source_detail_id),),
+            "SELECT pod.id, pod.thi_line_ref, pod.system_reference, "
+            "(SELECT pd.lot_number FROM production_details pd "
+            " WHERE pd.po_detail_id = pod.id ORDER BY pd.id DESC LIMIT 1) AS lot_number "
+            f"FROM po_details pod WHERE pod.id IN ({placeholders})",
+            tuple(ids),
         )
-        row = ecur.fetchone() or {}
+        for row in ecur.fetchall() or []:
+            try:
+                sid = int(row.get("id"))
+            except (TypeError, ValueError):
+                continue
+            for key in ("thi_line_ref", "system_reference", "lot_number"):
+                val = (row.get(key) or "").strip()
+                if val:
+                    out[sid] = val
+                    break
         ecur.close()
         erp.close()
-        for key in ("thi_line_ref", "system_reference", "lot_number"):
-            val = (row.get(key) or "").strip()
-            if val:
-                return val
     except Exception:
         pass
-    return ""
+    return out
+
+
+def _erp_lot_no_for_source_detail(source_detail_id: int | None) -> str:
+    """Lot No dari baris item SO ERP (po_details.thi_line_ref / system_reference)."""
+    if not source_detail_id:
+        return ""
+    try:
+        sid = int(source_detail_id)
+    except (TypeError, ValueError):
+        return ""
+    return _erp_lot_nos_for_source_details([sid]).get(sid, "")
+
+
+def _attach_erp_lot_no(rows: list) -> list:
+    """Isi lot_no dari LOT NO baris SO (tbl_master_po.lot_number / thi_line_ref ERP)."""
+    missing_ids = []
+    for row in rows or []:
+        stored = (row.get("lot_number") or row.get("lot_no") or "").strip()
+        row["lot_no"] = stored
+        if stored:
+            continue
+        sid = row.get("source_detail_id")
+        try:
+            sid_i = int(sid) if sid is not None else None
+        except (TypeError, ValueError):
+            sid_i = None
+        if sid_i:
+            missing_ids.append(sid_i)
+    if missing_ids:
+        lot_map = _erp_lot_nos_for_source_details(missing_ids)
+        for row in rows or []:
+            if (row.get("lot_no") or "").strip():
+                continue
+            sid = row.get("source_detail_id")
+            try:
+                sid_i = int(sid) if sid is not None else None
+            except (TypeError, ValueError):
+                sid_i = None
+            row["lot_no"] = (lot_map.get(sid_i) or "").strip() if sid_i else ""
+    return rows
 
 
 def _packing_spec_for_wip(
@@ -2820,6 +2964,28 @@ def packing_list():
             "SELECT * FROM tbl_packing ORDER BY date_created DESC LIMIT %s", (limit,)
         )
     data = _rows(cur.fetchall())
+    for row in data:
+        spec = _packing_spec_for_wip(
+            cur,
+            row.get("kode_wip") or "",
+            row.get("no_po"),
+            row.get("rencana_item_id"),
+        )
+        no_so = (spec.get("no_so") or "").strip()
+        if not no_so:
+            cur.execute(
+                "SELECT no_so FROM tbl_packing_po WHERE packing_id = %s "
+                "AND no_so IS NOT NULL AND no_so <> '' ORDER BY id LIMIT 1",
+                (row.get("id"),),
+            )
+            po_row = cur.fetchone() or {}
+            no_so = (po_row.get("no_so") or "").strip()
+        row["no_so"] = no_so
+        row["lot_no"] = (
+            spec.get("lot_no")
+            or row.get("kode_wip")
+            or ""
+        )
     cur.close()
     conn.close()
     return jsonify(data)
@@ -4802,6 +4968,7 @@ def erp_combination_api():
 
 @api.get("/rencana/po/by-combination")
 def rencana_po_by_combination():
+    from app import ensure_extended_tables
     from spek_match import filter_master_po_by_spek
 
     color = (request.args.get("color") or "").strip()
@@ -4809,21 +4976,15 @@ def rencana_po_by_combination():
     material_name = (request.args.get("material_name") or request.args.get("item_name") or "").strip()
     thickness = (request.args.get("thickness") or request.args.get("tebal") or "").strip()
     color_swatch = (request.args.get("color_swatch") or "").strip()
-    if not color or not emboss:
-        return _err("Color dan Emboss wajib")
-    if not material_name and not thickness and not color_swatch:
-        return _err("Material, Thickness, atau Color Swatch wajib")
-    if thickness:
-        mode = "spek"
-    elif color_swatch:
-        mode = "swatch"
-    else:
-        mode = "material"
+    if not material_name or not emboss or not thickness:
+        return _err("Material, Emboss, dan Tebal wajib")
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
     cur.execute(
         "SELECT id, no_po, no_so, customer, item_name, tebal, warna, emboss, color_swatch, "
-        "sq_ft, qty_order, qty_processed, qty_balance_erp, "
+        "sq_ft, qty_order, qty_processed, qty_balance_erp, source_detail_id, lot_number, "
         "(qty_order - qty_processed) AS qty_outstanding "
         "FROM tbl_master_po "
         "WHERE status IN ('outstanding','partial') "
@@ -4832,11 +4993,12 @@ def rencana_po_by_combination():
     items = filter_master_po_by_spek(
         _rows(cur.fetchall()),
         material_name=material_name,
-        thickness=thickness if mode == "spek" else "",
+        thickness=thickness,
         color=color,
         emboss=emboss,
-        color_swatch=color_swatch if mode == "swatch" else "",
+        color_swatch=color_swatch,
     )
+    _attach_erp_lot_no(items)
     cur.close()
     conn.close()
     return jsonify(items)
@@ -4940,11 +5102,12 @@ def rencana_item_barcode_api(item_id: int):
 
 @api.get("/rencana-produksi/item/<int:item_id>/list-po")
 def rencana_item_list_po_get(item_id: int):
-    from app import ensure_rencana_tables
+    from app import ensure_extended_tables, ensure_rencana_tables
 
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
     ensure_rencana_tables(cur)
+    ensure_extended_tables(cur)
     conn.commit()
     cur.execute(
         "SELECT i.*, i.nama_customer, r.nama_rencana, r.tanggal_rencana "
@@ -4960,17 +5123,18 @@ def rencana_item_list_po_get(item_id: int):
         conn.close()
         return _err("Item rencana tidak ditemukan", 404)
 
-    # Spek item: filter PO outstanding by Material + Warna + Emboss (match longgar).
+    # Spek item: filter SO outstanding by Material + Emboss + Tebal (+ Warna jika ada).
     t_material = _po_field_or_dash(item.get("material_name"))
     t_warna = _po_field_or_dash(item.get("color"))
     t_emboss = _po_field_or_dash(item.get("emboss"))
+    t_tebal = _po_field_or_dash(item.get("thickness"))
 
     from spek_match import filter_master_po_by_spek
 
     cur.execute(
         f"SELECT po.id, po.no_po, po.no_so, po.customer, po.item_name, po.tebal, po.warna, "
         f"po.emboss, po.color_swatch, po.sq_ft, po.qty_order, po.qty_processed, "
-        f"po.qty_balance_erp, po.source_detail_id, po.status, "
+        f"po.qty_balance_erp, po.source_detail_id, po.lot_number, po.status, "
         f"(po.qty_order - po.qty_processed) AS qty_outstanding, "
         f"COALESCE(rip.qty_proses, 0) AS already_allocated_qty "
         f"FROM tbl_master_po po "
@@ -4987,6 +5151,7 @@ def rencana_item_list_po_get(item_id: int):
     po_list = filter_master_po_by_spek(
         raw_po_rows,
         material_name="" if t_material == "-" else t_material,
+        thickness="" if t_tebal == "-" else t_tebal,
         color="" if t_warna == "-" else t_warna,
         emboss="" if t_emboss == "-" else t_emboss,
     )
@@ -4998,12 +5163,13 @@ def rencana_item_list_po_get(item_id: int):
         if float(row.get("already_allocated_qty") or 0) > 0:
             po_list.append(row)
             listed_ids.add(po_id)
+    _attach_erp_lot_no(po_list)
 
     cur.execute(
         "SELECT p.id, p.item_id, p.po_id, p.qty_outstanding, p.qty_proses, "
         "po.no_po, po.no_so, po.customer, po.item_name, po.tebal, po.warna, po.emboss, "
         "po.color_swatch, po.qty_order, po.qty_processed, po.qty_balance_erp, "
-        "po.source_detail_id, po.status AS po_status, "
+        "po.source_detail_id, po.lot_number, po.status AS po_status, "
         "(po.qty_order - po.qty_processed) AS qty_sisa_alokasi, "
         "p.qty_proses AS already_allocated_qty "
         "FROM tbl_rencana_item_po p "
@@ -5013,6 +5179,7 @@ def rencana_item_list_po_get(item_id: int):
         (item_id,),
     )
     selected_po = _rows(cur.fetchall())
+    _attach_erp_lot_no(selected_po)
     cur.close()
     conn.close()
     return jsonify({"item": _row(item), "po_list": po_list, "selected_po": selected_po})
@@ -5130,6 +5297,546 @@ def report_persiapan_api():
             ),
         }
     )
+
+
+# ---- Monitoring SO / Lot ----
+_MONITOR_STATUS_RANK = (
+    "rencana",
+    "proses_draft",
+    "proses_started",
+    "proses_saved",
+    "proses_completed",
+    "lab",
+    "usage",
+    "checkpoint",
+    "checkpoint_ok",
+    "packing",
+    "packing_finished",
+    "gudang_fg",
+    "gudang_fg_out",
+)
+_PREP_STATUS_RANK = {"draft": 1, "started": 2, "saved": 3, "completed": 4}
+_PACKING_STATUS_RANK = {"in_progress": 1, "finished": 2}
+_FG_STATUS_RANK = {"in_stock": 1, "out": 2}
+
+
+def _monitoring_status_code(
+    *,
+    prep_status: str | None = None,
+    has_lab: bool = False,
+    has_usage: bool = False,
+    checkpoint_result: str | None = None,
+    packing_status: str | None = None,
+    fg_status: str | None = None,
+) -> str:
+    code = "rencana"
+
+    def bump(next_code: str):
+        nonlocal code
+        if _MONITOR_STATUS_RANK.index(next_code) > _MONITOR_STATUS_RANK.index(code):
+            code = next_code
+
+    prep = (prep_status or "").strip().lower()
+    if prep == "completed":
+        bump("proses_completed")
+    elif prep == "saved":
+        bump("proses_saved")
+    elif prep == "started":
+        bump("proses_started")
+    elif prep:
+        bump("proses_draft")
+    if has_lab:
+        bump("lab")
+    if has_usage:
+        bump("usage")
+    result = (checkpoint_result or "").strip().upper()
+    if result == "OK":
+        bump("checkpoint_ok")
+    elif result:
+        bump("checkpoint")
+    pack = (packing_status or "").strip().lower()
+    if pack == "finished":
+        bump("packing_finished")
+    elif pack:
+        bump("packing")
+    fg = (fg_status or "").strip().lower()
+    if fg == "out":
+        bump("gudang_fg_out")
+    elif fg:
+        bump("gudang_fg")
+    return code
+
+
+def _sql_in(ids: list[int]) -> tuple[str, tuple]:
+    clean: list[int] = []
+    seen: set[int] = set()
+    for x in ids or []:
+        try:
+            i = int(x)
+        except (TypeError, ValueError):
+            continue
+        if i not in seen:
+            seen.add(i)
+            clean.append(i)
+    if not clean:
+        return "", ()
+    return ",".join(["%s"] * len(clean)), tuple(clean)
+
+
+def _furthest_status(values, rank_map: dict) -> str | None:
+    best = None
+    best_rank = -1
+    for raw in values or []:
+        key = (raw or "").strip().lower()
+        rank = rank_map.get(key, 0)
+        if rank > best_rank:
+            best_rank = rank
+            best = key
+    return best
+
+
+def _monitoring_row_from_bundle(item: dict, bundle: dict, lot_map: dict[int, str]) -> dict:
+    pos = bundle.get("pos") or []
+    so_vals = []
+    po_vals = []
+    source_ids = []
+    for p in pos:
+        so = (p.get("no_so") or "").strip()
+        if so and so not in so_vals:
+            so_vals.append(so)
+        po = (p.get("no_po") or "").strip()
+        if po and po not in po_vals:
+            po_vals.append(po)
+        sid = p.get("source_detail_id")
+        try:
+            sid_i = int(sid) if sid is not None else None
+        except (TypeError, ValueError):
+            sid_i = None
+        if sid_i and sid_i not in source_ids:
+            source_ids.append(sid_i)
+    lot_no = ""
+    for sid in source_ids:
+        lot_no = (lot_map.get(sid) or "").strip()
+        if lot_no:
+            break
+    if not lot_no:
+        lot_no = (item.get("kode_lot_wip") or "").strip()
+    prep_rows = bundle.get("prep") or []
+    prep_status = _furthest_status([r.get("status") for r in prep_rows], _PREP_STATUS_RANK)
+    qty_prep = 0.0
+    wip_codes = []
+    for r in prep_rows:
+        qty_prep += float(r.get("total_size") or 0)
+        wip = (r.get("kode_wip") or "").strip()
+        if wip and wip not in wip_codes:
+            wip_codes.append(wip)
+    item_wip = (item.get("kode_lot_wip") or "").strip()
+    if item_wip and item_wip not in wip_codes:
+        wip_codes.append(item_wip)
+    packing_rows = bundle.get("packing") or []
+    packing_status = _furthest_status(
+        [r.get("status") for r in packing_rows], _PACKING_STATUS_RANK
+    )
+    qty_fg = 0.0
+    fg_measured = False
+    for r in packing_rows:
+        if (r.get("status") or "").strip().lower() == "finished":
+            fg_measured = True
+            qty_fg += float(r.get("total_ukuran") or 0)
+    fg_rows = bundle.get("fg") or []
+    fg_status = _furthest_status([r.get("status") for r in fg_rows], _FG_STATUS_RANK)
+    if not fg_measured:
+        for r in fg_rows:
+            qty_fg += float(r.get("total_ukuran") or 0)
+            if float(r.get("total_ukuran") or 0) > 0:
+                fg_measured = True
+    cp_rows = bundle.get("checkpoint") or []
+    checkpoint_result = ""
+    for r in cp_rows:
+        res = (r.get("result") or "").strip().upper()
+        if res == "OK":
+            checkpoint_result = "OK"
+            break
+        if res and not checkpoint_result:
+            checkpoint_result = res
+    has_lab = bool(bundle.get("lab"))
+    has_usage = bool(bundle.get("usage"))
+    status_terakhir = _monitoring_status_code(
+        prep_status=prep_status,
+        has_lab=has_lab,
+        has_usage=has_usage,
+        checkpoint_result=checkpoint_result or None,
+        packing_status=packing_status,
+        fg_status=fg_status,
+    )
+    return {
+        "rencana_item_id": item.get("id"),
+        "kode_rencana": item.get("kode_rencana"),
+        "kode_rencana_item": item.get("kode_rencana_item"),
+        "kode_lot_wip": item.get("kode_lot_wip"),
+        "nama_rencana": item.get("nama_rencana"),
+        "nama_customer": item.get("nama_customer") or (pos[0].get("customer") if pos else None),
+        "material_name": item.get("material_name"),
+        "color": item.get("color"),
+        "thickness": item.get("thickness"),
+        "emboss": item.get("emboss"),
+        "no_so": " / ".join(so_vals),
+        "no_po": ", ".join(po_vals),
+        "lot_no": lot_no,
+        "source_detail_ids": source_ids,
+        "kode_wip_list": wip_codes,
+        "status_terakhir": status_terakhir,
+        "total_qty_persiapan": qty_prep,
+        "total_qty_fg": qty_fg if fg_measured else None,
+        "fg_measured": fg_measured,
+    }
+
+
+def _monitoring_fetch_items(cur, item_id: int | None = None) -> list[dict]:
+    sql = (
+        "SELECT i.id, i.kode_rencana_item, i.kode_lot_wip, i.nama_customer, i.material_name, "
+        "i.color, i.thickness, i.emboss, r.kode_rencana, r.nama_rencana, "
+        "r.status AS rencana_status, r.tanggal_rencana, r.date_created "
+        "FROM tbl_rencana_item i "
+        "JOIN tbl_rencana_produksi r ON r.id = i.rencana_id "
+    )
+    params: list = []
+    if item_id is not None:
+        sql += "WHERE i.id = %s "
+        params.append(int(item_id))
+    sql += "ORDER BY COALESCE(r.tanggal_rencana, r.date_created) DESC, i.id DESC"
+    if item_id is None:
+        sql += " LIMIT 500"
+    cur.execute(sql, tuple(params))
+    return _rows(cur.fetchall())
+
+
+def _monitoring_attach(cur, items: list[dict], *, include_detail: bool = False) -> list[dict]:
+    if not items:
+        return []
+    item_ids = [int(i["id"]) for i in items if i.get("id") is not None]
+    rpi_by_id = {
+        int(i["id"]): (i.get("kode_rencana_item") or "")
+        for i in items
+        if i.get("id") is not None
+    }
+    rpi_to_id = {v: k for k, v in rpi_by_id.items() if v}
+    bundles: dict[int, dict] = {
+        iid: {
+            "pos": [],
+            "prep": [],
+            "packing": [],
+            "fg": [],
+            "checkpoint": [],
+            "lab": [],
+            "usage": [],
+            "ky": [],
+        }
+        for iid in item_ids
+    }
+    in_sql, in_params = _sql_in(item_ids)
+
+    cur.execute(
+        f"SELECT p.item_id, po.no_so, po.no_po, po.source_detail_id, po.customer "
+        f"FROM tbl_rencana_item_po p "
+        f"JOIN tbl_master_po po ON po.id = p.po_id "
+        f"WHERE p.item_id IN ({in_sql}) "
+        f"ORDER BY p.item_id, po.no_so, po.no_po",
+        in_params,
+    )
+    for row in _rows(cur.fetchall()):
+        bundles[int(row["item_id"])]["pos"].append(row)
+
+    rpi_codes = [c for c in rpi_by_id.values() if c]
+    prep_sql = (
+        "SELECT id, rencana_item_id, kode_wip, kode_rencana, kode_proses, status, "
+        "checkpoint_status, total_size FROM tbl_persiapan_kulit WHERE rencana_item_id IN "
+        f"({in_sql})"
+    )
+    prep_params = list(in_params)
+    if rpi_codes:
+        rpi_ph = ",".join(["%s"] * len(rpi_codes))
+        prep_sql += f" OR (rencana_item_id IS NULL AND kode_rencana IN ({rpi_ph}))"
+        prep_params.extend(rpi_codes)
+    cur.execute(prep_sql, tuple(prep_params))
+    wip_to_item: dict[str, int] = {}
+    for raw in cur.fetchall() or []:
+        row = _row(raw)
+        iid = row.get("rencana_item_id")
+        try:
+            iid = int(iid) if iid is not None else None
+        except (TypeError, ValueError):
+            iid = None
+        if iid not in bundles:
+            iid = rpi_to_id.get((row.get("kode_rencana") or "").strip())
+        if iid not in bundles:
+            continue
+        bundles[iid]["prep"].append(row)
+        wip = (row.get("kode_wip") or "").strip()
+        if wip:
+            wip_to_item[wip] = iid
+    for item in items:
+        wip = (item.get("kode_lot_wip") or "").strip()
+        if wip:
+            wip_to_item[wip] = int(item["id"])
+
+    wip_list = [w for w in wip_to_item.keys() if w]
+    packing_ids: list[int] = []
+    if wip_list or item_ids:
+        pack_clauses = [f"rencana_item_id IN ({in_sql})"]
+        pack_params = list(in_params)
+        if wip_list:
+            wip_ph = ",".join(["%s"] * len(wip_list))
+            pack_clauses.append(f"kode_wip IN ({wip_ph})")
+            pack_params.extend(wip_list)
+        cur.execute(
+            "SELECT id, rencana_item_id, kode_wip, kode_packing, status, total_ukuran, total_lembar "
+            f"FROM tbl_packing WHERE {' OR '.join(pack_clauses)}",
+            tuple(pack_params),
+        )
+        for raw in cur.fetchall() or []:
+            row = _row(raw)
+            iid = row.get("rencana_item_id")
+            try:
+                iid = int(iid) if iid is not None else None
+            except (TypeError, ValueError):
+                iid = None
+            if iid not in bundles:
+                iid = wip_to_item.get((row.get("kode_wip") or "").strip())
+            if iid not in bundles:
+                continue
+            bundles[iid]["packing"].append(row)
+            wip_to_item.setdefault((row.get("kode_wip") or "").strip(), iid)
+            if row.get("id") is not None:
+                packing_ids.append(int(row["id"]))
+
+    wip_list = [w for w in wip_to_item.keys() if w]
+    if wip_list or packing_ids:
+        fg_clauses = []
+        fg_params: list = []
+        if wip_list:
+            wip_ph = ",".join(["%s"] * len(wip_list))
+            fg_clauses.append(f"kode_wip IN ({wip_ph})")
+            fg_params.extend(wip_list)
+        if packing_ids:
+            pk_sql, pk_params = _sql_in(packing_ids)
+            fg_clauses.append(f"packing_id IN ({pk_sql})")
+            fg_params.extend(pk_params)
+        cur.execute(
+            "SELECT packing_id, kode_packing, kode_wip, status, total_ukuran "
+            f"FROM tbl_gudang_fg WHERE {' OR '.join(fg_clauses)}",
+            tuple(fg_params),
+        )
+        for raw in cur.fetchall() or []:
+            row = _row(raw)
+            iid = wip_to_item.get((row.get("kode_wip") or "").strip())
+            if iid not in bundles:
+                continue
+            bundles[iid]["fg"].append(row)
+
+    if wip_list:
+        wip_ph = ",".join(["%s"] * len(wip_list))
+        cur.execute(
+            f"SELECT kode_wip, result, treatment, measured_at FROM tbl_checkpoint "
+            f"WHERE kode_wip IN ({wip_ph}) ORDER BY id DESC",
+            tuple(wip_list),
+        )
+        for raw in cur.fetchall() or []:
+            row = _row(raw)
+            iid = wip_to_item.get((row.get("kode_wip") or "").strip())
+            if iid not in bundles:
+                continue
+            bundles[iid]["checkpoint"].append(row)
+        cur.execute(
+            f"SELECT kode_wip, kode_lot_warna, nama_warna, qty_pembuatan, qty_digunakan "
+            f"FROM tbl_usage_color WHERE kode_wip IN ({wip_ph}) ORDER BY id",
+            tuple(wip_list),
+        )
+        for raw in cur.fetchall() or []:
+            row = _row(raw)
+            iid = wip_to_item.get((row.get("kode_wip") or "").strip())
+            if iid not in bundles:
+                continue
+            bundles[iid]["usage"].append(row)
+
+    cur.execute(
+        f"SELECT id, rencana_item_id, kode_lot_warna, nama_lot_warna, status "
+        f"FROM tbl_lab_lot WHERE rencana_item_id IN ({in_sql})",
+        in_params,
+    )
+    for raw in cur.fetchall() or []:
+        row = _row(raw)
+        try:
+            iid = int(row.get("rencana_item_id"))
+        except (TypeError, ValueError):
+            continue
+        if iid in bundles:
+            bundles[iid]["lab"].append(row)
+
+    if include_detail:
+        prep_ids = [int(p["id"]) for b in bundles.values() for p in b["prep"] if p.get("id")]
+        if prep_ids:
+            ky_sql, ky_params = _sql_in(prep_ids)
+            prep_by_id = {
+                int(p["id"]): iid
+                for iid, b in bundles.items()
+                for p in b["prep"]
+                if p.get("id") is not None
+            }
+            cur.execute(
+                f"SELECT ky.*, pk.kode_proses, pk.kode_wip "
+                f"FROM tbl_persiapan_ky ky "
+                f"JOIN tbl_persiapan_kulit pk ON pk.id = ky.persiapan_id "
+                f"WHERE ky.persiapan_id IN ({ky_sql}) "
+                f"ORDER BY ky.created_at",
+                ky_params,
+            )
+            for raw in cur.fetchall() or []:
+                row = _row(raw)
+                iid = prep_by_id.get(int(row["persiapan_id"]))
+                if iid in bundles:
+                    bundles[iid]["ky"].append(row)
+        lot_codes = []
+        for b in bundles.values():
+            for u in b["usage"]:
+                kode = (u.get("kode_lot_warna") or "").strip()
+                if kode and kode not in lot_codes:
+                    lot_codes.append(kode)
+            for lab in b["lab"]:
+                kode = (lab.get("kode_lot_warna") or "").strip()
+                if kode and kode not in lot_codes:
+                    lot_codes.append(kode)
+        chem_by_lot: dict[str, list] = {}
+        if lot_codes:
+            lot_ph = ",".join(["%s"] * len(lot_codes))
+            cur.execute(
+                f"SELECT kode_lot_warna, kode_kimia, nama_kimia, resep, satuan, qty "
+                f"FROM tbl_lab_lot_detail WHERE kode_lot_warna IN ({lot_ph}) ORDER BY id",
+                tuple(lot_codes),
+            )
+            for raw in cur.fetchall() or []:
+                row = _row(raw)
+                kode = (row.get("kode_lot_warna") or "").strip()
+                chem_by_lot.setdefault(kode, []).append(row)
+        for iid, b in bundles.items():
+            chemicals = []
+            if b["usage"]:
+                for u in b["usage"]:
+                    kode = (u.get("kode_lot_warna") or "").strip()
+                    qty_used = float(u.get("qty_digunakan") or 0)
+                    qty_make = float(u.get("qty_pembuatan") or 0)
+                    details = chem_by_lot.get(kode) or []
+                    if details:
+                        for d in details:
+                            recipe_qty = float(d.get("qty") or 0)
+                            used_qty = (
+                                (recipe_qty / qty_make) * qty_used if qty_make > 0 else recipe_qty
+                            )
+                            used_qty = round(used_qty, 4)
+                            chemicals.append(
+                                {
+                                    "kode_lot_warna": kode,
+                                    "nama_warna": u.get("nama_warna"),
+                                    "kode_kimia": d.get("kode_kimia"),
+                                    "nama_kimia": d.get("nama_kimia"),
+                                    "satuan": d.get("satuan") or "kg",
+                                    "qty": used_qty,
+                                    "qty_lot": qty_used,
+                                }
+                            )
+                    else:
+                        chemicals.append(
+                            {
+                                "kode_lot_warna": kode,
+                                "nama_warna": u.get("nama_warna"),
+                                "kode_kimia": None,
+                                "nama_kimia": u.get("nama_warna"),
+                                "satuan": "kg",
+                                "qty": qty_used,
+                                "qty_lot": qty_used,
+                            }
+                        )
+            b["chemicals"] = chemicals
+
+    source_ids = []
+    for b in bundles.values():
+        for p in b["pos"]:
+            sid = p.get("source_detail_id")
+            if sid is not None:
+                source_ids.append(sid)
+    lot_map = _erp_lot_nos_for_source_details(source_ids)
+    out = []
+    for item in items:
+        iid = int(item["id"])
+        row = _monitoring_row_from_bundle(item, bundles[iid], lot_map)
+        if include_detail:
+            row["ky"] = bundles[iid].get("ky") or []
+            row["chemicals"] = bundles[iid].get("chemicals") or []
+            row["persiapan"] = bundles[iid].get("prep") or []
+            row["packing"] = bundles[iid].get("packing") or []
+        out.append(row)
+    return out
+
+
+@api.get("/monitoring")
+def monitoring_list():
+    from app import ensure_extended_tables, ensure_lab_tables, ensure_rencana_tables
+
+    q = (request.args.get("q") or "").strip().lower()
+    status_f = (request.args.get("status") or "").strip()
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_rencana_tables(cur)
+    ensure_extended_tables(cur)
+    ensure_lab_tables(cur)
+    conn.commit()
+    items = _monitoring_fetch_items(cur)
+    rows = _monitoring_attach(cur, items, include_detail=False)
+    cur.close()
+    conn.close()
+    if status_f:
+        rows = [r for r in rows if r.get("status_terakhir") == status_f]
+    if q:
+        filtered = []
+        for r in rows:
+            blob = " ".join(
+                str(r.get(k) or "")
+                for k in (
+                    "no_so",
+                    "lot_no",
+                    "status_terakhir",
+                    "nama_customer",
+                    "kode_rencana_item",
+                    "kode_lot_wip",
+                    "no_po",
+                    "material_name",
+                )
+            ).lower()
+            if q in blob:
+                filtered.append(r)
+        rows = filtered
+    return jsonify(rows)
+
+
+@api.get("/monitoring/<int:rencana_item_id>")
+def monitoring_detail(rencana_item_id: int):
+    from app import ensure_extended_tables, ensure_lab_tables, ensure_rencana_tables
+
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_rencana_tables(cur)
+    ensure_extended_tables(cur)
+    ensure_lab_tables(cur)
+    conn.commit()
+    items = _monitoring_fetch_items(cur, item_id=rencana_item_id)
+    if not items:
+        cur.close()
+        conn.close()
+        return _err("Item rencana tidak ditemukan", 404)
+    rows = _monitoring_attach(cur, items, include_detail=True)
+    cur.close()
+    conn.close()
+    return jsonify(rows[0])
 
 
 # ---- Integration: packing production mirror result ----

@@ -216,13 +216,13 @@
       v-model="soOpen"
       class="mrp-rencana-so-dialog"
       :title="t('pages.mrpRencana.soDialogTitle')"
-      width="920px"
+      width="1040px"
       destroy-on-close
       append-to-body
     >
       <p v-if="soRow" class="text-sm text-slate-500 mb-3">
         {{ t('pages.mrpRencana.soFilterHint') }}:
-        {{ spekDisplay(soRow.thickness) }} / {{ spekDisplay(soRow.color) }} / {{ spekDisplay(soRow.emboss) }}
+        {{ spekDisplay(soRow.material_name) }} · {{ spekDisplay(soRow.emboss) }} · {{ spekDisplay(soRow.thickness) }}
       </p>
       <el-table
         ref="soTableRef"
@@ -236,6 +236,9 @@
         <el-table-column type="selection" width="40" :selectable="soSelectable" />
         <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" />
         <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="lot_no" :label="t('common.lotNo')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.lot_no || '—' }}</template>
+        </el-table-column>
         <el-table-column prop="customer" :label="t('common.customer')" min-width="110" show-overflow-tooltip />
         <el-table-column prop="item_name" :label="t('pages.mrpRencana.poItem')" min-width="130" show-overflow-tooltip />
         <el-table-column :label="t('pages.mrpRencana.qtyAllocatable')" width="110" align="right">
@@ -499,7 +502,7 @@ function onSwatchChange(row) {
 }
 
 function rowSpekReady(row) {
-  return Boolean(row.thickness && row.color && row.emboss)
+  return Boolean(row.material_name && row.thickness && row.emboss)
 }
 
 function soSelectable(row) {

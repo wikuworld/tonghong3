@@ -39,6 +39,7 @@ import MrpStokMaterialLainPage from '../views/admin/mrp/MrpStokMaterialLainPage.
 import MrpUsagePage from '../views/admin/mrp/MrpUsagePage.vue'
 import MrpReportPackingPage from '../views/admin/mrp/MrpReportPackingPage.vue'
 import MrpReportPersiapanPage from '../views/admin/mrp/MrpReportPersiapanPage.vue'
+import MrpMonitoringPage from '../views/admin/mrp/MrpMonitoringPage.vue'
 import LoginPage from '../views/LoginPage.vue'
 import { can, currentRoleFromToken } from '../security/permissions'
 
@@ -178,6 +179,11 @@ const router = createRouter({
           path: 'mrp/checkpoint',
           component: MrpCheckpointPage,
           meta: { titleKey: 'menu.mrpCheckpoint', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/monitoring',
+          component: MrpMonitoringPage,
+          meta: { titleKey: 'menu.mrpMonitoring', module: 'mrpShopfloor' },
         },
         {
           path: 'mrp/stok-kimia',

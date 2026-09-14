@@ -186,6 +186,47 @@ export function deleteCustomer(id) {
   return apiFetch(`/customers/${id}`, { method: 'DELETE' })
 }
 
+export function listQuotations(params = {}) {
+  const q = new URLSearchParams()
+  if (params.q != null && String(params.q).trim()) q.set('q', String(params.q).trim())
+  if (params.customer_id != null && params.customer_id !== '') q.set('customer_id', String(params.customer_id))
+  if (params.status != null && String(params.status).trim()) q.set('status', String(params.status).trim())
+  if (params.date_from) q.set('date_from', params.date_from)
+  if (params.date_to) q.set('date_to', params.date_to)
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/quotations${suffix}`)
+}
+
+export function getQuotation(id) {
+  return apiFetch(`/quotations/${id}`)
+}
+
+export function createQuotation(body) {
+  return apiFetch('/quotations', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateQuotation(id, body) {
+  return apiFetch(`/quotations/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteQuotation(id) {
+  return apiFetch(`/quotations/${id}`, { method: 'DELETE' })
+}
+
+export function addQuotationLine(quotationId, body) {
+  return apiFetch(`/quotations/${quotationId}/lines`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateQuotationLine(lineId, body) {
+  return apiFetch(`/quotation-lines/${lineId}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteQuotationLine(lineId) {
+  return apiFetch(`/quotation-lines/${lineId}`, { method: 'DELETE' })
+}
+
 /** Data wilayah Indonesia: provinsi → kab/kota → kecamatan → kelurahan/desa */
 export function wilayahProvinces() {
   return apiFetch('/wilayah/provinces')
@@ -204,23 +245,6 @@ export function wilayahVillages(districtCode) {
 }
 
 // --- PO / Sales Order (satu tabel) ---
-function _csvParam(raw) {
-  if (raw == null || raw === '') return ''
-  const parts = Array.isArray(raw) ? raw : String(raw).split(',')
-  return parts.map((x) => String(x).trim()).filter(Boolean).join(',')
-}
-
-function _appendCustomerIds(q, customer_id) {
-  const ids = Array.isArray(customer_id)
-    ? customer_id
-    : customer_id != null && customer_id !== ''
-      ? [customer_id]
-      : []
-  for (const id of ids) {
-    if (id != null && id !== '') q.append('customer_id', String(id))
-  }
-}
-
 export function listPo(params = {}) {
   const q = new URLSearchParams()
   if (params.mkt_workflow_stage) q.set('mkt_workflow_stage', params.mkt_workflow_stage)
@@ -230,7 +254,7 @@ export function listPo(params = {}) {
   if (params.order_date_to && String(params.order_date_to).trim())
     q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
-  _appendCustomerIds(q, params.customer_id)
+  if (params.customer_id != null && params.customer_id !== '') q.set('customer_id', String(params.customer_id))
   if (params.buyer && String(params.buyer).trim()) q.set('buyer', String(params.buyer).trim())
   if (params.status && String(params.status).trim()) q.set('status', String(params.status).trim())
   if (params.po_category && String(params.po_category).trim()) q.set('po_category', String(params.po_category).trim())
@@ -249,7 +273,7 @@ export function listPoPage(params = {}) {
   if (params.order_date_to && String(params.order_date_to).trim())
     q.set('order_date_to', String(params.order_date_to).trim().slice(0, 10))
   if (params.q && String(params.q).trim()) q.set('q', String(params.q).trim())
-  _appendCustomerIds(q, params.customer_id)
+  if (params.customer_id != null && params.customer_id !== '') q.set('customer_id', String(params.customer_id))
   if (params.buyer && String(params.buyer).trim()) q.set('buyer', String(params.buyer).trim())
   if (params.status && String(params.status).trim()) q.set('status', String(params.status).trim())
   if (params.po_category && String(params.po_category).trim()) q.set('po_category', String(params.po_category).trim())
@@ -322,10 +346,7 @@ export function listMarketingOutstandingLines(params = {}) {
   if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
   if (params.shipment_status) q.set('shipment_status', params.shipment_status)
   if (params.material_status) q.set('material_status', params.material_status)
-  if (params.factory_code && (Array.isArray(params.factory_code) ? params.factory_code.length : String(params.factory_code).trim()))
-    q.set('factory_code', _csvParam(params.factory_code))
-  if (params.customer_ids && (Array.isArray(params.customer_ids) ? params.customer_ids.length : String(params.customer_ids).trim()))
-    q.set('customer_ids', _csvParam(params.customer_ids))
+  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
   if (params.po_category && String(params.po_category).trim()) q.set('po_category', String(params.po_category).trim())
   if (params.material_group && String(params.material_group).trim())
     q.set('material_group', String(params.material_group).trim())
@@ -357,10 +378,7 @@ function _marketingOutstandingExportQuery(params = {}, { includePoCategory = fal
   if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
   if (params.shipment_status) q.set('shipment_status', params.shipment_status)
   if (params.material_status) q.set('material_status', params.material_status)
-  if (params.factory_code && (Array.isArray(params.factory_code) ? params.factory_code.length : String(params.factory_code).trim()))
-    q.set('factory_code', _csvParam(params.factory_code))
-  if (params.customer_ids && (Array.isArray(params.customer_ids) ? params.customer_ids.length : String(params.customer_ids).trim()))
-    q.set('customer_ids', _csvParam(params.customer_ids))
+  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
   if (includePoCategory && params.po_category && String(params.po_category).trim()) {
     q.set('po_category', String(params.po_category).trim())
   }
@@ -495,8 +513,7 @@ export function listMarketingDeliveryPlanning(params = {}) {
   const q = new URLSearchParams()
   if (params.date_from && String(params.date_from).trim()) q.set('date_from', String(params.date_from).trim().slice(0, 10))
   if (params.date_to && String(params.date_to).trim()) q.set('date_to', String(params.date_to).trim().slice(0, 10))
-  if (params.factory_code && (Array.isArray(params.factory_code) ? params.factory_code.length : String(params.factory_code).trim()))
-    q.set('factory_code', _csvParam(params.factory_code))
+  if (params.factory_code && String(params.factory_code).trim()) q.set('factory_code', String(params.factory_code).trim())
   if (params.mkt_stage_min && String(params.mkt_stage_min).trim())
     q.set('mkt_stage_min', String(params.mkt_stage_min).trim())
   if (params.po_q && String(params.po_q).trim()) q.set('po_q', String(params.po_q).trim())
@@ -1084,7 +1101,7 @@ export function reportSalesOrderLinesExportUrl() {
   return '/api/v1/reports/sales-order-lines-export.csv'
 }
 
-/** JSON untuk halaman Reports (revisi audit baris, produksi/sample/claim/return/subcont). */
+/** JSON untuk halaman Reports (revisi ketebalan, produksi, sample). */
 export function fetchReportPoOrderDescription(params = {}) {
   const q = new URLSearchParams()
   if (params.date_from) q.set('date_from', params.date_from)
@@ -1161,7 +1178,45 @@ export function reportPendingPaymentXlsxPath(params = {}) {
   return `/api/v1/reports/pending-payment.xlsx${suffix}`
 }
 
-// --- Bulk price update ---
+// --- Special Prices ---
+export async function listSpecialPrices(params = {}) {
+  const q = new URLSearchParams()
+  if (params.buyer_code) q.set('buyer_code', params.buyer_code)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/pricing/special-prices${suffix}`)
+}
+
+export async function createSpecialPrice(body) {
+  return apiFetch('/pricing/special-prices', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export async function updateSpecialPrice(id, body) {
+  return apiFetch(`/pricing/special-prices/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export async function deleteSpecialPrice(id) {
+  return apiFetch(`/pricing/special-prices/${id}`, { method: 'DELETE' })
+}
+
+export async function listCustomerPrices(params = {}) {
+  const q = new URLSearchParams()
+  if (params.customer_id) q.set('customer_id', params.customer_id)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/pricing/customer-prices${suffix}`)
+}
+
+export async function createCustomerPrice(body) {
+  return apiFetch('/pricing/customer-prices', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export async function updateCustomerPrice(id, body) {
+  return apiFetch(`/pricing/customer-prices/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export async function deleteCustomerPrice(id) {
+  return apiFetch(`/pricing/customer-prices/${id}`, { method: 'DELETE' })
+}
+
 export async function bulkUpdatePrices(updates) {
   return apiFetch('/pricing/bulk-update', { method: 'POST', body: JSON.stringify({ updates }) })
 }
@@ -1228,6 +1283,31 @@ export function upsertBrandConstraint(customerId, body) {
   return apiFetch(`/customers/${customerId}/brand-constraint`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
+// --- Subcon Invoices ---
+export function listSubconInvoices(params = {}) {
+  const q = new URLSearchParams()
+  if (params.po_id) q.set('po_id', String(params.po_id))
+  if (params.status) q.set('status', params.status)
+  if (params.invoice_type) q.set('invoice_type', params.invoice_type)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/subcon-invoices${suffix}`)
+}
+
+export function createSubconInvoice(body) {
+  return apiFetch('/subcon-invoices', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateSubconInvoice(id, body) {
+  return apiFetch(`/subcon-invoices/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteSubconInvoice(id) {
+  return apiFetch(`/subcon-invoices/${id}`, { method: 'DELETE' })
+}
+
+export function generateSubconInvoicesFromPo(poId) {
+  return apiFetch(`/subcon-invoices/generate-from-po/${poId}`, { method: 'POST' })
+}
 
 // --- PPIC Workflow ---
 export function assignPoToPpic(poId, body) {
@@ -1250,6 +1330,42 @@ export function listPpicUsers() {
   return apiFetch('/workflow/ppic/users')
 }
 
+// --- Outstanding Materials ---
+export function listOutstandingMaterials(params = {}) {
+  const q = new URLSearchParams()
+  if (params.customer_id) q.set('customer_id', String(params.customer_id))
+  if (params.status) q.set('status', params.status)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/workflow/outstanding-materials${suffix}`)
+}
+
+export function deliverOutstandingMaterial(materialId, deliveredQty) {
+  return apiFetch(`/workflow/outstanding-materials/${materialId}/deliver`, {
+    method: 'PUT',
+    body: JSON.stringify({ delivered_qty: deliveredQty }),
+  })
+}
+
+// --- Accounting Mappings ---
+export function listAccountingMappings(params = {}) {
+  const q = new URLSearchParams()
+  if (params.transaction_type) q.set('transaction_type', params.transaction_type)
+  if (params.status) q.set('status', params.status)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/accounting/mappings${suffix}`)
+}
+
+export function createAccountingMapping(body) {
+  return apiFetch('/accounting/mappings', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateAccountingMapping(id, body) {
+  return apiFetch(`/accounting/mappings/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteAccountingMapping(id) {
+  return apiFetch(`/accounting/mappings/${id}`, { method: 'DELETE' })
+}
 
 // --- Inventory - Warehouse ---
 export function listWarehouses() {
@@ -1290,6 +1406,42 @@ export function getStockSummary() {
   return apiFetch('/inventory/stocks/summary')
 }
 
+// --- Inventory - Receipt ---
+export function listReceipts(params = {}) {
+  const q = new URLSearchParams()
+  if (params.status) q.set('status', params.status)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/inventory/receipts${suffix}`)
+}
+
+export function createReceipt(body) {
+  return apiFetch('/inventory/receipts', { method: 'POST', body: JSON.stringify(body) })
+}
+
+// --- Journal Entries ---
+export function listJournalEntries(params = {}) {
+  const q = new URLSearchParams()
+  if (params.date_from) q.set('date_from', params.date_from)
+  if (params.date_to) q.set('date_to', params.date_to)
+  if (params.transaction_type) q.set('transaction_type', params.transaction_type)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/journal/entries${suffix}`)
+}
+
+export function generateJournalFromTransaction(transaction_type, transaction_id) {
+  return apiFetch('/journal/entries/generate-from-transaction', {
+    method: 'POST',
+    body: JSON.stringify({ transaction_type, transaction_id }),
+  })
+}
+
+export function getTrialBalance(params = {}) {
+  const q = new URLSearchParams()
+  if (params.date_from) q.set('date_from', params.date_from)
+  if (params.date_to) q.set('date_to', params.date_to)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/journal/entries/trial-balance${suffix}`)
+}
 
 /* ---- MRP shopfloor (Flask via FastAPI gateway /api/v1/mrp) ---- */
 export function mrpListRencana() {
@@ -1302,6 +1454,10 @@ export function mrpGetRencana(id) {
 
 export function mrpCreateRencana(body) {
   return apiFetch('/mrp/rencana-produksi', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpUpdateRencana(id, body) {
+  return apiFetch(`/mrp/rencana-produksi/${id}`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
 export function mrpSyncPo(body = {}) {
@@ -1404,6 +1560,10 @@ export function mrpListProses() {
   return apiFetch('/mrp/proses')
 }
 
+export function mrpProsesNextWip() {
+  return apiFetch('/mrp/proses/next-wip')
+}
+
 export function mrpCreateProses(body) {
   return apiFetch('/mrp/proses', { method: 'POST', body: JSON.stringify(body) })
 }
@@ -1472,6 +1632,18 @@ export function mrpListPacking(params = {}) {
 
 export function mrpPackingScanWip(q) {
   return apiFetch(`/mrp/packing/scan-wip?q=${encodeURIComponent(q || '')}`)
+}
+
+export function mrpPackingPendingRpi() {
+  return apiFetch('/mrp/packing/pending-rpi')
+}
+
+export function mrpPackingPrintedRolls(rencanaItemId) {
+  return apiFetch(`/mrp/packing/rpi/${encodeURIComponent(rencanaItemId)}/printed-rolls`)
+}
+
+export function mrpPackingRollLabel(rollId) {
+  return apiFetch(`/mrp/packing/roll/${encodeURIComponent(rollId)}/label`)
 }
 
 export function mrpStartPacking(body) {
@@ -1692,4 +1864,16 @@ export function mrpReportPersiapan(params = {}) {
   if (params.end_date) q.set('end_date', params.end_date)
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/mrp/reports/persiapan${suffix}`)
+}
+
+export function mrpListMonitoring(params = {}) {
+  const q = new URLSearchParams()
+  if (params.q) q.set('q', params.q)
+  if (params.status) q.set('status', params.status)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/mrp/monitoring${suffix}`)
+}
+
+export function mrpGetMonitoring(id) {
+  return apiFetch(`/mrp/monitoring/${id}`)
 }

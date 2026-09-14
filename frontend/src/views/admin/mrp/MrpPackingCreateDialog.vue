@@ -14,6 +14,7 @@
           @current-change="onRowSelect"
         >
           <el-table-column prop="kode_rencana_item" :label="t('pages.mrpPacking.colRpi')" min-width="110" show-overflow-tooltip />
+          <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="110" show-overflow-tooltip />
           <el-table-column prop="lot_no" :label="t('pages.mrpPacking.lotNo')" min-width="110" show-overflow-tooltip />
           <el-table-column prop="deskripsi" :label="t('pages.mrpPacking.colDeskripsi')" min-width="140" show-overflow-tooltip />
           <el-table-column prop="material_name" :label="t('pages.mrpPacking.colMaterial')" min-width="100" show-overflow-tooltip />

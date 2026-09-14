@@ -324,6 +324,7 @@ import {
   CircleCheck,
   User,
   FolderOpened,
+  Monitor,
 } from '@element-plus/icons-vue'
 import {
   getPermissionMatrix,
@@ -454,6 +455,7 @@ const mrpFlowMenus = [
   { path: '/admin/mrp/packing', labelKey: 'menu.mrpPacking', icon: Box },
   { path: '/admin/mrp/gudang-fg', labelKey: 'menu.mrpGudangFg', icon: Goods },
   { path: '/admin/mrp/checkpoint', labelKey: 'menu.mrpCheckpoint', icon: CollectionTag },
+  { path: '/admin/mrp/monitoring', labelKey: 'menu.mrpMonitoring', icon: Monitor },
 ]
 
 const mrpMaterialMenus = [
