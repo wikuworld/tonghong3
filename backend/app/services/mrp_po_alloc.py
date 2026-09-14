@@ -127,4 +127,12 @@ def enrich_outstanding_mrp_alloc(rows: list[dict[str, Any]]) -> None:
         row.update(alloc)
         mrp_stock = alloc.get("stock_wh_qty")
         if mrp_stock not in (None, ""):
-            row["stock_wh_qty"] = mrp_stock
+            try:
+                packed = max(0.0, float(mrp_stock))
+            except (TypeError, ValueError):
+                packed = 0.0
+            try:
+                shipped = max(0.0, float(row.get("delivered_qty") or 0))
+            except (TypeError, ValueError):
+                shipped = 0.0
+            row["stock_wh_qty"] = _qty_str(max(0.0, packed - shipped))

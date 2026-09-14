@@ -102,3 +102,37 @@ def test_enrich_overlays_stock_wh_from_mrp():
         enrich_outstanding_mrp_alloc(rows)
     assert rows[0]["stock_wh_qty"] == "150"
     assert rows[0]["mrp_qty_wip"] == "200"
+
+
+def test_enrich_stock_wh_minus_delivered():
+    rows = [{"po_detail_id": 69, "delivered_qty": "200", "stock_wh_qty": ""}]
+    found = {
+        69: {
+            "mrp_alloc_status": "partial",
+            "mrp_qty_processed": "500",
+            "mrp_qty_remaining": "500",
+            "mrp_qty_ship_remaining": "",
+            "mrp_qty_wip": "500",
+            "stock_wh_qty": "500",
+        }
+    }
+    with patch("app.services.mrp_po_alloc.fetch_mrp_alloc_by_detail_ids", return_value=found):
+        enrich_outstanding_mrp_alloc(rows)
+    assert rows[0]["stock_wh_qty"] == "300"
+
+
+def test_enrich_stock_wh_not_negative_when_shipped_exceeds_packed():
+    rows = [{"po_detail_id": 1, "delivered_qty": "150"}]
+    found = {
+        1: {
+            "mrp_alloc_status": "partial",
+            "mrp_qty_processed": "100",
+            "mrp_qty_remaining": "0",
+            "mrp_qty_ship_remaining": "",
+            "mrp_qty_wip": "0",
+            "stock_wh_qty": "100",
+        }
+    }
+    with patch("app.services.mrp_po_alloc.fetch_mrp_alloc_by_detail_ids", return_value=found):
+        enrich_outstanding_mrp_alloc(rows)
+    assert rows[0]["stock_wh_qty"] == "0"

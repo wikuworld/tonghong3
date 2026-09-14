@@ -532,48 +532,167 @@ def _qty_wip_by_source_detail_ids(cur, source_ids: list[int]) -> dict[int, float
     return out
 
 
+def _as_float_qty(value) -> float:
+    try:
+        return max(0.0, float(value or 0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _assign_stock_wh_from_finished_packings(
+    packings: list,
+    packing_po_rows: list,
+    alloc_rows: list,
+    source_ids: list[int],
+) -> dict[int, float]:
+    """Stock WH packing finished per baris SO (source_detail_id).
+
+    Utamakan packing.rencana_item_id → alokasi RPI (lot SO). packing_po.po_id
+    sering salah karena lookup no_po ORDER BY id DESC (baris SO lain di PO yang sama).
+    Qty belum dikurangi terkirim — itu dihitung di outstanding ERP.
+    """
+    wanted = {int(x) for x in source_ids if x is not None}
+    if not wanted:
+        return {}
+
+    pos_by_packing: dict[int, list] = {}
+    for pp in packing_po_rows or []:
+        try:
+            pid = int(pp.get("packing_id"))
+        except (TypeError, ValueError):
+            continue
+        pos_by_packing.setdefault(pid, []).append(pp)
+
+    allocs_by_item: dict[int, list] = {}
+    allocs_by_wip: dict[str, list] = {}
+    alloc_by_po_id: dict[int, dict] = {}
+    for alloc in alloc_rows or []:
+        sid = alloc.get("source_detail_id")
+        try:
+            sid_i = int(sid)
+        except (TypeError, ValueError):
+            continue
+        if sid_i not in wanted:
+            continue
+        try:
+            item_id = int(alloc.get("item_id"))
+        except (TypeError, ValueError):
+            continue
+        allocs_by_item.setdefault(item_id, []).append(alloc)
+        wip = str(alloc.get("kode_lot_wip") or alloc.get("prep_kode_wip") or "").strip()
+        if wip:
+            allocs_by_wip.setdefault(wip, []).append(alloc)
+        try:
+            po_id = int(alloc.get("po_id"))
+        except (TypeError, ValueError):
+            po_id = None
+        if po_id is not None:
+            alloc_by_po_id[po_id] = alloc
+
+    out: dict[int, float] = {}
+
+    def _add(sid: int, qty: float) -> None:
+        if sid not in wanted or qty <= 0:
+            return
+        out[sid] = out.get(sid, 0.0) + qty
+
+    def _unique_sids(allocs: list) -> list[int]:
+        seen: list[int] = []
+        for alloc in allocs:
+            try:
+                sid = int(alloc.get("source_detail_id"))
+            except (TypeError, ValueError):
+                continue
+            if sid in wanted and sid not in seen:
+                seen.append(sid)
+        return seen
+
+    for packing in packings or []:
+        qty = _as_float_qty(packing.get("total_ukuran"))
+        if qty <= 0:
+            continue
+        try:
+            packing_id = int(packing.get("id"))
+        except (TypeError, ValueError):
+            packing_id = None
+        chosen: list = []
+        try:
+            item_id = int(packing.get("rencana_item_id"))
+        except (TypeError, ValueError):
+            item_id = None
+        if item_id is not None:
+            chosen = allocs_by_item.get(item_id, [])
+        if not chosen:
+            wip = str(packing.get("kode_wip") or "").strip()
+            if wip:
+                chosen = allocs_by_wip.get(wip, [])
+        sids = _unique_sids(chosen)
+        if len(sids) == 1:
+            _add(sids[0], qty)
+            continue
+        assigned = False
+        for pp in pos_by_packing.get(packing_id, []) if packing_id is not None else []:
+            try:
+                po_id = int(pp.get("po_id"))
+            except (TypeError, ValueError):
+                continue
+            alloc = alloc_by_po_id.get(po_id)
+            if not alloc:
+                continue
+            try:
+                sid = int(alloc.get("source_detail_id"))
+            except (TypeError, ValueError):
+                continue
+            split_qty = _as_float_qty(pp.get("qty_sq")) or qty
+            _add(sid, split_qty)
+            assigned = True
+        if assigned or item_id is not None:
+            continue
+
+    return out
+
+
 def _stock_wh_by_source_detail_ids(cur, source_ids: list[int]) -> dict[int, float]:
-    """Stock WH = packing finished + surat jalan (erp_delivery_id) per baris PO ERP."""
+    """Stock WH = qty packing status finished per baris SO ERP (lot / RPI)."""
     if not source_ids:
         return {}
+    from app import _col_names
+
+    packing_cols = _col_names(cur, "tbl_packing")
+    packing_fields = ["id", "kode_wip", "total_ukuran"]
+    if "rencana_item_id" in packing_cols:
+        packing_fields.insert(1, "rencana_item_id")
+    cur.execute(
+        f"SELECT {', '.join(packing_fields)} FROM tbl_packing WHERE status='finished'"
+    )
+    packings = list(cur.fetchall() or [])
+    if not packings:
+        return {}
+    packing_ids = [int(p["id"]) for p in packings if p.get("id") is not None]
+    packing_po_rows: list = []
+    if packing_ids:
+        pp_ph = ",".join(["%s"] * len(packing_ids))
+        cur.execute(
+            f"SELECT packing_id, po_id, no_po, no_so, qty_sq "
+            f"FROM tbl_packing_po WHERE packing_id IN ({pp_ph})",
+            packing_ids,
+        )
+        packing_po_rows = list(cur.fetchall() or [])
     placeholders = ",".join(["%s"] * len(source_ids))
     cur.execute(
-        f"SELECT sid.source_detail_id, COALESCE(SUM(sid.qty_sq), 0) AS stock_wh_qty "
-        f"FROM ( "
-        f"  SELECT po.source_detail_id, "
-        f"    COALESCE(NULLIF(pp.qty_sq, 0), p.total_ukuran) AS qty_sq "
-        f"  FROM tbl_packing p "
-        f"  JOIN tbl_gudang_fg fg ON fg.packing_id = p.id "
-        f"  JOIN tbl_packing_po pp ON pp.packing_id = p.id "
-        f"  JOIN tbl_master_po po ON po.id = COALESCE(pp.po_id, ( "
-        f"    SELECT id FROM tbl_master_po WHERE no_po = pp.no_po ORDER BY id DESC LIMIT 1 "
-        f"  )) "
-        f"  WHERE p.status = 'finished' "
-        f"    AND fg.erp_delivery_id IS NOT NULL "
-        f"    AND po.source_detail_id IN ({placeholders}) "
-        f"  UNION ALL "
-        f"  SELECT po.source_detail_id, p.total_ukuran AS qty_sq "
-        f"  FROM tbl_packing p "
-        f"  JOIN tbl_gudang_fg fg ON fg.packing_id = p.id "
-        f"  JOIN tbl_rencana_item i ON i.kode_lot_wip = p.kode_wip "
-        f"  JOIN tbl_rencana_item_po rip ON rip.item_id = i.id "
-        f"  JOIN tbl_master_po po ON po.id = rip.po_id "
-        f"  WHERE p.status = 'finished' "
-        f"    AND fg.erp_delivery_id IS NOT NULL "
-        f"    AND po.source_detail_id IN ({placeholders}) "
-        f"    AND NOT EXISTS (SELECT 1 FROM tbl_packing_po x WHERE x.packing_id = p.id) "
-        f") sid "
-        f"WHERE sid.source_detail_id IS NOT NULL "
-        f"GROUP BY sid.source_detail_id",
-        (*source_ids, *source_ids),
+        f"SELECT rip.item_id, rip.po_id, po.source_detail_id, po.lot_number, po.no_so, "
+        f"i.kode_lot_wip, pk.kode_wip AS prep_kode_wip "
+        f"FROM tbl_rencana_item_po rip "
+        f"JOIN tbl_master_po po ON po.id = rip.po_id "
+        f"JOIN tbl_rencana_item i ON i.id = rip.item_id "
+        f"LEFT JOIN tbl_persiapan_kulit pk ON pk.rencana_item_id = i.id "
+        f"WHERE po.source_detail_id IN ({placeholders})",
+        source_ids,
     )
-    out: dict[int, float] = {}
-    for row in cur.fetchall() or []:
-        sid = row.get("source_detail_id")
-        if sid is None:
-            continue
-        out[int(sid)] = float(row.get("stock_wh_qty") or 0)
-    return out
+    alloc_rows = list(cur.fetchall() or [])
+    return _assign_stock_wh_from_finished_packings(
+        packings, packing_po_rows, alloc_rows, source_ids
+    )
 
 
 @api.get("/masters/po")
@@ -3122,19 +3241,23 @@ def packing_start():
             (kode_packing, kode_wip, no_po, customer),
         )
     packing_id = cur.lastrowid
-    po_id = body.get("po_id")
     try:
         po_id = int(po_id) if po_id is not None else None
     except (TypeError, ValueError):
         po_id = None
-    if po_id is None and no_po:
+    if po_id is None:
+        raw_po = body.get("po_id")
+        try:
+            po_id = int(raw_po) if raw_po is not None else None
+        except (TypeError, ValueError):
+            po_id = None
+    if po_id is None and item_id_val is not None:
         cur.execute(
-            "SELECT id FROM tbl_master_po WHERE no_po=%s ORDER BY id DESC LIMIT 1",
-            (no_po,),
+            "SELECT po_id FROM tbl_rencana_item_po WHERE item_id=%s ORDER BY id LIMIT 1",
+            (item_id_val,),
         )
-        row_po = cur.fetchone()
-        if row_po:
-            po_id = row_po["id"]
+        row_po = cur.fetchone() or {}
+        po_id = row_po.get("po_id")
     cur.execute(
         "INSERT INTO tbl_packing_po (packing_id, po_id, no_po, no_so, qty_sq) "
         "VALUES (%s,%s,%s,%s,%s)",
@@ -3436,13 +3559,25 @@ def packing_actions(packing_id: int):
             conn.close()
             return _err("no_po wajib")
         if po_id is None:
-            cur.execute(
-                "SELECT id FROM tbl_master_po WHERE no_po=%s ORDER BY id DESC LIMIT 1",
-                (no_po,),
-            )
-            row_po = cur.fetchone()
-            if row_po:
-                po_id = row_po["id"]
+            raw_sid = body.get("source_detail_id")
+            try:
+                sid = int(raw_sid) if raw_sid is not None else None
+            except (TypeError, ValueError):
+                sid = None
+            if sid is not None:
+                cur.execute(
+                    "SELECT id FROM tbl_master_po WHERE source_detail_id=%s LIMIT 1",
+                    (sid,),
+                )
+                row_po = cur.fetchone() or {}
+                po_id = row_po.get("id")
+            if po_id is None and packing.get("rencana_item_id"):
+                cur.execute(
+                    "SELECT po_id FROM tbl_rencana_item_po WHERE item_id=%s ORDER BY id LIMIT 1",
+                    (packing.get("rencana_item_id"),),
+                )
+                row_po = cur.fetchone() or {}
+                po_id = row_po.get("po_id")
         cur.execute(
             "INSERT INTO tbl_packing_po (packing_id, po_id, no_po, no_so, qty_sq) "
             "VALUES (%s,%s,%s,%s,%s)",

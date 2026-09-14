@@ -67,12 +67,34 @@
       <div class="mrp-proses-create-layout">
         <div class="mrp-proses-create-layout__main">
           <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpProses.createHint') }}</p>
+          <el-form label-position="top">
+        <el-form-item :label="t('pages.mrpProses.treatmentJenis')" required>
+          <el-radio-group v-model="form.treatment_jenis" @change="onTreatmentJenisChange">
+            <el-radio-button value="PU">PU</el-radio-button>
+            <el-radio-button value="Suede">SUEDE</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpProses.treatmentList')" required>
+          <div class="mrp-proses-treatment-box">
+            <template v-if="treatmentsFiltered.length">
+              <el-checkbox-group v-model="form.treatment_list">
+                <div
+                  v-for="tr in treatmentsFiltered"
+                  :key="tr.nama_treatment"
+                  class="mrp-proses-treatment-item"
+                >
+                  <el-checkbox :label="tr.nama_treatment">{{ tr.nama_treatment }}</el-checkbox>
+                </div>
+              </el-checkbox-group>
+            </template>
+            <p v-else class="text-sm text-slate-400 mb-0">{{ t('pages.mrpProses.treatmentEmpty') }}</p>
+          </div>
+        </el-form-item>
           <div class="mrp-proses-wip-card mb-3">
             <span class="mrp-proses-wip-card__label">{{ t('pages.mrpProses.kodeWip') }}</span>
             <span class="mrp-proses-wip-card__value">{{ previewKodeWip || '—' }}</span>
             <span class="mrp-proses-wip-card__hint">{{ t('pages.mrpProses.kodeWipHint') }}</span>
           </div>
-          <el-form label-position="top">
         <el-form-item :label="t('pages.mrpProses.scanRpi')">
           <div class="flex gap-2 w-full">
             <el-input
@@ -293,29 +315,6 @@
             </el-table-column>
           </el-table>
         </template>
-
-        <el-form-item :label="t('pages.mrpProses.treatmentJenis')" required>
-          <el-radio-group v-model="form.treatment_jenis" @change="onTreatmentJenisChange">
-            <el-radio-button value="PU">PU</el-radio-button>
-            <el-radio-button value="Suede">Suede</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item :label="t('pages.mrpProses.treatmentList')" required>
-          <div class="mrp-proses-treatment-box">
-            <template v-if="treatmentsFiltered.length">
-              <el-checkbox-group v-model="form.treatment_list">
-                <div
-                  v-for="tr in treatmentsFiltered"
-                  :key="tr.nama_treatment"
-                  class="mrp-proses-treatment-item"
-                >
-                  <el-checkbox :label="tr.nama_treatment">{{ tr.nama_treatment }}</el-checkbox>
-                </div>
-              </el-checkbox-group>
-            </template>
-            <p v-else class="text-sm text-slate-400 mb-0">{{ t('pages.mrpProses.treatmentEmpty') }}</p>
-          </div>
-        </el-form-item>
           </el-form>
         </div>
 
