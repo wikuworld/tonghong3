@@ -1,8 +1,7 @@
 <template>
   <AdminSection :title="t('pages.mrpMasterErp.title')" :subtitle="t('pages.mrpMasterErp.subtitle')">
     <template #actions>
-      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
-      <el-input v-model="keyword" clearable :placeholder="t('common.search')" class="mrp-toolbar-search" @keyup.enter="onSearch" />
+      <el-input v-model="keyword" clearable :placeholder="t('common.search')" class="w-56" @keyup.enter="onSearch" />
       <el-select v-model="filterCategory" clearable :placeholder="t('pages.mrpMasterErp.filterCategory')" class="w-36" @change="onSearch">
         <el-option :label="t('pages.mrpMasterErp.allCategory')" value="" />
         <el-option label="PU" value="PU" />
@@ -13,46 +12,18 @@
       <el-button type="primary" @click="goManage">{{ t('pages.mrpMasterErp.manageItems') }}</el-button>
     </template>
 
-    <p v-if="stats.total" class="text-sm text-slate-500 mb-2">
+    <p v-if="stats.total" class="text-sm text-gray-500 mb-2">
       <el-tag size="small" type="info" effect="plain" class="mr-1 align-middle">{{ t('common.nav.viewOnly') }}</el-tag>
       {{ t('pages.mrpMasterErp.statsHint', { shown: rows.length, total }) }}
       · {{ t('pages.mrpMasterErp.sourceHint') }}
     </p>
-    <p v-else class="text-sm text-slate-500 mb-2">
+    <p v-else class="text-sm text-gray-500 mb-2">
       <el-tag size="small" type="info" effect="plain" class="mr-1 align-middle">{{ t('common.nav.viewOnly') }}</el-tag>
       {{ t('pages.mrpMasterErp.sourceHint') }}
     </p>
 
-    <div class="admin-stats-grid admin-stats-grid--4 mb-4" v-if="stats.total">
-      <div class="admin-stat-card">
-        <span class="admin-stat-card__value">{{ stats.total }}</span>
-        <span class="admin-stat-card__label">{{ t('pages.mrpMasterErp.statTotal') }}</span>
-      </div>
-      <div class="admin-stat-card admin-stat-card--info">
-        <span class="admin-stat-card__value">{{ stats.pu }}</span>
-        <span class="admin-stat-card__label">{{ t('pages.mrpMasterErp.statPu') }}</span>
-      </div>
-      <div class="admin-stat-card admin-stat-card--success">
-        <span class="admin-stat-card__value">{{ stats.suide }}</span>
-        <span class="admin-stat-card__label">{{ t('pages.mrpMasterErp.statSuide') }}</span>
-      </div>
-      <div class="admin-stat-card admin-stat-card--warn">
-        <span class="admin-stat-card__value">{{ stats.subkon }}</span>
-        <span class="admin-stat-card__label">{{ t('pages.mrpMasterErp.statSubkon') }}</span>
-      </div>
-    </div>
-
     <div class="admin-inner-card">
-      <div class="admin-inner-card__head">
-        <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpMasterErp.listSectionTitle') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpMasterErp.listSubtitle') }}</p>
-        </div>
-      </div>
-      <div class="mkt-section-body">
-        <p class="admin-scroll-hint">{{ t('pages.mrpMasterErp.scrollHint') }}</p>
-        <div class="admin-table-scroll">
-      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" max-height="60vh" :empty-text="t('pages.mrpMasterErp.tableEmpty')">
+      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" max-height="60vh">
         <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center">
           <template #default="{ $index }">{{ (page - 1) * pageSize + $index + 1 }}</template>
         </el-table-column>
@@ -71,10 +42,8 @@
           </template>
         </el-table-column>
         <el-table-column prop="emboss" :label="t('common.emboss')" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="backing" :label="t('pages.mrpMasterErp.backer')" width="120" show-overflow-tooltip />
+        <el-table-column prop="backing" label="Backer" width="120" show-overflow-tooltip />
       </el-table>
-        </div>
-      </div>
     </div>
 
     <div class="mt-3 flex justify-end">

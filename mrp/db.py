@@ -1,73 +1,60 @@
-"""Shared DB config for MRP service — reads Docker/env defaults."""
+"""Shared DB config for MRP service — reads project .env / process env."""
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import mysql.connector
+
+_ROOT_ENV = Path(__file__).resolve().parent.parent / ".env"
+
+
+def _load_root_env() -> None:
+    """Load /tonghong/.env into os.environ if not already set (jalan tanpa Docker)."""
+    if not _ROOT_ENV.is_file():
+        return
+    for raw in _ROOT_ENV.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        key = key.strip()
+        val = val.strip().strip("'").strip('"')
+        if key and key not in os.environ:
+            os.environ[key] = val
+
+
+_load_root_env()
+
+_DEFAULT_HOST = "202.10.48.75"
+_DEFAULT_USER = "root"
+_DEFAULT_PASSWORD = "Developer2026!"
 
 
 def db_config() -> dict:
     return {
-        "host": os.getenv("MRP_DB_HOST", "mariadb"),
-        "port": int(os.getenv("MRP_DB_PORT", "3306")),
-        "user": os.getenv("MRP_DB_USER", "tonghong_mrp"),
-        "password": os.getenv("MRP_DB_PASSWORD", "tonghong_mrp_secret"),
+        "host": os.getenv("MRP_DB_HOST") or os.getenv("MYSQL_HOST", _DEFAULT_HOST),
+        "port": int(os.getenv("MRP_DB_PORT") or os.getenv("MYSQL_PORT", "3306")),
+        "user": os.getenv("MRP_DB_USER") or os.getenv("MYSQL_USER", _DEFAULT_USER),
+        "password": os.getenv("MRP_DB_PASSWORD")
+        or os.getenv("MYSQL_PASSWORD", _DEFAULT_PASSWORD),
         "database": os.getenv("MRP_DB_NAME", "tonghong_mrp"),
-        "connection_timeout": int(os.getenv("MRP_DB_CONNECT_TIMEOUT", "10")),
-        # Autocommit: tanpa ini, SELECT/SHOW di transaksi terbuka menahan
-        # metadata lock sampai commit — satu koneksi Sleep cukup menggantung DDL ensure_*.
-        "autocommit": True,
     }
 
 
 def get_db_connection(**overrides):
     cfg = db_config()
     cfg.update(overrides)
-    conn = mysql.connector.connect(**cfg)
-    # ensure_*_tables() menjalankan DDL idempoten di hampir setiap request. Dengan
-    # lock_wait_timeout default (1 hari) satu koneksi idle-in-transaction cukup
-    # untuk menggantung request selamanya.
-    lock_wait = int(os.getenv("MRP_DB_LOCK_WAIT_TIMEOUT", "5"))
-    cur = conn.cursor()
-    cur.execute(
-        "SET SESSION lock_wait_timeout=%s, innodb_lock_wait_timeout=%s",
-        (lock_wait, lock_wait),
-    )
-    cur.close()
-    return conn
+    return mysql.connector.connect(**cfg)
 
 
 def root_db_config() -> dict:
     """Root (or privileged) connection for bootstrap — no default database required."""
     return {
-        "host": os.getenv("MRP_DB_HOST", "mariadb"),
-        "port": int(os.getenv("MRP_DB_PORT", "3306")),
-        "user": os.getenv("MRP_DB_ROOT_USER", "root"),
-        "password": os.getenv("MYSQL_ROOT_PASSWORD", os.getenv("MRP_DB_ROOT_PASSWORD", "root")),
-    }
-
-
-def erp_db_config() -> dict:
-    """Koneksi baca katalog ERP (raw_materials / customers / master_items).
-
-    Jangan pakai root: di MariaDB native, root@127.0.0.1 memakai unix_socket auth
-    dan gagal lewat TCP (error 1698 Access denied).
-    """
-    host = os.getenv("ERP_DB_HOST") or os.getenv("MRP_DB_HOST") or "127.0.0.1"
-    port = int(os.getenv("ERP_DB_PORT") or os.getenv("MRP_DB_PORT") or os.getenv("MYSQL_PORT") or "3306")
-    user = (os.getenv("ERP_DB_USER") or os.getenv("MYSQL_USER") or "tonghong").strip()
-    password = os.getenv("ERP_DB_PASSWORD") or os.getenv("MYSQL_PASSWORD") or "tonghong_secret"
-    database = os.getenv("ERP_DB_NAME") or os.getenv("MYSQL_DATABASE") or "tonghong"
-    if not user or user == "root":
-        # Guard: jangan pernah jatuh ke root untuk baca katalog ERP.
-        user = "tonghong"
-        password = os.getenv("ERP_DB_PASSWORD") or os.getenv("MYSQL_PASSWORD") or "tonghong_secret"
-    return {
-        "host": host,
-        "port": port,
-        "user": user,
-        "password": password,
-        "database": database,
-        "connection_timeout": int(os.getenv("MRP_DB_CONNECT_TIMEOUT", "10")),
-        "autocommit": True,
+        "host": os.getenv("MRP_DB_HOST") or os.getenv("MYSQL_HOST", _DEFAULT_HOST),
+        "port": int(os.getenv("MRP_DB_PORT") or os.getenv("MYSQL_PORT", "3306")),
+        "user": os.getenv("MRP_DB_ROOT_USER") or os.getenv("MYSQL_USER", _DEFAULT_USER),
+        "password": os.getenv("MYSQL_ROOT_PASSWORD")
+        or os.getenv("MRP_DB_ROOT_PASSWORD")
+        or os.getenv("MYSQL_PASSWORD", _DEFAULT_PASSWORD),
     }

@@ -178,11 +178,19 @@ def validate_invoice_against_delivery(
     delivery_id: int,
     po_number: str | None,
 ) -> None:
-    from app.models import DeliveryDetail, DeliveryHeader
+    from app.models import DeliveryDetail, DeliveryHeader, Invoice
 
     hdr = db.get(DeliveryHeader, delivery_id)
     if not hdr:
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
+    existing = db.scalars(
+        select(Invoice.id).where(Invoice.delivery_id == int(delivery_id)).limit(1)
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="Invoice untuk delivery ini sudah ada",
+        )
     if (hdr.status or "").lower() != "sent":
         raise HTTPException(
             status_code=400,

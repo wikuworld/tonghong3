@@ -41,17 +41,7 @@ def _invoice_for_delivery(db: Session, delivery_id: int) -> Invoice | None:
 
 
 def _matched_invoice_detail(db: Session, inv: Invoice, dd: DeliveryDetail) -> InvoiceDetail | None:
-    """Match by ordinal position within the same delivery (legacy INVPL/SJ convention)."""
-    details = list(
-        db.scalars(
-            select(DeliveryDetail)
-            .where(DeliveryDetail.delivery_id == dd.delivery_id)
-            .order_by(DeliveryDetail.id.asc())
-        ).all()
-    )
-    idx = next((i for i, row in enumerate(details) if int(row.id) == int(dd.id)), None)
-    if idx is None:
-        return None
+    """Cocokkan baris invoice ke baris SJ via PO/spek, bukan urutan id."""
     inv_details = list(
         db.scalars(
             select(InvoiceDetail)
@@ -59,9 +49,33 @@ def _matched_invoice_detail(db: Session, inv: Invoice, dd: DeliveryDetail) -> In
             .order_by(InvoiceDetail.id.asc())
         ).all()
     )
-    if idx >= len(inv_details):
+    if not inv_details:
         return None
-    return inv_details[idx]
+    pod = resolve_po_detail_for_delivery_line(db, dd)
+    if pod:
+        name = (getattr(pod, "material_name", None) or "").strip().lower()
+        color = (getattr(pod, "color", None) or "").strip().lower()
+        hits = []
+        for row in inv_details:
+            desc = (row.item_description or "").strip().lower()
+            row_color = (row.color or "").strip().lower()
+            name_ok = (not name) or name in desc or desc in name
+            color_ok = (not color) or color == row_color or color in desc
+            if name_ok and color_ok:
+                hits.append(row)
+        if len(hits) == 1:
+            return hits[0]
+        if len(hits) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Baris invoice ambigu untuk retur — cocokkan manual di outstanding",
+            )
+    if len(inv_details) == 1:
+        return inv_details[0]
+    raise HTTPException(
+        status_code=400,
+        detail="Tidak bisa mencocokkan baris invoice untuk retur (bukan urutan SJ)",
+    )
 
 
 def apply_delivery_line_return(
@@ -143,6 +157,10 @@ def apply_delivery_line_return(
     if not (inv.credit_note_no or "").strip():
         base = (inv.invoice_number or f"INV-{inv.id}").strip()
         inv.credit_note_no = f"CN-{base}"
+
+    from app.services.invoice_outstanding import sync_payment_status_from_balance
+
+    sync_payment_status_from_balance(inv)
 
     return {
         "delivery_detail_id": int(dd.id),

@@ -179,14 +179,15 @@ def sync_po_details_to_mrp(
         elif full or not cancelled_detail_ids:
             details = _load_details(db, header_status_mode="active", limit=2000)
             details.extend(_load_details(db, header_status_mode="cancelled", limit=2000))
-            details.extend(_load_details(db, header_status_mode="draft", limit=2000))
 
         for d in details:
             mapped = map_po_detail(d)
             if not mapped:
                 continue
             st = ((d.po.status if d.po else "") or "").strip().lower()
-            if st in _CANCELLED_STATUSES or st not in _SYNCABLE_STATUSES:
+            if st not in _SYNCABLE_STATUSES and st not in _CANCELLED_STATUSES:
+                continue
+            if st in _CANCELLED_STATUSES:
                 mapped["cancelled"] = True
             sid = int(d.id)
             items.append(mapped)

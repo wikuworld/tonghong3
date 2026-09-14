@@ -34,8 +34,10 @@ from app.services.document_numbers import allocate_invoice_number
 from app.services.invoice_outstanding import (
     enrich_outstanding_invoice,
     filter_outstanding_rows,
+    invoice_ar_status,
     sync_payment_status_from_balance,
 )
+from app.services.accounts_receivable_report import invoice_balance
 router = APIRouter(tags=["invoice"])
 
 
@@ -156,9 +158,7 @@ def list_outstanding_invoice(
 ) -> list[dict]:
     today = date.today()
     stmt = select(Invoice).order_by(Invoice.id.desc())
-    if overdue_only:
-        stmt = stmt.where(and_(Invoice.due_date.is_not(None), Invoice.due_date < today))
-    elif due_within_days is not None:
+    if due_within_days is not None and not overdue_only:
         stmt = stmt.where(
             and_(
                 Invoice.due_date.is_not(None),
@@ -168,8 +168,10 @@ def list_outstanding_invoice(
         )
     rows = list(db.scalars(stmt).all())
     enriched = [enrich_outstanding_invoice(db, r, hide_po=hide_po) for r in rows]
-    # Jika overdue_only/due filter SQL sudah dipakai, jangan force open_only menutupi closed
-    # kecuali caller minta; default open_only=True untuk workbench outstanding.
+    if overdue_only:
+        enriched = [r for r in enriched if (r.get("ar_status") or "") == "overdue"]
+    elif due_within_days is not None:
+        enriched = [r for r in enriched if (r.get("ar_status") or "") != "closed"]
     return filter_outstanding_rows(
         enriched,
         ar_status=ar_status,
@@ -332,6 +334,12 @@ def run_invoice_reminders(
     skipped = 0
     errors: list[str] = []
     for inv, dh, cust in rows:
+        if invoice_balance(inv) <= 0 or (inv.payment_status or "").lower() == "paid":
+            skipped += 1
+            continue
+        if invoice_ar_status(inv, today=today) == "closed":
+            skipped += 1
+            continue
         if not cust.email:
             skipped += 1
             continue

@@ -63,7 +63,7 @@ def test_map_po_detail_cancelled_header():
     assert mapped["cancelled"] is True
 
 
-def test_sync_cancels_draft_header(monkeypatch):
+def test_sync_skips_draft_header(monkeypatch):
     db = MagicMock()
     pod = _detail(status="draft")
     monkeypatch.setattr(sync, "_load_details", lambda *a, **k: [pod])
@@ -76,8 +76,8 @@ def test_sync_cancels_draft_header(monkeypatch):
     monkeypatch.setattr(sync, "_push_items", _push)
     result = sync.sync_po_details_to_mrp(db, detail_ids=[11], raise_on_error=True)
     assert result["ok"] is True
-    assert pushed["items"][0]["source_detail_id"] == 11
-    assert pushed["items"][0]["cancelled"] is True
+    assert pushed["items"] == []
+    assert result["total"] == 0
 
 
 def test_sync_incremental_by_detail_id(monkeypatch):
@@ -275,3 +275,61 @@ def test_update_po_detail_calls_sync_after_commit_and_survives_sync_failure():
     assert out is row
     db.commit.assert_called()
     sync_mock.assert_called_once_with(db, po_id=1, detail_ids=[11])
+
+
+def test_update_po_confirm_rolls_back_when_sync_fails():
+    from fastapi import HTTPException
+
+    from app.routers import po as po_router
+    from app.schemas import PoHeaderUpdate
+
+    db = MagicMock()
+    row = MagicMock()
+    row.id = 42
+    row.status = "draft"
+    row.mkt_workflow_stage = "input_system"
+    row.order_date = None
+    row.customer_id = 1
+    row.brand_id = 1
+    row.buyer = "NB"
+    row.po_customer_ref = "REF"
+    row.po_number = "SO-42"
+    db.get.return_value = row
+
+    body = PoHeaderUpdate(status="confirmed")
+    user = MagicMock(username="tester", role="admin")
+
+    with (
+        patch.object(po_router, "_validate_customer_brand_buyer"),
+        patch.object(po_router, "_validate_po_customer_ref_unique"),
+        patch.object(po_router, "apply_header_snapshots"),
+        patch.object(po_router, "validate_po_status_transition"),
+        patch.object(po_router, "_validate_po_has_details_for_confirm"),
+        patch.object(po_router, "create_notification_for_roles"),
+        patch.object(po_router, "log_change"),
+        patch.object(po_router, "sync_mkt_workflow_auto_advance"),
+        patch.object(
+            po_router,
+            "sync_po_details_to_mrp",
+            return_value={"ok": False, "error": "down"},
+        ),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            po_router.update_po(42, body, db, user)
+
+    assert exc.value.status_code == 502
+    assert "Confirm dibatalkan" in str(exc.value.detail)
+    db.rollback.assert_called()
+    db.commit.assert_not_called()
+
+
+def test_mrp_write_forbidden_for_sales():
+    from tests.http_fixtures import clear_api_overrides, make_api_client, set_auth_user
+
+    client = make_api_client()
+    set_auth_user("sales")
+    try:
+        resp = client.post("/api/v1/mrp/rencana-produksi", json={"nama_rencana": "x"})
+        assert resp.status_code == 403
+    finally:
+        clear_api_overrides()

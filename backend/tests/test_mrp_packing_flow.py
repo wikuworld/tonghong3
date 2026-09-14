@@ -75,7 +75,7 @@ def test_packing_rejects_empty_roll_and_finish_without_roll(auth_headers):
         if not pos:
             pytest.skip("WIP tanpa PO")
         po = pos[0]
-        started = client.post(
+        zero = client.post(
             "/mrp/packing",
             headers=auth_headers,
             json={
@@ -83,12 +83,33 @@ def test_packing_rejects_empty_roll_and_finish_without_roll(auth_headers):
                 "no_po": po["no_po"],
                 "no_so": po.get("no_so") or "",
                 "customer": po.get("customer") or "",
-                "qty_sq": po.get("qty_sq") or 0,
+                "qty_sq": 0,
                 "po_id": po.get("po_id"),
             },
         )
-        assert started.status_code in (200, 201), started.text
-        pid = started.json()["id"]
+        if zero.status_code in (200, 201) and (zero.json() or {}).get("reused"):
+            pid = zero.json()["id"]
+        else:
+            assert zero.status_code == 400, zero.text
+            qty = float(po.get("qty_sq") or po.get("qty_outstanding") or 0)
+            if qty <= 0:
+                qty = 1.0
+            started = client.post(
+                "/mrp/packing",
+                headers=auth_headers,
+                json={
+                    "kode_wip": wip,
+                    "no_po": po["no_po"],
+                    "no_so": po.get("no_so") or "",
+                    "customer": po.get("customer") or "",
+                    "qty_sq": qty,
+                    "po_id": po.get("po_id"),
+                },
+            )
+            if started.status_code == 400 and "melebihi" in started.text.lower():
+                pytest.skip("sisa qty packing PO habis")
+            assert started.status_code in (200, 201), started.text
+            pid = started.json()["id"]
 
         bad_roll = client.post(
             f"/mrp/packing/{pid}/actions",

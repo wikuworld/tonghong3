@@ -435,6 +435,7 @@ import {
   listDelivery,
   listDeliveryDetails,
   listInvoice,
+  getDelivery,
   listOutstandingInvoice,
   listPo,
   tandaTerimaBatchHtmlPath,
@@ -579,7 +580,14 @@ async function applyRouteQuery() {
 
   const deliveryId = Number(route.query.delivery_id)
   if (Number.isNaN(deliveryId) || deliveryId <= 0) return
-  const existing = (rows.value || []).find((r) => Number(r.delivery_id) === deliveryId)
+  const wantCreate = String(route.query.create || '') === '1' || route.query.amount != null
+  let existing = null
+  try {
+    const found = await listInvoice({ delivery_id: deliveryId })
+    existing = Array.isArray(found) && found.length ? found[0] : null
+  } catch {
+    existing = (rows.value || []).find((r) => Number(r.delivery_id) === deliveryId) || null
+  }
   if (existing) {
     tab.value = 'outstanding'
     outstandingQ.value = String(existing.invoice_number || '').trim()
@@ -587,7 +595,7 @@ async function applyRouteQuery() {
     await loadOutstanding()
     return
   }
-  if (!canCreate) return
+  if (!canCreate || !wantCreate) return
   if (formVisible.value && Number(form.delivery_id) === deliveryId) return
   await openCreateFromDelivery(deliveryId, route.query.amount)
 }
@@ -873,11 +881,21 @@ async function onDeliveryPick(did) {
     form.po_id = null
     return
   }
-  const d = deliveries.value.find((x) => x.id === did)
+  let d = deliveries.value.find((x) => x.id === did)
+  if (!d) {
+    try {
+      d = await getDelivery(did)
+      if (d && !deliveries.value.some((x) => Number(x.id) === Number(d.id))) {
+        deliveries.value = [...deliveries.value, d]
+      }
+    } catch {
+      d = null
+    }
+  }
   if (d?.customer_id) {
     form.customer_id = d.customer_id
     const c = customers.value.find((x) => x.id === d.customer_id)
-    form.customer_name = c?.name || ''
+    form.customer_name = c?.name || d.customer_name || ''
   }
   if (!form.invoice_date) {
     form.invoice_date = toIsoDate(d?.delivery_date || new Date())
@@ -955,7 +973,7 @@ async function submit() {
 }
 
 watch(
-  () => [route.query.invoice_id, route.query.tab, route.query.delivery_id, route.query.amount],
+  () => [route.query.invoice_id, route.query.tab, route.query.delivery_id, route.query.amount, route.query.create],
   async () => {
     await applyRouteQuery()
   },

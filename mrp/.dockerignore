@@ -1,0 +1,8 @@
+archives/
+venv/
+**/__pycache__/
+**/*.pyc
+.cursor/
+*.tgz
+*.pdf
+.git/

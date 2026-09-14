@@ -1,27 +1,20 @@
 <template>
   <AdminSection :title="t('pages.mrpLab.title')" :subtitle="t('pages.mrpLab.subtitle')">
     <template #actions>
-      <el-input
-        v-model="search"
-        clearable
-        class="mrp-toolbar-search"
-        :placeholder="t('pages.mrpLab.searchPlaceholder')"
-      />
-      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
+    <div class="admin-inner-card mb-3">
+      <el-input
+        v-model="search"
+        clearable
+        :placeholder="t('pages.mrpLab.searchPlaceholder')"
+        class="max-w-md"
+      />
+    </div>
+
     <div class="admin-inner-card">
-      <div class="admin-inner-card__head">
-        <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpLab.listSectionTitle') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpLab.listSubtitle') }}</p>
-        </div>
-      </div>
-      <div class="mkt-section-body">
-        <p class="admin-scroll-hint">{{ t('pages.mrpLab.scrollHint') }}</p>
-        <div class="admin-table-scroll">
       <el-table
         :data="filteredLots"
         v-loading="loading"
@@ -31,13 +24,13 @@
         class="admin-table"
         row-key="kode_lot_warna"
         max-height="62vh"
-        :empty-text="t('pages.mrpLab.tableEmpty')"
+        empty-text="—"
       >
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="mrp-lab-expand">
               <p class="text-xs text-slate-500 mb-2">{{ t('pages.mrpLab.items') }}</p>
-              <el-table :data="row.items || []" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpLab.tableEmpty')">
+              <el-table :data="row.items || []" border size="small" empty-text="—">
                 <el-table-column type="index" width="48" :label="t('common.noLabel')" align="center" />
                 <el-table-column prop="kode_kimia" :label="t('pages.mrpLab.kimia')" min-width="110" show-overflow-tooltip />
                 <el-table-column prop="nama_kimia" :label="t('common.name')" min-width="140" show-overflow-tooltip />
@@ -59,7 +52,7 @@
         <el-table-column :label="t('pages.mrpLab.rpi')" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ dash(row.kode_rencana_item) }}</template>
         </el-table-column>
-        <el-table-column :label="t('pages.mrpLab.wip')" min-width="120" show-overflow-tooltip>
+        <el-table-column label="WIP" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ dash(row.kode_lot_wip) }}</template>
         </el-table-column>
         <el-table-column :label="t('common.customer')" min-width="120" show-overflow-tooltip>
@@ -82,8 +75,6 @@
           <template #default="{ row }">{{ formatDate(row.date_created || row.tanggal_rencana) }}</template>
         </el-table-column>
       </el-table>
-        </div>
-      </div>
     </div>
 
     <el-dialog

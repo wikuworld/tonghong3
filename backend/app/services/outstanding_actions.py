@@ -11,7 +11,15 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import DeliveryDetail, DeliveryHeader, PackingHeader, PoDetail, PoDetailDelivery, PoHeader
+from app.models import (
+    DeliveryDetail,
+    DeliveryHeader,
+    PackingHeader,
+    PoDetail,
+    PoDetailDelivery,
+    PoHeader,
+    ProductionDetail,
+)
 from app.schemas import (
     DeliveryScheduleItem,
     OutstandingScheduleBatchIn,
@@ -293,18 +301,35 @@ def apply_outstanding_ship_batch(
                 production_detail_id=prod_id,
                 qty=qty,
             )
+            pd = db.get(ProductionDetail, prod_id)
+            resolved_pod = int(pd.po_detail_id) if pd and pd.po_detail_id else None
+            body_pod = int(ln.po_detail_id) if ln.po_detail_id else None
+            if body_pod and resolved_pod and body_pod != resolved_pod:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"po_detail_id {body_pod} tidak cocok dengan production detail "
+                        f"#{prod_id} (SO line {resolved_pod})"
+                    ),
+                )
+            po_detail_id = resolved_pod or body_pod
+            if po_detail_id is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"production detail #{prod_id} tidak tertaut baris SO",
+                )
             db.add(
                 DeliveryDetail(
                     delivery_id=hdr.id,
                     production_detail_id=prod_id,
                     packing_detail_id=int(ln.packing_detail_id) if ln.packing_detail_id else None,
-                    po_detail_id=int(ln.po_detail_id),
+                    po_detail_id=int(po_detail_id),
                     qty=qty,
                 )
             )
             line_audit.append(
                 {
-                    "po_detail_id": int(ln.po_detail_id),
+                    "po_detail_id": int(po_detail_id),
                     "production_detail_id": prod_id,
                     "packing_id": packing_id,
                     "packing_detail_id": int(ln.packing_detail_id) if ln.packing_detail_id else None,

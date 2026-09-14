@@ -200,7 +200,10 @@ def _delivered_qty_by_po_detail(db: Session) -> dict[int, Decimal]:
     """Qty terkirim per baris SO: jalur produksi + DeliveryDetail.po_detail_id langsung (MRP)."""
     delivered: dict[int, Decimal] = {}
     rows = db.execute(
-        select(ProductionDetail.po_detail_id, func.sum(DeliveryDetail.qty))
+        select(
+            ProductionDetail.po_detail_id,
+            func.sum(DeliveryDetail.qty - func.coalesce(DeliveryDetail.returned_qty, 0)),
+        )
         .join(DeliveryDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
         .group_by(ProductionDetail.po_detail_id)
     ).all()
@@ -209,7 +212,10 @@ def _delivered_qty_by_po_detail(db: Session) -> dict[int, Decimal]:
             continue
         delivered[int(pod_id)] = total or Decimal(0)
     direct_rows = db.execute(
-        select(DeliveryDetail.po_detail_id, func.sum(DeliveryDetail.qty))
+        select(
+            DeliveryDetail.po_detail_id,
+            func.sum(DeliveryDetail.qty - func.coalesce(DeliveryDetail.returned_qty, 0)),
+        )
         .where(
             DeliveryDetail.po_detail_id.is_not(None),
             or_(

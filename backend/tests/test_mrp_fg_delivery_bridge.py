@@ -26,6 +26,11 @@ def test_sum_delivered_includes_direct_po_detail():
     assert total == Decimal("35")
 
 
+def test_net_delivered_qty_expr_subtracts_returns():
+    compiled = str(bal._net_delivered_qty_expr().compile())
+    assert "returned_qty" in compiled.lower()
+
+
 def test_validate_delivery_qty_with_po_detail_id():
     db = MagicMock()
     pod = PoDetail(id=7, quantity_order=Decimal("100"))

@@ -106,6 +106,7 @@ def test_validate_invoice_allows_null_packing_when_invpl_printed():
     ph = SimpleNamespace(invpl_printed_at=datetime(2026, 9, 1))
 
     db = MagicMock()
+    db.scalars.return_value.first.return_value = None
     db.scalars.return_value.all.return_value = [dd]
     db.get.side_effect = lambda model, pk: {
         (DeliveryHeader, 6): hdr,
@@ -114,6 +115,24 @@ def test_validate_invoice_allows_null_packing_when_invpl_printed():
     }.get((model, pk))
 
     validate_invoice_against_delivery(db, 6, None)
+
+
+def test_validate_invoice_rejects_duplicate_delivery():
+    from fastapi import HTTPException
+
+    from app.models import DeliveryHeader
+    from app.services.business_rules import validate_invoice_against_delivery
+
+    hdr = SimpleNamespace(id=6, packing_id=1, status="sent")
+    db = MagicMock()
+    db.get.return_value = hdr
+    db.scalars.return_value.first.return_value = 41
+    try:
+        validate_invoice_against_delivery(db, 6, None)
+        raise AssertionError("expected HTTPException")
+    except HTTPException as ei:
+        assert ei.status_code == 400
+        assert "sudah ada" in ei.detail
 
 
 def test_validate_invoice_rejects_null_packing_without_invpl():
@@ -128,6 +147,7 @@ def test_validate_invoice_rejects_null_packing_without_invpl():
     ph = SimpleNamespace(invpl_printed_at=None)
 
     db = MagicMock()
+    db.scalars.return_value.first.return_value = None
     db.scalars.return_value.all.return_value = [dd]
     db.get.side_effect = lambda model, pk: {
         (DeliveryHeader, 6): hdr,

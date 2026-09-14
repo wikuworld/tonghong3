@@ -1,13 +1,6 @@
 <template>
   <AdminSection :title="t('pages.mrpGudangFg.title')" :subtitle="t('pages.mrpGudangFg.subtitle')">
     <template #actions>
-      <el-input
-        v-model="search"
-        clearable
-        class="mrp-toolbar-search"
-        :placeholder="t('pages.mrpGudangFg.searchPlaceholder')"
-      />
-      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
     </template>
 
@@ -21,57 +14,53 @@
     </div>
 
     <div v-if="canUpdate" class="admin-inner-card mb-4">
-      <div class="admin-inner-card__head">
-        <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpGudangFg.outTitle') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpGudangFg.outHint') }}</p>
-        </div>
-      </div>
-      <div class="mkt-section-body">
-        <el-button type="primary" @click="goOutstanding">{{ t('pages.mrpGudangFg.goOutstanding') }}</el-button>
+      <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpGudangFg.outTitle') }}</h3>
+      <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpGudangFg.outHint') }}</p>
+      <div class="flex gap-2 flex-wrap items-center">
+        <el-input
+          v-model="outForm.kode_packing"
+          :placeholder="t('pages.mrpGudangFg.outPlaceholder')"
+          class="max-w-xs"
+          clearable
+          @keyup.enter="doOut"
+        />
+        <el-input
+          v-model="outForm.keterangan"
+          :placeholder="t('common.notes')"
+          class="max-w-xs"
+          clearable
+          @keyup.enter="doOut"
+        />
+        <el-button type="danger" :loading="outing" @click="doOut">
+          {{ t('pages.mrpGudangFg.outBtn') }}
+        </el-button>
       </div>
     </div>
 
     <div class="admin-inner-card">
-      <div class="admin-inner-card__head">
+      <div class="mrp-fg-list-head mb-3">
         <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpGudangFg.listSectionTitle') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpGudangFg.listSubtitle') }}</p>
+          <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpGudangFg.listTitle') }}</h3>
+          <p class="text-xs text-slate-500 mb-0">
+            {{ t('pages.mrpGudangFg.statsLine', { inStock: stats.inStock, out: stats.out, failed: stats.failed }) }}
+          </p>
+        </div>
+        <div class="flex gap-2 flex-wrap items-center">
+          <el-radio-group v-model="statusFilter" size="small" @change="reload">
+            <el-radio-button value="">{{ t('pages.mrpGudangFg.filterAll') }}</el-radio-button>
+            <el-radio-button value="in_stock">{{ t('pages.mrpGudangFg.statusInStock') }}</el-radio-button>
+            <el-radio-button value="out">{{ t('pages.mrpGudangFg.statusOut') }}</el-radio-button>
+          </el-radio-group>
+          <el-input
+            v-model="search"
+            clearable
+            size="small"
+            class="w-56"
+            :placeholder="t('pages.mrpGudangFg.searchPlaceholder')"
+          />
         </div>
       </div>
-      <div class="admin-stats-grid admin-stats-grid--3">
-        <div class="admin-stat-card admin-stat-card--success">
-          <span class="admin-stat-card__value">{{ stats.inStock }}</span>
-          <span class="admin-stat-card__label">{{ t('pages.mrpGudangFg.statInStock') }}</span>
-        </div>
-        <div class="admin-stat-card admin-stat-card--info">
-          <span class="admin-stat-card__value">{{ stats.out }}</span>
-          <span class="admin-stat-card__label">{{ t('pages.mrpGudangFg.statOut') }}</span>
-        </div>
-        <div class="admin-stat-card admin-stat-card--warn">
-          <span class="admin-stat-card__value">{{ stats.failed }}</span>
-          <span class="admin-stat-card__label">{{ t('pages.mrpGudangFg.statFailed') }}</span>
-        </div>
-      </div>
-      <div class="mkt-section-body">
-        <div class="filter-panel mb-4">
-          <p class="filter-panel__title">{{ t('common.filter') }}</p>
-          <el-form class="filter-form" label-position="top">
-            <el-row :gutter="12">
-              <el-col :xs="24" :sm="12" :md="10" :lg="8">
-                <el-form-item :label="t('common.status')">
-                  <el-radio-group v-model="statusFilter" size="small" @change="reload">
-                    <el-radio-button value="">{{ t('pages.mrpGudangFg.filterAll') }}</el-radio-button>
-                    <el-radio-button value="in_stock">{{ t('pages.mrpGudangFg.statusInStock') }}</el-radio-button>
-                    <el-radio-button value="out">{{ t('pages.mrpGudangFg.statusOut') }}</el-radio-button>
-                  </el-radio-group>
-                </el-form-item>
-              </el-col>
-            </el-row>
-          </el-form>
-        </div>
-        <p class="admin-scroll-hint">{{ t('pages.mrpGudangFg.scrollHint') }}</p>
-        <div class="admin-table-scroll">
+
       <el-table
         :data="filteredRows"
         v-loading="loading"
@@ -79,7 +68,7 @@
         stripe
         size="small"
         class="admin-table"
-        :empty-text="t('pages.mrpGudangFg.tableEmpty')"
+        empty-text="—"
       >
         <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
         <el-table-column
@@ -88,7 +77,7 @@
           min-width="140"
           show-overflow-tooltip
         />
-        <el-table-column prop="kode_wip" :label="t('pages.mrpGudangFg.wip')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="kode_wip" label="WIP" min-width="120" show-overflow-tooltip />
         <el-table-column :label="t('common.customer')" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ dash(row.customer) }}</template>
         </el-table-column>
@@ -124,7 +113,7 @@
                 {{ t('pages.mrpGudangFg.bridgeFailed') }}
               </el-tag>
             </el-tooltip>
-            <span v-else class="text-slate-400">—</span>
+            <span v-else class="text-gray-400">—</span>
           </template>
         </el-table-column>
         <el-table-column :label="t('pages.mrpGudangFg.dateIn')" width="120">
@@ -139,16 +128,14 @@
             <el-button
               v-if="canUpdate && row.status === 'in_stock'"
               link
-              type="primary"
-              @click="goOutstanding"
+              type="danger"
+              @click="fillOut(row)"
             >
-              {{ t('pages.mrpGudangFg.goOutstanding') }}
+              OUT
             </el-button>
           </template>
         </el-table-column>
       </el-table>
-        </div>
-      </div>
     </div>
 
     <el-drawer v-model="detailOpen" size="48%" :title="detail?.fg?.kode_packing || t('common.detail')">
@@ -163,35 +150,35 @@
           :description="detail.fg.bridge_error || ''"
         />
 
-        <div class="admin-stats-grid admin-stats-grid--3 mb-4">
-          <div class="admin-stat-card">
-            <span class="admin-stat-card__label">{{ t('pages.mrpGudangFg.wip') }}</span>
+        <div class="mrp-fg-meta mb-4">
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">WIP</span>
             <span>{{ dash(detail.fg.kode_wip) }}</span>
           </div>
-          <div class="admin-stat-card">
-            <span class="admin-stat-card__label">{{ t('common.customer') }}</span>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('common.customer') }}</span>
             <span>{{ dash(detail.fg.customer) }}</span>
           </div>
-          <div class="admin-stat-card">
-            <span class="admin-stat-card__label">{{ t('common.status') }}</span>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('common.status') }}</span>
             <el-tag :type="statusType(detail.fg.status)" size="small" effect="plain">
               {{ statusLabel(detail.fg.status) }}
             </el-tag>
           </div>
-          <div class="admin-stat-card">
-            <span class="admin-stat-card__label">{{ t('pages.mrpPacking.pieces') }} / {{ t('pages.mrpPacking.quantity') }}</span>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpPacking.pieces') }} / {{ t('pages.mrpPacking.quantity') }}</span>
             <span>{{ formatQty(detail.fg.total_lembar) }} / {{ formatQty(detail.fg.total_ukuran) }}</span>
           </div>
-          <div class="admin-stat-card">
-            <span class="admin-stat-card__label">{{ t('pages.mrpGudangFg.dateIn') }}</span>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.dateIn') }}</span>
             <span>{{ formatDateTime(detail.fg.date_in) }}</span>
           </div>
-          <div v-if="detail.fg.date_out" class="admin-stat-card">
-            <span class="admin-stat-card__label">{{ t('pages.mrpGudangFg.dateOut') }}</span>
+          <div v-if="detail.fg.date_out" class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.dateOut') }}</span>
             <span>{{ formatDateTime(detail.fg.date_out) }} — {{ dash(detail.fg.keterangan_out) }}</span>
           </div>
-          <div v-if="detail.fg.erp_delivery_id" class="admin-stat-card">
-            <span class="admin-stat-card__label">{{ t('pages.mrpGudangFg.erpDelivery') }}</span>
+          <div v-if="detail.fg.erp_delivery_id" class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.erpDelivery') }}</span>
             <el-button link type="primary" @click="goDelivery(detail.fg.erp_delivery_id)">
               {{ detail.fg.erp_delivery_number || `#${detail.fg.erp_delivery_id}` }}
             </el-button>
@@ -199,13 +186,13 @@
         </div>
 
         <div v-if="canUpdate && detail.fg.status === 'in_stock'" class="mb-4">
-          <el-button type="primary" size="small" @click="goOutstanding">
-            {{ t('pages.mrpGudangFg.goOutstanding') }}
+          <el-button type="danger" size="small" :loading="outing" @click="outFromDetail">
+            {{ t('pages.mrpGudangFg.outBtn') }}
           </el-button>
         </div>
 
         <h4 class="mb-2 font-semibold">{{ t('pages.mrpPacking.rolls') }}</h4>
-        <el-table :data="detail.rolls || []" border stripe size="small" class="admin-table mb-4" :empty-text="t('pages.mrpGudangFg.tableEmpty')">
+        <el-table :data="detail.rolls || []" border size="small" class="mb-4" empty-text="—">
           <el-table-column prop="roll_no" :label="t('pages.mrpPacking.artNo')" width="70" />
           <el-table-column :label="t('pages.mrpPacking.pieces')" align="right">
             <template #default="{ row }">{{ formatQty(row.lembar) }}</template>
@@ -216,7 +203,7 @@
         </el-table>
 
         <h4 class="mb-2 font-semibold">{{ t('pages.mrpPacking.poSection') }}</h4>
-        <el-table :data="detail.packing_pos || []" border stripe size="small" class="admin-table mb-4" :empty-text="t('pages.mrpGudangFg.tableEmpty')">
+        <el-table :data="detail.packing_pos || []" border size="small" class="mb-4" empty-text="—">
           <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" show-overflow-tooltip />
           <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="90" show-overflow-tooltip />
           <el-table-column :label="t('pages.mrpPacking.poItem')" min-width="140" show-overflow-tooltip>
@@ -225,12 +212,12 @@
           <el-table-column :label="t('pages.mrpPacking.qtyPlan')" width="100" align="right">
             <template #default="{ row }">{{ formatQty(row.qty_sq) }}</template>
           </el-table-column>
-          <el-table-column prop="source_detail_id" :label="t('common.poDetail')" width="100" />
+          <el-table-column prop="source_detail_id" label="PO Detail" width="100" />
         </el-table>
 
         <template v-if="(detail.bridge_lines || []).length">
           <h4 class="mb-2 font-semibold">{{ t('pages.mrpGudangFg.bridgeLines') }}</h4>
-          <el-table :data="detail.bridge_lines || []" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpGudangFg.tableEmpty')">
+          <el-table :data="detail.bridge_lines || []" border size="small" empty-text="—">
             <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" show-overflow-tooltip />
             <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="90" show-overflow-tooltip />
             <el-table-column :label="t('pages.mrpPacking.poItem')" min-width="140" show-overflow-tooltip>
@@ -239,7 +226,7 @@
             <el-table-column :label="t('pages.mrpPacking.quantity')" width="100" align="right">
               <template #default="{ row }">{{ formatQty(row.qty_sq) }}</template>
             </el-table-column>
-            <el-table-column prop="source_detail_id" :label="t('common.poDetail')" width="100" />
+            <el-table-column prop="source_detail_id" label="PO Detail" width="100" />
           </el-table>
         </template>
       </template>
@@ -248,24 +235,26 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import { can } from '../../../security/permissions'
-import { mrpGetGudangFg, mrpListGudangFg } from '../../../api/client'
+import { mrpGetGudangFg, mrpGudangFgOut, mrpListGudangFg } from '../../../api/client'
 
 const { t } = useI18n()
 const router = useRouter()
 const loading = ref(false)
+const outing = ref(false)
 const rows = ref([])
 const search = ref('')
 const statusFilter = ref('')
 const detailOpen = ref(false)
 const detail = ref(null)
 const canUpdate = computed(() => can('mrpShopfloor', 'update'))
+const outForm = reactive({ kode_packing: '', keterangan: '' })
 
 const filteredRows = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -349,8 +338,17 @@ function goDelivery(id) {
   router.push({ path: '/admin/delivery', query: { delivery_id: id } })
 }
 
-function goOutstanding() {
-  router.push({ path: '/admin/marketing-flow/outstanding' })
+function fillOut(row) {
+  outForm.kode_packing = row?.kode_packing || ''
+  if (row?.bridge_error) {
+    ElMessage.warning(row.bridge_error)
+  }
+}
+
+function outFromDetail() {
+  if (!detail.value?.fg) return
+  fillOut(detail.value.fg)
+  doOut()
 }
 
 async function reload() {
@@ -363,6 +361,43 @@ async function reload() {
     ElMessage.error(errMsg(e))
   } finally {
     loading.value = false
+  }
+}
+
+async function doOut() {
+  const kode = outForm.kode_packing.trim()
+  if (!kode) {
+    ElMessage.warning(t('pages.mrpGudangFg.outPlaceholder'))
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      t('pages.mrpGudangFg.outConfirm', { kode }),
+      t('pages.mrpGudangFg.outBtn'),
+      { type: 'warning', confirmButtonText: t('pages.mrpGudangFg.outBtn'), cancelButtonText: t('common.cancel') },
+    )
+  } catch {
+    return
+  }
+  outing.value = true
+  try {
+    const res = await mrpGudangFgOut({
+      kode_packing: kode,
+      keterangan: outForm.keterangan.trim(),
+    })
+    const dn = res?.erp_delivery_number || (res?.erp_delivery_id ? `#${res.erp_delivery_id}` : '')
+    ElMessage.success(
+      dn ? t('pages.mrpGudangFg.outBridged', { delivery: dn }) : t('common.saved'),
+    )
+    outForm.kode_packing = ''
+    outForm.keterangan = ''
+    detailOpen.value = false
+    await reload()
+  } catch (e) {
+    ElMessage.error(errMsg(e))
+    await reload()
+  } finally {
+    outing.value = false
   }
 }
 
@@ -379,5 +414,41 @@ onMounted(reload)
 </script>
 
 <style scoped>
-.max-w-xs { max-width: 20rem; }
+.max-w-xs {
+  max-width: 20rem;
+}
+.w-56 {
+  width: 14rem;
+}
+.mrp-fg-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.mrp-fg-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.mrp-fg-meta__item {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.875rem;
+}
+.mrp-fg-meta__label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 0.15rem;
+}
+@media (max-width: 700px) {
+  .mrp-fg-meta {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

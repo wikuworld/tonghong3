@@ -89,7 +89,10 @@ def allocate_tanda_terima_number(db: Session, *, on_date: date | None = None) ->
     yyyy = str(d.year)
     suffix = f"/{mm}/{yyyy}"
     rows = db.scalars(
-        select(Invoice.receipt_no).where(Invoice.receipt_no.is_not(None)).where(Invoice.receipt_no.like(f"%{suffix}"))
+        select(Invoice.receipt_no)
+        .where(Invoice.receipt_no.is_not(None))
+        .where(Invoice.receipt_no.like(f"%{suffix}"))
+        .with_for_update()
     ).all()
     max_seq = 0
     for raw in rows:

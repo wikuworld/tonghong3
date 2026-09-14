@@ -1,24 +1,14 @@
 <template>
   <AdminSection :title="t('pages.mrpMasterTreatment.title')" :subtitle="t('pages.mrpMasterTreatment.subtitle')">
     <template #actions>
-      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
     <div class="admin-inner-card">
-      <div class="admin-inner-card__head">
-        <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpMasterTreatment.listSectionTitle') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpMasterTreatment.listSubtitle') }}</p>
-        </div>
-      </div>
-      <div class="mkt-section-body">
-        <p class="admin-scroll-hint">{{ t('pages.mrpMasterTreatment.scrollHint') }}</p>
-        <div class="admin-table-scroll">
-      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpMasterTreatment.tableEmpty')">
+      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table">
         <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
-        <el-table-column prop="jenis" :label="t('pages.mrpMasterTreatment.jenis')" width="100" />
+        <el-table-column prop="jenis" label="Jenis" width="100" />
         <el-table-column prop="nama_treatment" :label="t('common.name')" min-width="180" />
         <el-table-column prop="created_at" :label="t('common.date')" min-width="140" />
         <el-table-column v-if="canCreate" :label="t('common.actions')" width="160" fixed="right">
@@ -28,13 +18,11 @@
           </template>
         </el-table-column>
       </el-table>
-        </div>
-      </div>
     </div>
 
     <el-dialog v-model="dialogOpen" :title="editId ? t('common.edit') : t('common.create')" width="420px" destroy-on-close>
       <el-form label-position="top">
-        <el-form-item :label="t('pages.mrpMasterTreatment.jenis')" required>
+        <el-form-item label="Jenis" required>
           <el-select v-model="form.jenis" class="w-full">
             <el-option label="PU" value="PU" />
             <el-option label="Suede" value="Suede" />

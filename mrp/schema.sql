@@ -43,7 +43,6 @@ CREATE TABLE IF NOT EXISTS tbl_master_po (
     id INT AUTO_INCREMENT PRIMARY KEY,
     no_po VARCHAR(50) NOT NULL,
     no_so VARCHAR(50) DEFAULT NULL,
-    lot_number VARCHAR(100) DEFAULT NULL,
     customer VARCHAR(150) DEFAULT NULL,
     customer_id INT DEFAULT NULL,
     item_name VARCHAR(200) DEFAULT NULL,
@@ -104,7 +103,20 @@ CREATE TABLE IF NOT EXISTS tbl_rencana_item_po (
     INDEX idx_item_po (item_id)
 );
 
--- tbl_rencana_produksi_detail dihapus (tidak dipakai; alokasi ada di tbl_rencana_item_po).
+CREATE TABLE IF NOT EXISTS tbl_rencana_produksi_detail (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    rencana_id INT NOT NULL,
+    po_id INT DEFAULT NULL,
+    no_po VARCHAR(50) NOT NULL,
+    no_so VARCHAR(50) DEFAULT NULL,
+    item_name VARCHAR(200) DEFAULT NULL,
+    sq_ft DECIMAL(12,2) DEFAULT 0,
+    qty_order DECIMAL(12,2) DEFAULT 0,
+    qty_proses DECIMAL(12,2) DEFAULT 0,
+    qty_sisa DECIMAL(12,2) DEFAULT 0,
+    FOREIGN KEY (rencana_id) REFERENCES tbl_rencana_produksi(id) ON DELETE CASCADE,
+    INDEX idx_rencana (rencana_id)
+);
 
 CREATE TABLE IF NOT EXISTS tbl_master_treatment (
     id INT AUTO_INCREMENT PRIMARY KEY,

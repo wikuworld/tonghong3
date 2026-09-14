@@ -99,10 +99,30 @@ def test_palet_in_out_and_yl_cap(auth_headers):
         assert created.status_code in (200, 201), created.text
         assert created.json().get("yl_count") == 1
 
+        again = client.post(
+            "/mrp/palet/in",
+            headers=auth_headers,
+            json={
+                "kode_palet": kode_palet,
+                "keterangan": "smoke additive",
+                "items": [
+                    {
+                        "kode_yl": kode_yl,
+                        "thickness": "1.0",
+                        "warna": "Black",
+                        "qty": 5,
+                    }
+                ],
+            },
+        )
+        assert again.status_code in (200, 201), again.text
+
         yl = client.get("/mrp/yl", headers=auth_headers, params={"kode_palet": kode_palet})
         assert yl.status_code == 200, yl.text
         rows = yl.json() or []
-        assert any(r.get("kode_yl") == kode_yl for r in rows)
+        hit = next((r for r in rows if r.get("kode_yl") == kode_yl), None)
+        assert hit is not None
+        assert float(hit.get("qty") or 0) == 15.0
 
         over = client.post(
             "/mrp/yl/movement",

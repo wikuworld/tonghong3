@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import date
 
 import httpx
@@ -113,6 +114,14 @@ def test_proses_requires_start_before_ky(auth_headers):
         assert created.status_code in (200, 201), created.text
         pid = created.json()["id"]
 
+        legacy_scan = client.post(
+            f"/mrp/proses/{pid}/actions",
+            headers=auth_headers,
+            json={"action": "scan"},
+        )
+        assert legacy_scan.status_code == 400, legacy_scan.text
+        assert "ky" in legacy_scan.text.lower()
+
         bad = client.post(
             f"/mrp/proses/{pid}/actions",
             headers=auth_headers,
@@ -136,7 +145,7 @@ def test_proses_consume_yl_and_complete(auth_headers):
         if not treatment:
             pytest.skip("tidak ada master treatment jenis PU")
 
-        suffix = date.today().strftime("%m%d%H%M%S")
+        suffix = str(int(time.time() * 1000))[-10:]
         kode_palet = f"KY-T{suffix}"
         kode_yl = f"YL-T{suffix}"
         stock_qty = 50.0
@@ -196,11 +205,9 @@ def test_proses_consume_yl_and_complete(auth_headers):
         assert "out" in selesai.json().get("message", "").lower() or "OUT" in selesai.text
 
         # stok YL berkurang
-        yl = client.get(f"/mrp/palet/{kode_palet}/yl", headers=auth_headers)
+        yl = client.get("/mrp/yl", headers=auth_headers, params={"kode_palet": kode_palet})
         assert yl.status_code == 200, yl.text
-        rows = yl.json() if isinstance(yl.json(), list) else yl.json().get("items") or yl.json().get("yls") or []
-        if isinstance(rows, dict):
-            rows = rows.get("yls") or []
+        rows = yl.json() if isinstance(yl.json(), list) else []
         hit = next((r for r in rows if str(r.get("kode_yl")) == kode_yl), None)
         if hit is None:
             # terhapus karena sisa 0 — di sini sisa harus 38

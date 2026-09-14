@@ -1,18 +1,13 @@
 <template>
   <AdminSection :title="t('pages.mrpCheckpoint.title')" :subtitle="t('pages.mrpCheckpoint.subtitle')">
     <template #actions>
-      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
     </template>
 
     <div v-if="canCreate" class="admin-inner-card mb-4">
-      <div class="admin-inner-card__head">
-        <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpCheckpoint.scanSectionTitle') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpCheckpoint.scanSectionSubtitle') }}</p>
-        </div>
-      </div>
-      <div class="mkt-section-body">
+      <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpCheckpoint.createTitle') }}</h3>
+      <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpCheckpoint.createHint') }}</p>
+
       <div class="flex gap-2 flex-wrap mb-3">
         <el-input
           v-model="form.kode_wip"
@@ -26,40 +21,40 @@
         </el-button>
       </div>
 
-      <div v-if="scanInfo" class="admin-stats-grid admin-stats-grid--4 mb-3">
-        <div class="admin-stat-card">
-          <span class="admin-stat-card__label">{{ t('pages.mrpCheckpoint.wipShort') }}</span>
+      <div v-if="scanInfo" class="mrp-cp-prep mb-3">
+        <div class="mrp-cp-prep__item">
+          <span class="mrp-cp-prep__label">WIP</span>
           <span>{{ dash(scanInfo.kode_wip) }}</span>
         </div>
-        <div class="admin-stat-card">
-          <span class="admin-stat-card__label">{{ t('common.customer') }}</span>
+        <div class="mrp-cp-prep__item">
+          <span class="mrp-cp-prep__label">{{ t('common.customer') }}</span>
           <span>{{ dash(scanInfo.customer) }}</span>
         </div>
-        <div class="admin-stat-card">
-          <span class="admin-stat-card__label">{{ t('pages.mrpCheckpoint.currentStatus') }}</span>
+        <div class="mrp-cp-prep__item">
+          <span class="mrp-cp-prep__label">{{ t('pages.mrpCheckpoint.currentStatus') }}</span>
           <el-tag v-if="scanInfo.checkpoint_status" size="small" effect="plain">
             {{ scanInfo.checkpoint_status }}
           </el-tag>
           <span v-else>{{ dash(scanInfo.prep_status) }}</span>
         </div>
-        <div class="admin-stat-card">
-          <span class="admin-stat-card__label">{{ t('pages.mrpCheckpoint.treatmentPlan') }}</span>
+        <div class="mrp-cp-prep__item">
+          <span class="mrp-cp-prep__label">{{ t('pages.mrpCheckpoint.treatmentPlan') }}</span>
           <span>{{ dash(scanInfo.treatment_list) }}</span>
         </div>
-        <div class="admin-stat-card">
-          <span class="admin-stat-card__label">{{ t('pages.mrpCheckpoint.tebalTarget') }}</span>
+        <div class="mrp-cp-prep__item">
+          <span class="mrp-cp-prep__label">{{ t('pages.mrpCheckpoint.tebalTarget') }}</span>
           <span>{{ dash(scanInfo.tebal_target) }}</span>
         </div>
-        <div class="admin-stat-card">
-          <span class="admin-stat-card__label">{{ t('common.color') }}</span>
+        <div class="mrp-cp-prep__item">
+          <span class="mrp-cp-prep__label">{{ t('common.color') }}</span>
           <span>{{ dash(scanInfo.warna) }}</span>
         </div>
-        <div class="admin-stat-card">
-          <span class="admin-stat-card__label">{{ t('pages.mrpPacking.kodePacking') }}</span>
+        <div class="mrp-cp-prep__item">
+          <span class="mrp-cp-prep__label">{{ t('pages.mrpPacking.kodePacking') }}</span>
           <span>{{ dash(scanInfo.kode_packing) }}</span>
         </div>
-        <div class="admin-stat-card">
-          <span class="admin-stat-card__label">{{ t('pages.mrpCheckpoint.erpProd') }}</span>
+        <div class="mrp-cp-prep__item">
+          <span class="mrp-cp-prep__label">{{ t('pages.mrpCheckpoint.erpProd') }}</span>
           <span>{{ scanInfo.erp_production_detail_id || '—' }}</span>
         </div>
       </div>
@@ -108,21 +103,18 @@
           {{ t('common.save') }}
         </el-button>
       </div>
-      </div>
     </div>
 
     <div class="admin-inner-card">
-      <div class="admin-inner-card__head">
+      <div class="mrp-cp-list-head mb-3">
         <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpCheckpoint.listSectionTitle') }}</h3>
-          <p class="admin-inner-card__sub">
+          <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpCheckpoint.listTitle') }}</h3>
+          <p class="text-xs text-slate-500 mb-0">
             {{ scanInfo ? t('pages.mrpCheckpoint.listHint') : t('pages.mrpCheckpoint.listEmpty') }}
           </p>
         </div>
       </div>
-      <div class="mkt-section-body">
-        <p class="admin-scroll-hint">{{ t('pages.mrpCheckpoint.scrollHint') }}</p>
-        <div class="admin-table-scroll">
+
       <el-table
         :data="rows"
         v-loading="loading"
@@ -130,7 +122,7 @@
         stripe
         size="small"
         class="admin-table"
-        :empty-text="t('pages.mrpCheckpoint.tableEmpty')"
+        :empty-text="t('pages.mrpCheckpoint.listEmpty')"
       >
         <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
         <el-table-column prop="kode_wip" :label="t('pages.mrpCheckpoint.wip')" min-width="140" show-overflow-tooltip />
@@ -157,8 +149,6 @@
           </template>
         </el-table-column>
       </el-table>
-        </div>
-      </div>
     </div>
   </AdminSection>
 </template>
@@ -357,11 +347,35 @@ onMounted(() => {
 .max-w-xs {
   max-width: 20rem;
 }
-
-
-
-
+.mrp-cp-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.mrp-cp-prep {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+.mrp-cp-prep__item {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.875rem;
+}
+.mrp-cp-prep__label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 0.15rem;
+}
 @media (max-width: 800px) {
-  
+  .mrp-cp-prep {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>

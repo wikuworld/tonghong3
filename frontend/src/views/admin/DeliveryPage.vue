@@ -1329,19 +1329,25 @@ function isDeliverySent(row) {
   return String(row?.delivery_status || row?.status || '').toLowerCase() === 'sent'
 }
 
-function deliveryLineAmount(deliveryId) {
-  return (lineRows.value || [])
-    .filter((r) => Number(r.delivery_id) === Number(deliveryId))
-    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0)
+async function deliveryLineAmount(deliveryId) {
+  try {
+    const lines = await listDeliveryDetails(deliveryId)
+    return (lines || []).reduce((sum, r) => sum + (Number(r.amount) || 0), 0)
+  } catch {
+    return (lineRows.value || [])
+      .filter((r) => Number(r.delivery_id) === Number(deliveryId))
+      .reduce((sum, r) => sum + (Number(r.amount) || 0), 0)
+  }
 }
 
 function canCreateInvoiceFromLine(row) {
   return canCreateInvoice && isDeliverySent(row) && !String(row?.invoice_number || '').trim()
 }
 
-function goCreateInvoiceFromLine(row) {
+async function goCreateInvoiceFromLine(row) {
   if (!row?.delivery_id) return
-  goInvoiceFromDelivery(row.delivery_id, { create: true, amount: deliveryLineAmount(row.delivery_id) })
+  const amount = await deliveryLineAmount(row.delivery_id)
+  goInvoiceFromDelivery(row.delivery_id, { create: true, amount })
 }
 
 function goViewOutstandingFromLine(row) {
@@ -1351,6 +1357,7 @@ function goViewOutstandingFromLine(row) {
 
 function goInvoiceFromDelivery(deliveryId, { create = false, amount = 0 } = {}) {
   const query = { tab: 'outstanding', delivery_id: String(deliveryId) }
+  if (create) query.create = '1'
   if (create && Number(amount) > 0) query.amount = String(amount)
   router.push({ path: '/admin/invoice', query })
 }
@@ -1363,11 +1370,12 @@ const showViewOutstandingCta = computed(() => {
   return isDeliverySent(detailRow.value) && Boolean(detailInvoice.value)
 })
 
-function goCreateInvoiceFromDetail() {
+async function goCreateInvoiceFromDetail() {
   if (!detailRow.value?.id) return
+  const amount = await deliveryLineAmount(detailRow.value.id)
   goInvoiceFromDelivery(detailRow.value.id, {
     create: true,
-    amount: deliveryLineAmount(detailRow.value.id),
+    amount,
   })
 }
 

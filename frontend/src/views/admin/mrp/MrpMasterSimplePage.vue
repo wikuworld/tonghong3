@@ -1,7 +1,6 @@
 <template>
   <AdminSection :title="pageTitle" :subtitle="pageSubtitle">
     <template #actions>
-      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
       <el-button v-if="canImport" :loading="importing" @click="triggerImport">
         {{ t('pages.mrpMasterImport.importRaw') }}
@@ -23,23 +22,14 @@
       <el-button type="primary" @click="goInventory">{{ t('pages.mrpMasterCatalog.manageInventory') }}</el-button>
     </template>
 
-    <p class="text-sm text-slate-500 mb-2">
+    <p class="text-sm text-gray-500 mb-2">
       <el-tag size="small" type="info" effect="plain" class="mr-1 align-middle">{{ t('common.nav.viewOnly') }}</el-tag>
       {{ t('pages.mrpMasterCatalog.sourceHint') }}
       · {{ t('pages.mrpMasterCatalog.crudHint') }}
     </p>
 
     <div class="admin-inner-card">
-      <div class="admin-inner-card__head">
-        <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpMasterCatalog.listSectionTitle') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpMasterCatalog.listSubtitle') }}</p>
-        </div>
-      </div>
-      <div class="mkt-section-body">
-        <p class="admin-scroll-hint">{{ t('pages.mrpMasterCatalog.scrollHint') }}</p>
-        <div class="admin-table-scroll">
-      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpMasterCatalog.tableEmpty')">
+      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table">
         <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
         <el-table-column
           v-for="col in columns"
@@ -49,8 +39,6 @@
           :min-width="col.minWidth || 120"
         />
       </el-table>
-        </div>
-      </div>
     </div>
   </AdminSection>
 </template>
@@ -102,39 +90,39 @@ const pageSubtitle = computed(() => {
 const columns = computed(() => {
   if (kind.value === 'kimia') {
     return [
-      { prop: 'kode_kimia', label: t('pages.mrpMasterCatalog.kode'), minWidth: 120 },
-      { prop: 'nama_kimia', label: t('pages.mrpMasterCatalog.nama'), minWidth: 160 },
-      { prop: 'kode_barang', label: t('pages.mrpMasterCatalog.kodeBarang'), minWidth: 120 },
-      { prop: 'nama_barang', label: t('pages.mrpMasterCatalog.namaBarang'), minWidth: 160 },
-      { prop: 'satuan', label: t('pages.mrpMasterCatalog.satuan'), minWidth: 80 },
-      { prop: 'erp_material_id', label: t('pages.mrpMasterCatalog.erpMatId'), minWidth: 100 },
+      { prop: 'kode_kimia', label: 'Kode', minWidth: 120 },
+      { prop: 'nama_kimia', label: 'Nama', minWidth: 160 },
+      { prop: 'kode_barang', label: 'Kode Barang', minWidth: 120 },
+      { prop: 'nama_barang', label: 'Nama Barang', minWidth: 160 },
+      { prop: 'satuan', label: 'Satuan', minWidth: 80 },
+      { prop: 'erp_material_id', label: 'ERP Mat ID', minWidth: 100 },
     ]
   }
   if (kind.value === 'rp') {
     return [
-      { prop: 'kode_rp', label: t('pages.mrpMasterCatalog.kode'), minWidth: 120 },
-      { prop: 'nama_rp', label: t('pages.mrpMasterCatalog.nama'), minWidth: 160 },
-      { prop: 'nama_jenis', label: t('pages.mrpMasterCatalog.jenis'), minWidth: 140 },
-      { prop: 'satuan', label: t('pages.mrpMasterCatalog.satuan'), minWidth: 80 },
-      { prop: 'deskripsi', label: t('pages.mrpMasterCatalog.deskripsi'), minWidth: 160 },
-      { prop: 'erp_material_id', label: t('pages.mrpMasterCatalog.erpMatId'), minWidth: 100 },
+      { prop: 'kode_rp', label: 'Kode', minWidth: 120 },
+      { prop: 'nama_rp', label: 'Nama', minWidth: 160 },
+      { prop: 'nama_jenis', label: 'Jenis', minWidth: 140 },
+      { prop: 'satuan', label: 'Satuan', minWidth: 80 },
+      { prop: 'deskripsi', label: 'Deskripsi', minWidth: 160 },
+      { prop: 'erp_material_id', label: 'ERP Mat ID', minWidth: 100 },
     ]
   }
   if (kind.value === 'material') {
     return [
-      { prop: 'kode_material', label: t('pages.mrpMasterCatalog.kode'), minWidth: 120 },
-      { prop: 'nama_material', label: t('pages.mrpMasterCatalog.nama'), minWidth: 160 },
-      { prop: 'satuan', label: t('pages.mrpMasterCatalog.satuan'), minWidth: 80 },
-      { prop: 'deskripsi', label: t('pages.mrpMasterCatalog.deskripsi'), minWidth: 160 },
-      { prop: 'erp_material_id', label: t('pages.mrpMasterCatalog.erpMatId'), minWidth: 100 },
+      { prop: 'kode_material', label: 'Kode', minWidth: 120 },
+      { prop: 'nama_material', label: 'Nama', minWidth: 160 },
+      { prop: 'satuan', label: 'Satuan', minWidth: 80 },
+      { prop: 'deskripsi', label: 'Deskripsi', minWidth: 160 },
+      { prop: 'erp_material_id', label: 'ERP Mat ID', minWidth: 100 },
     ]
   }
   return [
-    { prop: 'kode_kulit', label: t('pages.mrpMasterCatalog.kode'), minWidth: 120 },
-    { prop: 'nama_kulit', label: t('pages.mrpMasterCatalog.nama'), minWidth: 160 },
-    { prop: 'thickness', label: t('pages.mrpMasterCatalog.thickness'), minWidth: 100 },
+    { prop: 'kode_kulit', label: 'Kode', minWidth: 120 },
+    { prop: 'nama_kulit', label: 'Nama', minWidth: 160 },
+    { prop: 'thickness', label: 'Thickness', minWidth: 100 },
     { prop: 'warna', label: t('common.color'), minWidth: 120 },
-    { prop: 'erp_material_id', label: t('pages.mrpMasterCatalog.erpMatId'), minWidth: 100 },
+    { prop: 'erp_material_id', label: 'ERP Mat ID', minWidth: 100 },
   ]
 })
 

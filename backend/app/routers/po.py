@@ -57,7 +57,7 @@ from app.services.mkt_workflow import (
     validate_mkt_advance,
     validate_mkt_rollback,
 )
-from app.services.mrp_po_sync import try_sync_po_details_to_mrp
+from app.services.mrp_po_sync import sync_po_details_to_mrp, try_sync_po_details_to_mrp
 from app.services.po_delete_guards import validate_po_deletable
 from app.services.po_query import po_list_count, po_list_select, po_list_stage_counts
 from app.services.po_header_snapshots import apply_header_snapshots
@@ -1092,10 +1092,25 @@ def update_po(
         actor=user.username,
     )
     sync_mkt_workflow_auto_advance(db, po_id, actor=user.username)
+    if becoming_confirmed:
+        sync_result = sync_po_details_to_mrp(db, po_id=po_id, raise_on_error=False)
+        if not sync_result.get("ok"):
+            db.rollback()
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Confirm dibatalkan: sync MRP gagal "
+                    f"({sync_result.get('error') or 'upstream'})"
+                ),
+            )
+        db.commit()
+        db.refresh(row)
+        _attach_mrp_sync(row, sync_result)
+        return row
     db.commit()
     db.refresh(row)
     sync_result = _try_sync_po_to_mrp(db, po=row, po_id=po_id)
-    if becoming_confirmed or (row.status or "").strip().lower() == "confirmed":
+    if (row.status or "").strip().lower() == "confirmed":
         _attach_mrp_sync(row, sync_result)
     return row
 

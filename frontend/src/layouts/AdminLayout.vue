@@ -284,7 +284,7 @@
 
       <el-main class="admin-main" :style="{ marginLeft: isSidebarCollapsed ? '64px' : '240px' }">
         <router-view v-slot="{ Component }">
-          <component v-if="Component" :is="Component" :key="route.fullPath" />
+          <component v-if="Component" :is="Component" :key="route.path" />
         </router-view>
       </el-main>
 

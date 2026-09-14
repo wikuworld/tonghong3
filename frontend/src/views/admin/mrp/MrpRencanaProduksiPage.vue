@@ -1,7 +1,6 @@
 <template>
   <AdminSection :title="t('pages.mrpRencana.title')" :subtitle="t('pages.mrpRencana.subtitle')">
     <template #actions>
-      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button id="mrp-rencana-tour-guide" @click="startTour">
         {{ t('pages.mrpRencana.tourBtn') }}
       </el-button>
@@ -25,16 +24,7 @@
     </template>
 
     <div id="mrp-rencana-tour-list" class="admin-inner-card">
-      <div class="admin-inner-card__head">
-        <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpRencana.listSectionTitle') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpRencana.listSubtitle') }}</p>
-        </div>
-      </div>
-      <div class="mkt-section-body">
-        <p class="admin-scroll-hint">{{ t('pages.mrpRencana.scrollHint') }}</p>
-        <div class="admin-table-scroll">
-      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpRencana.tableEmpty')">
+      <el-table :data="rows" v-loading="loading" border stripe size="small" class="admin-table">
         <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" />
         <el-table-column prop="kode_rencana" :label="t('pages.mrpRencana.code')" min-width="130" />
         <el-table-column prop="nama_rencana" :label="t('pages.mrpRencana.name')" min-width="160" show-overflow-tooltip />
@@ -47,7 +37,7 @@
           <template #default="{ row }">{{ formatQty(row.total_qty_alokasi) }}</template>
         </el-table-column>
         <el-table-column prop="status" :label="t('common.status')" width="100" />
-        <el-table-column :label="t('common.actions')" width="230" fixed="right">
+        <el-table-column :label="t('common.actions')" width="210" fixed="right">
           <template #default="{ row, $index }">
             <el-button
               :id="$index === 0 ? 'mrp-rencana-tour-detail' : undefined"
@@ -55,14 +45,26 @@
               type="primary"
               @click="openDetail(row)"
             >
-              {{ t('pages.mrpRencana.actionView') }}
+              {{ t('common.detail') }}
             </el-button>
-            <el-button link @click="printRencana(row)">{{ t('pages.mrpRencana.print') }}</el-button>
+            <el-button
+              v-if="canUpdate"
+              link
+              type="primary"
+              @click="openEdit(row)"
+            >
+              {{ t('common.edit') }}
+            </el-button>
+            <el-button
+              link
+              :loading="printingId === row.id"
+              @click="printRencana(row)"
+            >
+              {{ t('pages.mrpRencana.print') }}
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
-        </div>
-      </div>
     </div>
 
     <el-tour
@@ -87,37 +89,42 @@
       id="mrp-rencana-tour-detail-drawer"
       v-model="detailOpen"
       size="72%"
-      :title="detail?.rencana?.nama_rencana || t('pages.mrpRencana.actionView')"
+      :title="detail?.rencana?.nama_rencana || t('common.detail')"
       append-to-body
       :z-index="3000"
     >
       <template v-if="detail">
+        <div v-if="canUpdate" class="mb-3 flex justify-end">
+          <el-button type="primary" @click="openEdit(detail.rencana)">
+            {{ t('common.edit') }}
+          </el-button>
+        </div>
         <div id="mrp-rencana-tour-detail-header" class="mrp-rencana-detail-summary mb-4">
           <p class="text-sm text-slate-500 mb-2">
             {{ detail.rencana.kode_rencana }} · {{ detail.rencana.tanggal_rencana }} · {{ detail.rencana.status }}
           </p>
-          <div class="admin-stats-grid admin-stats-grid--3">
-            <div class="admin-stat-card">
-              <span class="admin-stat-card__label">{{ t('pages.mrpRencana.itemCount') }}</span>
-              <span class="admin-stat-card__value">{{ detail.summary?.jml_item ?? detail.items?.length ?? 0 }}</span>
+          <div class="mrp-rencana-detail-stats">
+            <div class="mrp-rencana-detail-stat">
+              <span class="mrp-rencana-detail-stat__label">{{ t('pages.mrpRencana.itemCount') }}</span>
+              <span class="mrp-rencana-detail-stat__value">{{ detail.summary?.jml_item ?? detail.items?.length ?? 0 }}</span>
             </div>
-            <div class="admin-stat-card">
-              <span class="admin-stat-card__label">{{ t('pages.mrpRencana.poCount') }}</span>
-              <span class="admin-stat-card__value">{{ detail.summary?.jml_po ?? 0 }}</span>
+            <div class="mrp-rencana-detail-stat">
+              <span class="mrp-rencana-detail-stat__label">{{ t('pages.mrpRencana.poCount') }}</span>
+              <span class="mrp-rencana-detail-stat__value">{{ detail.summary?.jml_po ?? 0 }}</span>
             </div>
-            <div class="admin-stat-card">
-              <span class="admin-stat-card__label">{{ t('pages.mrpRencana.qtyAllocated') }}</span>
-              <span class="admin-stat-card__value">{{ formatQty(detail.summary?.total_qty_alokasi) }}</span>
+            <div class="mrp-rencana-detail-stat">
+              <span class="mrp-rencana-detail-stat__label">{{ t('pages.mrpRencana.qtyAllocated') }}</span>
+              <span class="mrp-rencana-detail-stat__value">{{ formatQty(detail.summary?.total_qty_alokasi) }}</span>
             </div>
-            <div class="admin-stat-card">
-              <span class="admin-stat-card__label">{{ t('common.customer') }}</span>
-              <span class="admin-stat-card__value">
+            <div class="mrp-rencana-detail-stat mrp-rencana-detail-stat--wide">
+              <span class="mrp-rencana-detail-stat__label">{{ t('common.customer') }}</span>
+              <span class="mrp-rencana-detail-stat__value mrp-rencana-detail-stat__value--text">
                 {{ detail.summary?.customers || '—' }}
               </span>
             </div>
-            <div class="admin-stat-card">
-              <span class="admin-stat-card__label">{{ t('pages.mrpRencana.poNumbers') }}</span>
-              <span class="admin-stat-card__value">
+            <div class="mrp-rencana-detail-stat mrp-rencana-detail-stat--wide">
+              <span class="mrp-rencana-detail-stat__label">{{ t('pages.mrpRencana.poNumbers') }}</span>
+              <span class="mrp-rencana-detail-stat__value mrp-rencana-detail-stat__value--text">
                 {{ detail.summary?.po_numbers || '—' }}
               </span>
             </div>
@@ -126,15 +133,14 @@
 
         <div id="mrp-rencana-tour-detail-items">
           <h4 class="text-sm font-semibold mb-2">{{ t('pages.mrpRencana.items') }}</h4>
-          <el-table :data="detail.items || []" border stripe size="small" class="admin-table" row-key="id">
+          <el-table :data="detail.items || []" border size="small" row-key="id">
             <el-table-column type="expand">
               <template #default="{ row }">
                 <div class="mrp-rencana-alloc-wrap">
                   <p class="text-xs text-slate-500 mb-2">{{ t('pages.mrpRencana.poAllocationDetail') }}</p>
-                  <el-table :data="row.po_allocations || []" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpRencana.tableEmpty')">
-                    <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" width="130" fixed="left" show-overflow-tooltip />
-                    <el-table-column prop="lot_number" :label="t('pages.mrpRencana.itemLot')" width="180" fixed="left" show-overflow-tooltip />
+                  <el-table :data="row.po_allocations || []" border size="small" empty-text="—">
                     <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="120" />
+                    <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="110" show-overflow-tooltip />
                     <el-table-column prop="item_name" :label="t('pages.mrpRencana.poItem')" min-width="150" show-overflow-tooltip />
                     <el-table-column :label="t('pages.mrpRencana.color')" width="100" show-overflow-tooltip>
                       <template #default="{ row: al }">{{ spekDisplay(al.warna) }}</template>
@@ -163,10 +169,10 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="kode_rencana_item" :label="t('pages.mrpRencana.itemLabel')" min-width="120" />
-            <el-table-column prop="kode_lot_wip" :label="t('pages.mrpRencana.wip')" min-width="120" />
+            <el-table-column prop="kode_rencana_item" label="Item" min-width="120" />
+            <el-table-column prop="kode_lot_wip" label="WIP" min-width="120" />
             <el-table-column prop="nama_customer" :label="t('common.customer')" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="material_name" :label="t('pages.mrpRencana.material')" min-width="130" show-overflow-tooltip />
+            <el-table-column prop="material_name" label="Material" min-width="130" show-overflow-tooltip />
             <el-table-column :label="t('pages.mrpRencana.thickness')" width="90">
               <template #default="{ row }">{{ spekDisplay(row.thickness) }}</template>
             </el-table-column>
@@ -184,13 +190,17 @@
             <el-table-column :label="t('pages.mrpRencana.qtyAllocated')" width="100" align="right">
               <template #default="{ row }">{{ formatQty(row.total_qty_so) }}</template>
             </el-table-column>
-            <el-table-column :label="t('common.actions')" width="240" fixed="right">
+            <el-table-column :label="t('common.actions')" width="150" fixed="right">
               <template #default="{ row, $index }">
                 <span :id="$index === 0 ? 'mrp-rencana-tour-detail-actions' : undefined">
-                  <el-button v-if="canUpdate" link type="primary" @click="openPo(row)">
-                    {{ t('pages.mrpRencana.actionPo') }}
+                  <el-button
+                    link
+                    type="primary"
+                    @click="openPo(row)"
+                  >
+                    {{ canEditPo ? t('pages.mrpRencana.editPo') : t('pages.mrpRencana.viewPo') }}
                   </el-button>
-                  <el-button link @click="showBarcode(row)">{{ t('pages.mrpRencana.actionBarcode') }}</el-button>
+                  <el-button link @click="showBarcode(row)">Barcode</el-button>
                 </span>
               </template>
             </el-table-column>
@@ -201,26 +211,21 @@
 
     <el-dialog
       v-model="poOpen"
-      :title="t('pages.mrpRencana.listPo')"
+      :title="canEditPo ? t('pages.mrpRencana.listPo') : t('pages.mrpRencana.viewPoTitle')"
       width="920px"
       destroy-on-close
       append-to-body
       :z-index="4600"
     >
-      <p class="text-sm text-slate-500 mb-2">{{ t('pages.mrpRencana.replacePoHint') }}</p>
-      <el-table
-        v-if="selectedPoRows.length"
-        :data="selectedPoRows"
-        border
-        size="small"
-        class="mb-3"
-      >
-        <el-table-column prop="no_po" :label="t('pages.mrpRencana.currentlyAllocated')" min-width="120" />
-        <el-table-column prop="item_name" :label="t('pages.mrpRencana.poItem')" min-width="140" show-overflow-tooltip />
-        <el-table-column :label="t('pages.mrpRencana.qtyAllocated')" width="110" align="right">
-          <template #default="{ row }">{{ formatQty(row.qty_proses) }}</template>
-        </el-table-column>
-      </el-table>
+      <p v-if="currentPoItem" class="text-sm text-slate-500 mb-2">
+        {{ t('pages.mrpRencana.poFilterHint', {
+          material: spekDisplay(currentPoItem.material_name),
+          color: spekDisplay(currentPoItem.color),
+          emboss: spekDisplay(currentPoItem.emboss),
+        }) }}
+      </p>
+      <p v-if="!canEditPo" class="text-sm text-amber-700 mb-2">{{ t('pages.mrpRencana.poViewOnlyHint') }}</p>
+      <p v-else class="text-sm text-slate-500 mb-2">{{ t('pages.mrpRencana.replacePoHint') }}</p>
       <el-table
         ref="poTableRef"
         :data="poList"
@@ -229,11 +234,18 @@
         row-key="id"
         @selection-change="onPoSelect"
       >
-        <el-table-column type="selection" width="40" fixed="left" />
-        <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" width="130" fixed="left" show-overflow-tooltip />
-        <el-table-column prop="lot_number" :label="t('pages.mrpRencana.itemLot')" width="180" fixed="left" show-overflow-tooltip />
+        <el-table-column
+          v-if="canEditPo"
+          type="selection"
+          width="40"
+          :selectable="poSelectable"
+        />
         <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" min-width="110" />
+        <el-table-column prop="no_so" :label="t('pages.mrpRencana.soRef')" min-width="100" show-overflow-tooltip />
         <el-table-column prop="item_name" :label="t('pages.mrpRencana.poItem')" min-width="130" show-overflow-tooltip />
+        <el-table-column :label="t('pages.mrpRencana.color')" width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ spekDisplay(row.warna) }}</template>
+        </el-table-column>
         <el-table-column :label="t('pages.mrpRencana.emboss')" width="80">
           <template #default="{ row }">{{ spekDisplay(row.emboss) }}</template>
         </el-table-column>
@@ -251,17 +263,27 @@
         </el-table-column>
         <el-table-column :label="t('pages.mrpRencana.qtyPlan')" width="120">
           <template #default="{ row }">
-            <el-input v-model.number="poQty[row.id]" type="number" size="small" />
+            <el-input
+              v-if="canEditPo"
+              v-model.number="poQty[row.id]"
+              type="number"
+              size="small"
+              min="0"
+              :disabled="!isPoRowSelected(row)"
+            />
+            <span v-else>{{ formatQty(displayPoQty(row)) }}</span>
           </template>
         </el-table-column>
       </el-table>
       <template #footer>
-        <el-button @click="poOpen = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="primary" :loading="savingPo" @click="savePo">{{ t('common.save') }}</el-button>
+        <el-button @click="poOpen = false">{{ canEditPo ? t('common.cancel') : t('common.close') }}</el-button>
+        <el-button v-if="canEditPo" type="primary" :loading="savingPo" @click="savePo">
+          {{ t('common.save') }}
+        </el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="barcodeOpen" :title="t('pages.mrpRencana.actionBarcode')" width="420px" append-to-body :z-index="4600">
+    <el-dialog v-model="barcodeOpen" title="Barcode" width="420px" append-to-body :z-index="4600">
       <div v-if="barcodeData" class="text-center space-y-2">
         <div class="text-2xl font-mono font-bold">{{ barcodeData.barcode }}</div>
         <div class="text-sm">{{ barcodeData.item?.kode_rencana_item }} · {{ barcodeData.item?.nama_customer }}</div>
@@ -271,23 +293,11 @@
       </div>
     </el-dialog>
 
-    <el-dialog v-model="printOpen" :title="t('pages.mrpRencana.print')" width="640px" append-to-body :z-index="4600">
-      <template v-if="printData">
-        <h3 class="font-semibold mb-2">{{ printData.rencana?.nama_rencana }} ({{ printData.rencana?.kode_rencana }})</h3>
-        <el-table :data="printData.items || []" border size="small">
-          <el-table-column prop="kode_rencana_item" :label="t('pages.mrpRencana.itemLabel')" />
-          <el-table-column prop="nama_customer" :label="t('common.customer')" />
-          <el-table-column prop="material_name" :label="t('pages.mrpRencana.material')" />
-          <el-table-column prop="total_qty_so" :label="t('pages.mrpRencana.qtyAllocated')" width="110" />
-          <el-table-column prop="schedule_text" :label="t('pages.mrpRencana.soRef')" min-width="120" />
-        </el-table>
-      </template>
-    </el-dialog>
-
     <MrpRencanaCreateDialog
       v-model="createOpen"
+      :edit-id="editTargetId"
       :tour-open="tourOpen"
-      @saved="reload"
+      @saved="onDialogSaved"
     />
   </AdminSection>
 </template>
@@ -299,6 +309,7 @@ import { ElMessage } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import MrpRencanaCreateDialog from './MrpRencanaCreateDialog.vue'
+import { printMrpRencana } from '../../../utils/mrpRencanaPrint'
 import { can } from '../../../security/permissions'
 import {
   mrpGetRencana,
@@ -322,19 +333,21 @@ const rows = ref([])
 const detailOpen = ref(false)
 const detail = ref(null)
 const createOpen = ref(false)
+const editTargetId = ref(null)
 const poOpen = ref(false)
 const barcodeOpen = ref(false)
-const printOpen = ref(false)
+const printingId = ref(null)
 const poList = ref([])
 const poTableRef = ref(null)
 const selectedPoRows = ref([])
 const poQty = reactive({})
 const selectedPos = ref([])
 const currentItemId = ref(null)
+const currentPoItem = ref(null)
 const barcodeData = ref(null)
-const printData = ref(null)
 const canCreate = computed(() => can('mrpShopfloor', 'create'))
 const canUpdate = computed(() => can('mrpShopfloor', 'update'))
+const canEditPo = computed(() => canUpdate.value)
 
 const tourSteps = computed(() => {
   const steps = [
@@ -467,6 +480,21 @@ function spekDisplay(v) {
   return s || '—'
 }
 
+function poSelectable(row) {
+  if (!canEditPo.value) return false
+  return Number(row.qty_outstanding || 0) > 0 || Number(row.already_allocated_qty || 0) > 0
+}
+
+function isPoRowSelected(row) {
+  return selectedPos.value.some((p) => Number(p.id) === Number(row.id))
+}
+
+function displayPoQty(row) {
+  const allocated = Number(row.already_allocated_qty || 0)
+  if (allocated > 0) return allocated
+  return Number(row.qty_outstanding || 0)
+}
+
 function markTourSeen() {
   try {
     localStorage.setItem(TOUR_STORAGE_KEY, '1')
@@ -555,11 +583,27 @@ async function openDetail(row) {
 }
 
 async function printRencana(row) {
+  printingId.value = row.id
   try {
-    printData.value = await mrpRencanaPrint(row.id)
-    printOpen.value = true
+    const data = await mrpRencanaPrint(row.id)
+    await printMrpRencana(data, {
+      title: t('pages.mrpRencana.print'),
+      planName: t('pages.mrpRencana.printPlanName'),
+      planNo: t('pages.mrpRencana.printPlanNo'),
+      barcode: t('pages.mrpRencana.barcode'),
+      emboss: t('pages.mrpRencana.printEmboss'),
+      customer: t('pages.mrpRencana.printCustomer'),
+      color: t('pages.mrpRencana.printColor'),
+      qty: t('pages.mrpRencana.printQty'),
+      schedule: t('pages.mrpRencana.printSchedule'),
+      cs: t('pages.mrpRencana.printCs'),
+      remarks: t('pages.mrpRencana.printRemarks'),
+      backer: t('pages.mrpRencana.printBacker'),
+    })
   } catch (e) {
     ElMessage.error(e.message || String(e))
+  } finally {
+    printingId.value = null
   }
 }
 
@@ -573,13 +617,46 @@ async function showBarcode(row) {
 }
 
 async function openPo(row) {
+  if (!row.material_name || !row.color || !row.emboss) {
+    ElMessage.warning(t('pages.mrpRencana.poSpekRequired'))
+    return
+  }
   currentItemId.value = row.id
+  currentPoItem.value = row
   selectedPos.value = []
   selectedPoRows.value = []
   try {
     await syncPoSilent()
     const data = await mrpRencanaItemListPo(row.id)
-    poList.value = data.po_list || []
+    const listed = new Set()
+    poList.value = (data.po_list || []).map((p) => {
+      listed.add(Number(p.id))
+      return p
+    })
+    for (const sel of data.selected_po || []) {
+      const pid = Number(sel.po_id)
+      if (!pid || listed.has(pid)) continue
+      poList.value.push({
+        id: pid,
+        no_po: sel.no_po,
+        no_so: sel.no_so,
+        customer: sel.customer,
+        item_name: sel.item_name,
+        warna: sel.warna,
+        emboss: sel.emboss,
+        tebal: sel.tebal,
+        color_swatch: sel.color_swatch,
+        qty_order: sel.qty_order,
+        qty_outstanding: sel.qty_sisa_alokasi ?? sel.qty_outstanding,
+        qty_balance_erp: sel.qty_balance_erp,
+        already_allocated_qty: sel.already_allocated_qty ?? sel.qty_proses,
+        status: sel.po_status,
+      })
+      listed.add(pid)
+    }
+    if (!poList.value.length) {
+      ElMessage.info(t('pages.mrpRencana.poListEmpty'))
+    }
     selectedPoRows.value = data.selected_po || []
     const allocatedIds = new Set(
       selectedPoRows.value.map((s) => Number(s.po_id)).filter((id) => Number.isFinite(id)),
@@ -598,13 +675,18 @@ async function openPo(row) {
       }
     }
     poOpen.value = true
-    await nextTick()
-    const table = poTableRef.value
-    if (table?.clearSelection) table.clearSelection()
-    for (const p of poList.value) {
-      if (allocatedIds.has(Number(p.id))) {
-        table?.toggleRowSelection?.(p, true)
+    if (canEditPo.value) {
+      await nextTick()
+      const table = poTableRef.value
+      if (table?.clearSelection) table.clearSelection()
+      const preselected = []
+      for (const p of poList.value) {
+        if (allocatedIds.has(Number(p.id))) {
+          table?.toggleRowSelection?.(p, true)
+          preselected.push(p)
+        }
       }
+      selectedPos.value = preselected
     }
   } catch (e) {
     ElMessage.error(e.message || String(e))
@@ -616,9 +698,22 @@ function onPoSelect(rowsSel) {
 }
 
 async function savePo() {
+  if (!canEditPo.value) return
   if (!selectedPos.value.length) {
     ElMessage.warning(t('pages.mrpRencana.selectPoRequired'))
     return
+  }
+  for (const p of selectedPos.value) {
+    const qty = Number(poQty[p.id] || 0)
+    if (qty <= 0) {
+      ElMessage.warning(`${t('pages.mrpRencana.qtyPlan')}: ${p.no_po}`)
+      return
+    }
+    const maxQty = Number(p.qty_outstanding || 0) + Number(p.already_allocated_qty || 0)
+    if (qty > maxQty + 1e-9) {
+      ElMessage.warning(`${t('pages.mrpRencana.qtyExceeds')}: ${p.no_po}`)
+      return
+    }
   }
   savingPo.value = true
   try {
@@ -638,7 +733,23 @@ async function savePo() {
 }
 
 function openCreate() {
+  editTargetId.value = null
   createOpen.value = true
+}
+
+function openEdit(row) {
+  if (!row?.id) return
+  editTargetId.value = Number(row.id)
+  createOpen.value = true
+}
+
+async function onDialogSaved(payload) {
+  const savedId = payload?.id ?? editTargetId.value
+  editTargetId.value = null
+  await reload()
+  if (savedId && detailOpen.value && Number(detail.value?.rencana?.id) === Number(savedId)) {
+    detail.value = await mrpGetRencana(savedId)
+  }
 }
 
 onMounted(async () => {
@@ -655,17 +766,46 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-
-
-
-
-
-
+.mrp-rencana-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.mrp-rencana-detail-stat {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  background: var(--el-fill-color-blank);
+}
+.mrp-rencana-detail-stat--wide {
+  grid-column: span 3;
+}
+.mrp-rencana-detail-stat__label {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--el-text-color-secondary);
+  margin-bottom: 0.15rem;
+}
+.mrp-rencana-detail-stat__value {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.mrp-rencana-detail-stat__value--text {
+  font-size: 0.88rem;
+  font-weight: 500;
+  line-height: 1.35;
+  word-break: break-word;
+}
 .mrp-rencana-alloc-wrap {
   padding: 0.35rem 0.75rem 0.75rem;
 }
 @media (max-width: 900px) {
-  
-  
+  .mrp-rencana-detail-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .mrp-rencana-detail-stat--wide {
+    grid-column: span 2;
+  }
 }
 </style>

@@ -1,138 +1,156 @@
 <template>
   <AdminSection :title="t('pages.mrpStokMaterialLain.title')" :subtitle="t('pages.mrpStokMaterialLain.subtitle')">
     <template #actions>
-      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
     </template>
 
     <div v-if="canCreate" class="admin-inner-card mb-4">
-      <div class="admin-inner-card__head">
-        <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpStokMaterialLain.inTitle') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpStokMaterialLain.inHint') }}</p>
-        </div>
-      </div>
-      <div class="mkt-section-body">
-        <div class="flex flex-wrap gap-2 items-center">
-          <el-select v-model="inForm.material_id" filterable clearable :placeholder="t('pages.mrpStokMaterialLain.material')" class="max-w-sm">
-            <el-option
-              v-for="r in materialList"
-              :key="r.id"
-              :label="`${r.kode_material} — ${r.nama_material}${r.satuan ? ` (${r.satuan})` : ''}`"
-              :value="r.id"
-            />
-          </el-select>
-          <el-input v-model="inForm.qty" type="number" :placeholder="t('pages.mrpStokMaterialLain.qty')" class="w-28" @keyup.enter="doIn" />
-          <el-date-picker v-model="inForm.tanggal" type="date" value-format="YYYY-MM-DD" />
-          <el-button type="primary" :loading="saving" @click="doIn">{{ t('pages.mrpStokMaterialLain.inBtn') }}</el-button>
-        </div>
+      <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpStokMaterialLain.inTitle') }}</h3>
+      <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpStokMaterialLain.inHint') }}</p>
+      <div class="flex flex-wrap gap-2 items-center">
+        <el-select
+          v-model="inForm.material_id"
+          filterable
+          clearable
+          :placeholder="t('pages.mrpStokMaterialLain.material')"
+          class="max-w-sm"
+        >
+          <el-option
+            v-for="r in materialList"
+            :key="r.id"
+            :label="`${r.kode_material} — ${r.nama_material}${r.satuan ? ` (${r.satuan})` : ''}`"
+            :value="r.id"
+          />
+        </el-select>
+        <el-input
+          v-model="inForm.qty"
+          type="number"
+          :placeholder="t('pages.mrpStokMaterialLain.qty')"
+          class="w-28"
+          @keyup.enter="doIn"
+        />
+        <el-date-picker v-model="inForm.tanggal" type="date" value-format="YYYY-MM-DD" />
+        <el-button type="primary" :loading="saving" @click="doIn">{{ t('pages.mrpStokMaterialLain.inBtn') }}</el-button>
       </div>
     </div>
 
     <div v-if="canUpdate" class="admin-inner-card mb-4">
-      <div class="admin-inner-card__head">
-        <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpStokMaterialLain.outTitle') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpStokMaterialLain.outHint') }}</p>
-        </div>
+      <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpStokMaterialLain.outTitle') }}</h3>
+      <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpStokMaterialLain.outHint') }}</p>
+      <div class="flex flex-wrap gap-2 items-center">
+        <el-select
+          v-model="outForm.stok_in_id"
+          filterable
+          clearable
+          :placeholder="t('pages.mrpStokMaterialLain.lot')"
+          class="max-w-md"
+          @change="onLotPick"
+        >
+          <el-option
+            v-for="s in activeLots"
+            :key="s.id"
+            :label="lotLabel(s)"
+            :value="s.id"
+          />
+        </el-select>
+        <el-input
+          v-model="outForm.qty"
+          type="number"
+          :placeholder="t('pages.mrpStokMaterialLain.qty')"
+          class="w-28"
+          @keyup.enter="doOut"
+        />
+        <el-input v-model="outForm.kode_wip" :placeholder="t('pages.mrpStokMaterialLain.wip')" class="max-w-xs" />
+        <el-button type="danger" :loading="saving" @click="doOut">{{ t('pages.mrpStokMaterialLain.outBtn') }}</el-button>
       </div>
-      <div class="mkt-section-body">
-        <div class="flex flex-wrap gap-2 items-center">
-          <el-select v-model="outForm.stok_in_id" filterable clearable :placeholder="t('pages.mrpStokMaterialLain.lot')" class="max-w-md" @change="onLotPick">
-            <el-option v-for="s in activeLots" :key="s.id" :label="lotLabel(s)" :value="s.id" />
-          </el-select>
-          <el-input v-model="outForm.qty" type="number" :placeholder="t('pages.mrpStokMaterialLain.qty')" class="w-28" @keyup.enter="doOut" />
-          <el-input v-model="outForm.kode_wip" :placeholder="t('pages.mrpStokMaterialLain.wip')" class="max-w-xs" />
-          <el-button type="danger" :loading="saving" @click="doOut">{{ t('pages.mrpStokMaterialLain.outBtn') }}</el-button>
-        </div>
-        <p v-if="outForm.stok != null" class="text-xs text-slate-500 mt-2 mb-0">
-          {{ t('pages.mrpStokMaterialLain.sisaHint', { qty: formatQty(outForm.stok), unit: outForm.satuan || 'pcs' }) }}
-        </p>
-      </div>
+      <p v-if="outForm.stok != null" class="text-xs text-slate-500 mt-2 mb-0">
+        {{ t('pages.mrpStokMaterialLain.sisaHint', { qty: formatQty(outForm.stok), unit: outForm.satuan || 'pcs' }) }}
+      </p>
     </div>
 
     <div class="admin-inner-card mb-4">
-      <div class="admin-inner-card__head">
+      <div class="mrp-sml-list-head mb-3">
         <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpStokMaterialLain.stokIn') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpStokMaterialLain.stokInSubtitle') }}</p>
+          <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpStokMaterialLain.stokIn') }}</h3>
+          <p class="text-xs text-slate-500 mb-0">
+            {{ t('pages.mrpStokMaterialLain.statsIn', { lots: stats.lots, qty: formatQty(stats.qty_sisa) }) }}
+          </p>
         </div>
-        <el-input v-model="searchIn" clearable size="small" class="mrp-toolbar-search" :placeholder="t('pages.mrpStokMaterialLain.searchPlaceholder')" />
+        <el-input
+          v-model="searchIn"
+          clearable
+          size="small"
+          class="w-56"
+          :placeholder="t('pages.mrpStokMaterialLain.searchPlaceholder')"
+        />
       </div>
-      <div class="admin-stats-grid admin-stats-grid--3">
-        <div class="admin-stat-card admin-stat-card--info">
-          <span class="admin-stat-card__value">{{ stats.lots }}</span>
-          <span class="admin-stat-card__label">{{ t('pages.mrpStokMaterialLain.statLots') }}</span>
-        </div>
-        <div class="admin-stat-card">
-          <span class="admin-stat-card__value">{{ formatQty(stats.qty_sisa) }}</span>
-          <span class="admin-stat-card__label">{{ t('pages.mrpStokMaterialLain.statQty') }}</span>
-        </div>
-        <div class="admin-stat-card admin-stat-card--warn">
-          <span class="admin-stat-card__value">{{ stats.out_rows }}</span>
-          <span class="admin-stat-card__label">{{ t('pages.mrpStokMaterialLain.statOutRows') }}</span>
-        </div>
-      </div>
-      <div class="mkt-section-body">
-        <p class="admin-scroll-hint">{{ t('pages.mrpStokMaterialLain.scrollHint') }}</p>
-        <div class="admin-table-scroll">
-          <el-table :data="filteredIn" v-loading="loading" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpStokMaterialLain.tableEmpty')">
-            <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
-            <el-table-column prop="kode_internal" :label="t('pages.mrpStokMaterialLain.bc')" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="kode_material" :label="t('pages.mrpStokMaterialLain.kode')" width="120" show-overflow-tooltip />
-            <el-table-column prop="nama_material" :label="t('common.name')" min-width="150" show-overflow-tooltip />
-            <el-table-column :label="t('pages.mrpStokMaterialLain.sisa')" width="110" align="right">
-              <template #default="{ row }">
-                {{ formatQty(row.qty_sisa) }}
-                <span class="text-slate-400 text-xs">{{ dash(row.satuan) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('pages.mrpStokMaterialLain.qtyIn')" width="90" align="right">
-              <template #default="{ row }">{{ formatQty(row.qty) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('common.date')" width="120">
-              <template #default="{ row }">{{ formatDate(row.tanggal_in) }}</template>
-            </el-table-column>
-            <el-table-column v-if="canUpdate" :label="t('common.actions')" width="100" fixed="right">
-              <template #default="{ row }">
-                <el-tooltip v-if="Number(row.qty_sisa) > 0" :content="t('pages.mrpStokMaterialLain.outBtn')" placement="top">
-                  <el-button link type="danger" @click="outFromRow(row)">{{ t('pages.mrpStokMaterialLain.outBtn') }}</el-button>
-                </el-tooltip>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </div>
+      <el-table
+        :data="filteredIn"
+        v-loading="loading"
+        border
+        stripe
+        size="small"
+        class="admin-table"
+        empty-text="—"
+      >
+        <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
+        <el-table-column prop="kode_internal" :label="t('pages.mrpStokMaterialLain.bc')" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="kode_material" :label="t('pages.mrpStokMaterialLain.kode')" width="120" show-overflow-tooltip />
+        <el-table-column prop="nama_material" :label="t('common.name')" min-width="150" show-overflow-tooltip />
+        <el-table-column :label="t('pages.mrpStokMaterialLain.sisa')" width="110" align="right">
+          <template #default="{ row }">
+            {{ formatQty(row.qty_sisa) }}
+            <span class="text-slate-400 text-xs">{{ dash(row.satuan) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpStokMaterialLain.qtyIn')" width="90" align="right">
+          <template #default="{ row }">{{ formatQty(row.qty) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('common.date')" width="120">
+          <template #default="{ row }">{{ formatDate(row.tanggal_in) }}</template>
+        </el-table-column>
+        <el-table-column v-if="canUpdate" :label="t('common.actions')" width="90" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="Number(row.qty_sisa) > 0"
+              link
+              type="danger"
+              @click="outFromRow(row)"
+            >
+              OUT
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
 
     <div class="admin-inner-card">
-      <div class="admin-inner-card__head">
-        <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpStokMaterialLain.stokOut') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpStokMaterialLain.stokOutSubtitle') }}</p>
-        </div>
-        <el-input v-model="searchOut" clearable size="small" class="mrp-toolbar-search" :placeholder="t('pages.mrpStokMaterialLain.searchOutPlaceholder')" />
+      <div class="mrp-sml-list-head mb-3">
+        <h3 class="admin-inner-card__title mb-0">{{ t('pages.mrpStokMaterialLain.stokOut') }}</h3>
+        <el-input
+          v-model="searchOut"
+          clearable
+          size="small"
+          class="w-56"
+          :placeholder="t('pages.mrpStokMaterialLain.searchOutPlaceholder')"
+        />
       </div>
-      <div class="mkt-section-body">
-        <div class="admin-table-scroll">
-          <el-table :data="filteredOut" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpStokMaterialLain.tableEmpty')">
-            <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
-            <el-table-column prop="nama_material" :label="t('common.name')" min-width="150" show-overflow-tooltip />
-            <el-table-column :label="t('pages.mrpStokMaterialLain.qty')" width="90" align="right">
-              <template #default="{ row }">{{ formatQty(row.qty) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.mrpStokMaterialLain.wip')" min-width="120" show-overflow-tooltip>
-              <template #default="{ row }">{{ dash(row.kode_wip) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('common.notes')" min-width="120" show-overflow-tooltip>
-              <template #default="{ row }">{{ dash(row.keterangan) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('common.date')" width="120">
-              <template #default="{ row }">{{ formatDate(row.tanggal) }}</template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </div>
+      <el-table :data="filteredOut" border stripe size="small" class="admin-table" empty-text="—">
+        <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
+        <el-table-column prop="nama_material" :label="t('common.name')" min-width="150" show-overflow-tooltip />
+        <el-table-column :label="t('pages.mrpStokMaterialLain.qty')" width="90" align="right">
+          <template #default="{ row }">{{ formatQty(row.qty) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpStokMaterialLain.wip')" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.kode_wip) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('common.notes')" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.keterangan) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('common.date')" width="120">
+          <template #default="{ row }">{{ formatDate(row.tanggal) }}</template>
+        </el-table-column>
+      </el-table>
     </div>
   </AdminSection>
 </template>
@@ -353,8 +371,26 @@ onMounted(reload)
 </script>
 
 <style scoped>
-.w-28 { width: 7rem; }
-.max-w-sm { max-width: 24rem; }
-.max-w-md { max-width: 28rem; }
-.max-w-xs { max-width: 16rem; }
+.w-28 {
+  width: 7rem;
+}
+.w-56 {
+  width: 14rem;
+}
+.max-w-sm {
+  max-width: 24rem;
+}
+.max-w-md {
+  max-width: 28rem;
+}
+.max-w-xs {
+  max-width: 16rem;
+}
+.mrp-sml-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
 </style>

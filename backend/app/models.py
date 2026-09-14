@@ -834,7 +834,7 @@ class ProformaInvoiceRecord(Base):
 class Invoice(Base):
     __tablename__ = "invoices"
     __table_args__ = (
-        Index("ix_invoices_delivery_id", "delivery_id"),
+        UniqueConstraint("delivery_id", name="uq_invoices_delivery_id"),
         Index("ix_invoices_customer_id", "customer_id"),
         Index("ix_invoices_po_id", "po_id"),
     )

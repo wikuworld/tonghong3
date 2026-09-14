@@ -1,7 +1,6 @@
 <template>
   <AdminSection :title="t('pages.mrpPalet.title')" :subtitle="t('pages.mrpPalet.subtitle')">
     <template #actions>
-      <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openIn">{{ t('pages.mrpPalet.paletIn') }}</el-button>
       <el-button v-if="canUpdate" type="warning" @click="openPaletOut">{{ t('pages.mrpPalet.paletOut') }}</el-button>
@@ -9,50 +8,28 @@
     </template>
 
     <div class="admin-inner-card mb-4">
-      <div class="admin-inner-card__head">
+      <div class="mrp-palet-list-head mb-3">
         <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpPalet.movements') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpPalet.listSubtitle') }}</p>
+          <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpPalet.movements') }}</h3>
+          <p class="text-xs text-slate-500 mb-0">
+            {{ t('pages.mrpPalet.statsMovements', { in: stats.in, out: stats.out, yl: ylRows.length }) }}
+          </p>
+        </div>
+        <div class="flex gap-2 flex-wrap items-center">
+          <el-radio-group v-model="directionFilter" size="small" @change="reload">
+            <el-radio-button value="">{{ t('pages.mrpPalet.filterAll') }}</el-radio-button>
+            <el-radio-button value="IN">IN</el-radio-button>
+            <el-radio-button value="OUT">OUT</el-radio-button>
+          </el-radio-group>
+          <el-input
+            v-model="searchMov"
+            clearable
+            size="small"
+            class="w-52"
+            :placeholder="t('pages.mrpPalet.searchMovements')"
+          />
         </div>
       </div>
-      <div class="admin-stats-grid admin-stats-grid--3">
-        <div class="admin-stat-card admin-stat-card--success">
-          <span class="admin-stat-card__value">{{ stats.in }}</span>
-          <span class="admin-stat-card__label">{{ t('pages.mrpPalet.statIn') }}</span>
-        </div>
-        <div class="admin-stat-card admin-stat-card--warn">
-          <span class="admin-stat-card__value">{{ stats.out }}</span>
-          <span class="admin-stat-card__label">{{ t('pages.mrpPalet.statOut') }}</span>
-        </div>
-        <div class="admin-stat-card admin-stat-card--info">
-          <span class="admin-stat-card__value">{{ ylRows.length }}</span>
-          <span class="admin-stat-card__label">{{ t('pages.mrpPalet.statYl') }}</span>
-        </div>
-      </div>
-      <div class="mkt-section-body">
-        <div class="filter-panel mb-4">
-          <p class="filter-panel__title">{{ t('common.filter') }}</p>
-          <el-form class="filter-form" label-position="top">
-            <el-row :gutter="12">
-              <el-col :xs="24" :sm="12" :md="8" :lg="6">
-                <el-form-item :label="t('pages.mrpPalet.direction')">
-                  <el-radio-group v-model="directionFilter" size="small" @change="reload">
-                    <el-radio-button value="">{{ t('pages.mrpPalet.filterAll') }}</el-radio-button>
-                    <el-radio-button value="IN">{{ t('pages.mrpPalet.directionIn') }}</el-radio-button>
-                    <el-radio-button value="OUT">{{ t('pages.mrpPalet.directionOut') }}</el-radio-button>
-                  </el-radio-group>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12" :md="8" :lg="6">
-                <el-form-item :label="t('common.search')">
-                  <el-input v-model="searchMov" clearable class="w-full" :placeholder="t('pages.mrpPalet.searchMovements')" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-          </el-form>
-        </div>
-        <p class="admin-scroll-hint">{{ t('pages.mrpPalet.scrollHint') }}</p>
-        <div class="admin-table-scroll">
       <el-table
         :data="filteredMovements"
         v-loading="loading"
@@ -60,14 +37,14 @@
         stripe
         size="small"
         class="admin-table"
-        :empty-text="t('pages.mrpPalet.movementsEmpty')"
+        empty-text="—"
       >
         <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
         <el-table-column prop="kode_palet" :label="t('pages.mrpPalet.kodePalet')" min-width="130" show-overflow-tooltip />
         <el-table-column :label="t('pages.mrpPalet.direction')" width="90" align="center">
           <template #default="{ row }">
             <el-tag :type="row.direction === 'IN' ? 'success' : 'warning'" size="small" effect="plain">
-              {{ row.direction === 'IN' ? t('pages.mrpPalet.directionIn') : (row.direction === 'OUT' ? t('pages.mrpPalet.directionOut') : dash(row.direction)) }}
+              {{ row.direction || '—' }}
             </el-tag>
           </template>
         </el-table-column>
@@ -82,32 +59,23 @@
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="100" fixed="right">
           <template #default="{ row }">
-            <el-tooltip :content="t('pages.mrpPalet.yl')" placement="top">
-              <el-button link type="primary" @click="showYl(row.kode_palet)">{{ t('pages.mrpPalet.yl') }}</el-button>
-            </el-tooltip>
+            <el-button link type="primary" @click="showYl(row.kode_palet)">YL</el-button>
           </template>
         </el-table-column>
       </el-table>
-        </div>
-      </div>
     </div>
 
     <div class="admin-inner-card">
-      <div class="admin-inner-card__head">
-        <div>
-          <h3 class="admin-inner-card__title">{{ t('pages.mrpPalet.ylStock') }}</h3>
-          <p class="admin-inner-card__sub">{{ t('pages.mrpPalet.listSubtitle') }}</p>
-        </div>
+      <div class="mrp-palet-list-head mb-3">
+        <h3 class="admin-inner-card__title mb-0">{{ t('pages.mrpPalet.ylStock') }}</h3>
         <el-input
           v-model="searchYl"
           clearable
           size="small"
-          class="mrp-toolbar-search"
+          class="w-56"
           :placeholder="t('pages.mrpPalet.searchYl')"
         />
       </div>
-      <div class="mkt-section-body">
-        <div class="admin-table-scroll">
       <el-table
         :data="filteredYl"
         v-loading="loadingYl"
@@ -115,10 +83,10 @@
         stripe
         size="small"
         class="admin-table"
-        :empty-text="t('pages.mrpPalet.ylEmpty')"
+        empty-text="—"
       >
         <el-table-column prop="kode_palet" :label="t('pages.mrpPalet.kodePalet')" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="kode_yl" :label="t('pages.mrpPalet.yl')" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="kode_yl" :label="t('pages.mrpPalet.materialType')" min-width="120" show-overflow-tooltip />
         <el-table-column :label="t('pages.mrpPalet.thickness')" width="100" show-overflow-tooltip>
           <template #default="{ row }">{{ dash(row.thickness) }}</template>
         </el-table-column>
@@ -130,14 +98,10 @@
         </el-table-column>
         <el-table-column v-if="canUpdate" :label="t('common.actions')" width="100" fixed="right">
           <template #default="{ row }">
-            <el-tooltip :content="t('pages.mrpPalet.ylOut')" placement="top">
-              <el-button link type="danger" @click="ylOutFromRow(row)">{{ t('pages.mrpPalet.ylOut') }}</el-button>
-            </el-tooltip>
+            <el-button link type="danger" @click="ylOutFromRow(row)">OUT</el-button>
           </template>
         </el-table-column>
       </el-table>
-        </div>
-      </div>
     </div>
 
     <el-dialog v-model="inOpen" :title="t('pages.mrpPalet.paletIn')" width="720px" destroy-on-close append-to-body>
@@ -154,14 +118,38 @@
         </el-form-item>
         <div class="mb-2 flex justify-between items-center">
           <strong>{{ t('pages.mrpPalet.ylItems') }}</strong>
-          <el-button size="small" @click="form.items.push({ kode_yl: '', thickness: '', warna: '', qty: null })">
+          <el-button size="small" @click="form.items.push({ kode_yl: 'PU', thickness: '', warna: '', qty: null })">
             {{ t('common.add') }}
           </el-button>
         </div>
         <div v-for="(item, idx) in form.items" :key="idx" class="mb-2 grid gap-2" style="grid-template-columns: 1.2fr 1fr 1fr 0.8fr auto;">
-          <el-input v-model="item.kode_yl" :placeholder="t('pages.mrpPalet.yl')" />
-          <el-input v-model="item.thickness" :placeholder="t('pages.mrpPalet.thickness')" />
-          <el-input v-model="item.warna" :placeholder="t('common.color')" />
+          <el-select v-model="item.kode_yl" class="w-full" :placeholder="t('pages.mrpPalet.materialType')">
+            <el-option v-for="type in materialTypes" :key="type" :label="type" :value="type" />
+          </el-select>
+          <el-select
+            v-model="item.thickness"
+            filterable
+            clearable
+            class="w-full"
+            :placeholder="t('pages.mrpPalet.thickness')"
+            @change="onItemThicknessChange(item)"
+          >
+            <el-option v-for="th in thicknessOptions" :key="th" :label="th" :value="th" />
+          </el-select>
+          <el-select
+            v-model="item.warna"
+            filterable
+            clearable
+            class="w-full"
+            :placeholder="t('common.color')"
+          >
+            <el-option
+              v-for="color in colorOptionsForItem(item)"
+              :key="color"
+              :label="color"
+              :value="color"
+            />
+          </el-select>
           <el-input v-model="item.qty" type="number" :placeholder="t('pages.mrpPalet.qty')" />
           <el-button
             link
@@ -180,8 +168,8 @@
     </el-dialog>
 
     <el-drawer v-model="ylOpen" :title="`${t('pages.mrpPalet.ylStock')} · ${ylPalet}`" size="42%">
-      <el-table :data="ylDetail" border stripe size="small" class="admin-table" :empty-text="t('pages.mrpPalet.ylEmpty')">
-        <el-table-column prop="kode_yl" :label="t('pages.mrpPalet.yl')" min-width="110" />
+      <el-table :data="ylDetail" border size="small" empty-text="—">
+        <el-table-column prop="kode_yl" :label="t('pages.mrpPalet.materialType')" min-width="110" />
         <el-table-column :label="t('pages.mrpPalet.thickness')" width="100">
           <template #default="{ row }">{{ dash(row.thickness) }}</template>
         </el-table-column>
@@ -216,7 +204,7 @@
     <el-dialog v-model="ylOutOpen" :title="t('pages.mrpPalet.ylOut')" width="480px" destroy-on-close append-to-body>
       <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpPalet.ylOutHint') }}</p>
       <el-form label-position="top">
-        <el-form-item :label="t('pages.mrpPalet.yl')" required>
+        <el-form-item :label="t('pages.mrpPalet.materialType')" required>
           <el-select v-model="ylOutKey" filterable class="w-full" @change="onYlPick">
             <el-option
               v-for="y in ylRows"
@@ -255,6 +243,7 @@ import { Plus, Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import { can } from '../../../security/permissions'
 import {
+  listMasterItems,
   mrpListPaletMovements,
   mrpListYl,
   mrpPaletIn,
@@ -264,6 +253,7 @@ import {
 } from '../../../api/client'
 
 const { t } = useI18n()
+const materialTypes = ['PU', 'SUEDE']
 const loading = ref(false)
 const loadingYl = ref(false)
 const saving = ref(false)
@@ -282,11 +272,12 @@ const ylOutOpen = ref(false)
 const ylPalet = ref('')
 const ylDetail = ref([])
 const ylOutKey = ref('')
+const masterItems = ref([])
 const form = reactive({
   kode_palet: '',
   tanggal: new Date().toISOString().slice(0, 10),
   keterangan: '',
-  items: [{ kode_yl: '', thickness: '', warna: '', qty: null }],
+  items: [{ kode_yl: 'PU', thickness: '', warna: '', qty: null }],
 })
 const paletOutForm = reactive({
   kode_palet: '',
@@ -326,6 +317,50 @@ const stats = computed(() => ({
   in: (movements.value || []).filter((r) => r.direction === 'IN').length,
   out: (movements.value || []).filter((r) => r.direction === 'OUT').length,
 }))
+
+const thicknessOptions = computed(() => {
+  const set = new Set()
+  for (const it of masterItems.value) {
+    const th = String(it.thickness_range ?? it.thickness_mm ?? '').trim()
+    if (th) set.add(th)
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+})
+
+const allColorOptions = computed(() => {
+  const set = new Set()
+  for (const it of masterItems.value) {
+    const color = String(it.color ?? '').trim()
+    if (color) set.add(color)
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+})
+
+function colorOptionsForItem(item) {
+  const thickness = String(item?.thickness ?? '').trim()
+  if (!thickness) return allColorOptions.value
+  const set = new Set()
+  for (const it of masterItems.value) {
+    const rowTh = String(it.thickness_range ?? it.thickness_mm ?? '').trim()
+    if (rowTh !== thickness) continue
+    const color = String(it.color ?? '').trim()
+    if (color) set.add(color)
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+}
+
+function onItemThicknessChange(item) {
+  const allowed = new Set(colorOptionsForItem(item))
+  if (item.warna && !allowed.has(item.warna)) item.warna = ''
+}
+
+async function loadMasterItems() {
+  try {
+    masterItems.value = await listMasterItems()
+  } catch {
+    masterItems.value = []
+  }
+}
 
 function dash(v) {
   const s = (v == null ? '' : String(v)).trim()
@@ -379,7 +414,8 @@ function openIn() {
   form.kode_palet = ''
   form.tanggal = new Date().toISOString().slice(0, 10)
   form.keterangan = ''
-  form.items = [{ kode_yl: '', thickness: '', warna: '', qty: null }]
+  form.items = [{ kode_yl: 'PU', thickness: '', warna: '', qty: null }]
+  loadMasterItems()
   inOpen.value = true
 }
 
@@ -538,8 +574,24 @@ async function submitYlOut() {
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  reload()
+  loadMasterItems()
+})
 </script>
 
 <style scoped>
+.w-52 {
+  width: 13rem;
+}
+.w-56 {
+  width: 14rem;
+}
+.mrp-palet-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
 </style>

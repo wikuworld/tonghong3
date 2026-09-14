@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-shot: cd mrp && .venv/bin/python scripts/import_raw_material_masters.py"""
+"""One-shot: docker compose exec mrp python scripts/import_raw_material_masters.py"""
 from __future__ import annotations
 
 import os

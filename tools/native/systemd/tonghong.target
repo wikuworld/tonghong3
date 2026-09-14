@@ -1,0 +1,7 @@
+[Unit]
+Description=Tonghong native stack (backend + MRP + frontend)
+Wants=tonghong-mrp.service tonghong-backend.service tonghong-frontend.service
+After=network.target
+
+[Install]
+WantedBy=multi-user.target

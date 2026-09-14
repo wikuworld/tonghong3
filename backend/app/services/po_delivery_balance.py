@@ -11,15 +11,19 @@ from sqlalchemy.orm import Session
 from app.models import DeliveryDetail, PoDetail, ProductionDetail
 
 
+def _net_delivered_qty_expr():
+    return DeliveryDetail.qty - func.coalesce(DeliveryDetail.returned_qty, 0)
+
+
 def sum_delivered_qty_for_po_detail(
     db: Session,
     po_detail_id: int,
     *,
     exclude_delivery_detail_id: int | None = None,
 ) -> Decimal:
-    """Jumlah qty delivery untuk baris PO (jalur ProductionDetail atau po_detail_id langsung)."""
+    """Jumlah qty delivery NET (qty − retur) untuk baris PO."""
     via_production = (
-        select(func.coalesce(func.sum(DeliveryDetail.qty), 0))
+        select(func.coalesce(func.sum(_net_delivered_qty_expr()), 0))
         .select_from(DeliveryDetail)
         .join(ProductionDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
         .where(ProductionDetail.po_detail_id == po_detail_id)
@@ -29,7 +33,7 @@ def sum_delivered_qty_for_po_detail(
     total_prod = db.scalars(via_production).one()
 
     via_direct = (
-        select(func.coalesce(func.sum(DeliveryDetail.qty), 0))
+        select(func.coalesce(func.sum(_net_delivered_qty_expr()), 0))
         .select_from(DeliveryDetail)
         .where(
             DeliveryDetail.po_detail_id == po_detail_id,

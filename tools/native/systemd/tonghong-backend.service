@@ -1,0 +1,18 @@
+[Unit]
+Description=Tonghong ERP backend (FastAPI / uvicorn)
+After=network.target tonghong-mrp.service
+Wants=tonghong-mrp.service
+
+[Service]
+Type=simple
+WorkingDirectory=/tonghong/backend
+Environment=HOME=/root
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/tonghong/tools/native/run-backend.sh
+Restart=always
+RestartSec=3
+TimeoutStartSec=180
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target tonghong.target

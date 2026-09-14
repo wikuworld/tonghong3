@@ -1,0 +1,18 @@
+[Unit]
+Description=Tonghong frontend (Vite dev)
+After=network.target tonghong-backend.service
+Wants=tonghong-backend.service
+
+[Service]
+Type=simple
+WorkingDirectory=/tonghong/frontend
+Environment=HOME=/root
+Environment=NODE_ENV=development
+ExecStart=/tonghong/tools/native/run-frontend.sh
+Restart=always
+RestartSec=3
+TimeoutStartSec=180
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target tonghong.target

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db import get_db
 from app.models import QcDetail, QcHeader
-from app.routers.auth import get_current_user
+from app.routers.auth import get_current_user, require_roles
 from app.services.mrp_fg_delivery_bridge import FG_OUT_MUST_USE_OUTSTANDING, bridge_fg_out_to_delivery
 from app.services.mrp_packing_bridge import ensure_erp_packing_from_mrp_finish
 from app.services.mrp_color_swatch_bridge import (
@@ -32,6 +32,14 @@ from app.services.mrp_production_bridge import upsert_production_mirror
 from app.services.mrp_stock_bridge import issue_stock_from_mrp
 
 router = APIRouter(prefix="/mrp", tags=["mrp"])
+
+require_mrp_write = require_roles("admin", "production", "ppic", "warehouse")
+
+
+def _mrp_proxy_user(request: Request, user=Depends(get_current_user)):
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return user
+    return require_mrp_write(user)
 
 _UPSTREAM = (settings.mrp_upstream_url or "http://mrp:5010").rstrip("/")
 _HOP_BY_HOP = {
@@ -147,7 +155,7 @@ class MrpSyncPoIn(BaseModel):
 @router.post("/sync/po")
 def sync_po_from_tonghong(
     body: MrpSyncPoIn | None = None,
-    _user=Depends(get_current_user),
+    _user=Depends(require_mrp_write),
     db: Session = Depends(get_db),
 ):
     """Pull PO details from Tonghong DB and upsert into MRP tbl_master_po.
@@ -209,7 +217,7 @@ class MrpBridgeStockIssueIn(BaseModel):
 def bridge_fg_out(
     body: MrpBridgeFgOutIn,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_mrp_write),
 ):
     """Taut mrp_fg_id ke packing/SJ yang sudah ada. Tidak membuat Surat Jalan baru."""
     result = bridge_fg_out_to_delivery(
@@ -240,7 +248,7 @@ def bridge_fg_out(
 def bridge_production_upsert(
     body: MrpBridgeProductionIn,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_mrp_write),
 ):
     result = upsert_production_mirror(
         db,
@@ -268,7 +276,7 @@ def bridge_production_upsert(
 def bridge_stock_issue(
     body: MrpBridgeStockIssueIn,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_mrp_write),
 ):
     from app.services.mrp_bridge_metrics import snapshot
 
@@ -400,7 +408,7 @@ async def _run_production_bridge_for_packing(
 async def gudang_fg_out_with_bridge(
     request: Request,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_mrp_write),
 ):
     """FG OUT mandiri ditolak. Surat jalan hanya dari Outstanding (susun kirim)."""
     _ = (request, db, user)
@@ -411,7 +419,7 @@ async def gudang_fg_out_with_bridge(
 async def packing_create_with_production(
     request: Request,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_mrp_write),
 ):
     body = await request.json()
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -443,7 +451,7 @@ async def packing_actions_with_production(
     packing_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_mrp_write),
 ):
     body = await request.json()
     action = (body.get("action") or "").strip()
@@ -511,44 +519,51 @@ async def _proxy_stock_action_with_bridge(
 
 @router.post("/stok-kimia")
 async def stok_kimia_bridged(
-    request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)
+    request: Request, db: Session = Depends(get_db), user=Depends(require_mrp_write)
 ):
     return await _proxy_stock_action_with_bridge("stok-kimia", request, db, user)
 
 
 @router.post("/stok-rp")
 async def stok_rp_bridged(
-    request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)
+    request: Request, db: Session = Depends(get_db), user=Depends(require_mrp_write)
 ):
     return await _proxy_stock_action_with_bridge("stok-rp", request, db, user)
 
 
 @router.post("/stok-material-lain")
 async def stok_material_lain_bridged(
-    request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)
+    request: Request, db: Session = Depends(get_db), user=Depends(require_mrp_write)
 ):
     return await _proxy_stock_action_with_bridge("stok-material-lain", request, db, user)
 
 
 @router.post("/usage-color")
 async def usage_color_bridged(
-    request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)
+    request: Request, db: Session = Depends(get_db), user=Depends(require_mrp_write)
 ):
     return await _proxy_stock_action_with_bridge("usage-color", request, db, user)
 
 
 @router.post("/usage-rp")
 async def usage_rp_bridged(
-    request: Request, db: Session = Depends(get_db), user=Depends(get_current_user)
+    request: Request, db: Session = Depends(get_db), user=Depends(require_mrp_write)
 ):
     return await _proxy_stock_action_with_bridge("usage-rp", request, db, user)
+
+
+@router.post("/usage-material-lain")
+async def usage_material_lain_bridged(
+    request: Request, db: Session = Depends(get_db), user=Depends(require_mrp_write)
+):
+    return await _proxy_stock_action_with_bridge("usage-material-lain", request, db, user)
 
 
 @router.post("/checkpoint")
 async def checkpoint_create_bridged(
     request: Request,
     db: Session = Depends(get_db),
-    user=Depends(get_current_user),
+    user=Depends(require_mrp_write),
 ):
     """Simpan checkpoint MRP + mirror QcDetail ERP bila treatment = QC."""
     body = await request.json()
@@ -611,9 +626,12 @@ async def checkpoint_create_bridged(
                         f"checkpoint/{data.get('id')}/qc-result",
                         json_body={"erp_qc_detail_id": qc_detail_id},
                     )
-            except Exception:
+            except Exception as exc:
                 db.rollback()
-                qc_detail_id = None
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Mirror QC ERP gagal: {exc}",
+                ) from exc
     out = dict(data or {})
     if qc_detail_id:
         out["erp_qc_detail_id"] = qc_detail_id
@@ -690,7 +708,7 @@ def erp_combination_from_master_items(
 async def proxy_mrp(
     path: str,
     request: Request,
-    _user=Depends(get_current_user),
+    _user=Depends(_mrp_proxy_user),
 ):
     target = f"{_UPSTREAM}/api/mrp/{path}"
     if request.url.query:

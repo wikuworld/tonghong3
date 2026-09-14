@@ -7,10 +7,10 @@ from typing import Any, Optional
 
 import mysql.connector
 
-from db import erp_db_config
+from db import root_db_config
 import os
 
-_ERP_DB = os.getenv("ERP_DB_NAME", "tonghong")
+_ERP_DB = os.getenv("ERP_DB_NAME", "tonghong_erp")
 
 
 def _norm(value: Any) -> str:
@@ -18,7 +18,7 @@ def _norm(value: Any) -> str:
 
 
 def _connect():
-    cfg = erp_db_config()
+    cfg = root_db_config()
     cfg["database"] = _ERP_DB
     return mysql.connector.connect(**cfg)
 
