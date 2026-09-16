@@ -5455,6 +5455,122 @@ _PACKING_STATUS_RANK = {"in_progress": 1, "finished": 2}
 _FG_STATUS_RANK = {"in_stock": 1, "out": 2}
 
 
+def _monitoring_parse_dt(value):
+    if value is None or value == "":
+        return None, False
+    if isinstance(value, datetime):
+        return value, True
+    if isinstance(value, date):
+        return datetime(value.year, value.month, value.day), False
+    s = str(value).strip()
+    if not s:
+        return None, False
+    s = s.replace("Z", "")
+    if "T" in s or " " in s:
+        try:
+            return datetime.fromisoformat(s[:19]), True
+        except ValueError:
+            pass
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d"), False
+    except ValueError:
+        return None, False
+
+
+def _monitoring_log_entry(value, proses: str, keterangan: str | None = None) -> dict | None:
+    dt, has_time = _monitoring_parse_dt(value)
+    if dt is None:
+        return None
+    entry = {
+        "at": dt.strftime("%Y-%m-%d %H:%M:%S") if has_time else dt.strftime("%Y-%m-%d"),
+        "tanggal": dt.strftime("%Y-%m-%d"),
+        "jam": dt.strftime("%H:%M:%S") if has_time else None,
+        "proses": proses,
+    }
+    note = (keterangan or "").strip() if keterangan is not None else ""
+    if note:
+        entry["keterangan"] = note
+    return entry
+
+
+def _monitoring_status_log(item: dict, bundle: dict) -> list[dict]:
+    logs: list[dict] = []
+
+    def add(value, proses: str, keterangan: str | None = None):
+        entry = _monitoring_log_entry(value, proses, keterangan)
+        if entry:
+            logs.append(entry)
+
+    add(
+        item.get("date_created") or item.get("item_created_at") or item.get("tanggal_rencana"),
+        "rencana",
+        item.get("kode_rencana") or item.get("kode_rencana_item"),
+    )
+    for row in bundle.get("prep") or []:
+        status = (row.get("status") or "").strip().lower()
+        created = row.get("date_created")
+        saved = row.get("date_saved")
+        kode = row.get("kode_proses")
+        if status == "completed":
+            if saved:
+                add(created, "proses_started", kode)
+                add(saved, "proses_completed", kode)
+            else:
+                add(created, "proses_completed", kode)
+        elif status == "saved":
+            if saved:
+                add(created, "proses_started", kode)
+                add(saved, "proses_saved", kode)
+            else:
+                add(created, "proses_saved", kode)
+        elif status == "started":
+            add(created, "proses_started", kode)
+        elif status:
+            add(created, "proses_draft", kode)
+    for row in bundle.get("lab") or []:
+        add(row.get("date_created"), "lab", row.get("kode_lot_warna"))
+    for row in bundle.get("usage") or []:
+        add(row.get("date_created"), "usage", row.get("kode_lot_warna"))
+    for row in bundle.get("checkpoint") or []:
+        result = (row.get("result") or "").strip().upper()
+        proses = "checkpoint_ok" if result == "OK" else "checkpoint"
+        add(
+            row.get("measured_at") or row.get("created_at"),
+            proses,
+            result or row.get("treatment"),
+        )
+    for row in bundle.get("packing") or []:
+        status = (row.get("status") or "").strip().lower()
+        created = row.get("date_created")
+        finished = row.get("date_finished")
+        kode = row.get("kode_packing")
+        if status == "finished":
+            if finished:
+                add(created, "packing", kode)
+                add(finished, "packing_finished", kode)
+            else:
+                add(created, "packing_finished", kode)
+        elif status:
+            add(created, "packing", kode)
+    for row in bundle.get("fg") or []:
+        status = (row.get("status") or "").strip().lower()
+        date_in = row.get("date_in")
+        date_out = row.get("date_out")
+        kode = row.get("kode_packing")
+        if status == "out":
+            if date_out:
+                add(date_in, "gudang_fg", kode)
+                add(date_out, "gudang_fg_out", kode)
+            else:
+                add(date_in or date_out, "gudang_fg_out", kode)
+        elif status:
+            add(date_in, "gudang_fg", kode)
+
+    rank = {code: i for i, code in enumerate(_MONITOR_STATUS_RANK)}
+    logs.sort(key=lambda e: (e.get("at") or "", rank.get(e.get("proses") or "", 99)))
+    return logs
+
+
 def _monitoring_status_code(
     *,
     prep_status: str | None = None,
@@ -5630,7 +5746,8 @@ def _monitoring_row_from_bundle(item: dict, bundle: dict, lot_map: dict[int, str
 def _monitoring_fetch_items(cur, item_id: int | None = None) -> list[dict]:
     sql = (
         "SELECT i.id, i.kode_rencana_item, i.kode_lot_wip, i.nama_customer, i.material_name, "
-        "i.color, i.thickness, i.emboss, r.kode_rencana, r.nama_rencana, "
+        "i.color, i.thickness, i.emboss, i.created_at AS item_created_at, "
+        "r.kode_rencana, r.nama_rencana, "
         "r.status AS rencana_status, r.tanggal_rencana, r.date_created "
         "FROM tbl_rencana_item i "
         "JOIN tbl_rencana_produksi r ON r.id = i.rencana_id "
@@ -5685,7 +5802,7 @@ def _monitoring_attach(cur, items: list[dict], *, include_detail: bool = False) 
     rpi_codes = [c for c in rpi_by_id.values() if c]
     prep_sql = (
         "SELECT id, rencana_item_id, kode_wip, kode_rencana, kode_proses, status, "
-        "checkpoint_status, total_size FROM tbl_persiapan_kulit WHERE rencana_item_id IN "
+        "checkpoint_status, total_size, date_created, date_saved FROM tbl_persiapan_kulit WHERE rencana_item_id IN "
         f"({in_sql})"
     )
     prep_params = list(in_params)
@@ -5725,7 +5842,8 @@ def _monitoring_attach(cur, items: list[dict], *, include_detail: bool = False) 
             pack_clauses.append(f"kode_wip IN ({wip_ph})")
             pack_params.extend(wip_list)
         cur.execute(
-            "SELECT id, rencana_item_id, kode_wip, kode_packing, status, total_ukuran, total_lembar "
+            "SELECT id, rencana_item_id, kode_wip, kode_packing, status, total_ukuran, total_lembar, "
+            "date_created, date_finished "
             f"FROM tbl_packing WHERE {' OR '.join(pack_clauses)}",
             tuple(pack_params),
         )
@@ -5758,7 +5876,7 @@ def _monitoring_attach(cur, items: list[dict], *, include_detail: bool = False) 
             fg_clauses.append(f"packing_id IN ({pk_sql})")
             fg_params.extend(pk_params)
         cur.execute(
-            "SELECT packing_id, kode_packing, kode_wip, status, total_ukuran "
+            "SELECT packing_id, kode_packing, kode_wip, status, total_ukuran, date_in, date_out "
             f"FROM tbl_gudang_fg WHERE {' OR '.join(fg_clauses)}",
             tuple(fg_params),
         )
@@ -5772,7 +5890,7 @@ def _monitoring_attach(cur, items: list[dict], *, include_detail: bool = False) 
     if wip_list:
         wip_ph = ",".join(["%s"] * len(wip_list))
         cur.execute(
-            f"SELECT kode_wip, result, treatment, measured_at FROM tbl_checkpoint "
+            f"SELECT kode_wip, result, treatment, measured_at, created_at FROM tbl_checkpoint "
             f"WHERE kode_wip IN ({wip_ph}) ORDER BY id DESC",
             tuple(wip_list),
         )
@@ -5783,7 +5901,7 @@ def _monitoring_attach(cur, items: list[dict], *, include_detail: bool = False) 
                 continue
             bundles[iid]["checkpoint"].append(row)
         cur.execute(
-            f"SELECT kode_wip, kode_lot_warna, nama_warna, qty_pembuatan, qty_digunakan "
+            f"SELECT kode_wip, kode_lot_warna, nama_warna, qty_pembuatan, qty_digunakan, date_created "
             f"FROM tbl_usage_color WHERE kode_wip IN ({wip_ph}) ORDER BY id",
             tuple(wip_list),
         )
@@ -5795,7 +5913,7 @@ def _monitoring_attach(cur, items: list[dict], *, include_detail: bool = False) 
             bundles[iid]["usage"].append(row)
 
     cur.execute(
-        f"SELECT id, rencana_item_id, kode_lot_warna, nama_lot_warna, status "
+        f"SELECT id, rencana_item_id, kode_lot_warna, nama_lot_warna, status, date_created "
         f"FROM tbl_lab_lot WHERE rencana_item_id IN ({in_sql})",
         in_params,
     )
@@ -5909,6 +6027,7 @@ def _monitoring_attach(cur, items: list[dict], *, include_detail: bool = False) 
             row["chemicals"] = bundles[iid].get("chemicals") or []
             row["persiapan"] = bundles[iid].get("prep") or []
             row["packing"] = bundles[iid].get("packing") or []
+            row["status_log"] = _monitoring_status_log(item, bundles[iid])
         out.append(row)
     return out
 
@@ -5938,6 +6057,7 @@ def monitoring_list():
                 str(r.get(k) or "")
                 for k in (
                     "no_so",
+                    "nama_rencana",
                     "lot_no",
                     "status_terakhir",
                     "nama_customer",
@@ -5945,6 +6065,8 @@ def monitoring_list():
                     "kode_lot_wip",
                     "no_po",
                     "material_name",
+                    "emboss",
+                    "thickness",
                 )
             ).lower()
             if q in blob:

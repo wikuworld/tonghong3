@@ -119,10 +119,37 @@ def _result_from_delivery(db: Session, dh: DeliveryHeader, pk: PackingHeader | N
     )
 
 
-def _stamp_fg(pk: PackingHeader | None, dh: DeliveryHeader | None, mrp_fg_id: int) -> None:
+def _fg_id_taken_by_other_delivery(
+    db: Session, delivery: DeliveryHeader | None, fg_id: int
+) -> bool:
+    """Satu packing FG bisa dikirim bertahap (beberapa SJ). Unique mrp_fg_id di header SJ
+    tidak boleh memblokir SJ kedua."""
+    stmt = select(DeliveryHeader.id).where(DeliveryHeader.mrp_fg_id == int(fg_id))
+    did = getattr(delivery, "id", None) if delivery is not None else None
+    if did is not None:
+        stmt = stmt.where(DeliveryHeader.id != int(did))
+    return db.scalars(stmt.limit(1)).first() is not None
+
+
+def _set_delivery_mrp_fg(db: Session, delivery: DeliveryHeader | None, fg_id: int) -> None:
+    if delivery is None or delivery.mrp_fg_id is not None:
+        return
+    if _fg_id_taken_by_other_delivery(db, delivery, fg_id):
+        return
+    delivery.mrp_fg_id = int(fg_id)
+
+
+def _stamp_fg(
+    pk: PackingHeader | None,
+    dh: DeliveryHeader | None,
+    mrp_fg_id: int,
+    db: Session | None = None,
+) -> None:
     if pk is not None:
         pk.mrp_fg_id = int(mrp_fg_id)
     if dh is not None and dh.mrp_fg_id is None:
+        if db is not None and _fg_id_taken_by_other_delivery(db, dh, mrp_fg_id):
+            return
         dh.mrp_fg_id = int(mrp_fg_id)
 
 
@@ -324,8 +351,7 @@ def trigger_mrp_fg_out_for_packings(
                                 detail="FG OUT MRP tanpa id",
                             )
                 pk.mrp_fg_id = int(fg_id)
-                if delivery.mrp_fg_id is None:
-                    delivery.mrp_fg_id = int(fg_id)
+                _set_delivery_mrp_fg(db, delivery, int(fg_id))
                 try:
                     client.post(
                         f"{base}/api/mrp/gudang-fg/{int(fg_id)}/bridge-result",

@@ -196,6 +196,79 @@ def _dec_str(v: Decimal | None) -> str:
     return str(v)
 
 
+def _actual_delivery_waves_by_po_detail(
+    db: Session, pod_ids: set[int]
+) -> dict[int, list[dict[str, Any]]]:
+    """Gelombang kirim aktual (satu SJ = satu slot), urut tanggal lalu nomor SJ."""
+    if not pod_ids:
+        return {}
+    net = DeliveryDetail.qty - func.coalesce(DeliveryDetail.returned_qty, 0)
+    cancelled = ("cancelled", "canceled")
+    rows = db.execute(
+        select(
+            DeliveryDetail.id,
+            DeliveryDetail.po_detail_id,
+            DeliveryHeader.id,
+            DeliveryHeader.delivery_date,
+            DeliveryHeader.delivery_number,
+            DeliveryHeader.status,
+            net,
+        )
+        .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
+        .where(DeliveryDetail.po_detail_id.in_(pod_ids))
+    ).all()
+    via_prod = db.execute(
+        select(
+            DeliveryDetail.id,
+            ProductionDetail.po_detail_id,
+            DeliveryHeader.id,
+            DeliveryHeader.delivery_date,
+            DeliveryHeader.delivery_number,
+            DeliveryHeader.status,
+            net,
+        )
+        .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
+        .join(ProductionDetail, ProductionDetail.id == DeliveryDetail.production_detail_id)
+        .where(
+            ProductionDetail.po_detail_id.in_(pod_ids),
+            DeliveryDetail.po_detail_id.is_(None),
+        )
+    ).all()
+    seen_dd: set[int] = set()
+    acc: dict[int, dict[int, dict[str, Any]]] = defaultdict(dict)
+    for dd_id, pod_id, dh_id, ddate, dnum, status, qty in (*rows, *via_prod):
+        if dd_id is None or pod_id is None or dh_id is None:
+            continue
+        dd_i = int(dd_id)
+        if dd_i in seen_dd:
+            continue
+        seen_dd.add(dd_i)
+        if (status or "").strip().lower() in cancelled:
+            continue
+        net_qty = qty if isinstance(qty, Decimal) else Decimal(str(qty or 0))
+        if net_qty <= 0:
+            continue
+        pod_i = int(pod_id)
+        rec = acc[pod_i].setdefault(
+            int(dh_id),
+            {"date": ddate, "qty": Decimal(0), "number": (dnum or "").strip()},
+        )
+        rec["qty"] += net_qty
+        if ddate and (rec["date"] is None or ddate < rec["date"]):
+            rec["date"] = ddate
+    out: dict[int, list[dict[str, Any]]] = {}
+    for pod_i, by_dh in acc.items():
+        waves = sorted(
+            by_dh.values(),
+            key=lambda w: (
+                w["date"] or date.min,
+                str(w.get("number") or ""),
+            ),
+        )
+        out[pod_i] = waves
+    return out
+
+
 def _delivered_qty_by_po_detail(db: Session) -> dict[int, Decimal]:
     """Qty terkirim per baris SO: jalur produksi + DeliveryDetail.po_detail_id langsung (MRP)."""
     delivered: dict[int, Decimal] = {}
@@ -407,11 +480,28 @@ def _remark_system_text(ln: PoDetail, delivered: Decimal, balance: Decimal) -> s
     return " | ".join(parts)
 
 
-def _delivery_slots(ln: PoDetail, max_slots: int = OUTSTANDING_DELIVERY_SLOTS_PROD) -> dict[str, Any]:
+def _delivery_slots(
+    ln: PoDetail,
+    max_slots: int = OUTSTANDING_DELIVERY_SLOTS_PROD,
+    actual_waves: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """1st/2nd/3rd: SJ aktual bila sudah ada kiriman; else rencana jadwal."""
+    out: dict[str, Any] = {}
+    for i in range(1, max_slots + 1):
+        out[f"delivery_{i}_qty"] = ""
+        out[f"delivery_{i}_date"] = ""
+    waves = [w for w in (actual_waves or []) if w]
+    if waves:
+        for i, w in enumerate(waves, start=1):
+            if i > max_slots:
+                break
+            out[f"delivery_{i}_qty"] = _dec_str(w.get("qty"))
+            ddate = w.get("date")
+            out[f"delivery_{i}_date"] = ddate.isoformat() if ddate else ""
+        return out
     by_seq: dict[int, Any] = {}
     for d in ln.delivery_schedules or []:
         by_seq[int(d.sequence_no)] = d
-    out: dict[str, Any] = {}
     for i in range(1, max_slots + 1):
         d = by_seq.get(i)
         out[f"delivery_{i}_qty"] = _dec_str(d.qty) if d and d.qty is not None else ""
@@ -462,6 +552,7 @@ def _line_to_row(
     delivered: Decimal,
     balance: Decimal,
     production_status: str,
+    actual_waves: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     brand = (h.brand_name_snapshot or "").strip() or "—"
     cust = (h.customer_name_snapshot or h.customer_code or "").strip() or "—"
@@ -510,7 +601,7 @@ def _line_to_row(
         "po_status": h.status or "",
         "mkt_stage": h.mkt_workflow_stage or "",
     }
-    row.update(_delivery_slots(ln))
+    row.update(_delivery_slots(ln, actual_waves=actual_waves))
     row.update(_schedule_summary(ln, delivered))
     return row
 
@@ -632,10 +723,20 @@ def _query_outstanding_rows(
 
     pod_ids = {int(ln.id) for _, ln, _, _ in pending}
     prod_status = _latest_production_status_by_pod(db, pod_ids)
+    actual_waves = _actual_delivery_waves_by_po_detail(db, pod_ids)
 
     out: list[dict[str, Any]] = []
     for h, ln, delivered, bal in pending:
-        out.append(_line_to_row(h, ln, delivered, bal, prod_status.get(int(ln.id), "")))
+        out.append(
+            _line_to_row(
+                h,
+                ln,
+                delivered,
+                bal,
+                prod_status.get(int(ln.id), ""),
+                actual_waves=actual_waves.get(int(ln.id)),
+            )
+        )
     return out
 
 

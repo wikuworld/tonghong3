@@ -377,6 +377,7 @@ class ColorSwatchRecipe(Base):
             "color_code",
             "material_name",
             "emboss",
+            "color_standard",
             name="uq_color_swatch_recipe_key",
         ),
         Index("ix_color_swatch_factory_key", "factory_key"),
@@ -749,7 +750,7 @@ class DeliveryHeader(Base):
     __tablename__ = "delivery_headers"
     __table_args__ = (
         Index("ix_delivery_headers_customer_id", "customer_id"),
-        Index("ix_delivery_headers_mrp_fg_id", "mrp_fg_id", unique=True),
+        Index("ix_delivery_headers_mrp_fg_id", "mrp_fg_id"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)

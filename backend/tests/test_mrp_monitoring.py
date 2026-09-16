@@ -1,4 +1,4 @@
-"""Smoke Monitoring MRP: list SO/lot/status and detail KY/chemical/qty."""
+"""Smoke Monitoring MRP: list SO/lot/status and detail log/KY/chemical/qty."""
 
 from __future__ import annotations
 
@@ -47,6 +47,10 @@ def test_monitoring_list_shape(auth_headers):
         assert isinstance(data, list)
         for row in data[:20]:
             assert "no_so" in row
+            assert "nama_rencana" in row
+            assert "material_name" in row
+            assert "emboss" in row
+            assert "thickness" in row
             assert "lot_no" in row
             assert "status_terakhir" in row
             assert "rencana_item_id" in row
@@ -71,10 +75,17 @@ def test_monitoring_detail_ky_chemical_qty(auth_headers):
         assert body.get("rencana_item_id") == item_id
         assert "ky" in body
         assert "chemicals" in body
+        assert "status_log" in body
         assert "total_qty_persiapan" in body
         assert "fg_measured" in body
         assert isinstance(body.get("ky"), list)
         assert isinstance(body.get("chemicals"), list)
+        assert isinstance(body.get("status_log"), list)
+        for ev in body.get("status_log") or []:
+            assert "tanggal" in ev
+            assert "jam" in ev
+            assert "proses" in ev
+            assert ev.get("proses")
         if body.get("fg_measured"):
             assert body.get("total_qty_fg") is not None
         else:

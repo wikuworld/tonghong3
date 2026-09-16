@@ -599,6 +599,14 @@
             </template>
           </el-table-column>
           <el-table-column prop="delivered_qty" :label="t('pages.marketingFlow.colDeliveredQty')" width="92" align="right" />
+          <template v-for="n in 3" :key="`wave-${n}`">
+            <el-table-column :label="`${outstandingOrdinalLabel(n)} Qty`" width="88" align="right">
+              <template #default="{ row }">{{ formatOutstandingCell(row[`delivery_${n}_qty`]) }}</template>
+            </el-table-column>
+            <el-table-column :label="`${outstandingOrdinalLabel(n)} Date`" width="112">
+              <template #default="{ row }">{{ formatOutstandingDate(row[`delivery_${n}_date`]) }}</template>
+            </el-table-column>
+          </template>
           <el-table-column prop="balance_qty" :label="t('pages.marketingFlow.colBalance')" width="92" align="right" />
           <el-table-column :label="t('pages.marketingFlow.outWorkCol')" width="150">
             <template #default="{ row }">

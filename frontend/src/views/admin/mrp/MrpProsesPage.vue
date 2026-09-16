@@ -74,22 +74,6 @@
             <el-radio-button value="Suede">SUEDE</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item :label="t('pages.mrpProses.treatmentList')" required>
-          <div class="mrp-proses-treatment-box">
-            <template v-if="treatmentsFiltered.length">
-              <el-checkbox-group v-model="form.treatment_list">
-                <div
-                  v-for="tr in treatmentsFiltered"
-                  :key="tr.nama_treatment"
-                  class="mrp-proses-treatment-item"
-                >
-                  <el-checkbox :label="tr.nama_treatment">{{ tr.nama_treatment }}</el-checkbox>
-                </div>
-              </el-checkbox-group>
-            </template>
-            <p v-else class="text-sm text-slate-400 mb-0">{{ t('pages.mrpProses.treatmentEmpty') }}</p>
-          </div>
-        </el-form-item>
           <div class="mrp-proses-wip-card mb-3">
             <span class="mrp-proses-wip-card__label">{{ t('pages.mrpProses.kodeWip') }}</span>
             <span class="mrp-proses-wip-card__value">{{ previewKodeWip || '—' }}</span>
@@ -315,6 +299,22 @@
             </el-table-column>
           </el-table>
         </template>
+        <el-form-item :label="t('pages.mrpProses.treatmentList')" required>
+          <div class="mrp-proses-treatment-box">
+            <template v-if="treatmentsFiltered.length">
+              <el-checkbox-group v-model="form.treatment_list">
+                <div
+                  v-for="tr in treatmentsFiltered"
+                  :key="tr.nama_treatment"
+                  class="mrp-proses-treatment-item"
+                >
+                  <el-checkbox :label="tr.nama_treatment">{{ tr.nama_treatment }}</el-checkbox>
+                </div>
+              </el-checkbox-group>
+            </template>
+            <p v-else class="text-sm text-slate-400 mb-0">{{ t('pages.mrpProses.treatmentEmpty') }}</p>
+          </div>
+        </el-form-item>
           </el-form>
         </div>
 
@@ -820,7 +820,7 @@ async function applyKyUkursToProses(persiapanId) {
         size_val: Number(u.size_val),
       })
     }
-    if (kyRow.tidak_ada_sisa) {
+    if (kyRow.ukur_rows?.length) {
       await mrpProsesAction(persiapanId, { action: 'selesai_ky', ky_id: session.id })
       detail = await mrpGetProses(persiapanId)
     }

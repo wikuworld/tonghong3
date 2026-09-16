@@ -7,6 +7,7 @@ import pytest
 
 from app.routers.marketing import (
     _classify_line_material_group,
+    _delivery_slots,
     _line_to_row,
     _normalize_material_group_filter,
     _passes_mkt_stage_min,
@@ -62,6 +63,39 @@ def test_outstanding_row_thi_order_uses_po_number_not_lot():
     assert row["no_po"] == "4501072445"
     assert row["po_customer_ref"] == "4501072445"
     assert row["system_reference"] == "PUMCS005260305001"
+
+
+def test_delivery_slots_use_actual_sjs_not_single_plan():
+    ln = SimpleNamespace(
+        delivery_schedules=[
+            SimpleNamespace(sequence_no=1, qty=Decimal("400"), delivery_date=date(2026, 9, 22)),
+        ]
+    )
+    waves = [
+        {"qty": Decimal("100"), "date": date(2026, 9, 14)},
+        {"qty": Decimal("100"), "date": date(2026, 9, 22)},
+        {"qty": Decimal("50"), "date": date(2026, 9, 25)},
+    ]
+    out = _delivery_slots(ln, actual_waves=waves)
+    assert out["delivery_1_qty"] == "100"
+    assert out["delivery_1_date"] == "2026-09-14"
+    assert out["delivery_2_qty"] == "100"
+    assert out["delivery_2_date"] == "2026-09-22"
+    assert out["delivery_3_qty"] == "50"
+    assert out["delivery_3_date"] == "2026-09-25"
+
+
+def test_delivery_slots_fall_back_to_plan_when_no_actual():
+    ln = SimpleNamespace(
+        delivery_schedules=[
+            SimpleNamespace(sequence_no=1, qty=Decimal("400"), delivery_date=date(2026, 9, 22)),
+        ]
+    )
+    out = _delivery_slots(ln)
+    assert out["delivery_1_qty"] == "400"
+    assert out["delivery_1_date"] == "2026-09-22"
+    assert out["delivery_2_qty"] == ""
+    assert out["delivery_2_date"] == ""
 
 
 def test_normalize_material_group_filter():

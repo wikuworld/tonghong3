@@ -829,7 +829,7 @@ def _consume_yl_for_ky_session(cur, ky, persiapan=None) -> float:
                 ky.get("kode_palet"),
                 kode_yl,
                 remainder,
-                keterangan=f"Auto adjustment{wip_ref}",
+                keterangan=f"Adjustment tidak ada sisa{wip_ref}",
             )
     cur.execute(
         "UPDATE tbl_persiapan_ky SET yl_consumed=1, qty_consumed=%s WHERE id=%s",

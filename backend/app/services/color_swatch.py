@@ -378,6 +378,24 @@ class UnknownBuyerRejectError(ValueError):
     """Unknown buyer_code when reject_unknown_buyer=True."""
 
 
+def _recipe_field(data: dict[str, Any] | ColorSwatchRecipe, name: str, default: str = "") -> str:
+    if isinstance(data, dict):
+        return str(data.get(name) or default)
+    return str(getattr(data, name, None) or default)
+
+
+def recipe_import_key(data: dict[str, Any] | ColorSwatchRecipe) -> tuple[str, str, str, str, str, str]:
+    """Kunci upsert import — color_standard membedakan varian swatch pada dimensi sama."""
+    return (
+        _recipe_field(data, "factory_key"),
+        _recipe_field(data, "buyer_code"),
+        _recipe_field(data, "color_code"),
+        _recipe_field(data, "material_name"),
+        _recipe_field(data, "emboss"),
+        _recipe_field(data, "color_standard"),
+    )
+
+
 def import_recipes(
     db: Session,
     recipes: list[dict[str, Any]],
@@ -400,7 +418,7 @@ def import_recipes(
     skipped = 0
     deactivated = 0
     warnings: list[str] = []
-    imported_keys: set[tuple[str, str, str, str, str]] = set()
+    imported_keys: set[tuple[str, str, str, str, str, str]] = set()
     customer_cache: dict[tuple[str, str | None], int | None] = {}
     brand_cache: dict[str, int | None] = {}
     buyers_seen: list[str] = [str(d.get("buyer_code") or "") for d in recipes]
@@ -418,9 +436,7 @@ def import_recipes(
         if mat and mat not in mats_warned and material_missing_in_master_items(db, mat):
             warnings.append(f"material tidak cocok master_items: {mat}")
             mats_warned.add(mat)
-        imported_keys.add(
-            (fk, buyer, data["color_code"], data["material_name"], data["emboss"])
-        )
+        imported_keys.add(recipe_import_key(data))
         cust_cache_key = (fk, data.get("color_standard"))
         if cust_cache_key not in customer_cache:
             customer_cache[cust_cache_key] = _resolve_customer_id(
@@ -436,6 +452,7 @@ def import_recipes(
                 ColorSwatchRecipe.color_code == data["color_code"],
                 ColorSwatchRecipe.material_name == data["material_name"],
                 ColorSwatchRecipe.emboss == data["emboss"],
+                ColorSwatchRecipe.color_standard == data.get("color_standard"),
             )
         ).first()
 
@@ -487,14 +504,7 @@ def import_recipes(
                     )
                 ).all()
                 for recipe in rows:
-                    rk = (
-                        recipe.factory_key,
-                        recipe.buyer_code,
-                        recipe.color_code,
-                        recipe.material_name,
-                        recipe.emboss,
-                    )
-                    if rk not in imported_keys:
+                    if recipe_import_key(recipe) not in imported_keys:
                         recipe.is_active = False
                         recipe.updated_at = app_now()
                         deactivated += 1
@@ -504,14 +514,7 @@ def import_recipes(
                 select(ColorSwatchRecipe).where(ColorSwatchRecipe.is_active.is_(True))
             ).all()
             for recipe in rows:
-                rk = (
-                    recipe.factory_key,
-                    recipe.buyer_code,
-                    recipe.color_code,
-                    recipe.material_name,
-                    recipe.emboss,
-                )
-                if rk not in imported_keys:
+                if recipe_import_key(recipe) not in imported_keys:
                     recipe.is_active = False
                     recipe.updated_at = app_now()
                     deactivated += 1

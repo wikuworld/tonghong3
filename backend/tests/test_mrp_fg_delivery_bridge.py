@@ -125,3 +125,21 @@ def test_bridge_does_not_create_stub_or_delivery():
     assert exc.value.status_code == 400
     assert "outstanding" in str(exc.value.detail).lower()
     assert added == []
+
+
+def test_set_delivery_mrp_fg_skips_when_another_sj_has_it():
+    db = MagicMock()
+    db.scalars.return_value.first.return_value = 10
+    dh = DeliveryHeader(id=11, delivery_number="THI-NEW")
+    dh.mrp_fg_id = None
+    bridge._set_delivery_mrp_fg(db, dh, 9)
+    assert dh.mrp_fg_id is None
+
+
+def test_set_delivery_mrp_fg_assigns_when_free():
+    db = MagicMock()
+    db.scalars.return_value.first.return_value = None
+    dh = DeliveryHeader(id=11, delivery_number="THI-NEW")
+    dh.mrp_fg_id = None
+    bridge._set_delivery_mrp_fg(db, dh, 9)
+    assert dh.mrp_fg_id == 9

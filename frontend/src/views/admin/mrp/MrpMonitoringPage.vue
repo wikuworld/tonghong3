@@ -32,8 +32,20 @@
         <el-table-column prop="no_so" :label="t('pages.mrpMonitoring.so')" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">{{ dash(row.no_so) }}</template>
         </el-table-column>
+        <el-table-column prop="nama_rencana" :label="t('pages.mrpMonitoring.namaRencana')" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.nama_rencana) }}</template>
+        </el-table-column>
         <el-table-column prop="lot_no" :label="t('pages.mrpMonitoring.lotNo')" min-width="160" show-overflow-tooltip>
           <template #default="{ row }">{{ dash(row.lot_no) }}</template>
+        </el-table-column>
+        <el-table-column prop="material_name" :label="t('common.material')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.material_name) }}</template>
+        </el-table-column>
+        <el-table-column prop="emboss" :label="t('common.emboss')" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.emboss) }}</template>
+        </el-table-column>
+        <el-table-column prop="thickness" :label="t('pages.mrpRencana.thickness')" min-width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.thickness) }}</template>
         </el-table-column>
         <el-table-column :label="t('pages.mrpMonitoring.statusLast')" min-width="180">
           <template #default="{ row }">
@@ -86,6 +98,33 @@
             <span v-else class="text-slate-400">{{ t('pages.mrpMonitoring.qtyFgPending') }}</span>
           </div>
         </div>
+
+        <h4 class="mb-2 font-semibold">{{ t('pages.mrpMonitoring.statusLog') }}</h4>
+        <el-table
+          :data="detail.status_log || []"
+          border
+          size="small"
+          class="mb-4"
+          :empty-text="t('pages.mrpMonitoring.statusLogEmpty')"
+        >
+          <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
+          <el-table-column :label="t('common.date')" width="130">
+            <template #default="{ row }">{{ formatLogDate(row.tanggal) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('pages.mrpMonitoring.jam')" width="110">
+            <template #default="{ row }">{{ formatLogTime(row.jam) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('common.process')" min-width="220">
+            <template #default="{ row }">
+              <div class="mrp-mon-log-proses">
+                <el-tag size="small" :type="statusType(row.proses)" effect="plain">
+                  {{ statusLabel(row.proses) }}
+                </el-tag>
+                <span v-if="row.keterangan" class="mrp-mon-log-ket">{{ row.keterangan }}</span>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
 
         <h4 class="mb-2 font-semibold">{{ t('pages.mrpMonitoring.kyUsed') }}</h4>
         <el-table :data="detail.ky || []" border size="small" class="mb-4" :empty-text="t('pages.mrpMonitoring.noKy')">
@@ -145,7 +184,11 @@ const filteredRows = computed(() => {
   return rows.value.filter((r) =>
     [
       r.no_so,
+      r.nama_rencana,
       r.lot_no,
+      r.material_name,
+      r.emboss,
+      r.thickness,
       r.status_terakhir,
       statusLabel(r.status_terakhir),
       r.nama_customer,
@@ -176,6 +219,23 @@ function formatQty(v) {
   const n = Number(v)
   if (!Number.isFinite(n)) return '—'
   return Number.isInteger(n) ? String(n) : n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
+
+function formatLogDate(v) {
+  if (!v) return '—'
+  const s = String(v).trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const [y, m, d] = s.slice(0, 10).split('-')
+    return `${d}/${m}/${y}`
+  }
+  return s
+}
+
+function formatLogTime(v) {
+  if (!v) return '—'
+  const s = String(v).trim()
+  if (/^\d{2}:\d{2}/.test(s)) return s.slice(0, 8)
+  return s
 }
 
 function statusLabel(code) {
@@ -258,6 +318,16 @@ onMounted(reload)
   letter-spacing: 0.04em;
   color: var(--el-text-color-secondary);
   margin-bottom: 0.15rem;
+}
+.mrp-mon-log-proses {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.mrp-mon-log-ket {
+  font-size: 0.75rem;
+  color: var(--el-text-color-secondary);
 }
 @media (max-width: 700px) {
   .mrp-mon-meta {
