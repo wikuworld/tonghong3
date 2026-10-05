@@ -1,0 +1,13 @@
+CREATE USER IF NOT EXISTS 'tonghong'@'%' IDENTIFIED BY 'tonghong_secret';
+CREATE USER IF NOT EXISTS 'tonghong'@'localhost' IDENTIFIED BY 'tonghong_secret';
+ALTER USER 'tonghong'@'%' IDENTIFIED BY 'tonghong_secret';
+ALTER USER 'tonghong'@'localhost' IDENTIFIED BY 'tonghong_secret';
+GRANT ALL PRIVILEGES ON `tonghong`.* TO 'tonghong'@'%';
+GRANT ALL PRIVILEGES ON `tonghong`.* TO 'tonghong'@'localhost';
+CREATE USER IF NOT EXISTS 'tonghong_mrp'@'%' IDENTIFIED BY 'tonghong_mrp_secret';
+CREATE USER IF NOT EXISTS 'tonghong_mrp'@'localhost' IDENTIFIED BY 'tonghong_mrp_secret';
+ALTER USER 'tonghong_mrp'@'%' IDENTIFIED BY 'tonghong_mrp_secret';
+ALTER USER 'tonghong_mrp'@'localhost' IDENTIFIED BY 'tonghong_mrp_secret';
+GRANT ALL PRIVILEGES ON `tonghong_mrp`.* TO 'tonghong_mrp'@'%';
+GRANT ALL PRIVILEGES ON `tonghong_mrp`.* TO 'tonghong_mrp'@'localhost';
+FLUSH PRIVILEGES;

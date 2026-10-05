@@ -1,0 +1,22 @@
+[Unit]
+Description=Tonghong UAT ERP API (FastAPI / uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+User=developer
+Group=developer
+WorkingDirectory=/home/developer/project_uat/erp/backend
+Environment=HOME=/home/developer
+Environment=PYTHONUNBUFFERED=1
+Environment=TONGHONG_ENV_FILE=/home/developer/project_uat/.env
+Environment=TZ=Asia/Jakarta
+Environment=APP_TIMEZONE=Asia/Jakarta
+ExecStart=/home/developer/project_uat/tools/native/run-backend.sh
+Restart=always
+RestartSec=3
+TimeoutStartSec=180
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target tonghong-uat.target

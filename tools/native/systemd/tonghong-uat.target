@@ -1,0 +1,7 @@
+[Unit]
+Description=Tonghong UAT native stack (ERP + MRP Vue/FastAPI)
+Wants=tonghong-uat-erp-api.service tonghong-uat-erp-ui.service tonghong-uat-mrp-api.service tonghong-uat-mrp-ui.service
+After=network.target
+
+[Install]
+WantedBy=multi-user.target

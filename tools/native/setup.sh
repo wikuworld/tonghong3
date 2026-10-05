@@ -9,30 +9,34 @@ if ! command -v "$PY" >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "==> Backend venv ($PY)"
-if [[ ! -x "$ROOT/backend/.venv/bin/python" ]]; then
-  "$PY" -m venv "$ROOT/backend/.venv"
+echo "==> ERP API venv ($PY)"
+if [[ ! -x "$ROOT/erp/backend/.venv/bin/python" ]]; then
+  "$PY" -m venv "$ROOT/erp/backend/.venv"
 fi
-"$ROOT/backend/.venv/bin/pip" install -q --upgrade pip
-"$ROOT/backend/.venv/bin/pip" install -q -r "$ROOT/backend/requirements.txt"
+"$ROOT/erp/backend/.venv/bin/pip" install -q --upgrade pip
+"$ROOT/erp/backend/.venv/bin/pip" install -q -r "$ROOT/erp/backend/requirements.txt"
 
-echo "==> MRP venv ($PY)"
-if [[ ! -x "$ROOT/mrp/.venv/bin/python" ]]; then
-  "$PY" -m venv "$ROOT/mrp/.venv"
+echo "==> MRP API venv ($PY)"
+if [[ ! -x "$ROOT/mrp/backend/.venv/bin/python" ]]; then
+  "$PY" -m venv "$ROOT/mrp/backend/.venv"
 fi
-"$ROOT/mrp/.venv/bin/pip" install -q --upgrade pip
-"$ROOT/mrp/.venv/bin/pip" install -q -r "$ROOT/mrp/requirements.txt"
+"$ROOT/mrp/backend/.venv/bin/pip" install -q --upgrade pip
+"$ROOT/mrp/backend/.venv/bin/pip" install -q -r "$ROOT/mrp/backend/requirements.txt"
 
-echo "==> Frontend npm"
+echo "==> ERP + MRP frontend npm"
 if [[ -s "$ROOT/tools/nvm-load.sh" ]]; then
   # shellcheck disable=SC1091
   source "$ROOT/tools/nvm-load.sh" || true
 fi
 (
-  cd "$ROOT/frontend"
+  cd "$ROOT/erp/frontend"
+  npm install
+)
+(
+  cd "$ROOT/mrp/frontend"
   npm install
 )
 
 chmod +x "$ROOT/tools/native/"*.sh
 echo "==> Setup native selesai."
-echo "    Install systemd: $ROOT/tools/native/install-systemd.sh --start"
+echo "    Install systemd UAT: $ROOT/tools/native/install-systemd-tonghong-uat.sh --start"

@@ -14,9 +14,9 @@ MRP historically mirrored ERP catalogs (`master_customer`, `master_erp`, `master
    - `customers`, `master_items`, `raw_materials` (+ `material_stocks` for financial book).
 2. **MRP must not CREATE or sync mirror catalog tables** for those domains.
 3. Shopfloor **transaction** tables store `erp_*_id` plus denormalized code/name snapshots.
-4. Dropdowns/lists resolve via root-DB read / gateway against ERP.
+4. Dropdowns/lists resolve via **ERP HTTP API** (`ERP_API_URL` + service token), not cross-DB SQL.
 5. Operational SoR that stays in MRP: lot tables (`tbl_stok_*`), WIP/lab/proses/packing, treatment, resep names, palet/YL.
-6. `tbl_master_po` remains as PO work-queue mirror (not a catalog master).
+6. `tbl_master_po` remains as PO work-queue mirror (not a catalog master); filled by **ERP→MRP push** only. MRP reconcile (`POST /api/v1/mrp/sync/po` di sisi MRP) meminta ERP push ulang via service token — bukan pull SQL.
 
 ## Consequences
 
@@ -27,10 +27,7 @@ MRP historically mirrored ERP catalogs (`master_customer`, `master_erp`, `master
 
 ## Grants (MRP DB user)
 
-MRP app user needs **SELECT** (not DML) on Tonghong ERP tables:
-
-- `tonghong.customers`
-- `tonghong.raw_materials`
-- `tonghong.master_items`
-
-Write path for catalogs remains ERP Inventory / Customers UI (or impor yang menulis ke `raw_materials` saja).
+MRP app user **tidak** punya akses ke database ERP.
+Katalog (`customers`, `raw_materials`, `master_items`) hanya via HTTP
+(`ERP_API_URL` + `X-Internal-Api-Key` / `ERP_SERVICE_TOKEN`).
+Tidak ada jalur SQL lintas-DB / rollback.

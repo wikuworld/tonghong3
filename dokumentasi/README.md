@@ -25,3 +25,5 @@ Atau drag-and-drop ke folder `dokumentasi/master-items/` lewat Cursor / SFTP.
 ## MRP shopfloor
 
 Peta fungsi yang sudah ada (rencana → proses → packing → gudang FG): [`mrp-peta-fungsi.md`](mrp-peta-fungsi.md). Dual path menu ERP vs MRP: [`menu-erp-mrp-status.md`](menu-erp-mrp-status.md).
+
+Kontrak pagination + sorting list table: [`list-paging-sorting.md`](list-paging-sorting.md).

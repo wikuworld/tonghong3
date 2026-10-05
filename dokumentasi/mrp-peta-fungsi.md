@@ -2,7 +2,7 @@
 
 Inventaris fungsi yang sudah jalan di UI Vue + API Flask MRP (`tonghong_mrp`), di-proxy FastAPI [`backend/app/routers/mrp_gateway.py`](../backend/app/routers/mrp_gateway.py). Bukan backlog fitur baru.
 
-**Stack:** frontend `/admin/mrp/*` → FastAPI `/api/v1/mrp/...` → Flask [`mrp/api_routes.py`](../mrp/api_routes.py) (port 5010). HTML Flask lama di-retire (`mrp/app.py` `_retire_flask_html_ui`).
+**Stack:** frontend `/admin/mrp/*` → FastAPI `/api/v1/mrp/...` → Flask [`mrp/backend/legacy/api_routes.py`](../mrp/backend/legacy/api_routes.py) (port 5010). HTML Flask shopfloor di-retire: route lama di [`mrp/backend/legacy/app.py`](../mrp/backend/legacy/app.py) memakai `_redirect_mrp_ui` ke Vue; template di `archive/`.
 
 Lihat juga: [menu-erp-mrp-status.md](menu-erp-mrp-status.md), [adr-erp-only-masters.md](adr-erp-only-masters.md), [uat-mrp-sl043-hasil.md](uat-mrp-sl043-hasil.md).
 
@@ -36,9 +36,11 @@ flowchart TD
 
 ## Dual path (jangan campur)
 
-- **MRP** = operasi shopfloor harian (menu `mrpFlowMenus` di [`frontend/src/layouts/AdminLayout.vue`](../frontend/src/layouts/AdminLayout.vue)).
+- **MRP** = operasi shopfloor harian (menu `mrpFlowMenus` di [`mrp/frontend/src/layouts/AdminLayout.vue`](../mrp/frontend/src/layouts/AdminLayout.vue)).
 - **ERP** Production / QC / Packing = buku order + bridge, bukan lantai produksi.
-- Master katalog MRP (kecuali Treatment) = **lihat saja** dari ERP `master_items` / `raw_materials`. CRUD di Inventory.
+- Master katalog MRP (kecuali Treatment) = **lihat saja** dari ERP `master_items` / `raw_materials` via **HTTP API** (`ERP_API_URL` + `ERP_SERVICE_TOKEN`). Tidak ada SQL lintas-DB.
+- CRUD katalog di Inventory **ERP** (UI MRP inventory read-only / 403 pada mutasi).
+- Sync PO: **ERP push** saja (`mrp_po_sync`). Tombol/reconcile di MRP memanggil ERP `POST /api/v1/mrp/sync/po` (service token) agar ERP push ulang — bukan pull SQL.
 
 ## Alur utama (urut operasi)
 
@@ -50,7 +52,7 @@ flowchart TD
 
 ### 1. Rencana Produksi — `/admin/mrp/rencana-produksi`
 
-UI: [`MrpRencanaProduksiPage.vue`](../frontend/src/views/admin/mrp/MrpRencanaProduksiPage.vue) + [`MrpRencanaCreateDialog.vue`](../frontend/src/views/admin/mrp/MrpRencanaCreateDialog.vue).
+UI: [`MrpRencanaProduksiPage.vue`](../mrp/frontend/src/views/admin/mrp/MrpRencanaProduksiPage.vue) + [`MrpRencanaCreateDialog.vue`](../mrp/frontend/src/views/admin/mrp/MrpRencanaCreateDialog.vue).
 
 Fungsi yang ada:
 
@@ -71,19 +73,21 @@ API: `GET/POST /palet`, `/palet/in`, `/palet/out`, `/yl`, movements.
 
 ### 3. Proses / Persiapan kulit — `/admin/mrp/proses`
 
-UI: [`MrpProsesPage.vue`](../frontend/src/views/admin/mrp/MrpProsesPage.vue) + [`MrpProsesDetailPage.vue`](../frontend/src/views/admin/mrp/MrpProsesDetailPage.vue).
+UI: [`MrpProsesPage.vue`](../mrp/frontend/src/views/admin/mrp/MrpProsesPage.vue) + [`MrpProsesDetailPage.vue`](../mrp/frontend/src/views/admin/mrp/MrpProsesDetailPage.vue) (workbench KY + ukur di detail).
 
 Fungsi yang ada:
 
-- Scan / pilih RPI, pilih treatment (PU/Suede dari master treatment), buat persiapan (`POST /proses`).
-- Status: `draft` → **Start** → `started` → **Selesai & Simpan** → `saved`/`completed`.
-- Sesi KY (hanya setelah Start): palet + YL + target qty; **Selesai KY** memotong stok YL (`_consume_yl_for_ky_session`).
-- Pencatatan ukur per sesi (tambah/hapus).
+- Scan / pilih RPI, pilih treatment (PU/Suede dari master treatment), buat persiapan (`POST /api/mrp/proses`).
+- Status write path: `draft` → **Start** → `started` → **Selesai & Simpan** → `completed` (legacy `saved` masih diterima gate & di-backfill ke `completed`).
+- Create: sesi KY hanya boleh bersama **1 RPI**; multi-RPI tanpa KY OK — KY lanjutan di halaman detail.
+- Detail (status `started`): tambah KY (`scan_ky`), aktifkan KY planned, panel ukur (`add_ukur`), **Selesai KY** (potong stok YL), lalu Finish&Save.
 - Cetak stiker lot WIP / reprint.
 
-API aksi [`proses_actions`](../mrp/api_routes.py): `start`, `scan_ky`, `add_ukur`, `selesai_ky`, `delete_ukur`, `save`, `reprint`.
+API aksi [`proses_actions`](../mrp/backend/legacy/api_routes.py): `start`, `scan_ky`, `activate_ky`, `add_ukur`, `selesai_ky`, `delete_ukur`, `save`, `reprint`.
 
 Gate: Lab (jika di-link RPI) butuh persiapan `started|saved|completed`. Packing butuh persiapan `saved|completed`.
+
+HTML Flask shopfloor (`/palet`, `/rencana-produksi*`, `/proses*`, `/lab`, `/usage*`, `/packing*`, `/stok-*`, `/report_*`, `/master/*`, `/gudang-fg*`, `/checkpoint`, …) diarahkan ke `/admin/mrp/*` via `_redirect_mrp_ui` (template lama di archive).
 
 ### 4. Lab lot warna — `/admin/mrp/lab`
 
@@ -115,7 +119,20 @@ Tiga tab: Color (scan lot lab), RP (scan master RP), Material lain. Qty ke WIP; 
 - `POST /gudang-fg/out` lewat gateway ditolak (`FG_OUT_MUST_USE_OUTSTANDING`).
 - Jalur kirim: **Outstanding susun kirim** memicu FG OUT + Delivery ([`mrp_fg_delivery_bridge.py`](../backend/app/services/mrp_fg_delivery_bridge.py) / `apply_outstanding_ship_batch`).
 
-Setelah OUT: Delivery ERP → sent → invoice (manual, di luar MRP).
+Setelah OUT: Delivery ERP dibuat dari Outstanding → **invoice THIN otomatis** saat SJ
+dibuat (`delivery_auto_invoice.ensure_invoice_for_delivery`, meeting 17/9). Scan packing list
+(`POST /delivery-shipments/scan-out`) menandai delivery `sent`. Invoice/AR tetap modul ERP
+(bukan UI MRP).
+
+### Alur Marketing (ERP) — efektif setelah Confirm SO
+
+- **Confirm SO** → otomatis stempel rekap + handoff PPIC → tahap **Outstanding** (`in_outstanding`). Cetak rekap / assign PPIC manual bersifat arsip/legacy, **bukan gerbang**.
+- **Outstanding** = pusat kerja: susun rencana + buat SJ (+ THIN) + PI.
+- **Rencana Kirim** = pantauan jadwal (filter rentang / hari ini / terlambat); tanpa buat SJ.
+- **Delivery** = eksekusi SJ (scan-out → `sent`). Draft ≠ sent.
+
+Untuk SJ lama tanpa invoice: jalankan
+`erp/backend/scripts/backfill_delivery_auto_invoices.py`.
 
 ## Material & master (pendukung, bukan urutan shopfloor)
 
@@ -142,4 +159,6 @@ Setelah OUT: Delivery ERP → sent → invoice (manual, di luar MRP).
 
 ## Yang tidak termasuk MRP
 
-ERP Production/QC/Packing halaman admin; invoice AR; Delivery SJ. MRP berhenti di FG in_stock / OUT ke delivery draft.
+ERP Production/QC/Packing halaman admin; Delivery SJ + Invoice/AR (ERP).
+MRP shopfloor berhenti di FG `in_stock` / OUT ke delivery draft via Outstanding.
+Invoice THIN dibuat otomatis di sisi ERP saat SJ dibuat (bukan di UI MRP).

@@ -1,0 +1,24 @@
+[Unit]
+Description=Tonghong UAT MRP UI (Vite shopfloor)
+After=network.target tonghong-uat-mrp-api.service
+Wants=tonghong-uat-mrp-api.service
+
+[Service]
+Type=simple
+User=developer
+Group=developer
+WorkingDirectory=/home/developer/project_uat/mrp/frontend
+Environment=HOME=/home/developer
+Environment=NVM_DIR=/home/developer/.nvm
+Environment=NODE_ENV=development
+Environment=TONGHONG_ENV_FILE=/home/developer/project_uat/.env
+Environment=CHOKIDAR_USEPOLLING=true
+Environment=WATCHPACK_POLLING=true
+ExecStart=/home/developer/project_uat/tools/native/run-mrp-ui.sh
+Restart=always
+RestartSec=3
+TimeoutStartSec=180
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target tonghong-uat.target

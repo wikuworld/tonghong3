@@ -1,0 +1,18 @@
+[Unit]
+Description=Tonghong3 MRP shopfloor (Flask)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/tonghong3/mrp
+Environment=HOME=/root
+Environment=PYTHONUNBUFFERED=1
+Environment=TONGHONG_ENV_FILE=/tonghong3/.env
+ExecStart=/tonghong3/tools/native/run-mrp.sh
+Restart=always
+RestartSec=3
+TimeoutStartSec=90
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target tonghong3.target

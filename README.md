@@ -22,12 +22,13 @@ Sistem ERP ringan untuk alur **Sales/PO → Produksi → QC → Packing → Deli
 - Secara proses bisnis, dokumen tersebut adalah **Sales Order (SO)** dari customer. Karena itu di UI label ditampilkan sebagai **SO** (mis. *No SO*).
 - Jika suatu saat ada **Purchase Order vendor**, sebaiknya dibuat modul terpisah agar tidak rancu.
 
-## Struktur repo
+## Struktur repo (UAT)
 
-- `backend/`: FastAPI + SQLAlchemy + Alembic (MariaDB/MySQL)
-- `frontend/`: Vue 3 + Vite + Element Plus (admin UI)
-- `mrp/`: Flask shopfloor (di-proxy FastAPI)
-- `deploy/systemd/`: unit systemd stack native
+- `erp/backend/`: FastAPI ERP (`tonghong-uat-erp-api` :8001)
+- `erp/frontend/`: Vue ERP (`tonghong-uat-erp-ui` :8081)
+- `mrp/backend/`: FastAPI MRP + shopfloor (`tonghong-uat-mrp-api` :8002)
+- `mrp/frontend/`: Vue MRP + login (`tonghong-uat-mrp-ui` :8082)
+- `tools/native/systemd/`: unit systemd UAT
 
 ## Menjalankan (systemd, server dev)
 

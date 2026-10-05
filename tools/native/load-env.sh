@@ -16,8 +16,9 @@ fi
 if [[ "${MRP_UPSTREAM_URL:-}" == *"mrp:"* ]]; then
   export MRP_UPSTREAM_URL="http://127.0.0.1:${MRP_PORT:-5010}"
 fi
-export MRP_UPSTREAM_URL="${MRP_UPSTREAM_URL:-http://127.0.0.1:5010}"
-export MRP_PORT="${MRP_PORT:-5010}"
-export BACKEND_PORT="${BACKEND_PORT:-8000}"
-export WEB_PORT="${WEB_PORT:-8080}"
+export MRP_UPSTREAM_URL="${MRP_UPSTREAM_URL:-http://127.0.0.1:8002}"
+export MRP_PORT="${MRP_PORT:-8002}"
+export BACKEND_PORT="${BACKEND_PORT:-8001}"
+export WEB_PORT="${WEB_PORT:-8081}"
+export VITE_API_PROXY="${VITE_API_PROXY:-http://127.0.0.1:${BACKEND_PORT}}"
 export PYTHONUNBUFFERED=1

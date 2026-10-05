@@ -1,0 +1,24 @@
+[Unit]
+Description=Tonghong UAT ERP UI (Vite)
+After=network.target tonghong-uat-erp-api.service
+Wants=tonghong-uat-erp-api.service
+
+[Service]
+Type=simple
+User=developer
+Group=developer
+WorkingDirectory=/home/developer/project_uat/erp/frontend
+Environment=HOME=/home/developer
+Environment=NVM_DIR=/home/developer/.nvm
+Environment=NODE_ENV=development
+Environment=TONGHONG_ENV_FILE=/home/developer/project_uat/.env
+Environment=CHOKIDAR_USEPOLLING=true
+Environment=WATCHPACK_POLLING=true
+ExecStart=/home/developer/project_uat/tools/native/run-frontend.sh
+Restart=always
+RestartSec=3
+TimeoutStartSec=180
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target tonghong-uat.target

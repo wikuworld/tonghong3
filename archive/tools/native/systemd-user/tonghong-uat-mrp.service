@@ -1,0 +1,20 @@
+[Unit]
+Description=Tonghong UAT MRP shopfloor (Flask)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/developer/project_uat/mrp
+Environment=HOME=/home/developer
+Environment=PYTHONUNBUFFERED=1
+Environment=TONGHONG_ENV_FILE=/home/developer/project_uat/.env
+Environment=TZ=Asia/Jakarta
+Environment=APP_TIMEZONE=Asia/Jakarta
+ExecStart=/home/developer/project_uat/tools/native/run-mrp.sh
+Restart=always
+RestartSec=3
+TimeoutStartSec=90
+KillMode=mixed
+
+[Install]
+WantedBy=default.target
