@@ -51,3 +51,7 @@ archive.tgz
 archive2.tgz
 th26082026.tgz
 *.tgz
+
+# Local office dumps di dokumentasi (jangan commit)
+dokumentasi/*.pdf
+dokumentasi/*\ (1).*
