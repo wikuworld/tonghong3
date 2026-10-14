@@ -53,7 +53,7 @@ def test_lab_options_include_proses_fields(auth_headers):
             assert "persiapan_status" in items[0] or items[0].get("has_proses") is False
 
 
-def test_lab_create_without_rpi_ok(auth_headers):
+def test_lab_create_without_rpi_rejected(auth_headers):
     with _client() as client:
         opt = client.get("/mrp/lab/options", headers=auth_headers)
         if opt.status_code >= 500:
@@ -71,18 +71,7 @@ def test_lab_create_without_rpi_ok(auth_headers):
                 "items": [{"kode_kimia": kode, "qty": 1, "satuan": "kg"}],
             },
         )
-        assert created.status_code in (200, 201), created.text
-        assert created.json().get("kode_lot_warna")
-
-        listing = client.get("/mrp/lab", headers=auth_headers)
-        assert listing.status_code == 200, listing.text
-        body = listing.json()
-        assert body.get("ok") is True
-        lots = body.get("lots") or []
-        assert any(l.get("kode_lot_warna") == created.json()["kode_lot_warna"] for l in lots)
-        hit = next(l for l in lots if l["kode_lot_warna"] == created.json()["kode_lot_warna"])
-        assert hit.get("jml_kimia", 0) >= 1
-        assert isinstance(hit.get("items"), list) and hit["items"]
+        assert created.status_code == 400, created.text
 
 
 def test_lab_create_link_rpi_requires_proses(auth_headers):

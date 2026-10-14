@@ -94,7 +94,7 @@ def test_filter_by_category_subkon() -> None:
     rows = [
         _mi(id=1, item_code="SUB0001", category="SubKon", material_name="SPLIT SUEDE", color="Black"),
         _mi(id=2, item_code="FG0001", category="PU", material_name="VIRGIN PU", color="Black"),
-        _mi(id=3, item_code="FG0002", category="Suide", material_name="HI SUEDE", color="Red"),
+        _mi(id=3, item_code="FG0002", category="Suede", material_name="HI SUEDE", color="Red"),
     ]
     subkon = filter_by_category(rows, "SubKon")
     assert len(subkon) == 1

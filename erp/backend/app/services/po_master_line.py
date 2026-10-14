@@ -23,6 +23,20 @@ def _norm_thickness(value: str | None) -> str:
     return _WS.sub("", raw).casefold()
 
 
+def _is_waiting_color_ref(value: str | None) -> bool:
+    """Placeholder CS belum dari customer — tidak dibandingkan ke color_code master."""
+    key = _WS.sub(" ", str(value or "").strip().upper()).replace(" ", "")
+    return key in ("WAITINGC/S", "WAITINGCS", "WAITC/S", "WAITCS")
+
+
+def po_line_uses_waiting_cs(
+    color_reference: str | None,
+    color_standard: str | None = None,
+) -> bool:
+    """Baris pakai opsi Waiting C/S — lewati validasi identitas/kode vs master item."""
+    return _is_waiting_color_ref(color_reference) or _is_waiting_color_ref(color_standard)
+
+
 def _color_code_token(value: str | None) -> str:
     """Samakan logika frontend: kode dari tanda kurung, atau string tanpa spasi."""
     raw = str(value or "").strip()
@@ -45,8 +59,15 @@ def align_po_line_to_master_item(
     emboss: str | None,
     thickness_text: str | None,
     color_reference: str | None,
+    color_standard: str | None = None,
 ) -> str | None:
     """Tolak baris yang identitasnya beda dari master. Kode warna kosong diisi dari color_code."""
+    if po_line_uses_waiting_cs(color_reference, color_standard):
+        ref = str(color_reference or "").strip()
+        if ref:
+            return ref
+        std = str(color_standard or "").strip()
+        return std or None
     if master_item_id is None:
         return color_reference
     item = db.get(MasterItem, int(master_item_id))

@@ -292,7 +292,7 @@
                 @change="w.onItemCategoryChange"
               >
                 <el-radio-button value="PU">PU</el-radio-button>
-                <el-radio-button value="Suide">{{ t('status.suede') }}</el-radio-button>
+                <el-radio-button value="Suede">{{ t('status.suede') }}</el-radio-button>
               </el-radio-group>
             </el-form-item>
           </section>

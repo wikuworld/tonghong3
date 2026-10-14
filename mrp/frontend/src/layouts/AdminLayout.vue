@@ -396,6 +396,12 @@ const mrpMasterMenus = [
   { path: '/admin/inventory?tab=material', labelKey: 'menu.inventoryMaterial', icon: Box, permissionKey: 'menu.inventory' },
   { path: '/admin/inventory?tab=stock', labelKey: 'menu.inventoryStock', icon: Goods, permissionKey: 'menu.inventory' },
   { path: '/admin/inventory?tab=warehouse', labelKey: 'menu.inventoryWarehouse', icon: FolderOpened, permissionKey: 'menu.inventory' },
+  {
+    path: '/admin/inventory/units',
+    labelKey: 'menu.inventoryUnitMaster',
+    icon: CollectionTag,
+    permissionKey: 'menu.inventory',
+  },
   { path: '/admin/mrp/masters/erp', labelKey: 'menu.mrpMasterErp', icon: Files, viewOnly: true },
   { path: '/admin/mrp/masters/kulit', labelKey: 'menu.mrpMasterKulit', icon: Files },
   { path: '/admin/mrp/masters/kimia', labelKey: 'menu.mrpMasterKimia', icon: Files, viewOnly: true },
@@ -438,6 +444,9 @@ const filteredMrpMasterMenus = computed(() => filterMenuTree(mrpMasterMenus))
 const filteredMrpReportMenus = computed(() => filterMenuTree(mrpReportMenus))
 
 const activeMenuPath = computed(() => {
+  if (route.path === '/admin/inventory/units') {
+    return '/admin/inventory/units'
+  }
   if (route.path === '/admin/inventory') {
     const tab = String(route.query.tab || 'material')
     return `/admin/inventory?tab=${tab}`

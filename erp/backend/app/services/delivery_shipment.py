@@ -57,10 +57,19 @@ def so_number_for_line(ph: PoHeader | None, pod: PoDetail | None) -> str:
     return ""
 
 
+def _delivery_not_cancelled():
+    status = func.lower(func.trim(func.coalesce(DeliveryHeader.status, "")))
+    return status.notin_(("cancelled", "canceled"))
+
+
 def sum_delivered_qty(db: Session, production_detail_id: int) -> Decimal:
     total = db.scalar(
-        select(func.coalesce(func.sum(DeliveryDetail.qty), 0)).where(
-            DeliveryDetail.production_detail_id == production_detail_id
+        select(func.coalesce(func.sum(DeliveryDetail.qty), 0))
+        .select_from(DeliveryDetail)
+        .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
+        .where(
+            DeliveryDetail.production_detail_id == production_detail_id,
+            _delivery_not_cancelled(),
         )
     )
     return _dec(total)

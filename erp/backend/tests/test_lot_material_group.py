@@ -30,7 +30,7 @@ def test_subkon_cow_leather_maps_to_suede_group():
 
 def test_existing_pu_and_suide_categories_unchanged():
     assert infer_material_group(master_item=_master_item(category="PU", material_name="VIRGIN HYDRO PU")) == "pu"
-    assert infer_material_group(master_item=_master_item(category="Suide", material_name="SPLIT SUEDE")) == "suede"
+    assert infer_material_group(master_item=_master_item(category="Suede", material_name="SPLIT SUEDE")) == "suede"
 
 
 def test_fallback_by_material_name_without_master_item():

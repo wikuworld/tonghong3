@@ -56,6 +56,10 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "update": ["warehouse"],
         "print": ["warehouse", "marketing"],
     },
+    "customsBc27": {
+        "view": ["exim", "warehouse", "marketing"],
+        "export": ["exim", "warehouse", "marketing"],
+    },
     "invoice": {
         "view": ["finance"],
         "create": ["finance"],
@@ -100,6 +104,12 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "delete": [],
     },
     "csiColors": {
+        "view": ["marketing", "sales"],
+        "create": ["marketing"],
+        "update": ["marketing"],
+        "delete": [],
+    },
+    "colorWindow": {
         "view": ["marketing", "sales"],
         "create": ["marketing"],
         "update": ["marketing"],

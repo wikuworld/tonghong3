@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tempfile
 import zipfile
+from datetime import date
 from pathlib import Path
 from typing import Any, Optional
 
@@ -13,7 +14,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import BuyerPriceList, BuyerPriceSheetRow
+from app.models import Brand, BuyerPriceList, BuyerPriceSheetRow
 from app.paging import apply_sort, page_dict, parse_page_params
 from app.routers.auth import get_current_user, require_roles
 from app.schemas import (
@@ -24,8 +25,13 @@ from app.schemas import (
     BuyerPriceSheetSave,
 )
 from app.services.buyer_price_import import list_to_api_dict, persist_buyer_folder
+from app.services.buyer_price_period import (
+    assert_brand_buyer,
+    assert_no_period_overlap,
+    assert_period_bounds,
+    select_buyer_price_list,
+)
 from app.services.buyer_price_resolve import resolve_unit_price_for_buyer
-from app.services.buyer_registry import ensure_buyer_code
 
 router = APIRouter(tags=["buyer-prices"])
 
@@ -35,6 +41,9 @@ class BuyerPriceSummaryOut(BaseModel):
 
     id: int
     buyer_code: str
+    brand_id: Optional[int] = None
+    brand_code: Optional[str] = None
+    brand_name: Optional[str] = None
     currency: str = "USD"
     title: Optional[str] = None
     period_label: Optional[str] = None
@@ -88,10 +97,13 @@ def _normalize_price_cell(val: Any) -> Any:
         )
 
 
-def _row_to_summary(r: BuyerPriceList) -> BuyerPriceSummaryOut:
+def _row_to_summary(r: BuyerPriceList, brand: Optional[Brand] = None) -> BuyerPriceSummaryOut:
     return BuyerPriceSummaryOut(
         id=r.id,
         buyer_code=r.buyer_code,
+        brand_id=r.brand_id,
+        brand_code=brand.code if brand else None,
+        brand_name=brand.name if brand else None,
         currency=r.currency or "USD",
         title=r.title,
         period_label=r.period_label,
@@ -148,14 +160,16 @@ def list_buyer_prices(
         sort_dir=sort_dir or "asc",
         default_page_size=20,
     )
-    stmt = select(BuyerPriceList)
-    count_stmt = select(func.count(BuyerPriceList.id))
+    stmt = select(BuyerPriceList).outerjoin(Brand, BuyerPriceList.brand_id == Brand.id)
+    count_stmt = select(func.count(BuyerPriceList.id)).outerjoin(Brand, BuyerPriceList.brand_id == Brand.id)
     if q and q.strip():
         like = f"%{q.strip()}%"
         where = (
             BuyerPriceList.buyer_code.ilike(like)
             | BuyerPriceList.title.ilike(like)
             | BuyerPriceList.period_label.ilike(like)
+            | Brand.name.ilike(like)
+            | Brand.code.ilike(like)
         )
         stmt = stmt.where(where)
         count_stmt = count_stmt.where(where)
@@ -165,6 +179,7 @@ def list_buyer_prices(
         sortable={
             "id": BuyerPriceList.id,
             "buyer_code": BuyerPriceList.buyer_code,
+            "brand_name": Brand.name,
             "title": BuyerPriceList.title,
             "period_label": BuyerPriceList.period_label,
             "currency": BuyerPriceList.currency,
@@ -185,9 +200,14 @@ def list_buyer_prices(
     grouped: dict[int, list[BuyerPriceSheetRow]] = {x: [] for x in list_ids}
     for sr in sheet_rows:
         grouped.setdefault(sr.list_id, []).append(sr)
+    brand_ids = [r.brand_id for r in rows if r.brand_id]
+    brand_map: dict[int, Brand] = {}
+    if brand_ids:
+        for brand in db.scalars(select(Brand).where(Brand.id.in_(brand_ids))).all():
+            brand_map[int(brand.id)] = brand
     out: list[BuyerPriceSummaryOut] = []
     for r in rows:
-        summary = _row_to_summary(r)
+        summary = _row_to_summary(r, brand_map.get(int(r.brand_id)) if r.brand_id else None)
         item_codes, filled_components = _extract_sheet_overview(grouped.get(r.id, []))
         summary.item_codes = item_codes
         summary.filled_price_components = filled_components
@@ -201,15 +221,20 @@ def create_buyer_price_list(
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin", "marketing")),
 ) -> BuyerPriceSummaryOut:
-    code = body.buyer_code.strip().upper()
-    if not code:
-        raise HTTPException(status_code=400, detail="Kode buyer wajib diisi")
-    existing = db.scalars(select(BuyerPriceList).where(BuyerPriceList.buyer_code == code)).first()
-    if existing:
-        raise HTTPException(status_code=409, detail=f"List untuk buyer {code} sudah ada")
-    ensure_buyer_code(db, code)
+    brand, code = assert_brand_buyer(db, body.brand_id, body.buyer_code)
+    assert_period_bounds(body.period_start, body.period_end)
+    label = (brand.name or brand.code or code).strip()
+    assert_no_period_overlap(
+        db,
+        brand_id=brand.id,
+        buyer_code=code,
+        period_start=body.period_start,
+        period_end=body.period_end,
+        brand_label=label,
+    )
     row = BuyerPriceList(
         buyer_code=code,
+        brand_id=brand.id,
         title=body.title,
         period_label=body.period_label,
         period_start=body.period_start,
@@ -219,7 +244,7 @@ def create_buyer_price_list(
     db.add(row)
     db.commit()
     db.refresh(row)
-    return _row_to_summary(row)
+    return _row_to_summary(row, brand)
 
 
 @router.put("/buyer-prices/lists/{list_id}", response_model=BuyerPriceSummaryOut)
@@ -233,11 +258,27 @@ def update_buyer_price_list(
     if not row:
         raise HTTPException(status_code=404, detail="List harga tidak ditemukan")
     data = body.model_dump(exclude_unset=True)
+    start = data["period_start"] if "period_start" in data else row.period_start
+    end = data["period_end"] if "period_end" in data else row.period_end
+    if row.brand_id is not None or start is not None or end is not None:
+        assert_period_bounds(start, end)
+        brand = db.get(Brand, row.brand_id) if row.brand_id else None
+        label = ((brand.name or brand.code) if brand else row.buyer_code) or row.buyer_code
+        assert_no_period_overlap(
+            db,
+            brand_id=row.brand_id,
+            buyer_code=row.buyer_code,
+            period_start=start,
+            period_end=end,
+            exclude_id=row.id,
+            brand_label=label,
+        )
     for key, val in data.items():
         setattr(row, key, val)
     db.commit()
     db.refresh(row)
-    return _row_to_summary(row)
+    brand = db.get(Brand, row.brand_id) if row.brand_id else None
+    return _row_to_summary(row, brand)
 
 
 @router.get("/buyer-prices/lists/{list_id}")
@@ -301,14 +342,13 @@ def save_buyer_price_sheet(
 @router.get("/buyer-prices/by-buyer/{buyer_code}")
 def get_by_buyer(
     buyer_code: str,
+    as_of: Optional[date] = Query(None),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> dict[str, Any]:
-    row = db.scalars(
-        select(BuyerPriceList).where(BuyerPriceList.buyer_code == buyer_code.upper())
-    ).first()
+    row = select_buyer_price_list(db, buyer_code, as_of)
     if not row:
-        raise HTTPException(status_code=404, detail="Buyer tidak ditemukan")
+        raise HTTPException(status_code=404, detail="List harga untuk buyer dan tanggal ini tidak ditemukan")
     return list_to_api_dict(db, row.id)
 
 
@@ -329,6 +369,7 @@ def resolve_unit_price(
         color_family=body.color_family,
         emboss=body.emboss,
         factory_code=body.factory_code,
+        as_of=body.as_of,
     )
     return BuyerPriceResolveOut(**r)
 
@@ -342,16 +383,7 @@ def delete_buyer_price_list(
     row = db.get(BuyerPriceList, list_id)
     if not row:
         raise HTTPException(status_code=404, detail="List harga tidak ditemukan")
-    
-    # Check if buyer_code is used in PO headers
-    from app.models import PoHeader
-    related_pos = db.query(PoHeader).filter(PoHeader.buyer == row.buyer_code).count()
-    if related_pos > 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Buyer {row.buyer_code} tidak bisa dihapus karena masih digunakan di {related_pos} PO"
-        )
-    
+
     db.delete(row)
     db.commit()
     return {"status": "deleted"}

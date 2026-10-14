@@ -27,6 +27,13 @@ import {
   pickBestSwatchRecipe,
 } from '../utils/poColorSwatch.js'
 import {
+  applyColorWindowRow,
+  colorWindowOptionLabel,
+  fetchColorWindowOptionList,
+  matchColorWindowOption,
+  pickBestColorWindow,
+} from '../utils/poColorWindow.js'
+import {
   COLOR_STANDARD_SOURCE,
   applyCsiColorToForm,
   applyWaitingCsToForm,
@@ -76,6 +83,7 @@ import {
   lookupColorSwatchRecipes,
   getColorSwatchPoFill,
   listCsiColorsPage,
+  listColorWindowsPage,
   listPoDetails,
   listPoForCopy,
   resolveBuyerUnitPrice,
@@ -348,6 +356,7 @@ const colorSwatchLoading = ref(false)
 const swatchAllMaterials = ref(false)
 const swatchRetriedWithoutMaterial = ref(false)
 const selectedSwatchId = ref(null)
+const selectedColorWindowId = ref(null)
 const swatchFieldsManualEdit = ref(false)
 const swatchPickerOpen = ref(false)
 const colorStandardSource = ref('')
@@ -356,6 +365,11 @@ const csiOptions = ref([])
 const csiLoading = ref(false)
 
 const selectedSwatchRecipe = computed(() => {
+  if (isSuedeMaterial.value) {
+    const id = selectedColorWindowId.value
+    if (!id) return null
+    return colorSwatchOptions.value.find((x) => x.id === id) || null
+  }
   const id = selectedSwatchId.value
   if (!id) return null
   return colorSwatchOptions.value.find((x) => x.id === id) || null
@@ -415,6 +429,7 @@ async function applyLineToForm(line) {
   formModel.detail_remark = line.detail_remark || ''
   formModel.thi_line_ref = line.thi_line_ref || ''
   formModel.unit_price_input = line.unit_price != null ? Number(line.unit_price) : null
+  selectedColorWindowId.value = null
   selectedSwatchId.value = line.color_swatch_recipe_id ?? null
   clearBackingForSuede()
   await hydrateColorStandardFromLine(line)
@@ -569,6 +584,7 @@ async function fetchResolvedUnitPricePreview() {
   try {
     const r = await resolveBuyerUnitPrice({
       buyer_code: b,
+      as_of: toIsoDate(formModel.order_date) || null,
       material_name: formModel.material_name || null,
       color: formModel.color || null,
       style_article: formModel.style_article || null,
@@ -851,6 +867,7 @@ const materialStepFillStep = computed(() => {
   if (
     !hasColorStandardValue(formModel, {
       selectedSwatchId: selectedSwatchId.value,
+      selectedColorWindowId: selectedColorWindowId.value,
       source: colorStandardSource.value,
     })
   ) {
@@ -861,17 +878,26 @@ const materialStepFillStep = computed(() => {
 
 const swatchHelperMessage = computed(() => {
   if (colorSwatchLoading.value) return ''
+  if (!formModel.brand_id) {
+    return t('pages.po.colorWindowNeedBrand')
+  }
   if (!formModel.buyer) {
     return t('pages.po.swatchNeedBuyer')
   }
   if (!String(formModel.material_name || '').trim()) {
     return t('pages.po.swatchNeedMaterial')
   }
-  if (!String(formModel.color || '').trim() || !String(formModel.emboss || '').trim()) {
+  if (isSuedeMaterial.value) {
+    if (!String(formModel.color || '').trim()) {
+      return t('pages.po.colorWindowNeedColor')
+    }
+  } else if (!String(formModel.color || '').trim() || !String(formModel.emboss || '').trim()) {
     return t('pages.po.swatchNeedColorEmboss')
   }
   if (!colorSwatchOptions.value.length) {
-    return t('pages.po.swatchNoMatchInMaster')
+    return isSuedeMaterial.value
+      ? t('pages.po.colorWindowNoMatchInMaster')
+      : t('pages.po.swatchNoMatchInMaster')
   }
   return ''
 })
@@ -882,9 +908,24 @@ const isColorStandardRequired = computed(() => !isSubkonPo.value)
 const hasColorStandardReady = computed(() =>
   hasColorStandardValue(formModel, {
     selectedSwatchId: selectedSwatchId.value,
+    selectedColorWindowId: selectedColorWindowId.value,
     source: colorStandardSource.value,
   }),
 )
+
+const colorReferencePickerId = computed({
+  get() {
+    return isSuedeMaterial.value ? selectedColorWindowId.value : selectedSwatchId.value
+  },
+  set(v) {
+    if (isSuedeMaterial.value) selectedColorWindowId.value = v
+    else selectedSwatchId.value = v
+  },
+})
+
+function colorReferenceOptionLabel(row) {
+  return isSuedeMaterial.value ? colorWindowOptionLabel(row) : swatchOptionLabel(row)
+}
 
 function ensureColorStandardReady({ warn = true } = {}) {
   if (!isColorStandardRequired.value) return true
@@ -897,12 +938,14 @@ let lastSwatchScopeKey = ''
 let lastAutoSwatchDimensionKey = ''
 
 function swatchScopeKey() {
-  return [formModel.buyer, formModel.material_name, swatchAllMaterials.value]
-    .map((x) => String(x ?? '').trim().toLowerCase())
-    .join('|')
+  const parts = [formModel.buyer, formModel.material_name, swatchAllMaterials.value]
+  if (isSuedeMaterialContext()) {
+    parts.unshift(formModel.brand_id)
+  }
+  return parts.map((x) => String(x ?? '').trim().toLowerCase()).join('|')
 }
 
-/** Color Swatch (PU) vs Color Window (Suede) — label saja; sumber data sama. */
+/** Color Swatch (PU) vs Color Window (Suede) — sumber master berbeda. */
 const isSuedeMaterial = computed(() => {
   if (normalizeItemCategory(formModel.item_category) === ITEM_CATEGORY_SUEDE) return true
   const linked = masterItems.value.find((x) => x.id === formModel.master_item_id)
@@ -926,6 +969,11 @@ function clearBackingForSuede() {
 
 watch(isSuedeMaterial, (suede) => {
   if (suede) clearBackingForSuede()
+  if (colorStandardSource.value === COLOR_STANDARD_SOURCE.SWATCH) {
+    selectedSwatchId.value = null
+    selectedColorWindowId.value = null
+    void loadColorSwatchOptions()
+  }
 })
 
 const wizardColorSwatchGroupTitle = computed(() =>
@@ -953,10 +1001,29 @@ function autoApplyColorSwatchFromDimensions() {
   const material = String(formModel.material_name || '').trim()
   const color = String(formModel.color || '').trim()
   const emboss = String(formModel.emboss || '').trim()
-  if (!material || !color || !emboss) return
-
   const dimKey = swatchDimensionKey()
   if (dimKey === lastAutoSwatchDimensionKey) return
+
+  if (isSuedeMaterial.value) {
+    if (!color) return
+    const row = pickBestColorWindow(colorSwatchOptions.value, { color })
+    if (!row) return
+    const applied = applyColorWindowRow(row, {
+      formModel,
+      autoFieldMeta,
+      selectedColorWindowId,
+      selectedSwatchId,
+    })
+    if (!applied) return
+    lastAutoSwatchDimensionKey = dimKey
+    colorStandardSource.value = COLOR_STANDARD_SOURCE.SWATCH
+    selectedCsiId.value = null
+    swatchFieldsManualEdit.value = false
+    swatchPickerOpen.value = false
+    return
+  }
+
+  if (!material || !color || !emboss) return
 
   const recipe = pickBestSwatchRecipe(colorSwatchOptions.value, { material, color, emboss })
   if (!recipe) return
@@ -977,12 +1044,19 @@ function autoApplyColorSwatchFromDimensions() {
 function reapplySelectedSwatchRecipe({ silent = false } = {}) {
   const picked = selectedSwatchRecipe.value
   if (!picked) return false
-  const applied = applySwatchRecipeOption(picked, {
-    formModel,
-    autoFieldMeta,
-    materialFieldOverride,
-    selectedSwatchId,
-  })
+  const applied = isSuedeMaterial.value
+    ? applyColorWindowRow(picked, {
+        formModel,
+        autoFieldMeta,
+        selectedColorWindowId,
+        selectedSwatchId,
+      })
+    : applySwatchRecipeOption(picked, {
+        formModel,
+        autoFieldMeta,
+        materialFieldOverride,
+        selectedSwatchId,
+      })
   if (!applied) {
     if (!silent) ElMessage.error(t('pages.po.swatchMismatch'))
     return false
@@ -1015,6 +1089,7 @@ function clearSwatchSelection() {
     autoFieldMeta.color_reference = false
   }
   selectedSwatchId.value = null
+  selectedColorWindowId.value = null
   swatchFieldsManualEdit.value = false
   swatchPickerOpen.value = true
   lastAutoSwatchDimensionKey = swatchDimensionKey()
@@ -1023,6 +1098,31 @@ function clearSwatchSelection() {
 async function loadColorSwatchOptions() {
   colorSwatchLoading.value = true
   try {
+    if (isSuedeMaterial.value) {
+      swatchAllMaterials.value = false
+      swatchRetriedWithoutMaterial.value = false
+      const options = await fetchColorWindowOptionList({
+        formModel,
+        brands: brands.value,
+        listColorWindowsPage,
+      })
+      colorSwatchOptions.value = options
+      if (selectedColorWindowId.value) {
+        const still = options.find((x) => x.id === selectedColorWindowId.value)
+        if (!still) selectedColorWindowId.value = null
+      }
+      autoApplyColorSwatchFromDimensions()
+      if (
+        colorStandardSource.value === COLOR_STANDARD_SOURCE.CSI &&
+        !selectedColorWindowId.value &&
+        !selectedSwatchId.value
+      ) {
+        await autoApplyCsiFromColorField()
+      }
+      return
+    }
+
+    selectedColorWindowId.value = null
     const { options, retriedWithoutMaterial } = await fetchColorSwatchOptionList({
       formModel,
       swatchAllMaterials: swatchAllMaterials.value,
@@ -1033,7 +1133,7 @@ async function loadColorSwatchOptions() {
     colorSwatchOptions.value = options
     swatchRetriedWithoutMaterial.value = retriedWithoutMaterial
     autoApplyColorSwatchFromDimensions()
-    if (!selectedSwatchId.value) {
+    if (colorStandardSource.value === COLOR_STANDARD_SOURCE.CSI && !selectedSwatchId.value) {
       await autoApplyCsiFromColorField()
     }
   } catch {
@@ -1050,6 +1150,25 @@ async function applyColorSwatch(recipeId) {
     return
   }
   const picked = colorSwatchOptions.value.find((x) => x.id === recipeId)
+  if (isSuedeMaterial.value && picked) {
+    const applied = applyColorWindowRow(picked, {
+      formModel,
+      autoFieldMeta,
+      selectedColorWindowId,
+      selectedSwatchId,
+    })
+    if (!applied) {
+      ElMessage.error(t('pages.po.swatchMismatch'))
+      return
+    }
+    lastAutoSwatchDimensionKey = swatchDimensionKey()
+    colorStandardSource.value = COLOR_STANDARD_SOURCE.SWATCH
+    selectedCsiId.value = null
+    swatchFieldsManualEdit.value = false
+    swatchPickerOpen.value = false
+    ElMessage.success(t('pages.po.colorWindowApplied'))
+    return
+  }
   if (picked) {
     const applied = applySwatchRecipeOption(picked, {
       formModel,
@@ -1089,10 +1208,11 @@ async function applyColorSwatch(recipeId) {
 }
 
 function resetColorStandardSourceState() {
-  colorStandardSource.value = ''
+  colorStandardSource.value = COLOR_STANDARD_SOURCE.SWATCH
   selectedCsiId.value = null
   csiOptions.value = []
   selectedSwatchId.value = null
+  selectedColorWindowId.value = null
   swatchFieldsManualEdit.value = false
   swatchPickerOpen.value = false
   lastAutoSwatchDimensionKey = ''
@@ -1136,8 +1256,20 @@ async function hydrateColorStandardFromLine(line) {
     return
   }
   if (source === COLOR_STANDARD_SOURCE.SWATCH) {
-    swatchPickerOpen.value = !line?.color_swatch_recipe_id
-    lastAutoSwatchDimensionKey = swatchDimensionKey()
+    if (isSuedeMaterial.value) {
+      await loadColorSwatchOptions()
+      const hit = matchColorWindowOption(
+        colorSwatchOptions.value,
+        line?.color_reference,
+        extractColorCodeFromReference(line?.color_reference),
+      )
+      selectedColorWindowId.value = hit?.id ?? null
+      selectedSwatchId.value = null
+      swatchPickerOpen.value = !selectedColorWindowId.value
+    } else {
+      await loadColorSwatchOptions()
+      swatchPickerOpen.value = !selectedSwatchId.value
+    }
     return
   }
   if (source === COLOR_STANDARD_SOURCE.WAITING || source === COLOR_STANDARD_SOURCE.MANUAL) {
@@ -1146,11 +1278,8 @@ async function hydrateColorStandardFromLine(line) {
 }
 
 async function autoApplyCsiFromColorField() {
-  const source = colorStandardSource.value
-  if (source && source !== COLOR_STANDARD_SOURCE.SWATCH && source !== COLOR_STANDARD_SOURCE.CSI) {
-    return
-  }
-  if (selectedSwatchId.value) return
+  if (colorStandardSource.value !== COLOR_STANDARD_SOURCE.CSI) return
+  if (selectedSwatchId.value || selectedColorWindowId.value) return
   const code =
     extractColorCodeFromReference(formModel.color) ||
     extractColorCodeFromReference(formModel.color_reference)
@@ -1160,7 +1289,6 @@ async function autoApplyCsiFromColorField() {
   if (!hit) return
   selectedCsiId.value = hit.id
   applyCsiColorToForm(hit, formModel, autoFieldMeta)
-  colorStandardSource.value = COLOR_STANDARD_SOURCE.CSI
   lastAutoSwatchDimensionKey = swatchDimensionKey()
 }
 
@@ -1205,11 +1333,14 @@ function onColorStandardSourceChange(next) {
   if (source === COLOR_STANDARD_SOURCE.SWATCH) {
     selectedCsiId.value = null
     lastAutoSwatchDimensionKey = ''
-    swatchPickerOpen.value = !selectedSwatchId.value
+    swatchPickerOpen.value = isSuedeMaterial.value
+      ? !selectedColorWindowId.value
+      : !selectedSwatchId.value
     void loadColorSwatchOptions()
     return
   }
   selectedSwatchId.value = null
+  selectedColorWindowId.value = null
   swatchFieldsManualEdit.value = false
   swatchPickerOpen.value = false
   lastAutoSwatchDimensionKey = swatchDimensionKey()
@@ -1514,10 +1645,12 @@ watch(
 
 watch(
   () => [
+    formModel.brand_id,
     formModel.buyer,
     formModel.material_name,
     formModel.color,
     formModel.emboss,
+    formModel.item_category,
     swatchAllMaterials.value,
   ],
   () => {
@@ -1528,6 +1661,7 @@ watch(
     const allowAutoSwatch = !source || source === COLOR_STANDARD_SOURCE.SWATCH
     if (scopeChanged && allowAutoSwatch) {
       selectedSwatchId.value = null
+      selectedColorWindowId.value = null
       lastAutoSwatchDimensionKey = ''
       swatchFieldsManualEdit.value = false
       swatchPickerOpen.value = false
@@ -1854,7 +1988,11 @@ function applyPickedMasterItem(item) {
   formModel.master_item_id = item.id
   masterItemCodePicker.value = item.item_code || ''
   hydrateFormFromMasterItemRow(item, { syncDimensions: false })
-  if (!colorStandardSource.value) {
+  if (!isSubkonPo.value) {
+    colorStandardSource.value = COLOR_STANDARD_SOURCE.SWATCH
+    lastAutoSwatchDimensionKey = ''
+    void loadColorSwatchOptions()
+  } else if (!colorStandardSource.value) {
     const inferredSource = inferColorStandardSource({
       color_swatch_recipe_id: selectedSwatchId.value,
       color_reference: formModel.color_reference,
@@ -2165,7 +2303,9 @@ const openCreateDialog = async () => {
 
 async function buildCurrentDetailBody() {
   clearBackingForSuede()
-  const body = buildDetailBodyCore(formModel, etdScheduleRows.value, selectedSwatchId.value)
+  const swatchId =
+    isSuedeMaterial.value && selectedColorWindowId.value ? null : selectedSwatchId.value
+  const body = buildDetailBodyCore(formModel, etdScheduleRows.value, swatchId)
   if (isSuedeMaterial.value) body.backing = undefined
   return appendDetailUnitPrice(body, formModel, {
     resolveBuyerUnitPrice,
@@ -2704,6 +2844,9 @@ function addCopiedItems() {
     activeSeasonLabel,
     fluorescentColorOptions,
     selectedSwatchId,
+    selectedColorWindowId,
+    colorReferencePickerId,
+    colorReferenceOptionLabel,
     selectedSwatchRecipe,
     swatchFieldsLocked,
     showColorStandardBackingFields,

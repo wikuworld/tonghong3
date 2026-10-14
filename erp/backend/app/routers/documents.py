@@ -14,7 +14,7 @@ from app.services import proforma_invoice_documents as pi
 from app.services import sales_contract_documents as sc
 from app.services import tanda_terima_documents as tt
 from app.services.audit import log_change
-from app.services.delivery_customs_bc27_xlsx import render_delivery_customs_bc27_xlsx
+from app.services.delivery_customs_bc27_xlsx import render_customs_bc27_xlsx
 
 router = APIRouter(tags=["documents"])
 
@@ -98,18 +98,40 @@ def document_commercial_invoice(
     return HTMLResponse(md.render_commercial_invoice_html(ctx))
 
 
-@router.get("/documents/sales-contract/{po_id}/pdf")
-def document_sales_contract_pdf(
-    po_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
-) -> Response:
+def _sales_contract_ctx_from_ids(db: Session, delivery_ids: str) -> dict:
+    raw = [p.strip() for p in str(delivery_ids or "").split(",") if p.strip()]
+    if not raw:
+        raise HTTPException(status_code=400, detail="delivery_ids wajib diisi")
     try:
-        ctx = sc.gather_sales_contract_ctx(db, po_id)
+        ids = [int(x) for x in raw]
     except ValueError as e:
-        if str(e) == "po_not_found":
-            raise HTTPException(status_code=404, detail="PO tidak ditemukan") from e
+        raise HTTPException(status_code=400, detail="delivery_ids harus angka") from e
+    try:
+        return sc.gather_sales_contract_ctx(db, ids)
+    except ValueError as e:
+        code = str(e)
+        if code == "delivery_not_found":
+            raise HTTPException(status_code=404, detail="Delivery tidak ditemukan") from e
+        if code == "delivery_customer_mismatch":
+            raise HTTPException(
+                status_code=400,
+                detail="Surat jalan terpilih harus dari customer yang sama",
+            ) from e
+        if code in ("delivery_ids_required", "delivery_customer_missing"):
+            raise HTTPException(status_code=400, detail="Pilih minimal satu surat jalan dengan customer") from e
         raise
+
+
+@router.get("/documents/sales-contract.pdf")
+def document_sales_contract_pdf(
+    delivery_ids: str = Query(..., description="CSV id surat jalan, contoh: 1,2,3"),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+) -> Response:
+    ctx = _sales_contract_ctx_from_ids(db, delivery_ids)
     data = sc.render_sales_contract_pdf(ctx)
-    fn = f"sales_contract_{ctx['po_number']}.pdf"
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in ctx["kontrak_no"])[:48]
+    fn = f"KPJB_{safe}.pdf"
     return Response(
         content=data,
         media_type="application/pdf",
@@ -117,18 +139,16 @@ def document_sales_contract_pdf(
     )
 
 
-@router.get("/documents/sales-contract/{po_id}/docx")
+@router.get("/documents/sales-contract.docx")
 def document_sales_contract_docx(
-    po_id: int, db: Session = Depends(get_db), _user=Depends(get_current_user)
+    delivery_ids: str = Query(..., description="CSV id surat jalan, contoh: 1,2,3"),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
 ) -> Response:
-    try:
-        ctx = sc.gather_sales_contract_ctx(db, po_id)
-    except ValueError as e:
-        if str(e) == "po_not_found":
-            raise HTTPException(status_code=404, detail="PO tidak ditemukan") from e
-        raise
+    ctx = _sales_contract_ctx_from_ids(db, delivery_ids)
     data = sc.render_sales_contract_docx(ctx)
-    fn = f"sales_contract_{ctx['po_number']}.docx"
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in ctx["kontrak_no"])[:48]
+    fn = f"KPJB_{safe}.docx"
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -279,18 +299,36 @@ def document_surat_jalan_pdf(
     )
 
 
-@router.get("/documents/delivery/{delivery_id}/customs-bc27.xlsx")
-def document_delivery_customs_bc27_xlsx(
-    delivery_id: int,
+@router.get("/documents/customs-bc27.xlsx")
+def document_customs_bc27_xlsx(
+    delivery_ids: str = Query(..., description="CSV id surat jalan, contoh: 1,2,3"),
+    aju_seq: str = Query(..., description="6 digit nomor AJU (xxxxxx)"),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> Response:
-    """Excel AJU BC 2.7 (format Core Customs) dari satu surat jalan."""
+    """Excel AJU BC 2.7 (Core Customs) dari satu/lebih surat jalan (wajib satu customer)."""
+    raw = [p.strip() for p in str(delivery_ids or "").split(",") if p.strip()]
+    if not raw:
+        raise HTTPException(status_code=400, detail="delivery_ids wajib diisi")
     try:
-        data, fn = render_delivery_customs_bc27_xlsx(db, delivery_id)
+        ids = [int(x) for x in raw]
     except ValueError as e:
-        if str(e) == "delivery_not_found":
+        raise HTTPException(status_code=400, detail="delivery_ids harus angka") from e
+    try:
+        data, fn = render_customs_bc27_xlsx(db, ids, aju_seq=aju_seq)
+    except ValueError as e:
+        code = str(e)
+        if code == "delivery_not_found":
             raise HTTPException(status_code=404, detail="Delivery tidak ditemukan") from e
+        if code == "delivery_customer_mismatch":
+            raise HTTPException(
+                status_code=400,
+                detail="Surat jalan terpilih harus dari customer yang sama",
+            ) from e
+        if code in ("delivery_ids_required", "delivery_customer_missing"):
+            raise HTTPException(status_code=400, detail="Pilih minimal satu surat jalan dengan customer") from e
+        if code == "aju_seq_invalid":
+            raise HTTPException(status_code=400, detail="Nomor AJU harus 6 digit angka") from e
         raise
     return Response(
         content=data,

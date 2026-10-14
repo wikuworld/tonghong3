@@ -318,7 +318,7 @@
     <el-dialog v-model="barcodeOpen" title="Barcode" width="420px" append-to-body :z-index="4600">
       <div v-if="barcodeData" class="text-center space-y-2">
         <div class="text-2xl font-mono font-bold">{{ barcodeData.barcode }}</div>
-        <div class="text-sm">{{ barcodeData.item?.kode_rencana_item }} · {{ barcodeData.item?.nama_customer }}</div>
+        <div class="text-sm">{{ barcodeData.item?.nama_customer }}</div>
         <div class="text-sm text-slate-500">
           {{ barcodeData.item?.thickness }} / {{ barcodeData.item?.color }} / {{ barcodeData.item?.emboss }}
         </div>
@@ -683,7 +683,6 @@ async function printRencana(row) {
       title: t('pages.mrpRencana.print'),
       planName: t('pages.mrpRencana.printPlanName'),
       planNo: t('pages.mrpRencana.printPlanNo'),
-      barcode: t('pages.mrpRencana.barcode'),
       emboss: t('pages.mrpRencana.printEmboss'),
       customer: t('pages.mrpRencana.printCustomer'),
       color: t('pages.mrpRencana.printColor'),

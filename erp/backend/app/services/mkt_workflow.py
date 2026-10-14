@@ -66,11 +66,18 @@ def prev_mkt_stage(current: str | None) -> str | None:
 
 
 def _delivery_status_posted():
-    """Delivery yang menggerakkan tahap MKT: bukan draft / kosong."""
+    """Delivery yang menggerakkan tahap MKT: bukan draft, kosong, atau dibatalkan."""
     from app.models import DeliveryHeader
 
     st = func.lower(func.trim(func.coalesce(DeliveryHeader.status, "")))
-    return st.notin_(("", "draft"))
+    return st.notin_(("", "draft", "cancelled", "canceled"))
+
+
+def _delivery_not_cancelled():
+    from app.models import DeliveryHeader
+
+    st = func.lower(func.trim(func.coalesce(DeliveryHeader.status, "")))
+    return st.notin_(("cancelled", "canceled"))
 
 
 def _direct_po_detail_delivery_clause():
@@ -123,6 +130,54 @@ def po_has_delivery_for_po(db: "Session", po_id: int) -> bool:
     return row is not None
 
 
+def po_has_posted_delivery(
+    db: "Session",
+    po_id: int,
+    *,
+    exclude_delivery_id: int | None = None,
+) -> bool:
+    ids = [
+        int(x)
+        for x in db.scalars(_stmt_delivery_ids_for_po(po_id, posted_only=True)).all()
+        if x is not None
+    ]
+    if exclude_delivery_id is not None:
+        ids = [i for i in ids if i != int(exclude_delivery_id)]
+    return bool(ids)
+
+
+def reconcile_po_stage_after_delivery_cancel(
+    db: "Session",
+    po,
+    *,
+    actor: str = "system",
+    exclude_delivery_id: int | None = None,
+) -> bool:
+    """Turunkan tahap hanya sampai material_followup bila tidak ada SJ terkirim lain."""
+    from app.services.audit import log_change
+
+    if po is None or getattr(po, "id", None) is None:
+        return False
+    if po_has_posted_delivery(db, int(po.id), exclude_delivery_id=exclude_delivery_id):
+        return False
+    current = normalize_mkt_stage(getattr(po, "mkt_workflow_stage", None))
+    floor = "material_followup"
+    if mkt_stage_index(current) <= mkt_stage_index(floor):
+        return False
+    before = po.mkt_workflow_stage
+    po.mkt_workflow_stage = floor
+    log_change(
+        db,
+        entity_type="sales_order",
+        entity_id=int(po.id),
+        action="reconcile_after_delivery_cancel",
+        before={"mkt_workflow_stage": before},
+        after={"mkt_workflow_stage": floor},
+        actor=actor,
+    )
+    return True
+
+
 def po_has_schedule_for_po(db: "Session", po_id: int) -> bool:
     return po_id in _po_ids_with_schedule(db, [po_id])
 
@@ -138,6 +193,8 @@ def po_has_sj_invpl_prints(db: "Session", po_id: int) -> bool:
     if not rows:
         return False
     for dh in rows:
+        if (dh.status or "").strip().lower() in ("cancelled", "canceled"):
+            continue
         if not dh.packing_id:
             continue
         pk = db.get(PackingHeader, dh.packing_id)
@@ -157,7 +214,10 @@ def po_has_invoice_for_po(db: "Session", po_id: int) -> bool:
 
     row = db.scalars(
         select(Invoice.id)
-        .where(Invoice.delivery_id.in_(_stmt_delivery_ids_for_po(po_id)))
+        .where(
+            Invoice.delivery_id.in_(_stmt_delivery_ids_for_po(po_id)),
+            Invoice.voided_at.is_(None),
+        )
         .limit(1)
     ).first()
     return row is not None
@@ -445,14 +505,23 @@ def _po_ids_with_invoice(db: "Session", po_ids: list[int]) -> set[int]:
         .join(DeliveryDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
         .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
         .join(Invoice, Invoice.delivery_id == DeliveryHeader.id)
-        .where(PoDetail.po_id.in_(po_ids))
+        .where(
+            PoDetail.po_id.in_(po_ids),
+            _delivery_not_cancelled(),
+            Invoice.voided_at.is_(None),
+        )
     )
     via_direct = (
         select(PoDetail.po_id)
         .join(DeliveryDetail, DeliveryDetail.po_detail_id == PoDetail.id)
         .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
         .join(Invoice, Invoice.delivery_id == DeliveryHeader.id)
-        .where(PoDetail.po_id.in_(po_ids), _direct_po_detail_delivery_clause())
+        .where(
+            PoDetail.po_id.in_(po_ids),
+            _direct_po_detail_delivery_clause(),
+            _delivery_not_cancelled(),
+            Invoice.voided_at.is_(None),
+        )
     )
     rows = db.scalars(via_prod.union(via_direct)).all()
     return {int(x) for x in rows if x is not None}

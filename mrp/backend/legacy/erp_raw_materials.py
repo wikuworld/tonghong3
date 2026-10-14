@@ -20,7 +20,19 @@ def normalize_material_type(material_type: str | None) -> str:
     return _TYPE_ALIASES.get(raw, raw)
 
 
+def material_ukuran(row: dict | None) -> str:
+    if not row:
+        return ""
+    for key in ("ukuran", "size"):
+        val = row.get(key)
+        if val is None or val == "":
+            continue
+        return str(val).strip()
+    return ""
+
+
 def _shape(row: dict) -> dict:
+    ukuran = material_ukuran(row)
     return {
         "id": int(row["id"]),
         "erp_material_id": int(row["id"]),
@@ -28,6 +40,8 @@ def _shape(row: dict) -> dict:
         "name": row.get("name"),
         "material_type": row.get("material_type"),
         "unit": row.get("unit") or "kg",
+        "size": ukuran or None,
+        "ukuran": ukuran or None,
         "thickness": row.get("thickness"),
         "color": row.get("color"),
         "leather_type": row.get("leather_type"),

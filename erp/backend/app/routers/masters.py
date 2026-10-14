@@ -25,6 +25,7 @@ from app.schemas import (
     MasterPriceOut,
 )
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -43,7 +44,6 @@ from app.models import (
     MasterPrice,
 )
 from app.routers.auth import get_current_user, require_roles
-from app.utils.excel_utils import export_to_excel, import_from_excel
 from app.services.fluorescent_color import (
     VALID_COLOR_CLASSES,
     apply_fluorescent_fields,
@@ -53,6 +53,11 @@ from app.services.fluorescent_color import (
     upsert_fluorescent_rows,
 )
 from app.services.color_code import apply_item_color_extract
+from app.services.master_items_excel import (
+    export_master_items_template_xlsx,
+    export_master_items_xlsx,
+    import_master_items_xlsx,
+)
 from app.services.color_swatch import UnknownBuyerRejectError
 from app.services.master_item_dimensions import (
     distinct_colors,
@@ -823,18 +828,21 @@ def _annotate_item_color_links(db: Session, items: list[MasterItemOut]) -> list[
     return items
 
 
+def _master_item_suede_count(counts: dict[str, int]) -> int:
+    return int(counts.get("Suede", 0)) + int(counts.get("Suide", 0))
+
+
 def _master_item_stats(db: Session) -> MasterItemStatsOut:
     rows = db.execute(
         select(MasterItem.category, func.count()).group_by(MasterItem.category)
     ).all()
     counts = {str(cat or ""): int(n) for cat, n in rows}
     pu = counts.get("PU", 0)
-    suide = counts.get("Suide", 0)
+    suide = _master_item_suede_count(counts)
     subkon = counts.get("SubKon", 0)
+    known = {"PU", "Suede", "Suide", "SubKon"}
     return MasterItemStatsOut(
-        total=pu + suide + subkon + sum(
-            v for k, v in counts.items() if k not in ("PU", "Suide", "SubKon")
-        ),
+        total=pu + suide + subkon + sum(v for k, v in counts.items() if k not in known),
         pu=pu,
         suide=suide,
         subkon=subkon,
@@ -848,7 +856,11 @@ def _apply_master_item_list_filters(
     category: Optional[str],
 ):
     if category and str(category).strip():
-        stmt = stmt.where(MasterItem.category == str(category).strip())
+        cat = str(category).strip()
+        if cat.lower() in ("suede", "suide"):
+            stmt = stmt.where(func.lower(MasterItem.category).in_(("suede", "suide")))
+        else:
+            stmt = stmt.where(MasterItem.category == cat)
     if keyword and str(keyword).strip():
         like = f"%{str(keyword).strip()}%"
         stmt = stmt.where(
@@ -875,7 +887,7 @@ def list_master_items(
 @router.get("/masters/items/page", response_model=MasterItemPageOut)
 def list_master_items_page(
     keyword: Optional[str] = Query(None, description="Cari kode, material, warna, emboss"),
-    category: Optional[str] = Query(None, description="Filter kategori: PU | Suide | SubKon"),
+    category: Optional[str] = Query(None, description="Filter kategori: PU | Suede | SubKon"),
     sort_by: Optional[str] = Query(
         None,
         description="Kolom sort: item_code, category, material_name, thickness, color, emboss, id",
@@ -955,7 +967,7 @@ def list_master_item_dimension_values(
     thickness_text: Optional[str] = Query(None, description="Wajib untuk colors, embosses, item_codes"),
     color: Optional[str] = Query(None, description="Wajib untuk embosses & item_codes"),
     emboss: Optional[str] = Query(None, description="Opsional untuk item_codes"),
-    category: Optional[str] = Query(None, description="Filter kategori master: PU | Suide | SubKon"),
+    category: Optional[str] = Query(None, description="Filter kategori master: PU | Suede | SubKon"),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> MasterItemDimensionValuesOut:
@@ -1037,7 +1049,7 @@ def resolve_master_item_by_dimensions(
     thickness_text: str = Query(..., min_length=1),
     color: str = Query(..., min_length=1),
     emboss: Optional[str] = Query(None, description="Filter emboss jika ada beberapa FG"),
-    category: Optional[str] = Query(None, description="Filter kategori master: PU | Suide | SubKon"),
+    category: Optional[str] = Query(None, description="Filter kategori master: PU | Suede | SubKon"),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ) -> MasterItemResolveByDimensionsOut:
@@ -1157,17 +1169,20 @@ def delete_master_item(
 
 @router.get("/masters/items/export")
 async def export_master_items(
+    template: bool = Query(False, description="Jika true, unduh template kosong (header saja)"),
     db: Session = Depends(get_db),
     _user=Depends(get_current_user),
 ):
-    items = db.scalars(select(MasterItem).order_by(MasterItem.item_code)).all()
-    columns = ["category", "item_code", "material_name", "thickness_range", "color", "emboss"]
-    data = [{col: getattr(item, col, None) for col in columns} for item in items]
-    excel_content = export_to_excel(data, columns, "Master Items")
+    if template:
+        excel_content = export_master_items_template_xlsx()
+        filename = "master_items_template.xlsx"
+    else:
+        excel_content = export_master_items_xlsx(db)
+        filename = "master_items.xlsx"
     return StreamingResponse(
         io.BytesIO(excel_content),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=master_items.xlsx"}
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -1177,35 +1192,22 @@ async def import_master_items(
     db: Session = Depends(get_db),
     _user=Depends(require_roles("admin")),
 ):
-    columns = ["category", "item_code", "material_name", "thickness_range", "color", "emboss"]
-    
     content = await file.read()
-    items = import_from_excel(content, columns)
-    
-    imported = 0
-    for item_data in items:
-        existing = db.scalars(select(MasterItem).where(
-            MasterItem.item_code == item_data.get("item_code")
-        )).first()
-        
-        if existing:
-            for col in columns:
-                val = item_data.get(col)
-                if val and hasattr(existing, col):
-                    setattr(existing, col, val)
-            apply_item_color_extract(existing)
-        else:
-            new_item = MasterItem(item_code=item_data.get("item_code"))
-            for col in columns:
-                val = item_data.get(col)
-                if val and hasattr(new_item, col):
-                    setattr(new_item, col, val)
-            apply_item_color_extract(new_item)
-            db.add(new_item)
-        imported += 1
-    
-    db.commit()
-    return {"imported": imported}
+    if not content:
+        raise HTTPException(status_code=400, detail="File Excel kosong")
+    try:
+        result = import_master_items_xlsx(db, content)
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Gagal import: bentrok item_code unik di database. Periksa duplikat di file.",
+        ) from e
+    except Exception:
+        db.rollback()
+        raise
+    return result.to_dict()
 
 
 # --- Master Harga (matrix USD) ---
@@ -1286,8 +1288,8 @@ async def import_master_zip(
                 category_raw = (r.get("category") or "").strip().lower()
                 category_alias = {
                     "pu": "PU",
-                    "suide": "Suide",
-                    "suede": "Suide",
+                    "suide": "Suede",
+                    "suede": "Suede",
                     "subkon": "SubKon",
                     "subcont": "SubKon",
                     "subcontract": "SubKon",

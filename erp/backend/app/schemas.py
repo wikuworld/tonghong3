@@ -130,11 +130,12 @@ class CustomerPageOut(BaseModel):
 
 # --- Buyer price lists ---
 class BuyerPriceListCreate(BaseModel):
+    brand_id: int
     buyer_code: str
     title: Optional[str] = None
     period_label: Optional[str] = None
-    period_start: Optional[date] = None
-    period_end: Optional[date] = None
+    period_start: date
+    period_end: date
     currency: str = "USD"
 
 
@@ -164,6 +165,7 @@ class BuyerPriceResolveIn(BaseModel):
     color_family: Optional[str] = None
     emboss: Optional[str] = None
     factory_code: Optional[str] = None
+    as_of: Optional[date] = None
 
     @field_validator("color_family")
     @classmethod
@@ -1001,6 +1003,18 @@ class DeliveryHeaderCreate(BaseModel):
     delivery_type: Optional[str] = None
 
 
+class DeliveryCancelIn(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_required(cls, value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            raise ValueError("Alasan pembatalan wajib diisi")
+        return text
+
+
 class DeliveryHeaderUpdate(BaseModel):
     delivery_number: Optional[str] = None
     customer_id: Optional[int] = None
@@ -1067,6 +1081,9 @@ class DeliveryHeaderOut(ORMBase):
     delivery_type: Optional[str] = None
     customs_declaration_id: Optional[int] = None
     mrp_fg_id: Optional[int] = None
+    cancel_reason: Optional[str] = None
+    cancelled_at: Optional[datetime] = None
+    cancelled_by: Optional[str] = None
 
 
 class DeliveryHeaderPageOut(BaseModel):
@@ -1276,6 +1293,8 @@ class InvoiceOut(ORMBase):
     credit_note_no: Optional[str] = None
     credit_note_date: Optional[date] = None
     credit_note_amount: Optional[float] = None
+    voided_at: Optional[datetime] = None
+    void_reason: Optional[str] = None
     oia_export_usd: Optional[float] = None
     balance_after_deduct: Optional[float] = None
     deduction_amount: Optional[float] = None
@@ -1438,15 +1457,15 @@ class MasterItemCreate(BaseModel):
         raw = str(v or "").strip().lower()
         alias = {
             "pu": "PU",
-            "suide": "Suide",
-            "suede": "Suide",
+            "suide": "Suede",
+            "suede": "Suede",
             "subkon": "SubKon",
             "subcont": "SubKon",
             "subcontract": "SubKon",
         }
         out = alias.get(raw)
         if not out:
-            raise ValueError("category harus salah satu: PU, Suide, SubKon")
+            raise ValueError("category harus salah satu: PU, Suede, SubKon")
         return out
 
 
@@ -1740,6 +1759,26 @@ class WarehouseOut(ORMBase):
     created_at: Optional[datetime] = None
 
 
+class InventoryUnitMasterCreate(BaseModel):
+    material_type: str
+    unit: str
+    is_active: bool = True
+
+
+class InventoryUnitMasterUpdate(BaseModel):
+    material_type: Optional[str] = None
+    unit: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class InventoryUnitMasterOut(ORMBase):
+    id: int
+    material_type: str
+    unit: str
+    is_active: bool
+    created_at: Optional[datetime] = None
+
+
 class RawMaterialCreate(BaseModel):
     code: str
     name: str
@@ -1750,6 +1789,7 @@ class RawMaterialCreate(BaseModel):
     cost_price: Optional[Decimal] = None
     thickness: Optional[str] = None
     color: Optional[str] = None
+    size: Optional[str] = None
     leather_type: Optional[str] = None
     is_active: bool = True
 
@@ -1764,6 +1804,7 @@ class RawMaterialUpdate(BaseModel):
     cost_price: Optional[Decimal] = None
     thickness: Optional[str] = None
     color: Optional[str] = None
+    size: Optional[str] = None
     leather_type: Optional[str] = None
     is_active: Optional[bool] = None
 
@@ -1779,6 +1820,7 @@ class RawMaterialOut(ORMBase):
     cost_price: Optional[Decimal] = None
     thickness: Optional[str] = None
     color: Optional[str] = None
+    size: Optional[str] = None
     leather_type: Optional[str] = None
     is_active: bool
     created_at: Optional[datetime] = None

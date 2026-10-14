@@ -336,6 +336,7 @@ def _apply_unit_price_on_update(db: Session, po, row, data: dict, user) -> None:
         color_family=data.get("color_family", row.color_family),
         emboss=data.get("emboss", row.emboss),
         factory_code=po.factory_code,
+        as_of=getattr(po, "order_date", None),
     )
     if resolved.get("unit_price") is not None:
         data["unit_price"] = resolved["unit_price"]
@@ -1498,6 +1499,7 @@ def add_po_detail(
         emboss=payload.get("emboss"),
         thickness_text=payload.get("thickness_text"),
         color_reference=payload.get("color_reference"),
+        color_standard=payload.get("color_standard"),
     )
     if payload.get("master_item_id") is not None:
         payload["color_reference"] = aligned_ref
@@ -1576,6 +1578,7 @@ def update_po_detail(
     assert_po_detail_update_allowed(db, row, data)
     merged_master_id = data["master_item_id"] if "master_item_id" in data else row.master_item_id
     merged_ref = data["color_reference"] if "color_reference" in data else row.color_reference
+    merged_std = data["color_standard"] if "color_standard" in data else row.color_standard
     aligned_ref = align_po_line_to_master_item(
         db,
         master_item_id=merged_master_id,
@@ -1584,6 +1587,7 @@ def update_po_detail(
         emboss=data["emboss"] if "emboss" in data else row.emboss,
         thickness_text=data["thickness_text"] if "thickness_text" in data else row.thickness_text,
         color_reference=merged_ref,
+        color_standard=merged_std,
     )
     if merged_master_id is not None and (aligned_ref or None) != (merged_ref or None):
         data["color_reference"] = aligned_ref

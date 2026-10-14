@@ -16,8 +16,8 @@ def _norm_text(value: str | None) -> str:
 
 _CATEGORY_ALIASES = {
     "pu": "pu",
-    "suide": "suide",
-    "suede": "suide",
+    "suide": "suede",
+    "suede": "suede",
     "subkon": "subkon",
     "subcont": "subkon",
     "subcontract": "subkon",

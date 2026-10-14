@@ -17,7 +17,21 @@ MATERIAL_NAME_ALIASES = {
     "METAL LEATHER - PATENT": "METAL LEATHER-PATENT",
     "METAL LEATHER PATENT": "METAL LEATHER-PATENT",
     "PRINCESS LEATHER": "PRINCESS LEATHER",
+    "(OIA) VIRGIN PU": "VIRGIN HYDRO PU",
+    "VIRGIN PU": "VIRGIN HYDRO PU",
+    "(PM) GENERIC PU COATED": "(PM) GENERIC PU COATED LEATHER",
 }
+
+NIKE_PRICE_BLOCKS = frozenset(
+    {
+        "COMMON",
+        "SPECIAL",
+        "OUTSIDE BANTEN",
+        "OUTSIDE SPECIAL",
+    }
+)
+
+_THICKNESS_RANGE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)")
 
 # Kode di quotation vs kode ERP. AF001 belum ada master — tetap dinormalisasi.
 CUSTOMER_CODE_ALIASES = {
@@ -69,6 +83,47 @@ def normalize_material_alias(name: str | None) -> str:
     key = raw.upper()
     aliased = MATERIAL_NAME_ALIASES.get(key)
     return aliased or raw
+
+
+def canonical_price_block(value: str | None) -> str:
+    """Blok harga Nike. Warna produk dan teks lain dihitung sebagai blok kosong."""
+    raw = re.sub(r"\s+", " ", str(value or "").strip()).upper()
+    if raw in NIKE_PRICE_BLOCKS:
+        return raw
+    return ""
+
+
+def split_material_and_thickness(name: str | None, thickness: str | None = "") -> tuple[str, str]:
+    """Pisahkan rentang ketebalan dari nama item, lalu samakan nama ke alias SO."""
+    raw = re.sub(r"\s+", " ", str(name or "").strip())
+    thick = re.sub(r"\s+", "", str(thickness or "").strip())
+    thick = re.sub(r"(?i)mm$", "", thick).strip()
+    range_match = _THICKNESS_RANGE_RE.search(raw)
+    if range_match:
+        span = f"{range_match.group(1)}-{range_match.group(2)}"
+        lead = range_match.group(1)
+        if not thick or thick == lead or thick == span:
+            thick = span
+        raw = f"{raw[: range_match.start()]} {raw[range_match.end() :]}"
+        raw = re.sub(r"\s+", " ", raw).strip(" -")
+        raw = re.sub(r"(?i)\s*mm$", "", raw).strip(" -")
+    elif thick:
+        raw = re.sub(
+            rf"(?i)(?:\s+{re.escape(thick)})(?:\s*mm)?\s*$",
+            "",
+            raw,
+        ).strip()
+    return normalize_material_alias(raw), thick
+
+
+def normalize_sheet_cells(cells: dict | None) -> dict:
+    """Rapikan satu baris sheet: nama material, rentang ketebalan, dan blok COLOR."""
+    src = dict(cells or {})
+    item, thick = split_material_and_thickness(src.get("ITEM"), src.get("THICKNESS"))
+    src["ITEM"] = item
+    src["THICKNESS"] = thick
+    src["COLOR"] = canonical_price_block(src.get("COLOR"))
+    return src
 
 
 def extract_emboss_tokens(text: str | None) -> set[str]:

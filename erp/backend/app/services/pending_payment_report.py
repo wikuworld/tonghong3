@@ -86,7 +86,7 @@ def _is_overdue(inv: Invoice, as_of: date) -> bool:
 
 
 def _load_overdue_invoices(db: Session, as_of: date) -> list[Invoice]:
-    rows = list(db.scalars(select(Invoice).order_by(Invoice.id.asc())).all())
+    rows = list(db.scalars(select(Invoice).where(Invoice.voided_at.is_(None)).order_by(Invoice.id.asc())).all())
     return [inv for inv in rows if _is_overdue(inv, as_of)]
 
 

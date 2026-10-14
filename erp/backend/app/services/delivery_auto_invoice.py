@@ -73,6 +73,12 @@ def sync_invoice_lines_from_delivery(
         ).all()
     )
     if not details:
+        if force:
+            inv.total_amount = Decimal("0")
+            if not (inv.total_in_words or "").strip():
+                from app.services.marketing_documents import usd_amount_in_words
+
+                inv.total_in_words = usd_amount_in_words(Decimal("0"))
         return 0
 
     total = Decimal("0")
@@ -167,8 +173,14 @@ def ensure_invoice_for_delivery(
         select(Invoice).where(Invoice.delivery_id == int(delivery_id)).limit(1)
     ).first()
     if existing:
+        if getattr(existing, "voided_at", None) is not None:
+            return existing
         sync_invoice_lines_from_delivery(db, int(existing.id), force=False)
         return existing
+
+    hdr = db.get(DeliveryHeader, int(delivery_id))
+    if hdr and (hdr.status or "").strip().lower() in ("cancelled", "canceled"):
+        return None
 
     details = db.scalars(
         select(DeliveryDetail).where(DeliveryDetail.delivery_id == int(delivery_id))

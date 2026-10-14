@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.services.po_delivery_balance import validate_delivery_qty_against_po_balance
 from app.schemas import (
+    DeliveryCancelIn,
     DeliveryDetailCreate,
     DeliveryDetailEnrichedOut,
     DeliveryDetailOut,
@@ -43,8 +44,13 @@ from app.services.audit import log_change
 from app.services.notifications import create_notification_for_roles
 from app.services.mkt_workflow import sync_mkt_for_delivery, sync_mkt_workflow_auto_advance
 from app.services.business_rules import po_numbers_from_delivery
-from app.services.document_numbers import allocate_surat_jalan_number
+from app.services.document_numbers import (
+    allocate_surat_jalan_number,
+    raise_floor_surat_jalan_sequence,
+)
 from app.services.delivery_return import apply_delivery_line_return
+from app.services.delivery_cancel import cancel_delivery
+from app.services.delivery_auto_invoice import sync_invoice_lines_from_delivery
 from app.services.delivery_shipment import (
     list_ready_to_ship,
     lot_number_for_line,
@@ -56,6 +62,83 @@ from app.services.delivery_shipment import (
 from app.routers.reports import _order_type_label, _thickness_display
 
 router = APIRouter(tags=["delivery"])
+
+_DRAFT_BLOCKED = frozenset({"sent", "delivered", "completed", "cancelled", "canceled"})
+
+
+def _parse_iso_date_optional(s: Optional[str]) -> Optional[date]:
+    if not s or not str(s).strip():
+        return None
+    try:
+        return date.fromisoformat(str(s).strip()[:10])
+    except ValueError:
+        return None
+
+
+def _require_draft_delivery(hdr: DeliveryHeader) -> None:
+    status = (hdr.status or "").strip().lower()
+    if status in ("cancelled", "canceled"):
+        raise HTTPException(status_code=400, detail="Delivery sudah dibatalkan")
+    if status in ("sent", "delivered", "completed"):
+        raise HTTPException(
+            status_code=400,
+            detail="Surat jalan sudah terkirim. Ubah atau hapus baris tidak diizinkan; gunakan retur.",
+        )
+    if status in _DRAFT_BLOCKED:
+        raise HTTPException(status_code=400, detail="Hanya surat jalan draft yang boleh diubah")
+
+
+def _sync_open_invoice_from_delivery(db: Session, delivery_id: int) -> None:
+    from app.models import Invoice
+
+    inv = db.scalars(
+        select(Invoice).where(Invoice.delivery_id == int(delivery_id)).limit(1)
+    ).first()
+    if inv is None or getattr(inv, "voided_at", None) is not None:
+        return
+    sync_invoice_lines_from_delivery(db, int(inv.id), force=True)
+
+
+def _void_open_invoice_if_no_lines(
+    db: Session,
+    delivery_id: int,
+    *,
+    actor: str,
+) -> None:
+    from decimal import Decimal
+
+    from app.models import Invoice
+
+    remaining = db.scalars(
+        select(DeliveryDetail.id).where(DeliveryDetail.delivery_id == int(delivery_id)).limit(1)
+    ).first()
+    if remaining is not None:
+        return
+    inv = db.scalars(
+        select(Invoice).where(Invoice.delivery_id == int(delivery_id)).limit(1)
+    ).first()
+    if inv is None or getattr(inv, "voided_at", None) is not None:
+        return
+    paid = (inv.payment_status or "").strip().lower() == "paid"
+    amount = Decimal(str(inv.payment_amount or 0))
+    has_cn = bool((inv.credit_note_no or "").strip()) or Decimal(str(inv.credit_note_amount or 0)) > 0
+    if paid or amount > 0 or has_cn:
+        raise HTTPException(
+            status_code=400,
+            detail="Invoice sudah dibayar atau punya credit note. Hapus baris terakhir tidak diizinkan.",
+        )
+    reason = "Baris surat jalan dikosongkan"
+    inv.voided_at = app_now()
+    inv.void_reason = reason
+    log_change(
+        db,
+        entity_type="invoice",
+        entity_id=int(inv.id),
+        action="void",
+        before={"voided_at": None},
+        after={"voided_at": inv.voided_at.isoformat(), "void_reason": reason},
+        actor=actor,
+    )
 
 
 def _resolve_delivery_line_masters(
@@ -365,6 +448,9 @@ def create_delivery(
 def list_delivery(
     db: Session = Depends(get_db),
     q: Optional[str] = Query(None, description="Search delivery number/destination"),
+    customer_id: Optional[int] = Query(None),
+    delivery_date_from: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    delivery_date_to: Optional[str] = Query(None, description="YYYY-MM-DD"),
     page: Optional[int] = Query(None, ge=1),
     page_size: Optional[int] = Query(None, ge=1, le=200),
     limit: Optional[int] = Query(None, ge=1, le=1000),
@@ -388,6 +474,14 @@ def list_delivery(
         filters.append(
             or_(DeliveryHeader.delivery_number.ilike(like), DeliveryHeader.destination.ilike(like))
         )
+    if customer_id is not None:
+        filters.append(DeliveryHeader.customer_id == int(customer_id))
+    d_from = _parse_iso_date_optional(delivery_date_from)
+    d_to = _parse_iso_date_optional(delivery_date_to)
+    if d_from is not None:
+        filters.append(DeliveryHeader.delivery_date >= d_from)
+    if d_to is not None:
+        filters.append(DeliveryHeader.delivery_date <= d_to)
     count_stmt = select(func.count(DeliveryHeader.id))
     stmt = select(DeliveryHeader)
     if filters:
@@ -421,8 +515,35 @@ def update_delivery(
     row = db.get(DeliveryHeader, delivery_id)
     if not row:
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
-    before = {"status": row.status, "packing_id": row.packing_id}
+    before = {
+        "status": row.status,
+        "packing_id": row.packing_id,
+        "delivery_number": row.delivery_number,
+    }
     data = body.model_dump(exclude_unset=True)
+    if "status" in data and (data.get("status") or "").strip().lower() in ("cancelled", "canceled"):
+        raise HTTPException(
+            status_code=400,
+            detail="Status cancelled hanya lewat aksi batalkan delivery",
+        )
+    if "delivery_number" in data:
+        _require_draft_delivery(row)
+        new_no = (data.get("delivery_number") or "").strip()
+        if not new_no:
+            raise HTTPException(status_code=400, detail="Nomor surat jalan wajib diisi")
+        clash = db.scalars(
+            select(DeliveryHeader).where(
+                DeliveryHeader.delivery_number == new_no,
+                DeliveryHeader.id != int(delivery_id),
+            ).limit(1)
+        ).first()
+        if clash is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Nomor surat jalan {new_no} sudah dipakai",
+            )
+        data["delivery_number"] = new_no
+        raise_floor_surat_jalan_sequence(db, new_no)
     if "packing_id" in data and data["packing_id"] is not None:
         require_packing_ready(db, int(data["packing_id"]))
     prev_status = row.status
@@ -430,19 +551,6 @@ def update_delivery(
         _require_details_if_sent(db, delivery_id, data["status"], prev_status)
     for k, v in data.items():
         setattr(row, k, v)
-    new_status = (row.status or "").lower()
-    if new_status in ("cancelled", "canceled") and (prev_status or "").lower() not in ("cancelled", "canceled"):
-        create_notification_for_roles(
-            db,
-            ("admin", "marketing", "warehouse", "finance"),
-            title=f"Delivery {row.delivery_number or row.id} dibatalkan",
-            message="Status delivery diubah menjadi cancelled; tinjau alur SJ / INVPL / invoice bila dokumen sudah diproses.",
-            category="delivery",
-            entity_type="delivery",
-            entity_id=row.id,
-            route_path="/admin/delivery",
-            route_query={"delivery_id": row.id},
-        )
     if row.status == "sent" and before["status"] != "sent":
         create_notification_for_roles(
             db,
@@ -461,7 +569,11 @@ def update_delivery(
         entity_id=row.id,
         action="update",
         before=before,
-        after={"status": row.status, "packing_id": row.packing_id},
+        after={
+            "status": row.status,
+            "packing_id": row.packing_id,
+            "delivery_number": row.delivery_number,
+        },
         actor=user.username,
     )
     if (row.status or "").lower() == "sent":
@@ -469,6 +581,22 @@ def update_delivery(
     db.commit()
     db.refresh(row)
     return row
+
+
+@router.post("/delivery/{delivery_id}/cancel", response_model=DeliveryHeaderOut)
+def cancel_delivery_route(
+    delivery_id: int,
+    body: DeliveryCancelIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("warehouse", "finance")),
+) -> DeliveryHeader:
+    return cancel_delivery(
+        db,
+        delivery_id,
+        reason=body.reason,
+        actor=user.username,
+        role=getattr(user, "role", None),
+    )
 
 
 @router.get("/delivery/{delivery_id}", response_model=DeliveryHeaderOut)
@@ -573,6 +701,10 @@ def update_delivery_detail(
     row = db.get(DeliveryDetail, detail_id)
     if not row:
         raise HTTPException(status_code=404, detail="Detail delivery tidak ditemukan")
+    hdr = db.get(DeliveryHeader, int(row.delivery_id))
+    if not hdr:
+        raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
+    _require_draft_delivery(hdr)
     before = {"production_detail_id": row.production_detail_id, "qty": row.qty, "qty_roll": row.qty_roll, "qty_pcs": row.qty_pcs}
     new_pd = body.production_detail_id
     if bypass_qc and not _user_can_bypass_qc(user):
@@ -604,9 +736,54 @@ def update_delivery_detail(
         after={"production_detail_id": row.production_detail_id, "qty": row.qty, "qty_roll": row.qty_roll, "qty_pcs": row.qty_pcs},
         actor=user.username,
     )
+    _sync_open_invoice_from_delivery(db, int(row.delivery_id))
     db.commit()
     db.refresh(row)
     return row
+
+
+@router.delete("/delivery-detail/{detail_id}", status_code=204, response_class=Response)
+def delete_delivery_detail(
+    detail_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "warehouse")),
+) -> Response:
+    from decimal import Decimal
+
+    row = db.get(DeliveryDetail, detail_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Detail delivery tidak ditemukan")
+    hdr = db.get(DeliveryHeader, int(row.delivery_id))
+    if not hdr:
+        raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
+    _require_draft_delivery(hdr)
+    returned = Decimal(str(row.returned_qty or 0))
+    if returned > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Baris sudah ada retur. Hapus tidak diizinkan.",
+        )
+    delivery_id = int(row.delivery_id)
+    before = {
+        "delivery_id": delivery_id,
+        "production_detail_id": row.production_detail_id,
+        "qty": float(row.qty) if row.qty is not None else None,
+    }
+    db.delete(row)
+    db.flush()
+    log_change(
+        db,
+        entity_type="delivery_line",
+        entity_id=detail_id,
+        action="delete",
+        before=before,
+        after=None,
+        actor=user.username,
+    )
+    _sync_open_invoice_from_delivery(db, delivery_id)
+    _void_open_invoice_if_no_lines(db, delivery_id, actor=user.username)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/delivery-detail/{detail_id}/return", response_model=DeliveryDetailReturnOut)

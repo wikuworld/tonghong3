@@ -1,4 +1,4 @@
-"""Normalisasi dan impor master item kategori PU / Suide dari sheet marketing."""
+"""Normalisasi dan impor master item kategori PU / Suede dari sheet marketing."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from app.services.subkon_master_items import (
 from app.services.thickness_format import canonical_thickness_range
 
 PU_CATEGORY = "PU"
-SUIDE_CATEGORY = "Suide"
+SUEDE_CATEGORY = "Suede"
 PU_SUEDE_SHEET = "PU, SUEDE"
 
 
@@ -50,7 +50,7 @@ class PuSuedeImportResult:
 def infer_pu_suede_category(material_name: str | None) -> str:
     name = str(material_name or "").strip().upper()
     if "SUEDE" in name:
-        return SUIDE_CATEGORY
+        return SUEDE_CATEGORY
     return PU_CATEGORY
 
 
@@ -62,7 +62,7 @@ def resolve_pu_suede_category(
     if raw:
         alias = raw.strip().lower()
         if alias in ("suide", "suede"):
-            return SUIDE_CATEGORY
+            return SUEDE_CATEGORY
         if alias == "pu":
             return PU_CATEGORY
     return infer_pu_suede_category(material_name)
@@ -183,7 +183,7 @@ def import_pu_suede_master_items(
             continue
         seen_codes.add(code)
 
-        if item_data.get("category") == SUIDE_CATEGORY:
+        if item_data.get("category") == SUEDE_CATEGORY:
             suide += 1
         else:
             pu += 1

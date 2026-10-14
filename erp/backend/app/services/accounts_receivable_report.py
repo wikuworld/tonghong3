@@ -233,6 +233,7 @@ def _query_invoices(
     stmt = (
         select(Invoice)
         .options(selectinload(Invoice.customer))
+        .where(Invoice.voided_at.is_(None))
         .order_by(Invoice.tax_invoice_date.asc(), Invoice.id.asc())
     )
     if customer:

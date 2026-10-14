@@ -1,37 +1,48 @@
-"""Export Excel bea cukai BC 2.7 (pengeluaran KB/TPB) dari delivery.
+"""Export Excel bea cukai BC 2.7 (pengeluaran KB/TPB) dari satu/lebih delivery.
 
-Format mengacu lampiran `dokumentasi/000027TOP41720261002004407.xlsx`.
-Field yang ada di ERP diisi dari data; yang belum punya sumber ditandai `need feed`.
+Format mengacu `dokumentasi/000027TOP41720261002004407 (1).xlsx`.
+Label merah = mapping isi dari ERP; sel kuning = dikosongkan.
+Multi-SJ wajib satu customer; digabung jadi satu workbook AJU.
 """
 
 from __future__ import annotations
 
+import logging
 from copy import copy
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
+import httpx
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import (
     Customer,
     DeliveryDetail,
     DeliveryHeader,
     ExchangeRate,
     Invoice,
+    InvoiceDetail,
     MasterItem,
     PackingDetail,
+    PackingHeader,
     PoDetail,
     ProductionDetail,
 )
+from app.services.customs_numbering import (
+    generate_nomor_aju,
+    generate_nomor_kontrak,
+    normalize_aju_seq,
+)
 from app.timeutil import app_now
 
-NEED_FEED = "need feed"
+logger = logging.getLogger(__name__)
 
 # Identitas perusahaan (isi tetap dari template contoh AJU).
 TH_NAME = "TONG HONG TANNERY INDONESIA"
@@ -58,6 +69,21 @@ KODE_SATUAN_FTK = "FTK"
 KODE_KEMASAN_RO = "RO"
 VERSI_TEMPLATE = "1.3"
 
+# Kolom kuning di template anotasi — jangan diisi.
+BAHANBAKU_YELLOW_KEYS = frozenset(
+    {
+        "NOMOR DAFTAR ASAL",
+        "TANGGAL DAFTAR ASAL",
+        "NOMOR AJU ASAL",
+        "SERI BARANG ASAL",
+        "NETTO",
+        "BRUTO",
+        "CIF",
+        "CIF RUPIAH",
+    }
+)
+BAHANBAKUTARIF_YELLOW_KEYS = frozenset({"NILAI FASILITAS"})
+
 SHEET_ORDER = [
     "HEADER",
     "ENTITAS",
@@ -82,15 +108,25 @@ SHEET_ORDER = [
     "RESPON",
 ]
 
+_TEMPLATE_NAMES = (
+    "000027TOP41720261002004407 (1).xlsx",
+    "000027TOP41720261002004407.xlsx",
+)
+
 
 def _template_candidates() -> list[Path]:
     here = Path(__file__).resolve()
-    return [
-        here.parents[3] / "dokumentasi" / "000027TOP41720261002004407.xlsx",
-        here.parents[2] / "dokumentasi" / "000027TOP41720261002004407.xlsx",
-        Path("/app/dokumentasi/000027TOP41720261002004407.xlsx"),
-        Path("/home/developer/project_uat/dokumentasi/000027TOP41720261002004407.xlsx"),
+    roots = [
+        here.parents[3] / "dokumentasi",
+        here.parents[2] / "dokumentasi",
+        Path("/app/dokumentasi"),
+        Path("/home/developer/project_uat/dokumentasi"),
     ]
+    out: list[Path] = []
+    for root in roots:
+        for name in _TEMPLATE_NAMES:
+            out.append(root / name)
+    return out
 
 
 def resolve_bc27_template_path() -> Path | None:
@@ -112,27 +148,29 @@ def _money2(val: Decimal) -> Decimal:
     return val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def _fmt_date(d: date | datetime | None) -> str:
+def _fmt_date(d: date | datetime | None) -> str | None:
     if d is None:
-        return NEED_FEED
+        return None
     if isinstance(d, datetime):
         d = d.date()
     return d.isoformat()
 
 
-def _or_feed(val: Any, *, zero_ok: bool = False) -> Any:
+def _num(val: Decimal | int | float | None) -> float | int | None:
     if val is None:
-        return NEED_FEED
-    if isinstance(val, str):
-        s = val.strip()
-        return s if s else NEED_FEED
-    if isinstance(val, (int, float, Decimal)):
-        if not zero_ok and val == 0:
-            return NEED_FEED
-        if isinstance(val, Decimal):
-            return float(val) if val != val.to_integral_value() else int(val)
-        return val
+        return None
+    if isinstance(val, Decimal):
+        if val == val.to_integral_value():
+            return int(val)
+        return float(val)
     return val
+
+
+def _text(val: Any) -> str | None:
+    if val is None:
+        return None
+    s = str(val).strip()
+    return s or None
 
 
 def _header_map(ws: Worksheet) -> dict[str, list[int]]:
@@ -147,11 +185,6 @@ def _header_map(ws: Worksheet) -> dict[str, list[int]]:
             continue
         out.setdefault(key, []).append(c)
     return out
-
-
-def _clear_data_rows(ws: Worksheet) -> None:
-    if ws.max_row and ws.max_row > 1:
-        ws.delete_rows(2, ws.max_row - 1)
 
 
 def _write_row(ws: Worksheet, row_idx: int, headers: dict[str, list[int]], values: dict[str, Any]) -> None:
@@ -187,28 +220,21 @@ def _copy_sheet_headers(src: Worksheet, dst: Worksheet) -> None:
 def _blank_workbook_from_template(template: Path) -> Any:
     src = load_workbook(template)
     wb = Workbook()
-    # remove default
     default = wb.active
     wb.remove(default)
     for name in SHEET_ORDER:
         if name not in src.sheetnames:
-            ws = wb.create_sheet(name)
+            wb.create_sheet(name)
             continue
         src_ws = src[name]
         ws = wb.create_sheet(name)
         _copy_sheet_headers(src_ws, ws)
-    # any extra sheets from template
     for name in src.sheetnames:
         if name not in wb.sheetnames:
             ws = wb.create_sheet(name)
             _copy_sheet_headers(src[name], ws)
     src.close()
     return wb
-
-
-def generate_nomor_aju(on_date: date, delivery_id: int) -> str:
-    """format: 000027TOP417yyyymmddxxxxxx"""
-    return f"000027TOP417{on_date.strftime('%Y%m%d')}{int(delivery_id) % 1_000_000:06d}"
 
 
 def _latest_kurs(db: Session, on_date: date | None = None) -> Decimal | None:
@@ -224,9 +250,9 @@ def _latest_kurs(db: Session, on_date: date | None = None) -> Decimal | None:
     return _dec(rows[0].idr_per_usd)
 
 
-def _item_uraian(pod: PoDetail | None) -> str:
+def _item_uraian(pod: PoDetail | None) -> str | None:
     if not pod:
-        return NEED_FEED
+        return None
     from app.services.thickness_format import display_po_thickness_mm
 
     thick = display_po_thickness_mm(pod)
@@ -241,10 +267,144 @@ def _item_uraian(pod: PoDetail | None) -> str:
     )
     if thick and rest:
         return f"{thick} {rest}".strip()
-    return rest or thick or NEED_FEED
+    return rest or thick or None
 
 
-def _gather_lines(db: Session, delivery_id: int) -> list[dict[str, Any]]:
+def _mrp_base() -> str:
+    return (settings.mrp_upstream_url or "http://127.0.0.1:8002").rstrip("/")
+
+
+def _mrp_timeout() -> float:
+    return max(float(settings.mrp_sync_timeout_seconds or 8.0), 20.0)
+
+
+def fetch_mrp_packing_weights(mrp_packing_id: int) -> tuple[Decimal | None, Decimal | None]:
+    """Ambil (gross_weight, net_weight) dari packing MRP. Gagal/network → (None, None)."""
+    if not mrp_packing_id:
+        return None, None
+    base = _mrp_base()
+    try:
+        with httpx.Client(timeout=_mrp_timeout()) as client:
+            r = client.get(f"{base}/api/mrp/packing/{int(mrp_packing_id)}")
+            if r.status_code != 200:
+                logger.warning("MRP packing/%s weights HTTP %s", mrp_packing_id, r.status_code)
+                return None, None
+            body = r.json() if r.content else {}
+            packing = body.get("packing") if isinstance(body, dict) else None
+            if not isinstance(packing, dict):
+                packing = body if isinstance(body, dict) else {}
+            gw_raw = packing.get("gross_weight")
+            nw_raw = packing.get("net_weight")
+            gw = _dec(gw_raw) if gw_raw not in (None, "") else None
+            nw = _dec(nw_raw) if nw_raw not in (None, "") else None
+            if gw is not None and gw <= 0:
+                gw = None
+            if nw is not None and nw <= 0:
+                nw = None
+            return gw, nw
+    except httpx.HTTPError as exc:
+        logger.warning("MRP packing/%s weights unavailable: %s", mrp_packing_id, exc)
+        return None, None
+    except Exception as exc:  # noqa: BLE001 — jangan gagalkan export Excel
+        logger.warning("MRP packing/%s weights error: %s", mrp_packing_id, exc)
+        return None, None
+
+
+def _invoice_weight_totals(db: Session, delivery_id: int) -> tuple[Decimal | None, Decimal | None]:
+    """Σ net/gross dari invoice_details untuk satu SJ (jika terisi)."""
+    inv_ids = list(
+        db.scalars(select(Invoice.id).where(Invoice.delivery_id == int(delivery_id))).all()
+    )
+    if not inv_ids:
+        return None, None
+    details = list(
+        db.scalars(select(InvoiceDetail).where(InvoiceDetail.invoice_id.in_(inv_ids))).all()
+    )
+    if not details:
+        return None, None
+    nw = sum((_dec(d.net_weight) for d in details if d.net_weight is not None), Decimal("0"))
+    gw = sum((_dec(d.gross_weight) for d in details if d.gross_weight is not None), Decimal("0"))
+    return (nw if nw > 0 else None), (gw if gw > 0 else None)
+
+
+def _mrp_packing_ids_for_headers(db: Session, headers: Sequence[DeliveryHeader]) -> list[int]:
+    """Unique mrp_packing_id dari packing ERP yang tertaut SJ."""
+    seen: set[int] = set()
+    out: list[int] = []
+    for dh in headers:
+        if not dh.packing_id:
+            continue
+        pk = db.get(PackingHeader, int(dh.packing_id))
+        if not pk or not pk.mrp_packing_id:
+            continue
+        mid = int(pk.mrp_packing_id)
+        if mid in seen:
+            continue
+        seen.add(mid)
+        out.append(mid)
+    return out
+
+
+def resolve_bruto_netto(
+    db: Session,
+    headers: Sequence[DeliveryHeader],
+    lines: Sequence[dict[str, Any]],
+) -> tuple[Decimal, Decimal]:
+    """NETTO dari baris delivery (+invoice fallback); BRUTO dari rasio packing MRP / invoice GW.
+
+    Prioritas BRUTO:
+    1) Rasio Σ gross/net packing MRP (unik) × NETTO
+    2) Rasio / total gross dari invoice_details
+    3) Fallback BRUTO = NETTO
+    """
+    line_nw = sum((ln["nw"] or Decimal("0") for ln in lines), Decimal("0"))
+
+    inv_nw_total = Decimal("0")
+    inv_gw_total = Decimal("0")
+    has_inv_nw = False
+    has_inv_gw = False
+    for dh in headers:
+        inv_nw, inv_gw = _invoice_weight_totals(db, int(dh.id))
+        if inv_nw is not None:
+            inv_nw_total += inv_nw
+            has_inv_nw = True
+        if inv_gw is not None:
+            inv_gw_total += inv_gw
+            has_inv_gw = True
+
+    total_nw = line_nw if line_nw > 0 else (inv_nw_total if has_inv_nw else Decimal("0"))
+
+    mrp_gw_sum = Decimal("0")
+    mrp_nw_sum = Decimal("0")
+    has_mrp_gw = False
+    has_mrp_nw = False
+    for mid in _mrp_packing_ids_for_headers(db, headers):
+        gw, nw = fetch_mrp_packing_weights(mid)
+        if gw is not None:
+            mrp_gw_sum += gw
+            has_mrp_gw = True
+        if nw is not None:
+            mrp_nw_sum += nw
+            has_mrp_nw = True
+
+    total_gw: Decimal | None = None
+    if has_mrp_gw and has_mrp_nw and mrp_nw_sum > 0 and total_nw > 0:
+        total_gw = _money2(total_nw * (mrp_gw_sum / mrp_nw_sum))
+    elif has_mrp_gw and total_nw > 0 and len(headers) == 1:
+        # Satu SJ: boleh pakai bruto packing MRP langsung bila netto packing tak ada
+        total_gw = mrp_gw_sum
+    elif has_inv_gw and has_inv_nw and inv_nw_total > 0 and total_nw > 0:
+        total_gw = _money2(total_nw * (inv_gw_total / inv_nw_total))
+    elif has_inv_gw:
+        total_gw = inv_gw_total
+
+    if total_gw is None or total_gw <= 0:
+        total_gw = total_nw
+
+    return total_nw, total_gw
+
+
+def _gather_lines(db: Session, delivery_id: int, *, seri_start: int = 1) -> list[dict[str, Any]]:
     details = list(
         db.scalars(
             select(DeliveryDetail)
@@ -253,7 +413,7 @@ def _gather_lines(db: Session, delivery_id: int) -> list[dict[str, Any]]:
         ).all()
     )
     lines: list[dict[str, Any]] = []
-    for idx, dd in enumerate(details, 1):
+    for idx, dd in enumerate(details):
         pod: PoDetail | None = None
         master: MasterItem | None = None
         pd: ProductionDetail | None = None
@@ -284,10 +444,10 @@ def _gather_lines(db: Session, delivery_id: int) -> list[dict[str, Any]]:
 
         lines.append(
             {
-                "seri": idx,
+                "seri": seri_start + idx,
+                "delivery_id": delivery_id,
                 "uraian": _item_uraian(pod),
-                "kode_barang": kode_barang or NEED_FEED,
-                "hs": NEED_FEED,
+                "kode_barang": kode_barang or None,
                 "qty": qty,
                 "qty_roll": int(dd.qty_roll or 0),
                 "qty_pcs": int(dd.qty_pcs or 0),
@@ -300,28 +460,78 @@ def _gather_lines(db: Session, delivery_id: int) -> list[dict[str, Any]]:
     return lines
 
 
-def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
-    dh = db.get(DeliveryHeader, delivery_id)
-    if not dh:
-        raise ValueError("delivery_not_found")
+def _parse_delivery_ids(delivery_ids: Sequence[int] | int) -> list[int]:
+    if isinstance(delivery_ids, int):
+        ids = [delivery_ids]
+    else:
+        ids = [int(x) for x in delivery_ids]
+    # unik, urut stabil
+    seen: set[int] = set()
+    out: list[int] = []
+    for i in ids:
+        if i in seen:
+            continue
+        seen.add(i)
+        out.append(i)
+    if not out:
+        raise ValueError("delivery_ids_required")
+    return out
 
-    customer = db.get(Customer, dh.customer_id) if dh.customer_id else None
+
+def build_bc27_workbook(
+    db: Session,
+    delivery_ids: Sequence[int] | int,
+    *,
+    aju_seq: str | int,
+) -> tuple[Any, str]:
+    ids = _parse_delivery_ids(delivery_ids)
+    aju_digits = normalize_aju_seq(aju_seq)
+
+    headers: list[DeliveryHeader] = []
+    for did in ids:
+        dh = db.get(DeliveryHeader, did)
+        if not dh:
+            raise ValueError("delivery_not_found")
+        headers.append(dh)
+
+    customer_ids = {int(h.customer_id) for h in headers if h.customer_id is not None}
+    if len(customer_ids) > 1:
+        raise ValueError("delivery_customer_mismatch")
+    if not customer_ids:
+        raise ValueError("delivery_customer_missing")
+
+    customer = db.get(Customer, next(iter(customer_ids)))
     invoices = list(
         db.scalars(
-            select(Invoice).where(Invoice.delivery_id == delivery_id).order_by(Invoice.id.asc())
+            select(Invoice)
+            .where(Invoice.delivery_id.in_(ids))
+            .order_by(Invoice.delivery_id.asc(), Invoice.id.asc())
         ).all()
     )
-    lines = _gather_lines(db, delivery_id)
-    dday = dh.delivery_date or app_now().date()
-    nomor_aju = generate_nomor_aju(dday, int(dh.id))
+
+    lines: list[dict[str, Any]] = []
+    seri = 1
+    for dh in headers:
+        chunk = _gather_lines(db, int(dh.id), seri_start=seri)
+        lines.extend(chunk)
+        seri += len(chunk)
+
+    dates = [h.delivery_date for h in headers if h.delivery_date]
+    dday = min(dates) if dates else app_now().date()
+    nomor_aju = generate_nomor_aju(dday, aju_digits)
+    cust_code = None
+    if customer:
+        cust_code = _text(customer.code)
+    kontrak = generate_nomor_kontrak(cust_code, dday)
     kurs = _latest_kurs(db, dday)
 
     total_cif = sum((ln["amount"] or Decimal("0") for ln in lines), Decimal("0"))
-    total_nw = sum((ln["nw"] or Decimal("0") for ln in lines), Decimal("0"))
-    total_gw = sum((ln["gw"] or Decimal("0") for ln in lines), Decimal("0"))
+    total_nw, total_gw = resolve_bruto_netto(db, headers, lines)
     total_roll = sum(int(ln["qty_roll"] or 0) for ln in lines)
-    if total_gw <= 0 and total_nw > 0:
-        total_gw = total_nw
+
+    bruto_ratio: Decimal | None = None
+    if total_nw > 0 and total_gw > 0:
+        bruto_ratio = total_gw / total_nw
 
     cif_idr = _money2(total_cif * kurs) if kurs is not None else None
     ppn = _money2(cif_idr * Decimal("0.11")) if cif_idr is not None else None
@@ -340,7 +550,6 @@ def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
     ws = wb["HEADER"]
     hmap = _header_map(ws)
     if not hmap:
-        # fallback minimal headers if template missing
         for i, col in enumerate(
             [
                 "NOMOR AJU",
@@ -372,16 +581,16 @@ def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
             ws.cell(1, i, col)
         hmap = _header_map(ws)
 
-    kantor_tujuan = (customer.customs_office_code or "").strip() if customer else ""
+    kantor_tujuan = _text(customer.customs_office_code) if customer else None
     valuta = "USD"
-    if customer and (customer.default_currency or "").strip():
+    if customer and _text(customer.default_currency):
         valuta = customer.default_currency.strip().upper()
 
     header_vals: dict[str, Any] = {
         "NOMOR AJU": nomor_aju,
         "KODE DOKUMEN": KODE_DOKUMEN_BC27,
         "KODE KANTOR": TH_KODE_KANTOR,
-        "KODE KANTOR TUJUAN": _or_feed(kantor_tujuan),
+        "KODE KANTOR TUJUAN": kantor_tujuan,
         "KODE JENIS TPB": "1",
         "KODE TUJUAN PENGIRIMAN": "1",
         "KODE TUJUAN TPB": "1",
@@ -392,22 +601,22 @@ def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
         "BIAYA TAMBAHAN": 0,
         "BIAYA PENGURANG": 0,
         "VD": 0,
-        "CIF": float(total_cif) if total_cif else NEED_FEED,
-        "HARGA_PENYERAHAN": float(cif_idr) if cif_idr is not None else NEED_FEED,
-        "NDPBM": float(kurs) if kurs is not None else NEED_FEED,
-        "DASAR PENGENAAN PAJAK": float(cif_idr) if cif_idr is not None else NEED_FEED,
+        "CIF": _num(total_cif) if total_cif else None,
+        "HARGA_PENYERAHAN": _num(cif_idr),
+        "NDPBM": _num(kurs),
+        "DASAR PENGENAAN PAJAK": _num(cif_idr),
         "UANG MUKA": 0,
-        "BRUTO": float(total_gw) if total_gw else NEED_FEED,
-        "NETTO": float(total_nw) if total_nw else NEED_FEED,
+        "BRUTO": _num(total_gw) if total_gw else None,
+        "NETTO": _num(total_nw) if total_nw else None,
         "VOLUME": 0,
         "KOTA PERNYATAAN": TH_KOTA_PERNYATAAN,
         "TANGGAL PERNYATAAN": _fmt_date(dday),
         "NAMA PERNYATAAN": TH_NAMA_PERNYATAAN,
         "JABATAN PERNYATAAN": TH_JABATAN_PERNYATAAN,
         "KODE VALUTA": valuta,
-        "NOMOR DAFTAR": NEED_FEED,
-        "TANGGAL DAFTAR": NEED_FEED,
-        "PPN PAJAK": float(ppn) if ppn is not None else NEED_FEED,
+        "NOMOR DAFTAR": None,
+        "TANGGAL DAFTAR": None,
+        "PPN PAJAK": _num(ppn),
         "PPNBM PAJAK": 0,
         "TARIF PPN PAJAK": 11,
     }
@@ -416,7 +625,6 @@ def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
     # --- ENTITAS ---
     ws = wb["ENTITAS"]
     emap = _header_map(ws)
-    # 7 & 3: Tong Hong; 8: customer
     _append_row(
         ws,
         emap,
@@ -450,12 +658,12 @@ def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
             "TANGGAL IJIN ENTITAS": TH_SKEP_DATE,
         },
     )
-    cust_name = (customer.name or "").strip() if customer else ""
-    cust_addr = ""
+    cust_name = _text(customer.name) if customer else None
+    cust_addr = None
     if customer:
-        cust_addr = (customer.address or customer.billing_address or "").strip()
-    cust_tax = (customer.tax_id or "").strip() if customer else ""
-    cust_skep = (customer.skep_kb_number or "").strip() if customer else ""
+        cust_addr = _text(customer.address) or _text(customer.billing_address)
+    cust_tax = _text(customer.tax_id) if customer else None
+    cust_skep = _text(customer.skep_kb_number) if customer else None
     _append_row(
         ws,
         emap,
@@ -464,72 +672,61 @@ def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
             "SERI": 8,
             "KODE ENTITAS": "8",
             "KODE JENIS IDENTITAS": "6",
-            "NOMOR IDENTITAS": _or_feed(cust_tax),
-            "NAMA ENTITAS": _or_feed(cust_name),
-            "ALAMAT ENTITAS": _or_feed(cust_addr),
+            "NOMOR IDENTITAS": cust_tax,
+            "NAMA ENTITAS": cust_name,
+            "ALAMAT ENTITAS": cust_addr,
             "KODE JENIS API": TH_KODE_JENIS_API,
             "KODE STATUS": TH_KODE_STATUS,
-            "NOMOR IJIN ENTITAS": _or_feed(cust_skep),
-            "TANGGAL IJIN ENTITAS": NEED_FEED,
+            "NOMOR IJIN ENTITAS": cust_skep,
+            "TANGGAL IJIN ENTITAS": None,
         },
     )
 
     # --- DOKUMEN ---
     ws = wb["DOKUMEN"]
     dmap = _header_map(ws)
-    seri = 1
-    if invoices:
-        for inv in invoices:
-            _append_row(
-                ws,
-                dmap,
-                {
-                    "NOMOR AJU": nomor_aju,
-                    "SERI": seri,
-                    "KODE DOKUMEN": KODE_DOK_INVOICE,
-                    "NOMOR DOKUMEN": _or_feed(inv.invoice_number),
-                    "TANGGAL DOKUMEN": _fmt_date(inv.invoice_date or dday),
-                },
-            )
-            seri += 1
-    else:
+    seri_dok = 1
+    for inv in invoices:
+        inv_day = inv.invoice_date
+        if inv_day is None:
+            dh_match = next((h for h in headers if int(h.id) == int(inv.delivery_id or 0)), None)
+            inv_day = (dh_match.delivery_date if dh_match else None) or dday
         _append_row(
             ws,
             dmap,
             {
                 "NOMOR AJU": nomor_aju,
-                "SERI": seri,
+                "SERI": seri_dok,
                 "KODE DOKUMEN": KODE_DOK_INVOICE,
-                "NOMOR DOKUMEN": NEED_FEED,
-                "TANGGAL DOKUMEN": _fmt_date(dday),
+                "NOMOR DOKUMEN": _text(inv.invoice_number),
+                "TANGGAL DOKUMEN": _fmt_date(inv_day),
             },
         )
-        seri += 1
+        seri_dok += 1
+
+    for dh in headers:
+        sj_day = dh.delivery_date or dday
+        _append_row(
+            ws,
+            dmap,
+            {
+                "NOMOR AJU": nomor_aju,
+                "SERI": seri_dok,
+                "KODE DOKUMEN": KODE_DOK_SJ,
+                "NOMOR DOKUMEN": _text(dh.delivery_number),
+                "TANGGAL DOKUMEN": _fmt_date(sj_day),
+            },
+        )
+        seri_dok += 1
 
     _append_row(
         ws,
         dmap,
         {
             "NOMOR AJU": nomor_aju,
-            "SERI": seri,
-            "KODE DOKUMEN": KODE_DOK_SJ,
-            "NOMOR DOKUMEN": _or_feed(dh.delivery_number),
-            "TANGGAL DOKUMEN": _fmt_date(dday),
-        },
-    )
-    seri += 1
-
-    kontrak = ""
-    if customer and (customer.reference_quotation or "").strip():
-        kontrak = customer.reference_quotation.strip()
-    _append_row(
-        ws,
-        dmap,
-        {
-            "NOMOR AJU": nomor_aju,
-            "SERI": seri,
+            "SERI": seri_dok,
             "KODE DOKUMEN": KODE_DOK_KONTRAK,
-            "NOMOR DOKUMEN": _or_feed(kontrak),
+            "NOMOR DOKUMEN": kontrak,
             "TANGGAL DOKUMEN": _fmt_date(dday),
         },
     )
@@ -537,15 +734,20 @@ def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
     # --- PENGANGKUT ---
     ws = wb["PENGANGKUT"]
     pmap = _header_map(ws)
+    first = headers[0]
+    drivers = {_text(h.driver_name) for h in headers}
+    vehicles = {_text(h.vehicle_number) for h in headers}
+    driver = _text(first.driver_name) if len(drivers) == 1 else None
+    vehicle = _text(first.vehicle_number) if len(vehicles) == 1 else None
     _append_row(
         ws,
         pmap,
         {
             "NOMOR AJU": nomor_aju,
             "SERI": 1,
-            "KODE CARA ANGKUT": NEED_FEED,
-            "NAMA PENGANGKUT": (dh.driver_name or "").strip() or "-",
-            "NOMOR PENGANGKUT": (dh.vehicle_number or "").strip() or "-",
+            "KODE CARA ANGKUT": None,
+            "NAMA PENGANGKUT": driver or "-",
+            "NOMOR PENGANGKUT": vehicle or "-",
         },
     )
 
@@ -559,11 +761,9 @@ def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
             "NOMOR AJU": nomor_aju,
             "SERI": 1,
             "KODE KEMASAN": KODE_KEMASAN_RO,
-            "JUMLAH KEMASAN": total_roll if total_roll > 0 else NEED_FEED,
+            "JUMLAH KEMASAN": total_roll if total_roll > 0 else None,
         },
     )
-
-    # empty-header-only sheets already cleared via blank workbook
 
     # --- BARANG ---
     ws = wb["BARANG"]
@@ -571,13 +771,19 @@ def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
     for ln in lines:
         amt = ln["amount"]
         amt_idr = _money2(amt * kurs) if amt is not None and kurs is not None else None
+        nw = ln["nw"]
+        gw = None
+        if nw is not None and bruto_ratio is not None:
+            gw = _money2(nw * bruto_ratio)
+        elif nw is not None:
+            gw = nw
         _append_row(
             ws,
             bmap,
             {
                 "NOMOR AJU": nomor_aju,
                 "SERI BARANG": ln["seri"],
-                "HS": NEED_FEED,
+                "HS": None,
                 "KODE BARANG": ln["kode_barang"],
                 "URAIAN": ln["uraian"],
                 "MEREK": "-",
@@ -585,15 +791,16 @@ def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
                 "UKURAN": "-",
                 "SPESIFIKASI LAIN": "-",
                 "KODE SATUAN": KODE_SATUAN_FTK,
-                "JUMLAH SATUAN": float(ln["qty"]) if ln["qty"] else NEED_FEED,
-                "NETTO": float(ln["nw"]) if ln["nw"] is not None else NEED_FEED,
-                "CIF": float(amt) if amt is not None else NEED_FEED,
-                "CIF RUPIAH": float(amt_idr) if amt_idr is not None else NEED_FEED,
-                "NDPBM": float(kurs) if kurs is not None else NEED_FEED,
+                "JUMLAH SATUAN": _num(ln["qty"]) if ln["qty"] else None,
+                "NETTO": _num(nw),
+                "BRUTO": _num(gw),
+                "CIF": _num(amt),
+                "CIF RUPIAH": _num(amt_idr),
+                "NDPBM": _num(kurs),
                 "FOB": 0,
                 "NILAI TAMBAH": 0,
                 "DISKON": 0,
-                "HARGA PENYERAHAN": float(amt_idr) if amt_idr is not None else NEED_FEED,
+                "HARGA PENYERAHAN": _num(amt_idr),
                 "HARGA PEROLEHAN": 0,
                 "HARGA EKSPOR": 0,
                 "NILAI BARANG": 0,
@@ -601,38 +808,37 @@ def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
             },
         )
 
-    # --- BAHANBAKU (belum ada BOM di ERP) ---
+    # --- BAHANBAKU (BOM belum ada; qty mengikuti invoice; kolom kuning kosong) ---
     ws = wb["BAHANBAKU"]
     bbmap = _header_map(ws)
     for ln in lines:
-        _append_row(
-            ws,
-            bbmap,
-            {
-                "NOMOR AJU": nomor_aju,
-                "SERI BARANG": ln["seri"],
-                "SERI BAHAN BAKU": 1,
-                "KODE ASAL BAHAN BAKU": "0",
-                "HS": NEED_FEED,
-                "KODE BARANG": NEED_FEED,
-                "URAIAN": NEED_FEED,
-                "MEREK": "-",
-                "TIPE": "-",
-                "UKURAN": "-",
-                "SPESIFIKASI LAIN": "-",
-                "KODE SATUAN": KODE_SATUAN_FTK,
-                "JUMLAH SATUAN": float(ln["qty"]) if ln["qty"] else NEED_FEED,
-                "KODE DOKUMEN ASAL": "23",
-                "KODE KANTOR ASAL": TH_KODE_KANTOR,
-                "NDPBM": float(kurs) if kurs is not None else NEED_FEED,
-                "HARGA PENYERAHAN": 0,
-                "HARGA PEROLEHAN": 0,
-                "NILAI JASA": 0,
-                "SERI IZIN": 0,
-            },
-        )
+        row = {
+            "NOMOR AJU": nomor_aju,
+            "SERI BARANG": ln["seri"],
+            "SERI BAHAN BAKU": 1,
+            "KODE ASAL BAHAN BAKU": "0",
+            "HS": None,
+            "KODE BARANG": None,
+            "URAIAN": None,
+            "MEREK": "-",
+            "TIPE": "-",
+            "UKURAN": "-",
+            "SPESIFIKASI LAIN": "-",
+            "KODE SATUAN": KODE_SATUAN_FTK,
+            "JUMLAH SATUAN": _num(ln["qty"]) if ln["qty"] else None,
+            "KODE DOKUMEN ASAL": "23",
+            "KODE KANTOR ASAL": TH_KODE_KANTOR,
+            "NDPBM": _num(kurs),
+            "HARGA PENYERAHAN": 0,
+            "HARGA PEROLEHAN": 0,
+            "NILAI JASA": 0,
+            "SERI IZIN": 0,
+        }
+        for k in BAHANBAKU_YELLOW_KEYS:
+            row[k] = None
+        _append_row(ws, bbmap, row)
 
-    # --- BAHANBAKUTARIF: BM / PPH / PPN per barang (qty dari invoice) ---
+    # --- BAHANBAKUTARIF ---
     ws = wb["BAHANBAKUTARIF"]
     btmap = _header_map(ws)
     tarif_rows = [
@@ -641,44 +847,55 @@ def build_bc27_workbook(db: Session, delivery_id: int) -> tuple[Any, str]:
         ("PPN", "1", 11, "6", 100),
     ]
     for ln in lines:
-        qty = float(ln["qty"]) if ln["qty"] else NEED_FEED
+        qty = _num(ln["qty"]) if ln["qty"] else None
         for kode_pungutan, kode_tarif, tarif, kode_fas, tarif_fas in tarif_rows:
-            _append_row(
-                ws,
-                btmap,
-                {
-                    "NOMOR AJU": nomor_aju,
-                    "SERI BARANG": ln["seri"],
-                    "SERI BAHAN BAKU": 1,
-                    "KODE ASAL BAHAN BAKU": "0",
-                    "KODE PUNGUTAN": kode_pungutan,
-                    "KODE TARIF": kode_tarif,
-                    "TARIF": tarif,
-                    "KODE FASILITAS": kode_fas,
-                    "TARIF FASILITAS": tarif_fas,
-                    "NILAI BAYAR": 0,
-                    "NILAI SUDAH DILUNASI": 0,
-                    "KODE SATUAN": KODE_SATUAN_FTK,
-                    "JUMLAH SATUAN": qty,
-                },
-            )
+            row = {
+                "NOMOR AJU": nomor_aju,
+                "SERI BARANG": ln["seri"],
+                "SERI BAHAN BAKU": 1,
+                "KODE ASAL BAHAN BAKU": "0",
+                "KODE PUNGUTAN": kode_pungutan,
+                "KODE TARIF": kode_tarif,
+                "TARIF": tarif,
+                "KODE FASILITAS": kode_fas,
+                "TARIF FASILITAS": tarif_fas,
+                "NILAI BAYAR": 0,
+                "NILAI SUDAH DILUNASI": 0,
+                "KODE SATUAN": KODE_SATUAN_FTK,
+                "JUMLAH SATUAN": qty,
+            }
+            for k in BAHANBAKUTARIF_YELLOW_KEYS:
+                row[k] = None
+            _append_row(ws, btmap, row)
 
     # --- VERSI ---
     ws = wb["VERSI"]
     if ws.max_row < 1 or ws.cell(1, 1).value is None:
         ws.cell(1, 1, "VERSI")
-    if ws.max_row >= 2:
-        ws.cell(2, 1, VERSI_TEMPLATE)
-    else:
-        ws.cell(2, 1, VERSI_TEMPLATE)
+    ws.cell(2, 1, VERSI_TEMPLATE)
 
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in nomor_aju)[:48]
     filename = f"{safe}_bc27.xlsx"
     return wb, filename
 
 
-def render_delivery_customs_bc27_xlsx(db: Session, delivery_id: int) -> tuple[bytes, str]:
-    wb, filename = build_bc27_workbook(db, delivery_id)
+def render_customs_bc27_xlsx(
+    db: Session,
+    delivery_ids: Sequence[int] | int,
+    *,
+    aju_seq: str | int,
+) -> tuple[bytes, str]:
+    wb, filename = build_bc27_workbook(db, delivery_ids, aju_seq=aju_seq)
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue(), filename
+
+
+def render_delivery_customs_bc27_xlsx(
+    db: Session,
+    delivery_id: int,
+    *,
+    aju_seq: str | int,
+) -> tuple[bytes, str]:
+    """Kompatibilitas: satu delivery_id."""
+    return render_customs_bc27_xlsx(db, [delivery_id], aju_seq=aju_seq)

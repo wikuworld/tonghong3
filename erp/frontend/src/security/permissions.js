@@ -46,6 +46,10 @@ export const ACTION_MATRIX = {
     update: ['admin', 'warehouse'],
     print: ['admin', 'warehouse', 'marketing'],
   },
+  customsBc27: {
+    view: ['admin', 'exim', 'warehouse', 'marketing'],
+    export: ['admin', 'exim', 'warehouse', 'marketing'],
+  },
   invoice: {
     view: ['admin', 'finance', 'marketing'],
     create: ['admin', 'finance'],
@@ -91,6 +95,12 @@ export const ACTION_MATRIX = {
     delete: ['admin'],
   },
   csiColors: {
+    view: ['admin', 'marketing', 'sales'],
+    create: ['admin', 'marketing'],
+    update: ['admin', 'marketing'],
+    delete: ['admin'],
+  },
+  colorWindow: {
     view: ['admin', 'marketing', 'sales'],
     create: ['admin', 'marketing'],
     update: ['admin', 'marketing'],

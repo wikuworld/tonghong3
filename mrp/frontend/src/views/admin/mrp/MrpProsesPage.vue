@@ -337,81 +337,25 @@
           </div>
         <el-form-item :label="t('pages.mrpProses.scanRpi')">
           <div class="flex gap-2 w-full">
-            <el-input
+            <el-autocomplete
               v-model="form.kode_scan"
+              :fetch-suggestions="fetchRpiSuggestions"
               :placeholder="t('pages.mrpProses.scanPlaceholder')"
+              :trigger-on-focus="true"
+              :debounce="250"
+              clearable
               class="flex-1"
+              value-key="kode_rencana_item"
+              @select="onRpiPicked"
               @keyup.enter="doScan"
-            />
+            >
+              <template #default="{ item }">
+                <span>{{ rpiListLabel(item) }}</span>
+              </template>
+            </el-autocomplete>
             <el-button @click="doScan">{{ t('pages.mrpProses.scan') }}</el-button>
           </div>
         </el-form-item>
-        <el-form-item :label="t('pages.mrpProses.pilihItem')">
-          <el-select
-            v-model="form.rencana_item_id"
-            filterable
-            clearable
-            class="w-full"
-            @change="onItemSelect"
-          >
-            <el-option
-              v-for="it in rencanaItems"
-              :key="it.id"
-              :label="rencanaItemLabel(it)"
-              :value="it.id"
-            />
-          </el-select>
-        </el-form-item>
-        <div v-if="scanned" class="mrp-proses-scan-card mb-3">
-          <span class="mrp-proses-scan-card__label">{{ t('common.detail') }}</span>
-          <span class="mrp-proses-scan-card__value">
-            {{ scanned.kode_rencana }} · {{ dash(scanned.nama_rencana) }} ·
-            {{ scanned.kode_rencana_item }}
-          </span>
-        </div>
-
-        <template v-if="candidateRows.length">
-          <div class="mrp-proses-section-title">{{ t('pages.mrpProses.candidateList') }}</div>
-          <el-table
-            :data="candidateRows"
-            border
-            stripe
-            size="small"
-            class="admin-table mb-3"
-            :empty-text="t('common.tableEmpty')"
-          >
-            <el-table-column width="48" align="center">
-              <template #default="{ row }">
-                <el-checkbox
-                  :model-value="isRowChecked(row)"
-                  @change="(val) => toggleRow(row, val)"
-                />
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('common.material')" min-width="120" show-overflow-tooltip>
-              <template #default="{ row }">{{ dash(row.material_name) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.mrpProses.thickness')" width="90">
-              <template #default="{ row }">{{ dash(row.thickness) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('common.color')" width="100" show-overflow-tooltip>
-              <template #default="{ row }">{{ dash(row.color) }}</template>
-            </el-table-column>
-            <el-table-column label="Emboss" width="90" show-overflow-tooltip>
-              <template #default="{ row }">{{ dash(row.emboss) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('common.colorStandard')" min-width="110" show-overflow-tooltip>
-              <template #default="{ row }">{{ dash(row.color_swatch) }}</template>
-            </el-table-column>
-            <el-table-column label="qty" width="80" align="right">
-              <template #default="{ row }">{{ formatQty(row.qty) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.mrpProses.qtyProcess')" width="90" align="right">
-              <template #default="{ row }">{{ formatQty(row.qty_proses) }}</template>
-            </el-table-column>
-            <el-table-column prop="no_po" :label="t('pages.mrpRencana.poCustomerRef')" width="110" show-overflow-tooltip />
-          </el-table>
-        </template>
 
         <template v-if="processRows.length">
           <div class="mrp-proses-section-title">{{ t('pages.mrpProses.processList') }}</div>
@@ -760,6 +704,7 @@ import {
   mrpProsesReturnLabel,
   mrpProsesRejectLookup,
   mrpProsesReturnLookup,
+  mrpProsesRencanaSearch,
   mrpProsesScanRencana,
 } from '../../../api/client'
 
@@ -926,22 +871,6 @@ function rowKey(row) {
   const itemId = row.rencana_item_id ?? 'item'
   const poKey = row.po_link_id ?? row.po_id ?? row.no_po ?? 'item'
   return `${itemId}:${poKey}`
-}
-
-function isRowChecked(row) {
-  return processRows.value.some((r) => rowKey(r) === rowKey(row))
-}
-
-function toggleRow(row, checked) {
-  const key = rowKey(row)
-  if (checked) {
-    if (!processRows.value.some((r) => rowKey(r) === key)) {
-      processRows.value.push({ ...row })
-    }
-  } else {
-    removeProcessRowByKey(key)
-  }
-  refreshKySelectionAfterFilter()
 }
 
 function removeProcessRow(row) {
@@ -1162,11 +1091,50 @@ async function onKySelect(kodePalet) {
   }
 }
 
-function rencanaItemLabel(it) {
-  const rp = (it.kode_rencana || '').trim()
-  const nama = (it.nama_rencana || '').trim()
+function formatRencanaDate(raw) {
+  if (raw == null || raw === '') return ''
+  const s = String(raw).trim()
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+  const d = new Date(s)
+  if (Number.isNaN(d.getTime())) return s
+  return d.toISOString().slice(0, 10)
+}
+
+function rpiListLabel(it) {
   const rpi = (it.kode_rencana_item || '').trim()
-  return [rp, nama, rpi].filter(Boolean).join(' · ')
+  const nama = (it.nama_rencana || '').trim()
+  const tanggal = formatRencanaDate(it.tanggal_rencana)
+  return [rpi, nama, tanggal].filter(Boolean).join(' - ')
+}
+
+async function fetchRpiSuggestions(queryString, cb) {
+  const q = (queryString || '').trim()
+  try {
+    const data = await mrpProsesRencanaSearch(q)
+    cb(data.items || [])
+  } catch {
+    const needle = q.toLowerCase()
+    const local = (rencanaItems.value || []).filter((it) => {
+      if (!needle) return true
+      const hay = [
+        it.kode_rencana_item,
+        it.kode_lot_wip,
+        it.kode_rencana,
+        it.nama_rencana,
+      ]
+        .map((x) => String(x || '').toLowerCase())
+        .join(' ')
+      return hay.includes(needle)
+    })
+    cb(local.slice(0, 30))
+  }
+}
+
+function onRpiPicked(item) {
+  const kode = (item?.kode_rencana_item || '').trim()
+  if (!kode) return
+  form.kode_scan = kode
+  loadItemDetail(kode)
 }
 
 function resolveMaterialName(item, po = null) {
@@ -1216,12 +1184,9 @@ function buildCandidateRows(item, poList = []) {
 
 function applyScanResult(data) {
   scanned.value = data
+  form.rencana_item_id = data.id ?? null
   candidateRows.value = buildCandidateRows(data, data.po_list || [])
-  // Ganti baris proses untuk item yang baru di-scan; auto-centang jika 1 kandidat.
-  processRows.value = processRows.value.filter((r) => r.rencana_item_id !== data.id)
-  if (candidateRows.value.length === 1) {
-    processRows.value.push({ ...candidateRows.value[0] })
-  }
+  processRows.value = candidateRows.value.map((row) => ({ ...row }))
   refreshKySelectionAfterFilter()
 }
 
@@ -1625,6 +1590,7 @@ async function loadItemDetail(kode) {
   if (!kode) {
     scanned.value = null
     candidateRows.value = []
+    processRows.value = []
     return
   }
   try {
@@ -1633,27 +1599,15 @@ async function loadItemDetail(kode) {
   } catch (e) {
     scanned.value = null
     candidateRows.value = []
+    processRows.value = []
     ElMessage.error(e.message || String(e))
   }
 }
 
 async function doScan() {
-  if (!form.kode_scan.trim()) return
   const kode = form.kode_scan.trim()
+  if (!kode) return
   await loadItemDetail(kode)
-  if (scanned.value?.id) form.rencana_item_id = scanned.value.id
-}
-
-async function onItemSelect(itemId) {
-  if (!itemId) {
-    scanned.value = null
-    candidateRows.value = []
-    return
-  }
-  const it = rencanaItems.value.find((row) => row.id === itemId)
-  if (!it?.kode_rencana_item) return
-  form.kode_scan = it.kode_rencana_item
-  await loadItemDetail(it.kode_rencana_item)
 }
 
 function groupProcessRowsByItem(rows) {

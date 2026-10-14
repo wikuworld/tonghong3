@@ -5,7 +5,7 @@
       <el-select v-model="filterCategory" clearable :placeholder="t('pages.masterItems.filterCategory')" class="master-items-filter-category">
         <el-option :label="t('pages.masterItems.allCategory')" value="" />
         <el-option label="PU" value="PU" />
-        <el-option label="Suide" value="Suide" />
+        <el-option label="Suede" value="Suede" />
         <el-option label="SubKon" value="SubKon" />
       </el-select>
       <el-button v-if="canView" :icon="Download" @click="handleExport">{{ t('pages.masterItems.export') }}</el-button>
@@ -16,7 +16,7 @@
     <p v-if="stats.total" class="master-items-stats-hint">
       {{ t('pages.masterItems.statTotal') }}: {{ stats.total }}
       · PU {{ stats.pu }}
-      · Suide {{ stats.suide }}
+      · Suede {{ stats.suide }}
       · SubKon {{ stats.subkon }}
       · {{ t('pages.masterItems.statShown') }}: {{ total }}
     </p>
@@ -101,7 +101,7 @@
             <el-form-item :label="t('common.category')" required>
               <el-select v-model="form.category" clearable class="w-full">
                 <el-option label="PU" value="PU" />
-                <el-option label="Suide" value="Suide" />
+                <el-option label="Suede" value="Suede" />
                 <el-option label="SubKon" value="SubKon" />
               </el-select>
             </el-form-item>
@@ -222,7 +222,18 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="importDialogVisible" :title="t('pages.masterItems.importTitle')" width="600px" destroy-on-close align-center>
+    <el-dialog v-model="importDialogVisible" :title="t('pages.masterItems.importTitle')" width="640px" destroy-on-close align-center>
+      <p class="master-items-import-sub">{{ t('pages.masterItems.importSub') }}</p>
+      <p class="master-items-import-hint">{{ t('pages.masterItems.importHint') }}</p>
+      <ul class="master-items-import-cols">
+        <li>{{ t('pages.masterItems.importColsRequired') }}</li>
+        <li>{{ t('pages.masterItems.importColsOptional') }}</li>
+        <li>{{ t('pages.masterItems.importPartialHint') }}</li>
+      </ul>
+      <div class="master-items-import-actions">
+        <el-button :icon="Download" @click="downloadImportTemplate">{{ t('pages.masterItems.downloadTemplate') }}</el-button>
+      </div>
+      <p class="master-items-import-panel-title">{{ t('pages.masterItems.importPanelTitle') }}</p>
       <el-upload
         ref="uploadRef"
         :auto-upload="false"
@@ -232,9 +243,28 @@
       >
         <el-button type="primary">{{ t('pages.masterItems.selectFile') }}</el-button>
       </el-upload>
+      <div v-if="importResult" class="master-items-import-result">
+        <p>
+          {{
+            t('pages.masterItems.importResultSummary', {
+              created: importResult.created || 0,
+              updated: importResult.updated || 0,
+              skipped: importResult.skipped || 0,
+            })
+          }}
+        </p>
+        <ul v-if="importResult.errors?.length" class="master-items-import-errors">
+          <li v-for="(err, idx) in importResult.errors.slice(0, 8)" :key="idx">
+            {{ t('pages.masterItems.importErrorRow', { row: err.row, code: err.item_code || '—', reason: err.reason }) }}
+          </li>
+          <li v-if="importResult.errors.length > 8">
+            {{ t('pages.masterItems.importErrorMore', { n: importResult.errors.length - 8 }) }}
+          </li>
+        </ul>
+      </div>
       <template #footer>
         <el-button :icon="Close" @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button v-if="canCreate" type="primary" :icon="Check" :disabled="!importFile" @click="handleImport">
+        <el-button v-if="canCreate" type="primary" :icon="Check" :disabled="!importFile || importing" :loading="importing" @click="handleImport">
           {{ t('pages.masterItems.doImport') }}
         </el-button>
       </template>
@@ -512,13 +542,18 @@ async function removeRow(row) {
   }
 }
 
+const importing = ref(false)
+const importResult = ref(null)
+
 function openImportDialog() {
   importDialogVisible.value = true
   importFile.value = null
+  importResult.value = null
 }
 
 function handleFileChange(file) {
   importFile.value = file.raw
+  importResult.value = null
 }
 
 async function handleExport() {
@@ -530,15 +565,34 @@ async function handleExport() {
   }
 }
 
+async function downloadImportTemplate() {
+  try {
+    await exportMasterItems({ template: true })
+    ElMessage.success(t('pages.masterItems.templateSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
 async function handleImport() {
   if (!importFile.value) return
+  importing.value = true
+  importResult.value = null
   try {
     const result = await importMasterItems(importFile.value)
-    ElMessage.success(t('pages.masterItems.importSuccess', { count: result.imported }))
-    importDialogVisible.value = false
+    importResult.value = result
+    ElMessage.success(
+      t('pages.masterItems.importResultSummary', {
+        created: result.created || 0,
+        updated: result.updated || 0,
+        skipped: result.skipped || 0,
+      }),
+    )
     await load()
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    importing.value = false
   }
 }
 
@@ -616,5 +670,52 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+.master-items-import-sub {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--el-text-color-primary);
+}
+
+.master-items-import-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.4;
+}
+
+.master-items-import-cols {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  line-height: 1.45;
+}
+
+.master-items-import-actions {
+  margin-bottom: 12px;
+}
+
+.master-items-import-panel-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.master-items-import-result {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
+  font-size: 13px;
+}
+
+.master-items-import-errors {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--el-color-danger);
+  line-height: 1.4;
 }
 </style>

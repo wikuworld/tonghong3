@@ -5,9 +5,9 @@ export function normalizedText(v) {
 }
 
 export const ITEM_CATEGORY_PU = 'PU'
-export const ITEM_CATEGORY_SUEDE = 'Suide'
+export const ITEM_CATEGORY_SUEDE = 'Suede'
 
-/** Nilai API master: PU | Suide | SubKon. */
+/** Nilai API master: PU | Suede | SubKon. */
 export function normalizeItemCategory(raw) {
   const cat = normalizedText(raw)
   if (cat === 'suide' || cat === 'suede') return ITEM_CATEGORY_SUEDE

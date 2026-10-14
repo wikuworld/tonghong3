@@ -17,6 +17,8 @@ import MasterItemsPage from '../views/admin/MasterItemsPage.vue'
 import FluorescentColorMasterPage from '../views/admin/FluorescentColorMasterPage.vue'
 import CsiColorMasterPage from '../views/admin/CsiColorMasterPage.vue'
 import ColorSwatchMasterPage from '../views/admin/ColorSwatchMasterPage.vue'
+import ColorWindowMasterPage from '../views/admin/ColorWindowMasterPage.vue'
+import CustomsBc27Page from '../views/admin/CustomsBc27Page.vue'
 import UserAccessPage from '../views/admin/UserAccessPage.vue'
 // Disembunyikan sementara: halaman Mapping Customer-Brand tidak dipakai.
 // import CustomerBrandMappingPage from '../views/admin/CustomerBrandMappingPage.vue'
@@ -75,6 +77,7 @@ const router = createRouter({
         { path: 'qc', component: QualityControlPage, meta: { titleKey: 'menu.qc', module: 'qc' } },
         { path: 'packing', component: PackingPage, meta: { titleKey: 'menu.packing', module: 'packing' } },
         { path: 'delivery', component: DeliveryPage, meta: { titleKey: 'menu.delivery', module: 'delivery' } },
+        { path: 'customs-bc27', component: CustomsBc27Page, meta: { titleKey: 'menu.customs', module: 'customsBc27' } },
         { path: 'delivery-pull', redirect: '/admin/delivery' },
         { path: 'surat-jalan', redirect: '/admin/delivery' },
         { path: 'print-surat-jalan', redirect: '/admin/delivery' },
@@ -87,6 +90,7 @@ const router = createRouter({
         { path: 'fluorescent-colors', component: FluorescentColorMasterPage, meta: { titleKey: 'menu.fluorescentColors', module: 'fluorescentColors' } },
         { path: 'csi-colors', component: CsiColorMasterPage, meta: { titleKey: 'menu.csiColors', module: 'csiColors' } },
         { path: 'color-swatch', component: ColorSwatchMasterPage, meta: { titleKey: 'menu.colorSwatch', module: 'colorSwatch' } },
+        { path: 'color-window', component: ColorWindowMasterPage, meta: { titleKey: 'menu.colorWindow', module: 'colorWindow' } },
         { path: 'user-access', component: UserAccessPage, meta: { titleKey: 'menu.userAccess', module: 'userAccess' } },
         // Disembunyikan sementara: URL lama jatuh ke redirect dashboard.
         // { path: 'customer-brand-mapping', component: CustomerBrandMappingPage, meta: { titleKey: 'menu.customerBrandMapping', module: 'customerBrandMapping' } },

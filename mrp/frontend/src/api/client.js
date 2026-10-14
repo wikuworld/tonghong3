@@ -1107,7 +1107,7 @@ export function getBuyerPriceList(id) {
 
 /**
  * Resolusi harga satuan dari sheet list harga buyer (logika di server).
- * @param {object} body - buyer_code, material_name?, color?, style_article?, thickness_text?, color_family?, emboss?, factory_code?
+ * @param {object} body - buyer_code, as_of?, material_name?, color?, style_article?, thickness_text?, color_family?, emboss?, factory_code?
  */
 export function resolveBuyerUnitPrice(body) {
   return apiFetch('/buyer-prices/resolve-unit-price', { method: 'POST', body: JSON.stringify(body) })
@@ -1448,8 +1448,33 @@ export function createMaterial(body) {
   return apiFetch('/inventory/materials', { method: 'POST', body: JSON.stringify(body) })
 }
 
+export function getMaterial(id) {
+  return apiFetch(`/inventory/materials/${encodeURIComponent(String(id))}`)
+}
+
 export function updateMaterial(id, body) {
   return apiFetch(`/inventory/materials/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+// --- Inventory - Master Unit ---
+export function listInventoryUnits(params = {}) {
+  const q = new URLSearchParams()
+  if (params.material_type) q.set('material_type', params.material_type)
+  if (params.active_only != null) q.set('active_only', String(params.active_only))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/inventory/units${suffix}`)
+}
+
+export function createInventoryUnit(body) {
+  return apiFetch('/inventory/units', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateInventoryUnit(id, body) {
+  return apiFetch(`/inventory/units/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteInventoryUnit(id) {
+  return apiFetch(`/inventory/units/${id}`, { method: 'DELETE' })
 }
 
 // --- Inventory - Stock ---
@@ -1610,6 +1635,10 @@ export function mrpListMasterKimia(params = {}) {
   return apiFetch(`/mrp/masters/kimia${suffix}`)
 }
 
+export function mrpGetMasterKimia(id) {
+  return apiFetch(`/mrp/masters/kimia/${encodeURIComponent(String(id))}`)
+}
+
 export function mrpCreateMasterKimia(body) {
   return apiFetch('/mrp/masters/kimia', { method: 'POST', body: JSON.stringify(body) })
 }
@@ -1680,6 +1709,11 @@ export function mrpProsesAction(id, body) {
 export function mrpProsesScanRencana(q) {
   const suffix = q ? `?q=${encodeURIComponent(q)}` : ''
   return apiFetch(`/mrp/proses/scan-rencana${suffix}`)
+}
+
+export function mrpProsesRencanaSearch(q) {
+  const suffix = q != null && String(q).trim() !== '' ? `?q=${encodeURIComponent(String(q).trim())}` : ''
+  return apiFetch(`/mrp/proses/rencana-search${suffix}`)
 }
 
 export function mrpProsesLabel(id) {

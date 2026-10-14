@@ -24,43 +24,63 @@
       <div class="admin-inner-card__body">
         <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpStokKimia.inTitle') }}</h3>
         <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpStokKimia.inHint') }}</p>
-        <div class="flex flex-wrap gap-2 items-center">
-          <el-select
-            v-model="inForm.kimia_id"
-            filterable
-            clearable
-            :placeholder="t('pages.mrpStokKimia.kimia')"
-            class="max-w-sm"
-          >
-            <el-option
-              v-for="k in kimiaList"
-              :key="k.id"
-              :label="`${k.kode_barang} — ${k.nama_barang}${k.satuan ? ` (${k.satuan})` : ''}`"
-              :value="k.id"
-            />
-          </el-select>
-          <el-input
-            v-model="inForm.qty"
-            type="number"
-            :placeholder="t('pages.mrpStokKimia.qty')"
-            class="w-28"
-            @keyup.enter="doIn"
-          />
-          <el-input
-            v-model="inForm.jumlah_kemasan"
-            type="number"
-            :placeholder="t('pages.mrpStokKimia.kemasan')"
-            class="w-28"
-          />
-          <el-input
-            v-model="inForm.lot_number"
-            :placeholder="t('pages.mrpStokKimia.lotNumber')"
-            class="max-w-xs"
-            clearable
-          />
-          <el-date-picker v-model="inForm.tanggal" type="date" value-format="YYYY-MM-DD" />
-          <el-button type="primary" :loading="saving" @click="doIn">{{ t('pages.mrpStokKimia.inBtn') }}</el-button>
-        </div>
+        <el-form label-position="top" class="mrp-sk-in-form" @submit.prevent="doIn">
+          <div class="mrp-sk-in-form__grid">
+            <el-form-item :label="t('pages.mrpStokKimia.bahanBaku')" required>
+              <el-select
+                v-model="inForm.kimia_id"
+                filterable
+                clearable
+                :placeholder="t('pages.mrpStokKimia.bahanBakuPlaceholder')"
+                class="w-full"
+                @change="onInKimiaChange"
+              >
+                <el-option
+                  v-for="k in kimiaList"
+                  :key="k.id"
+                  :label="`${k.kode_barang} — ${k.nama_barang}${k.satuan ? ` (${k.satuan})` : ''}`"
+                  :value="k.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item :label="t('pages.mrpStokKimia.lotNumber')">
+              <el-input
+                v-model="inForm.lot_number"
+                :placeholder="t('pages.mrpStokKimia.lotNumber')"
+                clearable
+                @keyup.enter="doIn"
+              />
+            </el-form-item>
+            <el-form-item :label="t('pages.mrpStokKimia.kemasan')">
+              <el-input
+                v-model="inForm.kemasan"
+                readonly
+                :placeholder="t('pages.mrpStokKimia.kemasanAutoPlaceholder')"
+              />
+            </el-form-item>
+            <el-form-item :label="t('pages.mrpStokKimia.qty')" required>
+              <el-input
+                v-model="inForm.qty"
+                type="number"
+                :placeholder="t('pages.mrpStokKimia.qty')"
+                @keyup.enter="doIn"
+              />
+            </el-form-item>
+            <el-form-item :label="t('common.date')">
+              <el-date-picker
+                v-model="inForm.tanggal"
+                type="date"
+                value-format="YYYY-MM-DD"
+                class="w-full"
+              />
+            </el-form-item>
+            <el-form-item class="mrp-sk-in-form__action" label=" ">
+              <el-button type="primary" :loading="saving" @click="doIn">
+                {{ t('pages.mrpStokKimia.inBtn') }}
+              </el-button>
+            </el-form-item>
+          </div>
+        </el-form>
       </div>
     </div>
 
@@ -402,14 +422,19 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
 import { can } from '../../../security/permissions'
-import { mrpStokKimia, mrpStokKimiaAction } from '../../../api/client'
+import {
+  getMaterial,
+  mrpGetMasterKimia,
+  mrpStokKimia,
+  mrpStokKimiaAction,
+} from '../../../api/client'
 import { buildPageParams, fromElSortChange, normalizePageResult } from '../../../utils/tableQuery'
 
 const { t } = useI18n()
@@ -437,9 +462,74 @@ const canUpdate = computed(() => can('mrpShopfloor', 'update'))
 const inForm = reactive({
   kimia_id: null,
   qty: null,
-  jumlah_kemasan: null,
   lot_number: '',
+  kemasan: '',
   tanggal: new Date().toISOString().slice(0, 10),
+})
+
+function findKimiaInList(id) {
+  if (id == null || id === '') return null
+  const key = String(id)
+  return kimiaList.value.find((k) => String(k.id) === key || String(k.erp_material_id) === key) || null
+}
+
+function materialUkuranText(mat) {
+  if (!mat) return ''
+  for (const key of ['ukuran', 'size', 'kemasan']) {
+    const raw = mat[key]
+    if (raw == null || raw === '') continue
+    const s = String(raw).trim()
+    if (s) return s
+  }
+  return ''
+}
+
+function applyKimiaUkuranToList(id, ukuran) {
+  if (!ukuran) return
+  const hit = findKimiaInList(id)
+  if (hit) {
+    hit.ukuran = ukuran
+    hit.size = ukuran
+  }
+}
+
+async function fetchKimiaUkuran(id) {
+  const fromList = materialUkuranText(findKimiaInList(id))
+  if (fromList) return fromList
+  try {
+    const detail = await mrpGetMasterKimia(id)
+    const u = materialUkuranText(detail)
+    if (u) return u
+  } catch {
+    /* Flask route may be unavailable on older deploy */
+  }
+  try {
+    const mat = await getMaterial(id)
+    return materialUkuranText(mat)
+  } catch {
+    return ''
+  }
+}
+
+async function onInKimiaChange(id) {
+  inForm.kemasan = ''
+  if (id == null || id === '') return
+  const ukuran = await fetchKimiaUkuran(id)
+  if (ukuran) {
+    inForm.kemasan = ukuran
+    applyKimiaUkuranToList(id, ukuran)
+  }
+}
+
+watch(
+  () => inForm.kimia_id,
+  (id) => {
+    onInKimiaChange(id)
+  },
+)
+
+watch(kimiaList, () => {
+  if (inForm.kimia_id != null && inForm.kimia_id !== '') onInKimiaChange(inForm.kimia_id)
 })
 const outForm = reactive({
   kimia_id: null,
@@ -734,9 +824,6 @@ async function doIn() {
       kimia_id: inForm.kimia_id,
       qty,
       gudang: 'utama',
-      jumlah_kemasan: inForm.jumlah_kemasan === '' || inForm.jumlah_kemasan == null
-        ? null
-        : Number(inForm.jumlah_kemasan),
       lot_number: (inForm.lot_number || '').trim() || null,
       tanggal: inForm.tanggal,
     })
@@ -745,8 +832,8 @@ async function doIn() {
     )
     inForm.kimia_id = null
     inForm.qty = null
-    inForm.jumlah_kemasan = null
     inForm.lot_number = ''
+    inForm.kemasan = ''
     await reload()
   } catch (e) {
     ElMessage.error(errMsg(e))
@@ -928,5 +1015,25 @@ onMounted(reload)
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--el-text-color-secondary);
+}
+.mrp-sk-in-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+.mrp-sk-in-form__grid {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1.4fr) minmax(9rem, 1fr) minmax(8rem, 0.9fr) minmax(6rem, 0.65fr) minmax(9rem, 0.85fr) auto;
+  gap: 0.75rem 1rem;
+  align-items: end;
+}
+.mrp-sk-in-form__action :deep(.el-form-item__content) {
+  justify-content: flex-start;
+}
+@media (max-width: 1100px) {
+  .mrp-sk-in-form__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mrp-sk-in-form__action {
+    grid-column: 1 / -1;
+  }
 }
 </style>

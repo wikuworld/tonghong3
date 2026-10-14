@@ -16,6 +16,15 @@ from app.services.accounts_receivable_report import (
 )
 
 
+def invoice_is_void(inv: Invoice) -> bool:
+    return getattr(inv, "voided_at", None) is not None
+
+
+def exclude_voided_invoices(stmt):
+    """Invoice yang di-void saat delivery dibatalkan tidak masuk daftar aktif."""
+    return stmt.where(Invoice.voided_at.is_(None))
+
+
 def _dec(v: Any) -> Decimal:
     if v is None or v == "":
         return Decimal(0)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Impor master item PU / Suide / SubKon dari folder dokumentasi/master-items.
+"""Impor master item PU / Suede / SubKon dari folder dokumentasi/master-items.
 
 Usage:
   cd backend && PYTHONPATH=. python scripts/import_master_items_dokumentasi.py --dry-run

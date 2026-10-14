@@ -10,7 +10,7 @@ def test_master_item_stats_counts_categories():
     db = MagicMock()
     db.execute.return_value.all.return_value = [
         ("PU", 10),
-        ("Suide", 3),
+        ("Suede", 3),
         ("SubKon", 5),
     ]
     stats = _master_item_stats(db)

@@ -38,7 +38,7 @@ def infer_material_group(
         return "suede"
     if "pu" in mn:
         return "pu"
-    raise HTTPException(status_code=400, detail="Material group tidak bisa ditentukan (butuh master item PU/Suide/SubKon).")
+    raise HTTPException(status_code=400, detail="Material group tidak bisa ditentukan (butuh master item PU/Suede/SubKon).")
 
 
 def _material_group_from_detail(db: Session, detail: PoDetail) -> str:

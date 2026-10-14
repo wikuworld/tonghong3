@@ -25,6 +25,13 @@ export function buildDetailBodyCore(formModel, etdScheduleRows, selectedSwatchId
   }
 }
 
+function orderDateAsOf(formModel) {
+  const raw = formModel?.order_date
+  if (!raw) return null
+  const s = String(raw).trim().slice(0, 10)
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null
+}
+
 export async function appendDetailUnitPrice(body, formModel, { resolveBuyerUnitPrice, previewResolvedUnitPrice }) {
   const isFreePrice = formModel.po_category === 'subcont' || formModel.po_category === 'return'
   if (isFreePrice) {
@@ -39,6 +46,7 @@ export async function appendDetailUnitPrice(body, formModel, { resolveBuyerUnitP
     try {
       const r = await resolveBuyerUnitPrice({
         buyer_code: b,
+        as_of: orderDateAsOf(formModel),
         material_name: formModel.material_name || null,
         color: formModel.color || null,
         style_article: formModel.style_article || null,

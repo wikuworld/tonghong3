@@ -77,6 +77,7 @@
                   <el-select v-model="statusFilter" clearable class="w-full" :placeholder="t('common.status')">
                     <el-option :label="t('status.draft')" value="draft" />
                     <el-option :label="t('status.sent')" value="sent" />
+                    <el-option :label="t('status.cancelled')" value="cancelled" />
                   </el-select>
                 </el-form-item>
               </el-col>
@@ -573,7 +574,25 @@
           </header>
           <el-descriptions :column="2" border size="small" class="delivery-detail-desc">
             <el-descriptions-item :label="t('common.deliveryNo')">
-              <span class="delivery-detail-sj">{{ detailRow.delivery_number || '—' }}</span>
+              <div v-if="canEditSjNumber" class="delivery-detail-sj-edit">
+                <el-input
+                  v-model="sjNumberEdit"
+                  size="small"
+                  clearable
+                  maxlength="80"
+                  class="delivery-detail-sj-input"
+                />
+                <el-button
+                  type="primary"
+                  plain
+                  size="small"
+                  :loading="sjNumberSaving"
+                  @click="saveSjNumber"
+                >
+                  {{ t('pages.delivery.saveSjNumber') }}
+                </el-button>
+              </div>
+              <span v-else class="delivery-detail-sj">{{ detailRow.delivery_number || '—' }}</span>
             </el-descriptions-item>
             <el-descriptions-item :label="t('common.customer')">{{ detailRow.customer_name || '—' }}</el-descriptions-item>
             <el-descriptions-item :label="t('common.date')">{{ detailRow.delivery_date || '—' }}</el-descriptions-item>
@@ -676,8 +695,20 @@
               <el-table-column :label="t('pages.delivery.columns.leatherInDate')" width="120">
                 <template #default="{ row }">{{ formatDate(row.leather_in_date) }}</template>
               </el-table-column>
-              <el-table-column prop="qty" :label="t('common.quantity')" width="88" align="right">
-                <template #default="{ row }">{{ formatNumber(row.qty, 2) }}</template>
+              <el-table-column prop="qty" :label="t('common.quantity')" width="120" align="right">
+                <template #default="{ row }">
+                  <el-input-number
+                    v-if="canEditDraftLines"
+                    v-model="row.qty"
+                    size="small"
+                    :min="0.01"
+                    :precision="2"
+                    :controls="false"
+                    class="w-full"
+                    @change="(val) => saveDetailLineQty(row, val)"
+                  />
+                  <span v-else>{{ formatNumber(row.qty, 2) }}</span>
+                </template>
               </el-table-column>
               <el-table-column :label="t('pages.delivery.colReturnedQty')" width="80" align="right">
                 <template #default="{ row }">{{ formatNumber(row.returned_qty, 2) || '—' }}</template>
@@ -687,12 +718,18 @@
               <el-table-column prop="weight" :label="t('pages.delivery.weight')" width="80" align="right">
                 <template #default="{ row }">{{ formatNumber(row.weight, 2) }}</template>
               </el-table-column>
-              <el-table-column v-if="canReturn" :label="t('common.actions')" width="72" align="center" fixed="right">
+              <el-table-column
+                v-if="canReturn || canEditDraftLines"
+                :label="t('common.actions')"
+                width="88"
+                align="center"
+                fixed="right"
+              >
                 <template #default="{ row }">
                   <AdminTableActions
-                    v-if="canShowReturn(row, true)"
-                    :more-items="[{ command: 'return', label: t('pages.delivery.returnAction') }]"
-                    @more="(cmd) => cmd === 'return' && openReturnFromDetailLine(row)"
+                    v-if="detailLineMoreItems(row).length"
+                    :more-items="detailLineMoreItems(row)"
+                    @more="(cmd) => onDetailLineMore(cmd, row)"
                   />
                 </template>
               </el-table-column>
@@ -721,9 +758,6 @@
               <el-button v-if="canPrint" size="small" @click="downloadSjPdf">{{ t('pages.delivery.downloadPdf') }}</el-button>
               <el-button v-if="canPrint" size="small" type="primary" plain @click="openCommercialInvoice">{{ t('pages.delivery.openCommercialInvoice') }}</el-button>
               <el-button v-if="canPrint" size="small" type="primary" plain @click="downloadCommercialInvoicePdf">{{ t('pages.delivery.commercialInvoicePdf') }}</el-button>
-              <el-button v-if="canPrint" size="small" type="warning" plain :loading="exportingCustoms" @click="downloadCustomsBc27Excel">
-                {{ t('pages.delivery.customsBc27Excel') }}
-              </el-button>
               <el-button v-if="showCreateInvoiceCta" size="small" plain @click="goCreateInvoiceFromDetail">
                 {{ t('pages.delivery.createArInvoice') }}
               </el-button>
@@ -740,6 +774,14 @@
       </div>
       <template #footer>
         <div class="delivery-dialog-footer">
+          <el-button
+            v-if="canCancelCurrent"
+            type="danger"
+            plain
+            @click="openCancelFromDetail"
+          >
+            {{ t('pages.delivery.cancelAction') }}
+          </el-button>
           <el-button type="primary" @click="detailVisible = false">{{ t('pages.delivery.closeDetail') }}</el-button>
         </div>
       </template>
@@ -935,6 +977,28 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="cancelVisible"
+      :title="t('pages.delivery.cancelDialogTitle')"
+      width="480px"
+      destroy-on-close
+      align-center
+      @closed="resetCancelForm"
+    >
+      <p class="delivery-field-hint mb-3">{{ t('pages.delivery.cancelHint') }}</p>
+      <el-form label-position="top">
+        <el-form-item :label="t('pages.delivery.cancelReasonLabel')" required>
+          <el-input v-model="cancelReason" type="textarea" :rows="3" maxlength="2000" show-word-limit />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="cancelVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="danger" :loading="cancelSaving" @click="submitCancel">
+          {{ t('pages.delivery.cancelAction') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -942,7 +1006,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Van, Download, Loading, RefreshLeft, Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import AdminTableActions from '../../components/admin/AdminTableActions.vue'
@@ -970,8 +1034,11 @@ import {
   marketingDeliveryXlsxPath,
   returnDeliveryDetail,
   scanDeliveryPackingOut,
+  cancelDelivery,
   toIsoDate,
   updateDelivery,
+  updateDeliveryDetail,
+  deleteDeliveryDetail,
 } from '../../api/client'
 
 const { t, te } = useI18n()
@@ -979,6 +1046,7 @@ const canCreate = can('delivery', 'create')
 const canUpdate = can('delivery', 'update')
 const canPrint = can('delivery', 'print')
 const canCreateInvoice = can('invoice', 'create')
+const canCancelDelivery = canUpdate || can('invoice', 'update')
 /** Align with API roles: admin, warehouse, finance, marketing */
 const canReturn = canUpdate || can('invoice', 'update') || canPrint
 const route = useRoute()
@@ -986,7 +1054,6 @@ const router = useRouter()
 const loading = ref(false)
 const saving = ref(false)
 const exporting = ref(false)
-const exportingCustoms = ref(false)
 const batchPrinting = ref(false)
 const listTableRef = ref(null)
 const listSelection = ref([])
@@ -1286,6 +1353,14 @@ const isSentOrCancelled = computed(() => {
   return status === 'sent' || status === 'cancelled' || status === 'canceled'
 })
 
+const isDetailDraft = computed(() => {
+  const status = String(detailRow.value?.status || '').toLowerCase()
+  return status === 'draft' || status === ''
+})
+
+const canEditDraftLines = computed(() => canUpdate && isDetailDraft.value)
+const canEditSjNumber = computed(() => canUpdate && isDetailDraft.value)
+
 async function downloadDeliveryExcel() {
   exporting.value = true
   try {
@@ -1454,6 +1529,9 @@ const bcForm = reactive({
 const bcSaving = ref(false)
 const zoneEdit = ref('outtown')
 const zoneSaving = ref(false)
+const sjNumberEdit = ref('')
+const sjNumberSaving = ref(false)
+const lineQtySavingId = ref(null)
 
 function deliveryZoneLabel(z) {
   const v = (z || '').toLowerCase()
@@ -1468,11 +1546,185 @@ function resetDetail() {
   detailInvoice.value = null
   bcForm.bc_number = ''
   bcForm.bc_date = ''
+  sjNumberEdit.value = ''
   invplFoc.value = false
+}
+
+async function refreshDetailInvoice(deliveryId) {
+  try {
+    const invoices = await listInvoice({ delivery_id: deliveryId, page_size: 20 })
+    const items = normalizePageResult(invoices).items
+    detailInvoice.value = items.length ? items[0] : null
+  } catch {
+    detailInvoice.value = null
+  }
+}
+
+function detailLineMoreItems(row) {
+  const items = []
+  if (canEditDraftLines.value) {
+    items.push({ command: 'delete', label: t('pages.delivery.deleteLineAction') })
+  }
+  if (canShowReturn(row, true)) {
+    items.push({ command: 'return', label: t('pages.delivery.returnAction') })
+  }
+  return items
+}
+
+async function onDetailLineMore(command, row) {
+  if (command === 'return') {
+    openReturnFromDetailLine(row)
+    return
+  }
+  if (command === 'delete') {
+    await deleteDetailLine(row)
+  }
+}
+
+async function saveSjNumber() {
+  if (!detailRow.value?.id) return
+  const next = String(sjNumberEdit.value || '').trim()
+  if (!next) {
+    ElMessage.warning(t('pages.delivery.sjNumberRequired'))
+    return
+  }
+  sjNumberSaving.value = true
+  try {
+    await updateDelivery(detailRow.value.id, { delivery_number: next })
+    ElMessage.success(t('pages.delivery.sjNumberSaved'))
+    await load()
+    const full = await getDelivery(detailRow.value.id)
+    detailRow.value = { ...full, customer_name: custName(full.customer_id) }
+    sjNumberEdit.value = full.delivery_number || ''
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    sjNumberSaving.value = false
+  }
+}
+
+async function saveDetailLineQty(row, val) {
+  if (!canEditDraftLines.value || !row?.id) return
+  const qty = Number(val)
+  if (!Number.isFinite(qty) || qty <= 0) {
+    ElMessage.warning(t('pages.delivery.lineQtyInvalid'))
+    return
+  }
+  if (lineQtySavingId.value === row.id) return
+  lineQtySavingId.value = row.id
+  try {
+    await updateDeliveryDetail(row.id, { qty })
+    ElMessage.success(t('pages.delivery.lineQtySaved'))
+    const lines = await listDeliveryDetails(detailRow.value.id)
+    detailLines.value = lines
+    await refreshDetailInvoice(detailRow.value.id)
+    await load()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+    try {
+      const lines = await listDeliveryDetails(detailRow.value.id)
+      detailLines.value = lines
+    } catch {
+      /* ignore */
+    }
+  } finally {
+    lineQtySavingId.value = null
+  }
+}
+
+async function deleteDetailLine(row) {
+  if (!canEditDraftLines.value || !row?.id) return
+  try {
+    await ElMessageBox.confirm(
+      t('pages.delivery.deleteLineConfirm'),
+      t('pages.delivery.deleteLineAction'),
+      { type: 'warning', confirmButtonText: t('common.delete'), cancelButtonText: t('common.cancel') },
+    )
+  } catch {
+    return
+  }
+  try {
+    await deleteDeliveryDetail(row.id)
+    ElMessage.success(t('pages.delivery.deleteLineDone'))
+    const lines = await listDeliveryDetails(detailRow.value.id)
+    detailLines.value = lines
+    await refreshDetailInvoice(detailRow.value.id)
+    await load()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 
 function isDeliverySent(row) {
   return String(row?.delivery_status || row?.status || '').toLowerCase() === 'sent'
+}
+
+function isDeliveryCancelled(row) {
+  const status = String(row?.delivery_status || row?.status || '').toLowerCase()
+  return status === 'cancelled' || status === 'canceled'
+}
+
+function isDeliveryDraft(row) {
+  const status = String(row?.delivery_status || row?.status || '').toLowerCase()
+  return status === 'draft' || status === ''
+}
+
+function canCancelRow(row) {
+  return (
+    canCancelDelivery &&
+    row &&
+    isDeliveryDraft(row) &&
+    !isDeliveryCancelled(row) &&
+    (row.delivery_id != null || row.id != null)
+  )
+}
+
+const canCancelCurrent = computed(() => canCancelRow(detailRow.value))
+
+const cancelVisible = ref(false)
+const cancelSaving = ref(false)
+const cancelReason = ref('')
+const cancelTargetId = ref(null)
+
+function resetCancelForm() {
+  cancelReason.value = ''
+  cancelTargetId.value = null
+}
+
+function openCancel(deliveryId) {
+  if (deliveryId == null) return
+  cancelTargetId.value = deliveryId
+  cancelReason.value = ''
+  cancelVisible.value = true
+}
+
+function openCancelFromDetail() {
+  if (!detailRow.value?.id) return
+  openCancel(detailRow.value.id)
+}
+
+async function submitCancel() {
+  const reason = cancelReason.value.trim()
+  if (!reason) {
+    ElMessage.warning(t('pages.delivery.cancelReasonRequired'))
+    return
+  }
+  if (cancelTargetId.value == null) return
+  cancelSaving.value = true
+  try {
+    await cancelDelivery(cancelTargetId.value, reason)
+    ElMessage.success(t('pages.delivery.cancelSuccess'))
+    const refreshedId = cancelTargetId.value
+    cancelVisible.value = false
+    await load()
+    if (detailVisible.value && detailRow.value?.id === refreshedId) {
+      await openDetailById(refreshedId)
+    }
+  } catch (e) {
+    ElMessage.error(e?.message || String(e))
+  } finally {
+    cancelSaving.value = false
+  }
 }
 
 async function deliveryLineAmount(deliveryId) {
@@ -1515,6 +1767,9 @@ function deliveryListMoreItems(row) {
   if (canShowReturn(row)) {
     items.push({ command: 'return', label: t('pages.delivery.returnAction') })
   }
+  if (canCancelRow(row)) {
+    items.push({ command: 'cancel', label: t('pages.delivery.cancelAction') })
+  }
   return items
 }
 
@@ -1522,6 +1777,7 @@ function handleDeliveryListMore(row, command) {
   if (command === 'createArInvoice') goCreateInvoiceFromLine(row)
   else if (command === 'viewOutstanding') goViewOutstandingFromLine(row)
   else if (command === 'return') openReturnFromList(row)
+  else if (command === 'cancel') openCancel(row.delivery_id)
 }
 
 function goInvoiceFromDelivery(deliveryId, { create = false, amount = 0 } = {}) {
@@ -1707,15 +1963,10 @@ async function openDetailById(deliveryId) {
     zoneEdit.value = (full.delivery_zone || 'outtown').toLowerCase() === 'local' ? 'local' : 'outtown'
     bcForm.bc_number = full.bc_number || ''
     bcForm.bc_date = full.bc_date ? String(full.bc_date).slice(0, 10) : ''
+    sjNumberEdit.value = full.delivery_number || ''
     const lines = await listDeliveryDetails(deliveryId)
     detailLines.value = lines
-    try {
-      const invoices = await listInvoice({ delivery_id: deliveryId, page_size: 20 })
-      const items = normalizePageResult(invoices).items
-      detailInvoice.value = items.length ? items[0] : null
-    } catch {
-      detailInvoice.value = null
-    }
+    await refreshDetailInvoice(deliveryId)
   } catch (e) {
     detailRow.value = null
     ElMessage.error(e.message || t('common.errorGeneric'))
@@ -1819,22 +2070,6 @@ async function downloadCommercialInvoicePdf() {
     })
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
-  }
-}
-
-async function downloadCustomsBc27Excel() {
-  if (!detailRow.value?.id) return
-  exportingCustoms.value = true
-  try {
-    const sj = String(detailRow.value.delivery_number || detailRow.value.id).replace(/[^\w.-]+/g, '_')
-    await fetchAuthenticatedDocument(`/documents/delivery/${detailRow.value.id}/customs-bc27.xlsx`, {
-      mode: 'download',
-      downloadFallbackName: `customs_bc27_${sj}.xlsx`,
-    })
-  } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
-  } finally {
-    exportingCustoms.value = false
   }
 }
 
@@ -2283,6 +2518,16 @@ async function submitArrange() {
   padding-right: 4px;
 }
 
+.delivery-detail-sj-edit {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.delivery-detail-sj-input {
+  min-width: 12rem;
+  flex: 1;
+}
 .delivery-detail-sj {
   font-weight: 700;
   letter-spacing: 0.01em;

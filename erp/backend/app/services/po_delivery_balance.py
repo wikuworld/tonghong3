@@ -8,11 +8,16 @@ from fastapi import HTTPException
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.models import DeliveryDetail, PoDetail, ProductionDetail
+from app.models import DeliveryDetail, DeliveryHeader, PoDetail, ProductionDetail
 
 
 def _net_delivered_qty_expr():
     return DeliveryDetail.qty - func.coalesce(DeliveryDetail.returned_qty, 0)
+
+
+def _delivery_not_cancelled():
+    status = func.lower(func.trim(func.coalesce(DeliveryHeader.status, "")))
+    return status.notin_(("cancelled", "canceled"))
 
 
 def sum_delivered_qty_for_po_detail(
@@ -26,7 +31,8 @@ def sum_delivered_qty_for_po_detail(
         select(func.coalesce(func.sum(_net_delivered_qty_expr()), 0))
         .select_from(DeliveryDetail)
         .join(ProductionDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
-        .where(ProductionDetail.po_detail_id == po_detail_id)
+        .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
+        .where(ProductionDetail.po_detail_id == po_detail_id, _delivery_not_cancelled())
     )
     if exclude_delivery_detail_id is not None:
         via_production = via_production.where(DeliveryDetail.id != exclude_delivery_detail_id)
@@ -35,12 +41,14 @@ def sum_delivered_qty_for_po_detail(
     via_direct = (
         select(func.coalesce(func.sum(_net_delivered_qty_expr()), 0))
         .select_from(DeliveryDetail)
+        .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
         .where(
             DeliveryDetail.po_detail_id == po_detail_id,
             or_(
                 DeliveryDetail.production_detail_id.is_(None),
                 DeliveryDetail.production_detail_id == 0,
             ),
+            _delivery_not_cancelled(),
         )
     )
     if exclude_delivery_detail_id is not None:

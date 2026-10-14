@@ -75,6 +75,10 @@ const showCreate = computed(
 watch(
   () => route.query.tab,
   () => {
+    if (String(route.query.tab || '') === 'units') {
+      router.replace('/admin/inventory/units')
+      return
+    }
     const next = tabFromRoute()
     activeTab.value = next
     if (route.query.tab && !VALID_TABS.has(String(route.query.tab))) {

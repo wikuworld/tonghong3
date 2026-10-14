@@ -580,6 +580,7 @@ async function fetchResolvedUnitPricePreview() {
   try {
     const r = await resolveBuyerUnitPrice({
       buyer_code: b,
+      as_of: toIsoDate(formModel.order_date) || null,
       material_name: formModel.material_name || null,
       color: formModel.color || null,
       style_article: formModel.style_article || null,
@@ -1022,7 +1023,7 @@ async function loadColorSwatchOptions() {
     colorSwatchOptions.value = options
     swatchRetriedWithoutMaterial.value = retriedWithoutMaterial
     autoApplyColorSwatchFromDimensions()
-    if (!selectedSwatchId.value) {
+    if (colorStandardSource.value === COLOR_STANDARD_SOURCE.CSI && !selectedSwatchId.value) {
       await autoApplyCsiFromColorField()
     }
   } catch {
@@ -1074,7 +1075,7 @@ async function applyColorSwatch(recipeId) {
 }
 
 function resetColorStandardSourceState() {
-  colorStandardSource.value = ''
+  colorStandardSource.value = COLOR_STANDARD_SOURCE.SWATCH
   selectedCsiId.value = null
   csiOptions.value = []
   selectedSwatchId.value = null
@@ -1121,8 +1122,8 @@ async function hydrateColorStandardFromLine(line) {
     return
   }
   if (source === COLOR_STANDARD_SOURCE.SWATCH) {
-    swatchPickerOpen.value = !line?.color_swatch_recipe_id
-    lastAutoSwatchDimensionKey = swatchDimensionKey()
+    await loadColorSwatchOptions()
+    swatchPickerOpen.value = !selectedSwatchId.value
     return
   }
   if (source === COLOR_STANDARD_SOURCE.WAITING || source === COLOR_STANDARD_SOURCE.MANUAL) {
@@ -1131,10 +1132,7 @@ async function hydrateColorStandardFromLine(line) {
 }
 
 async function autoApplyCsiFromColorField() {
-  const source = colorStandardSource.value
-  if (source && source !== COLOR_STANDARD_SOURCE.SWATCH && source !== COLOR_STANDARD_SOURCE.CSI) {
-    return
-  }
+  if (colorStandardSource.value !== COLOR_STANDARD_SOURCE.CSI) return
   if (selectedSwatchId.value) return
   const code =
     extractColorCodeFromReference(formModel.color) ||
@@ -1145,7 +1143,6 @@ async function autoApplyCsiFromColorField() {
   if (!hit) return
   selectedCsiId.value = hit.id
   applyCsiColorToForm(hit, formModel, autoFieldMeta)
-  colorStandardSource.value = COLOR_STANDARD_SOURCE.CSI
   lastAutoSwatchDimensionKey = swatchDimensionKey()
 }
 

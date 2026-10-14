@@ -58,6 +58,7 @@ export const MENU_MODULE_MAP = {
   'menu.qc': 'qc',
   'menu.packing': 'packing',
   'menu.inventory': 'inventory',
+  'menu.inventoryUnitMaster': 'inventory',
   'menu.mrpRencana': 'mrpShopfloor',
   'menu.mrpPalet': 'mrpShopfloor',
   'menu.mrpMasterErp': 'mrpShopfloor',

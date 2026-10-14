@@ -14,6 +14,7 @@ from app.models import (
     MaterialStock,
     MaterialReceipt,
     MaterialReceiptDetail,
+    InventoryUnitMaster,
 )
 from app.paging import apply_sort, page_dict, parse_page_params
 from app.schemas import (
@@ -27,6 +28,9 @@ from app.schemas import (
     MaterialReceiptCreate,
     MaterialReceiptUpdate,
     MaterialReceiptOut,
+    InventoryUnitMasterCreate,
+    InventoryUnitMasterUpdate,
+    InventoryUnitMasterOut,
 )
 from app.routers.auth import get_current_user, require_roles, is_service_mrp
 
@@ -59,6 +63,21 @@ def require_inventory_write(user=Depends(get_current_user)):
 def _normalize_material_type(material_type: str | None) -> str:
     raw = (material_type or "").strip().lower()
     return _TYPE_ALIASES.get(raw, raw)
+
+
+_UNIT_TYPE_ALIASES = {
+    **{k: k for k in ("kulit", "kimia", "material_lain", "rp")},
+    "leather": "kulit",
+    "chemical": "kimia",
+    "accessory": "material_lain",
+    "accesoris": "material_lain",
+    "aksesoris": "material_lain",
+}
+
+
+def _normalize_unit_material_type(material_type: str | None) -> str:
+    raw = (material_type or "").strip().lower()
+    return _UNIT_TYPE_ALIASES.get(raw, raw)
 
 
 def _page_args(
@@ -310,6 +329,107 @@ def update_material(
     db.commit()
     db.refresh(row)
     return row
+
+
+# === MASTER UNIT ===
+@router.get("/units", response_model=list[InventoryUnitMasterOut])
+def list_inventory_units(
+    material_type: Optional[str] = Query(None, description="kulit|kimia|material_lain|rp"),
+    active_only: bool = Query(True),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    stmt = select(InventoryUnitMaster)
+    if active_only:
+        stmt = stmt.where(InventoryUnitMaster.is_active.is_(True))
+    if material_type and str(material_type).strip():
+        mt = _normalize_unit_material_type(material_type)
+        stmt = stmt.where(InventoryUnitMaster.material_type == mt)
+    return list(
+        db.scalars(
+            stmt.order_by(InventoryUnitMaster.material_type.asc(), InventoryUnitMaster.unit.asc())
+        ).all()
+    )
+
+
+@router.post("/units", response_model=InventoryUnitMasterOut)
+def create_inventory_unit(
+    body: InventoryUnitMasterCreate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_inventory_write),
+):
+    mt = _normalize_unit_material_type(body.material_type)
+    if mt not in ("kulit", "kimia", "material_lain", "rp"):
+        raise HTTPException(status_code=400, detail="Tipe harus kulit, kimia, material_lain, atau rp")
+    unit = str(body.unit or "").strip()
+    if not unit:
+        raise HTTPException(status_code=400, detail="Unit wajib")
+    existing = db.scalars(
+        select(InventoryUnitMaster).where(
+            InventoryUnitMaster.material_type == mt,
+            InventoryUnitMaster.unit == unit,
+        )
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Unit untuk tipe ini sudah ada")
+    row = InventoryUnitMaster(material_type=mt, unit=unit[:50], is_active=bool(body.is_active))
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.put("/units/{unit_id}", response_model=InventoryUnitMasterOut)
+def update_inventory_unit(
+    unit_id: int,
+    body: InventoryUnitMasterUpdate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_inventory_write),
+):
+    row = db.get(InventoryUnitMaster, unit_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Master unit tidak ditemukan")
+    data = body.model_dump(exclude_unset=True)
+    if "material_type" in data and data["material_type"] is not None:
+        mt = _normalize_unit_material_type(data["material_type"])
+        if mt not in ("kulit", "kimia", "material_lain", "rp"):
+            raise HTTPException(status_code=400, detail="Tipe tidak valid")
+        data["material_type"] = mt
+    if "unit" in data and data["unit"] is not None:
+        data["unit"] = str(data["unit"]).strip()[:50]
+        if not data["unit"]:
+            raise HTTPException(status_code=400, detail="Unit wajib")
+    mt = data.get("material_type", row.material_type)
+    unit = data.get("unit", row.unit)
+    if "material_type" in data or "unit" in data:
+        clash = db.scalars(
+            select(InventoryUnitMaster).where(
+                InventoryUnitMaster.material_type == mt,
+                InventoryUnitMaster.unit == unit,
+                InventoryUnitMaster.id != unit_id,
+            )
+        ).first()
+        if clash:
+            raise HTTPException(status_code=409, detail="Unit untuk tipe ini sudah ada")
+    for k, v in data.items():
+        setattr(row, k, v)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/units/{unit_id}")
+def delete_inventory_unit(
+    unit_id: int,
+    db: Session = Depends(get_db),
+    _user=Depends(require_inventory_write),
+):
+    row = db.get(InventoryUnitMaster, unit_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Master unit tidak ditemukan")
+    row.is_active = False
+    db.commit()
+    return {"status": "deactivated", "id": unit_id}
 
 
 @router.delete("/materials/{material_id}")

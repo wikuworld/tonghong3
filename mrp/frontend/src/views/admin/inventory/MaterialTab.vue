@@ -43,6 +43,9 @@
         </template>
       </el-table-column>
       <el-table-column prop="unit" :label="t('pages.inventory.unit')" width="90" align="center" />
+      <el-table-column v-if="showKimiaColumns" :label="t('pages.inventory.size')" min-width="100" show-overflow-tooltip>
+        <template #default="{ row }">{{ kimiaSizeCell(row) }}</template>
+      </el-table-column>
       <el-table-column v-if="showKulitColumns" :label="t('common.thickness')" min-width="110" show-overflow-tooltip>
         <template #default="{ row }">{{ kulitCell(row, row.thickness) }}</template>
       </el-table-column>
@@ -93,7 +96,18 @@
             <el-option :label="t('pages.inventory.typeAccessory')" value="accessory" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="t('pages.inventory.unit')">
+        <template v-if="isChemicalForm">
+          <el-form-item :label="t('pages.inventory.unit')" required>
+            <el-select v-model="form.unit" filterable clearable class="w-full" :loading="unitOptionsLoading" :placeholder="t('pages.inventory.unitSelectPlaceholder')">
+              <el-option v-for="u in unitOptions" :key="u.id" :label="u.unit" :value="u.unit" />
+            </el-select>
+            <p class="mt-1 text-xs text-slate-500">{{ t('pages.inventory.unitKimiaHint') }}</p>
+          </el-form-item>
+          <el-form-item :label="t('pages.inventory.size')">
+            <el-input v-model="form.size" clearable :placeholder="t('pages.inventory.sizePlaceholder')" />
+          </el-form-item>
+        </template>
+        <el-form-item v-else :label="t('pages.inventory.unit')">
           <el-input v-model="form.unit" />
         </el-form-item>
         <template v-if="isLeatherForm">
@@ -104,7 +118,7 @@
             <el-input v-model="form.color" clearable />
           </el-form-item>
         </template>
-        <template v-else>
+        <template v-else-if="!isChemicalForm">
           <el-form-item :label="t('pages.inventory.minStock')">
             <el-input-number v-model="form.min_stock" class="w-full" :controls="false" />
           </el-form-item>
@@ -129,7 +143,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Check, Close } from '@element-plus/icons-vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
-import { listMaterials, createMaterial, updateMaterial } from '../../../api/client'
+import { listMaterials, createMaterial, updateMaterial, listInventoryUnits } from '../../../api/client'
 import { buildPageParams, fromElSortChange, normalizePageResult } from '../../../utils/tableQuery'
 import { formatCurrency } from '../../../utils/format'
 import { useModulePermission } from '../../../composables/useModulePermission'
@@ -160,7 +174,11 @@ const form = reactive({
   cost_price: null,
   thickness: '',
   color: '',
+  size: '',
 })
+
+const unitOptions = ref([])
+const unitOptionsLoading = ref(false)
 
 watch(loading, (v) => emit('loading', v))
 
@@ -168,9 +186,19 @@ const filtered = computed(() => materials.value)
 
 const isLeatherForm = computed(() => isKulitType(form.material_type))
 
+const isChemicalForm = computed(() => {
+  const s = String(form.material_type || '').toLowerCase()
+  return s === 'chemical' || s === 'kimia'
+})
+
 const showKulitColumns = computed(() => !typeFilter.value || typeFilter.value === 'leather')
 
-const showCostColumns = computed(() => typeFilter.value !== 'leather')
+const showKimiaColumns = computed(() => !typeFilter.value || typeFilter.value === 'chemical')
+
+const showCostColumns = computed(() => {
+  if (!typeFilter.value) return true
+  return typeFilter.value !== 'leather' && typeFilter.value !== 'chemical'
+})
 
 function isKulitType(type) {
   const s = String(type || '').toLowerCase()
@@ -200,8 +228,41 @@ function kulitCell(row, value) {
 
 function costCell(row, value) {
   if (isKulitType(row.material_type)) return '—'
+  if (String(row.material_type || '').toLowerCase() === 'kimia') return '—'
   return value ?? '—'
 }
+
+function isKimiaType(type) {
+  return String(type || '').toLowerCase() === 'kimia'
+}
+
+function kimiaSizeCell(row) {
+  if (!isKimiaType(row.material_type)) return '—'
+  const s = (row.size == null ? '' : String(row.size)).trim()
+  return s || '—'
+}
+
+async function loadKimiaUnitOptions() {
+  if (!isChemicalForm.value) {
+    unitOptions.value = []
+    return
+  }
+  unitOptionsLoading.value = true
+  try {
+    unitOptions.value = await listInventoryUnits({ material_type: 'kimia', active_only: true })
+  } catch {
+    unitOptions.value = []
+  } finally {
+    unitOptionsLoading.value = false
+  }
+}
+
+watch(
+  () => form.material_type,
+  () => {
+    void loadKimiaUnitOptions()
+  },
+)
 
 function typeLabel(type) {
   const ui = toUiMaterialType(type)
@@ -252,13 +313,15 @@ function openCreate() {
     id: null,
     code: '',
     name: '',
-    material_type: 'leather',
-    unit: 'sqft',
+    material_type: typeFilter.value === 'chemical' ? 'chemical' : 'leather',
+    unit: typeFilter.value === 'chemical' ? '' : 'sqft',
     min_stock: null,
     cost_price: null,
     thickness: '',
     color: '',
+    size: '',
   })
+  void loadKimiaUnitOptions()
   formVisible.value = true
 }
 
@@ -274,13 +337,19 @@ function openEdit(row) {
     cost_price: row.cost_price,
     thickness: row.thickness || '',
     color: row.color || '',
+    size: row.size || '',
   })
+  void loadKimiaUnitOptions()
   formVisible.value = true
 }
 
 async function submit() {
   if (!form.code || !form.name) {
     ElMessage.warning(t('common.fillRequired'))
+    return
+  }
+  if (isChemicalForm.value && !String(form.unit || '').trim()) {
+    ElMessage.warning(t('pages.inventory.unitRequired'))
     return
   }
   saving.value = true
@@ -295,13 +364,21 @@ async function submit() {
     if (isLeatherForm.value) {
       body.thickness = form.thickness?.trim() || null
       body.color = form.color?.trim() || null
+      body.size = null
       body.min_stock = null
       body.cost_price = null
+    } else if (isChemicalForm.value) {
+      body.size = form.size?.trim() || null
+      body.min_stock = null
+      body.cost_price = null
+      body.thickness = null
+      body.color = null
     } else {
       body.min_stock = form.min_stock
       body.cost_price = form.cost_price
       body.thickness = null
       body.color = null
+      body.size = null
     }
     if (isEdit.value) await updateMaterial(form.id, body)
     else await createMaterial(body)

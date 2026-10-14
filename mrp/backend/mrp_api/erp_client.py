@@ -302,6 +302,33 @@ def resolve_master_by_dimensions(
     return None
 
 
+def list_inventory_units(
+    *,
+    material_type: str | None = None,
+    active_only: bool = True,
+) -> list[dict]:
+    params: dict[str, Any] = {"active_only": active_only}
+    if material_type:
+        params["material_type"] = material_type
+    data = get("/inventory/units", params=params)
+    return list(data) if isinstance(data, list) else []
+
+
+def create_inventory_unit(body: dict[str, Any]) -> dict:
+    data = post("/inventory/units", json=body)
+    return dict(data) if data else {}
+
+
+def update_inventory_unit(unit_id: int, body: dict[str, Any]) -> dict:
+    data = put(f"/inventory/units/{int(unit_id)}", json=body)
+    return dict(data) if data else {}
+
+
+def delete_inventory_unit(unit_id: int) -> dict:
+    data = delete(f"/inventory/units/{int(unit_id)}")
+    return dict(data) if isinstance(data, dict) else {"status": "deactivated"}
+
+
 def create_material(body: dict[str, Any]) -> dict:
     data = post("/inventory/materials", json=body)
     return dict(data) if data else {}

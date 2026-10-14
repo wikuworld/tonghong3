@@ -10,6 +10,9 @@ export const COLOR_STANDARD_SOURCE = {
 export const WAITING_CS_LABEL = 'WAITING C/S'
 export const CSI_STANDARD_LABEL = 'CSI'
 
+/** Label color standard baris Suede dari master Color Window. */
+export const COLOR_WINDOW_STANDARD_LABEL = 'COLOR WINDOW'
+
 export function normalizeColorRefKey(value) {
   return String(value || '')
     .trim()
@@ -43,6 +46,11 @@ export function csiColorOptionLabel(row) {
 
 export function inferColorStandardSource(line) {
   if (line?.color_swatch_recipe_id) return COLOR_STANDARD_SOURCE.SWATCH
+  if (
+    normalizeColorRefKey(line?.color_standard) === normalizeColorRefKey(COLOR_WINDOW_STANDARD_LABEL)
+  ) {
+    return COLOR_STANDARD_SOURCE.SWATCH
+  }
   if (isWaitingColorRef(line?.color_reference) || isWaitingColorRef(line?.color_standard)) {
     return COLOR_STANDARD_SOURCE.WAITING
   }
@@ -88,8 +96,11 @@ export function applyWaitingCsToForm(formModel, autoFieldMeta) {
 }
 
 /** True jika CS sudah ada (swatch / CSI / waiting / color_standard terisi). Color reference saja tidak cukup. */
-export function hasColorStandardValue(formModel, { selectedSwatchId, source } = {}) {
-  if (selectedSwatchId) return true
+export function hasColorStandardValue(
+  formModel,
+  { selectedSwatchId, selectedColorWindowId, source } = {},
+) {
+  if (selectedSwatchId || selectedColorWindowId) return true
   if (source === COLOR_STANDARD_SOURCE.WAITING) return true
   if (isWaitingColorRef(formModel?.color_standard) || isWaitingColorRef(formModel?.color_reference)) {
     return true

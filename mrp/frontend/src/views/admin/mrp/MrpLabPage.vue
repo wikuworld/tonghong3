@@ -216,23 +216,19 @@
     <el-dialog
       v-model="createOpen"
       :title="t('pages.mrpLab.createTitle')"
-      width="880px"
+      width="920px"
       destroy-on-close
       append-to-body
     >
       <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpLab.createHint') }}</p>
       <el-form label-position="top">
-        <el-form-item :label="t('pages.mrpLab.namaLot')" required>
-          <el-input v-model="form.nama_lot_warna" :placeholder="t('pages.mrpLab.namaLotPlaceholder')" />
-        </el-form-item>
-        <el-form-item :label="t('pages.mrpLab.linkRpi')">
+        <el-form-item :label="t('pages.mrpLab.linkRpi')" required>
           <p class="text-sm text-slate-500 mb-2">{{ t('pages.mrpLab.linkRpiHint') }}</p>
           <el-checkbox v-model="onlyWithProses" class="mb-2" @change="onFilterProsesChange">
             {{ t('pages.mrpLab.onlyWithProses') }}
           </el-checkbox>
           <el-select
             v-model="form.rencana_item_id"
-            clearable
             filterable
             class="w-full"
             :placeholder="t('pages.mrpLab.linkRpiPlaceholder')"
@@ -250,66 +246,143 @@
 
         <div class="mrp-lab-items-head">
           <strong>{{ t('pages.mrpLab.items') }}</strong>
-          <el-button size="small" @click="addRow">{{ t('common.add') }}</el-button>
-        </div>
-        <div v-if="!options.kimia_list.length" class="text-sm text-amber-700 mb-2">
-          {{ t('pages.mrpLab.noKimiaMaster') }}
-        </div>
-        <div v-if="!form.items.length" class="text-sm text-slate-500 mb-2">{{ t('pages.mrpLab.itemsEmpty') }}</div>
-
-        <div class="mrp-lab-item-head text-xs text-slate-500 mb-1">
-          <span>{{ t('pages.mrpLab.kimia') }}</span>
-          <span>{{ t('pages.mrpLab.resep') }}</span>
-          <span>{{ t('pages.mrpLab.qty') }}</span>
-          <span>{{ t('pages.mrpLab.satuan') }}</span>
-          <span>{{ t('pages.mrpLab.stokLapangan') }}</span>
-          <span>{{ t('pages.mrpLab.remarks') }}</span>
-          <span />
-        </div>
-        <div v-for="(row, idx) in form.items" :key="idx" class="mrp-lab-item-row">
-          <el-select
-            v-model="row.kode_kimia"
-            filterable
-            allow-create
-            default-first-option
-            :placeholder="t('pages.mrpLab.kimia')"
-            class="mrp-lab-item-row__kimia"
-            @change="(v) => onKimiaChange(row, v)"
-          >
-            <el-option
-              v-for="k in options.kimia_list"
-              :key="k.kode_kimia"
-              :label="kimiaOptionLabel(k)"
-              :value="k.kode_kimia"
-            />
-          </el-select>
-          <el-select
-            v-model="row.resep"
-            filterable
-            allow-create
-            clearable
-            default-first-option
-            :placeholder="t('pages.mrpLab.resep')"
-            class="mrp-lab-item-row__resep"
-          >
-            <el-option v-for="r in options.reseps" :key="r" :label="r" :value="r" />
-          </el-select>
-          <el-input v-model="row.qty" type="number" :placeholder="t('pages.mrpLab.qty')" class="mrp-lab-item-row__qty" />
-          <el-input v-model="row.satuan" :placeholder="t('pages.mrpLab.satuan')" class="mrp-lab-item-row__sat" />
-          <span
-            class="mrp-lab-item-row__stok text-xs"
-            :class="stokLapanganClass(row)"
-          >{{ formatQty(row.stok_lapangan) }}</span>
-          <el-input v-model="row.remarks" :placeholder="t('pages.mrpLab.remarks')" class="mrp-lab-item-row__remarks" />
-          <el-button link type="danger" :disabled="form.items.length <= 1" @click="form.items.splice(idx, 1)">
-            {{ t('common.delete') }}
+          <el-button size="small" type="primary" plain :disabled="!form.rencana_item_id" @click="openLotDraft">
+            {{ t('common.add') }}
           </el-button>
         </div>
+        <p v-if="!form.rencana_item_id" class="text-sm text-slate-500 mb-2">{{ t('pages.mrpLab.rpiPickFirst') }}</p>
+        <div v-else-if="!form.colorLots.length" class="text-sm text-slate-500 mb-2">{{ t('pages.mrpLab.colorLotsEmpty') }}</div>
+
+        <el-table
+          v-if="form.colorLots.length"
+          :data="form.colorLots"
+          border
+          size="small"
+          class="admin-table mb-2"
+          :empty-text="t('common.tableEmpty')"
+        >
+          <el-table-column :label="t('pages.mrpLab.kodeLw')" min-width="160" show-overflow-tooltip>
+            <template #default="{ $index }">{{ previewLwCode($index) }}</template>
+          </el-table-column>
+          <el-table-column prop="nama_lot_warna" :label="t('pages.mrpLab.namaLot')" min-width="140" show-overflow-tooltip />
+          <el-table-column :label="t('pages.mrpLab.qtySatuan')" min-width="160" show-overflow-tooltip>
+            <template #default="{ row }">{{ formatQtySatuanTotal(row) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('pages.mrpLab.remarks')" min-width="140" show-overflow-tooltip>
+            <template #default="{ row }">{{ dash(row.catatan) }}</template>
+          </el-table-column>
+          <el-table-column :label="t('common.actions')" width="120" align="center">
+            <template #default="{ $index }">
+              <AdminTableActions
+                show-view
+                show-edit
+                show-delete
+                @view="viewColorLot($index)"
+                @edit="editColorLot($index)"
+                @delete="removeColorLot($index)"
+              />
+            </template>
+          </el-table-column>
+        </el-table>
+        <p v-if="form.colorLots.length" class="text-xs text-slate-500 mt-1 mb-0">{{ t('pages.mrpLab.qtySatuanHint') }}</p>
         <p class="text-xs text-slate-500 mt-2 mb-0">{{ t('pages.mrpLab.stokLapanganHint') }}</p>
       </el-form>
       <template #footer>
         <el-button @click="createOpen = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="saving" @click="submit">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="colorLotViewOpen"
+      :title="t('pages.mrpLab.colorLotDetailTitle')"
+      width="720px"
+      destroy-on-close
+      append-to-body
+    >
+      <el-descriptions :column="1" border size="small" class="mb-3">
+        <el-descriptions-item :label="t('pages.mrpLab.kodeLw')">{{ colorLotView.lwCode }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.mrpLab.namaLot')">{{ dash(colorLotView.nama_lot_warna) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.mrpLab.remarks')">{{ dash(colorLotView.catatan) }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.mrpLab.qtySatuan')">
+          {{ formatQtySatuanTotal(colorLotView) }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <p class="text-xs text-slate-500 mb-2">{{ t('pages.mrpLab.kimiaBahanList') }}</p>
+      <el-table :data="colorLotView.items" border size="small" :empty-text="t('common.tableEmpty')">
+        <el-table-column type="index" width="48" :label="t('common.noLabel')" align="center" />
+        <el-table-column :label="t('pages.mrpLab.kimiaMaterial')" min-width="280" show-overflow-tooltip>
+          <template #default="{ row }">{{ kimiaItemDisplayLabel(row) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpLab.qty')" width="90" align="right">
+          <template #default="{ row }">{{ formatQty(row.qty) }}</template>
+        </el-table-column>
+        <el-table-column prop="satuan" :label="t('pages.mrpLab.satuan')" width="72" />
+      </el-table>
+      <template #footer>
+        <el-button type="primary" @click="colorLotViewOpen = false">{{ t('common.close') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="lotDraftOpen"
+      :title="lotDraftDialogTitle"
+      width="960px"
+      destroy-on-close
+      append-to-body
+    >
+      <el-form label-position="top">
+        <el-form-item :label="t('pages.mrpLab.namaLot')" required>
+          <el-input v-model="lotDraft.nama_lot_warna" :placeholder="t('pages.mrpLab.namaLotPlaceholder')" />
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpLab.remarks')">
+          <el-input v-model="lotDraft.catatan" :placeholder="t('pages.mrpLab.remarks')" clearable />
+        </el-form-item>
+        <div class="mrp-lab-items-head">
+          <strong>{{ t('pages.mrpLab.kimiaBahanList') }}</strong>
+          <el-button size="small" @click="addDraftKimiaRow">{{ t('common.add') }}</el-button>
+        </div>
+        <div v-if="!kimiaStockPickOptions.length" class="text-sm text-amber-700 mb-2">
+          {{ t('pages.mrpLab.noKimiaStockLapangan') }}
+        </div>
+        <p v-else-if="labSisaPickCount" class="text-xs text-slate-500 mb-2">
+          {{ t('pages.mrpLab.labSisaPickHint', { n: labSisaPickCount }) }}
+        </p>
+        <div class="mrp-lab-draft-head text-xs text-slate-500 mb-1">
+          <span>{{ t('pages.mrpLab.kimiaMaterial') }}</span>
+          <span>{{ t('pages.mrpLab.qty') }}</span>
+          <span>{{ t('pages.mrpLab.satuan') }}</span>
+          <span />
+        </div>
+        <div v-for="(row, idx) in lotDraft.items" :key="idx" class="mrp-lab-draft-row">
+          <el-select
+            v-model="row.pick_key"
+            filterable
+            clearable
+            :placeholder="t('pages.mrpLab.kimiaPickPlaceholder')"
+            class="w-full"
+            @change="(key) => onDraftStockPick(row, key)"
+          >
+            <el-option
+              v-for="lot in kimiaStockPickOptions"
+              :key="lot.pick_key"
+              :label="kimiaStockPickLabel(lot)"
+              :value="lot.pick_key"
+            />
+          </el-select>
+          <el-input v-model="row.qty" type="number" :placeholder="t('pages.mrpLab.qty')" />
+          <el-input v-model="row.satuan" readonly :placeholder="t('pages.mrpLab.satuan')" />
+          <el-button link type="danger" :disabled="lotDraft.items.length <= 1" @click="lotDraft.items.splice(idx, 1)">
+            {{ t('common.delete') }}
+          </el-button>
+        </div>
+        <p v-if="lotDraftQtySatuan !== '—'" class="text-sm text-slate-700 mt-2 mb-0">
+          <strong>{{ t('pages.mrpLab.qtySatuan') }}:</strong> {{ lotDraftQtySatuan }}
+        </p>
+      </el-form>
+      <template #footer>
+        <el-button @click="cancelLotDraft">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="commitLotDraft">{{ lotDraftSubmitLabel }}</el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -321,9 +394,14 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Printer, Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
+import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
 import { can } from '../../../security/permissions'
 import { mrpCreateLab, mrpCreateLabSisa, mrpLabOptions, mrpListLab, mrpMixedLabSisa } from '../../../api/client'
 import { printLabLotQr } from '../../../utils/mrpLabQrPrint'
+import {
+  buildFarmasiSheetsFromCreate,
+  printLabFarmasiInstructions,
+} from '../../../utils/mrpLabFarmasiPrint'
 import { buildPageParams, fromElSortChange, normalizePageResult } from '../../../utils/tableQuery'
 
 const { t } = useI18n()
@@ -332,6 +410,15 @@ const optionsLoading = ref(false)
 const saving = ref(false)
 const mixingId = ref(null)
 const createOpen = ref(false)
+const lotDraftOpen = ref(false)
+const lotDraftEditIndex = ref(null)
+const colorLotViewOpen = ref(false)
+const colorLotView = reactive({
+  lwCode: '',
+  nama_lot_warna: '',
+  catatan: '',
+  items: [],
+})
 const sisaOpen = ref(false)
 const sisaLotsLoading = ref(false)
 const sisaLotOptions = ref([])
@@ -347,12 +434,82 @@ const sortBy = ref('date_created')
 const sortDir = ref('desc')
 const canCreate = computed(() => can('mrpShopfloor', 'create'))
 const canUpdate = computed(() => can('mrpShopfloor', 'update'))
-const options = reactive({ rencana_items: [], kimia_list: [], reseps: [] })
+const options = reactive({
+  rencana_items: [],
+  kimia_list: [],
+  kimia_stock_lots: [],
+  lab_lot_sisa_picks: [],
+  reseps: [],
+})
 const form = reactive({
-  nama_lot_warna: '',
   rencana_item_id: null,
+  colorLots: [],
+})
+const lotDraft = reactive({
+  nama_lot_warna: '',
+  catatan: '',
   items: [],
 })
+
+const selectedRpiItem = computed(
+  () => options.rencana_items.find((it) => it.id === form.rencana_item_id) || null,
+)
+
+const kimiaNameByCode = computed(() => {
+  const map = new Map()
+  for (const k of options.kimia_list || []) {
+    const code = (k.kode_kimia || '').trim()
+    if (code) map.set(code, (k.nama_kimia || '').trim())
+  }
+  return map
+})
+
+const lotDraftDialogTitle = computed(() =>
+  lotDraftEditIndex.value != null
+    ? t('pages.mrpLab.lotDraftEditTitle')
+    : t('pages.mrpLab.lotDraftTitle'),
+)
+const lotDraftSubmitLabel = computed(() =>
+  lotDraftEditIndex.value != null ? t('pages.mrpLab.lotDraftSaveEdit') : t('pages.mrpLab.lotDraftAdd'),
+)
+
+const lotDraftQtySatuan = computed(() =>
+  formatQtySatuanTotal(lotDraft, { onlyCommittedRows: true }),
+)
+
+const kimiaStockPickOptions = computed(() => {
+  const out = []
+  for (const lot of options.kimia_stock_lots || []) {
+    const kode = (lot.kode_kimia || '').trim()
+    const sid = lot.stok_in_id
+    if (sid == null || sid === '') continue
+    out.push({
+      ...lot,
+      source: 'kimia',
+      pick_key: `kimia-${sid}`,
+      nama_kimia: (lot.nama_kimia || kimiaNameByCode.value.get(kode) || '').trim(),
+    })
+  }
+  for (const s of options.lab_lot_sisa_picks || []) {
+    const sid = s.lab_sisa_id
+    if (sid == null || sid === '') continue
+    out.push({
+      ...s,
+      source: 'lab_sisa',
+      pick_key: `sisa-${sid}`,
+      nama_kimia: (s.nama_kimia || s.kode_kimia || '').trim(),
+    })
+  }
+  return out.sort((a, b) => {
+    const ka = `${a.source || ''}-${a.kode_kimia || ''}-${a.lot_number || ''}`
+    const kb = `${b.source || ''}-${b.kode_kimia || ''}-${b.lot_number || ''}`
+    return ka.localeCompare(kb, undefined, { numeric: true })
+  })
+})
+
+const labSisaPickCount = computed(
+  () => (options.lab_lot_sisa_picks || []).filter((s) => s.lab_sisa_id != null).length,
+)
 const sisaForm = reactive({
   kode_lot_warna: '',
   qty_sisa: '',
@@ -397,12 +554,291 @@ const filteredSisa = computed(() => {
   })
 })
 
-function emptyRow() {
-  return { kode_kimia: '', resep: '', qty: '', satuan: 'kg', remarks: '', stok_lapangan: null }
+function emptyKimiaRow() {
+  return {
+    pick_key: null,
+    kode_kimia: '',
+    stok_in_id: null,
+    lab_sisa_id: null,
+    lot_number: '',
+    qty: '',
+    satuan: 'kg',
+    stok_lapangan: null,
+  }
 }
 
-function addRow() {
-  form.items.push(emptyRow())
+function lwBaseFromRpi(kodeRpi) {
+  const s = (kodeRpi || '').trim()
+  if (!s) return 'LW'
+  const up = s.toUpperCase()
+  if (up.startsWith('RPI-')) return `LW-${s.slice(4)}`
+  if (up.startsWith('RPI')) return `LW-${s.slice(3).replace(/^-/, '')}`
+  return `LW-${s}`
+}
+
+function previewLwCode(index) {
+  const base = lwBaseFromRpi(selectedRpiItem.value?.kode_rencana_item)
+  return `${base}-${index + 1}`
+}
+
+function parseItemQty(v) {
+  if (v == null || v === '') return NaN
+  if (typeof v === 'number') return Number.isFinite(v) ? v : NaN
+  const s = String(v).trim().replace(/\s/g, '').replace(',', '.')
+  if (!s) return NaN
+  const n = Number(s)
+  return Number.isFinite(n) ? n : NaN
+}
+
+/** Jumlah qty per satuan dari semua baris kimia lot (total per satuan jika campuran). */
+function formatQtySatuanTotal(lot, opts = {}) {
+  const onlyCommittedRows = Boolean(opts.onlyCommittedRows)
+  const items = lot?.items || []
+  if (!items.length) return '—'
+  const byUnit = new Map()
+  for (const it of items) {
+    if (
+      onlyCommittedRows &&
+      !it.pick_key &&
+      (it.stok_in_id == null || it.stok_in_id === '') &&
+      (it.lab_sisa_id == null || it.lab_sisa_id === '')
+    ) {
+      continue
+    }
+    const u = (it.satuan || 'kg').trim() || 'kg'
+    const q = parseItemQty(it.qty)
+    if (!Number.isFinite(q) || q <= 0) continue
+    byUnit.set(u, (byUnit.get(u) || 0) + q)
+  }
+  if (!byUnit.size) return '—'
+  return [...byUnit.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([u, q]) => `${formatQty(q)} ${u}`)
+    .join(' + ')
+}
+
+function kimiaStockPickLabel(lot) {
+  const kode = (lot.kode_kimia || '').trim() || '—'
+  const nama = (lot.nama_kimia || kimiaNameByCode.value.get(kode) || '').trim() || '—'
+  const lotNo = (lot.lot_number || '').trim() || '—'
+  const stokPart = `${formatQty(lot.qty_sisa)} ${(lot.satuan || '').trim()}`.trim()
+  const base = [kode, nama, lotNo, stokPart || '—'].join(' - ')
+  if (lot.source === 'lab_sisa') {
+    return `${t('pages.mrpLab.labSisaPickTag')}: ${base}`
+  }
+  return base
+}
+
+function findMaterialPick(pickKey) {
+  if (pickKey == null || pickKey === '') return null
+  return kimiaStockPickOptions.value.find((l) => l.pick_key === pickKey) || null
+}
+
+function findMaterialPickForItem(item) {
+  if (item?.pick_key) return findMaterialPick(item.pick_key)
+  if (item?.lab_sisa_id != null && item.lab_sisa_id !== '') {
+    return findMaterialPick(`sisa-${item.lab_sisa_id}`)
+  }
+  if (item?.stok_in_id != null && item.stok_in_id !== '') {
+    return findMaterialPick(`kimia-${item.stok_in_id}`)
+  }
+  return null
+}
+
+/** @deprecated use findMaterialPickForItem */
+function findKimiaStockLot(stokInId) {
+  if (stokInId == null || stokInId === '') return null
+  return findMaterialPick(`kimia-${stokInId}`)
+}
+
+function kimiaItemDisplayLabel(item) {
+  const lot = findMaterialPickForItem(item)
+  if (lot) return kimiaStockPickLabel(lot)
+  const kode = (item?.kode_kimia || '').trim() || '—'
+  const nama = kimiaNameByCode.value.get(kode) || '—'
+  const lotNo = (item?.lot_number || '').trim() || '—'
+  const stokPart = `${formatQty(item?.qty)} ${(item?.satuan || '').trim()}`.trim()
+  return [kode, nama, lotNo, stokPart || '—'].join(' - ')
+}
+
+function cloneKimiaRowFromSaved(item) {
+  const lot = findMaterialPickForItem(item)
+  const qty = item?.qty
+  const labSisaId = item?.lab_sisa_id ?? lot?.lab_sisa_id ?? null
+  const stokInId = item?.stok_in_id ?? lot?.stok_in_id ?? null
+  let pickKey = item?.pick_key ?? lot?.pick_key ?? null
+  if (!pickKey && labSisaId != null) pickKey = `sisa-${labSisaId}`
+  if (!pickKey && stokInId != null) pickKey = `kimia-${stokInId}`
+  return {
+    pick_key: pickKey,
+    kode_kimia: (item?.kode_kimia || lot?.kode_kimia || '').trim(),
+    stok_in_id: stokInId,
+    lab_sisa_id: labSisaId,
+    lot_number: (item?.lot_number ?? lot?.lot_number ?? '').trim(),
+    qty: qty != null && qty !== '' ? String(qty) : '',
+    satuan: (item?.satuan || lot?.satuan || 'kg').trim() || 'kg',
+    stok_lapangan: lot != null ? Number(lot.qty_sisa) : null,
+  }
+}
+
+function resetLotDraftForm() {
+  lotDraft.nama_lot_warna = ''
+  lotDraft.catatan = ''
+  lotDraft.items = [emptyKimiaRow()]
+  lotDraftEditIndex.value = null
+}
+
+function cancelLotDraft() {
+  lotDraftOpen.value = false
+  resetLotDraftForm()
+}
+
+async function ensureCreateOptionsLoaded() {
+  if (!form.rencana_item_id) {
+    ElMessage.warning(t('pages.mrpLab.rpiRequired'))
+    return false
+  }
+  try {
+    await reloadOptions()
+    return true
+  } catch (e) {
+    ElMessage.error(e.message || String(e))
+    return false
+  }
+}
+
+async function openLotDraft() {
+  if (!(await ensureCreateOptionsLoaded())) return
+  resetLotDraftForm()
+  lotDraftOpen.value = true
+}
+
+function viewColorLot(index) {
+  const lot = form.colorLots[index]
+  if (!lot) return
+  colorLotView.lwCode = previewLwCode(index)
+  colorLotView.nama_lot_warna = lot.nama_lot_warna || ''
+  colorLotView.catatan = lot.catatan || ''
+  colorLotView.items = (lot.items || []).map((it) => ({ ...it }))
+  colorLotViewOpen.value = true
+}
+
+async function editColorLot(index) {
+  const lot = form.colorLots[index]
+  if (!lot) return
+  if (!(await ensureCreateOptionsLoaded())) return
+  lotDraftEditIndex.value = index
+  lotDraft.nama_lot_warna = lot.nama_lot_warna || ''
+  lotDraft.catatan = lot.catatan || ''
+  const rows = (lot.items || []).map((it) => cloneKimiaRowFromSaved(it))
+  lotDraft.items = rows.length ? rows : [emptyKimiaRow()]
+  lotDraftOpen.value = true
+}
+
+async function removeColorLot(index) {
+  const lot = form.colorLots[index]
+  if (!lot) return
+  try {
+    await ElMessageBox.confirm(
+      t('pages.mrpLab.colorLotDeleteConfirm', { nama: lot.nama_lot_warna || previewLwCode(index) }),
+      t('common.confirm'),
+      { type: 'warning' },
+    )
+    form.colorLots.splice(index, 1)
+  } catch {
+    /* cancelled */
+  }
+}
+
+function addDraftKimiaRow() {
+  lotDraft.items.push(emptyKimiaRow())
+}
+
+function onDraftStockPick(row, pickKey) {
+  row.pick_key = pickKey || null
+  if (!pickKey) {
+    row.kode_kimia = ''
+    row.stok_in_id = null
+    row.lab_sisa_id = null
+    row.lot_number = ''
+    row.satuan = 'kg'
+    row.stok_lapangan = null
+    return
+  }
+  const lot = findMaterialPick(pickKey)
+  if (!lot) return
+  row.kode_kimia = (lot.kode_kimia || '').trim()
+  row.lot_number = (lot.lot_number || '').trim()
+  row.stok_lapangan = Number(lot.qty_sisa) || 0
+  row.satuan = (lot.satuan || 'kg').trim() || 'kg'
+  if (lot.source === 'lab_sisa') {
+    row.lab_sisa_id = lot.lab_sisa_id
+    row.stok_in_id = null
+  } else {
+    row.stok_in_id = lot.stok_in_id
+    row.lab_sisa_id = null
+  }
+}
+
+function commitLotDraft() {
+  const nama = (lotDraft.nama_lot_warna || '').trim()
+  if (!nama) {
+    ElMessage.warning(t('pages.mrpLab.namaLot'))
+    return
+  }
+  const items = lotDraft.items.filter(
+    (r) =>
+      (r.pick_key != null && r.pick_key !== '') ||
+      r.stok_in_id != null ||
+      r.lab_sisa_id != null,
+  )
+  if (!items.length) {
+    ElMessage.warning(t('pages.mrpLab.itemsEmpty'))
+    return
+  }
+  for (const r of items) {
+    const qty = Number(r.qty)
+    const pick = findMaterialPickForItem(r)
+    const kode = r.kode_kimia || pick?.kode_kimia || '—'
+    if (!(qty > 0)) {
+      ElMessage.warning(`${t('pages.mrpLab.qtyInvalid')}: ${kode}`)
+      return
+    }
+    if (!pick) {
+      ElMessage.warning(t('pages.mrpLab.kimiaPickRequired'))
+      return
+    }
+    const avail = Number(r.stok_lapangan)
+    if (Number.isFinite(avail) && qty > avail) {
+      ElMessage.warning(
+        t('pages.mrpLab.stokLapanganKurang', {
+          kode: r.kode_kimia,
+          need: formatQty(qty),
+          avail: formatQty(avail),
+        }),
+      )
+      return
+    }
+  }
+  const payload = {
+    nama_lot_warna: nama,
+    catatan: (lotDraft.catatan || '').trim(),
+    items: items.map((r) => ({
+      kode_kimia: r.kode_kimia,
+      stok_in_id: r.lab_sisa_id ? null : r.stok_in_id,
+      lab_sisa_id: r.lab_sisa_id ?? null,
+      lot_number: r.lot_number,
+      qty: Number(r.qty),
+      satuan: r.satuan || 'kg',
+    })),
+  }
+  if (lotDraftEditIndex.value != null) {
+    form.colorLots[lotDraftEditIndex.value] = payload
+  } else {
+    form.colorLots.push(payload)
+  }
+  lotDraftOpen.value = false
+  resetLotDraftForm()
 }
 
 function dash(v) {
@@ -463,12 +899,6 @@ function stokLapanganClass(row) {
   return 'text-slate-600'
 }
 
-function onKimiaChange(row, kode) {
-  const hit = options.kimia_list.find((k) => k.kode_kimia === kode)
-  if (hit?.satuan) row.satuan = hit.satuan
-  row.stok_lapangan = hit?.stok_lapangan ?? 0
-}
-
 function onTabChange() {
   page.value = 1
   search.value = ''
@@ -521,6 +951,8 @@ async function reloadOptions() {
     Object.assign(options, {
       rencana_items: opt.rencana_items || [],
       kimia_list: opt.kimia_list || [],
+      kimia_stock_lots: opt.kimia_stock_lots || [],
+      lab_lot_sisa_picks: opt.lab_lot_sisa_picks || [],
       reseps: opt.reseps || [],
     })
     if (
@@ -623,9 +1055,8 @@ async function markMixed(row) {
 }
 
 async function openCreate() {
-  form.nama_lot_warna = ''
   form.rencana_item_id = null
-  form.items = [emptyRow()]
+  form.colorLots = []
   onlyWithProses.value = true
   createOpen.value = true
   try {
@@ -679,63 +1110,62 @@ async function submitSisa() {
 }
 
 async function submit() {
-  if (!form.nama_lot_warna?.trim()) {
-    ElMessage.warning(t('pages.mrpLab.namaLot'))
+  if (!form.rencana_item_id) {
+    ElMessage.warning(t('pages.mrpLab.rpiRequired'))
     return
   }
-  const items = form.items.filter((r) => String(r.kode_kimia || '').trim())
-  if (!items.length) {
-    ElMessage.warning(t('pages.mrpLab.itemsEmpty'))
+  const hit = options.rencana_items.find((it) => it.id === form.rencana_item_id)
+  if (hit && !hit.has_proses) {
+    ElMessage.warning(t('pages.mrpLab.prosesRequired'))
     return
   }
-  for (const r of items) {
-    const qty = Number(r.qty)
-    if (!(qty > 0)) {
-      ElMessage.warning(`${t('pages.mrpLab.qtyInvalid')}: ${r.kode_kimia}`)
-      return
-    }
-    const avail = Number(r.stok_lapangan)
-    if (Number.isFinite(avail) && qty > avail) {
-      ElMessage.warning(
-        t('pages.mrpLab.stokLapanganKurang', {
-          kode: r.kode_kimia,
-          need: formatQty(qty),
-          avail: formatQty(avail),
-        }),
-      )
-      return
-    }
-  }
-  if (form.rencana_item_id) {
-    const hit = options.rencana_items.find((it) => it.id === form.rencana_item_id)
-    if (hit && !hit.has_proses) {
-      ElMessage.warning(t('pages.mrpLab.prosesRequired'))
-      return
-    }
+  if (!form.colorLots.length) {
+    ElMessage.warning(t('pages.mrpLab.colorLotsEmpty'))
+    return
   }
   saving.value = true
   try {
     const res = await mrpCreateLab({
-      nama_lot_warna: form.nama_lot_warna,
-      rencana_item_id: form.rencana_item_id || null,
-      items: items.map((r) => ({
-        kode_kimia: r.kode_kimia,
-        resep: r.resep,
-        qty: Number(r.qty),
-        satuan: r.satuan || 'kg',
-        remarks: r.remarks,
+      rencana_item_id: form.rencana_item_id,
+      lots: form.colorLots.map((lot) => ({
+        nama_lot_warna: lot.nama_lot_warna,
+        catatan: lot.catatan || null,
+        items: (lot.items || []).map((r) => ({
+          kode_kimia: r.kode_kimia,
+          stok_in_id: r.lab_sisa_id ? null : r.stok_in_id,
+          lab_sisa_id: r.lab_sisa_id ?? null,
+          lot_number: r.lot_number,
+          qty: Number(r.qty),
+          satuan: r.satuan || 'kg',
+        })),
       })),
     })
-    if (res?.kode_lot_warna && res?.stok_deducted) {
+    const kodes = res?.kode_lot_warna_list || (res?.kode_lot_warna ? [res.kode_lot_warna] : [])
+    if (kodes.length && res?.stok_deducted) {
       ElMessage.success(
-        t('pages.mrpLab.savedWithStokOut', { kode: res.kode_lot_warna, n: (res.stok_outs || []).length }),
+        t('pages.mrpLab.savedWithStokOut', { kode: kodes.join(', '), n: (res.stok_outs || []).length }),
       )
     } else {
       ElMessage.success(
-        res?.kode_lot_warna
-          ? `${t('common.saved')}: ${res.kode_lot_warna}`
-          : t('common.saved'),
+        kodes.length ? `${t('common.saved')}: ${kodes.join(', ')}` : t('common.saved'),
       )
+    }
+    if (kodes.length && form.colorLots.length) {
+      const sheets = buildFarmasiSheetsFromCreate({
+        colorLots: form.colorLots,
+        kodeList: kodes,
+        rencanaItem: hit || selectedRpiItem.value,
+        resolveKimiaName: (code) => kimiaNameByCode.value.get(code) || '',
+        resolveStockLot: (_stokInId, item) => findMaterialPickForItem(item),
+      })
+      try {
+        printLabFarmasiInstructions(sheets, {
+          title: t('pages.mrpLab.printFarmasiTitle'),
+          popupBlockedMessage: t('pages.mrpProses.popupBlocked'),
+        })
+      } catch (e) {
+        ElMessage.warning(e.message || String(e))
+      }
     }
     createOpen.value = false
     tab.value = 'utama'
@@ -764,38 +1194,28 @@ onMounted(reload)
   justify-content: space-between;
   margin: 0.5rem 0 0.65rem;
 }
-.mrp-lab-item-head,
-.mrp-lab-item-row {
+.mrp-lab-draft-head,
+.mrp-lab-draft-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 0.9fr) 88px 72px 72px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 2.2fr) 88px 72px auto;
   gap: 0.45rem;
   align-items: center;
 }
-.mrp-lab-item-head {
+.mrp-lab-draft-head {
   padding: 0 0.55rem;
 }
-.mrp-lab-item-row {
+.mrp-lab-draft-row {
   margin-bottom: 0.5rem;
   padding: 0.55rem;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
   background: var(--el-fill-color-blank);
 }
-.mrp-lab-item-row__kimia,
-.mrp-lab-item-row__resep,
-.mrp-lab-item-row__qty,
-.mrp-lab-item-row__sat,
-.mrp-lab-item-row__remarks {
-  width: 100%;
-}
-.mrp-lab-item-row__stok {
-  text-align: right;
-}
 @media (max-width: 860px) {
-  .mrp-lab-item-head {
+  .mrp-lab-draft-head {
     display: none;
   }
-  .mrp-lab-item-row {
+  .mrp-lab-draft-row {
     grid-template-columns: 1fr 1fr;
   }
 }

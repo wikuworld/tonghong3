@@ -213,7 +213,7 @@ def test_classify_line_material_group_from_name_and_master():
     assert _classify_line_material_group(header, pu_line) == "pu"
     assert _classify_line_material_group(header, suede_line) == "suede"
 
-    master_suede = SimpleNamespace(category="Suide")
+    master_suede = SimpleNamespace(category="Suede")
     ambiguous = SimpleNamespace(material_name="ACTION LEATHER", vir_softness_type="")
     assert _classify_line_material_group(header, ambiguous, master_suede) == "suede"
 

@@ -118,7 +118,9 @@ def _mock_db_with_list(rows):
     db = MagicMock()
     lst = MagicMock()
     lst.id = 22
-    db.scalars.return_value.first.return_value = lst
+    lst.period_start = None
+    lst.period_end = None
+    db.scalars.return_value.all.return_value = [lst]
 
     def fake_list(_db, _id):
         return {"rows": rows, "meta_json": {"column_keys": STANDARD_COLUMN_KEYS}}

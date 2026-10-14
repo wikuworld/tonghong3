@@ -165,15 +165,18 @@ class CustomsAjuSheetRow(Base):
 
 
 class BuyerPriceList(Base):
-    """List harga material per buyer (NB / ADIDAS / NIKE / UA) — satu versi aktif per `buyer_code`."""
+    """List harga material per brand/buyer. Satu brand boleh punya banyak list selama periode tidak bertumpuk."""
 
     __tablename__ = "buyer_price_lists"
+    __table_args__ = (Index("ix_buyer_price_lists_brand_id", "brand_id"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     buyer_code: Mapped[str] = mapped_column(
         String(32),
         ForeignKey("buyer_codes.code", ondelete="RESTRICT"),
-        unique=True,
+    )
+    brand_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("brands.id", ondelete="RESTRICT"), nullable=True
     )
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     title: Mapped[Optional[str]] = mapped_column(Text)
@@ -191,6 +194,7 @@ class BuyerPriceList(Base):
         back_populates="price_list",
         cascade="all, delete-orphan",
     )
+    brand: Mapped[Optional["Brand"]] = relationship("Brand")
 
 
 class BuyerPriceSheetRow(Base):
@@ -295,6 +299,26 @@ class BrandBuyerMap(Base):
     buyer_code: Mapped[str] = mapped_column(
         String(32), ForeignKey("buyer_codes.code", ondelete="RESTRICT")
     )
+
+
+class ColorWindowMaster(Base):
+    """Master Color Window — katalog color code per brand."""
+
+    __tablename__ = "color_window_masters"
+    __table_args__ = (
+        Index("ix_color_window_masters_brand", "brand_code"),
+        Index("ix_color_window_masters_code", "color_code"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    color_code: Mapped[str] = mapped_column(String(64))
+    color_name: Mapped[str] = mapped_column(String(255))
+    brand_code: Mapped[str] = mapped_column(String(50))
+    remark: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP, server_default=func.current_timestamp()
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
 class CsiColorMaster(Base):
@@ -772,6 +796,9 @@ class DeliveryHeader(Base):
     delivery_zone: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     # production / sample / return / subcont / claim — terpisah dari teks destination/remark
     delivery_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    cancel_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    cancelled_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     customs_declaration_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("customs_declarations.id", ondelete="SET NULL")
     )
@@ -883,6 +910,8 @@ class Invoice(Base):
     credit_note_no: Mapped[Optional[str]] = mapped_column(String(120))
     credit_note_date: Mapped[Optional[date]] = mapped_column(Date)
     credit_note_amount: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    voided_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    void_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     oia_export_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
@@ -1063,6 +1092,21 @@ class Warehouse(Base):
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
 
 
+class InventoryUnitMaster(Base):
+    """Satuan per tipe material inventory (kulit, kimia, aksesoris, rp)."""
+
+    __tablename__ = "inventory_unit_masters"
+    __table_args__ = (
+        UniqueConstraint("material_type", "unit", name="uq_inv_unit_type_unit"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    material_type: Mapped[str] = mapped_column(String(32))
+    unit: Mapped[str] = mapped_column(String(50))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+
+
 class RawMaterial(Base):
     """Master data bahan baku."""
 
@@ -1076,6 +1120,7 @@ class RawMaterial(Base):
     name: Mapped[str] = mapped_column(String(255))
     material_type: Mapped[str] = mapped_column(String(50))
     unit: Mapped[str] = mapped_column(String(20))
+    size: Mapped[Optional[str]] = mapped_column(String(80))
     default_warehouse_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("warehouses.id"))
     min_stock: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 2))
     cost_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))

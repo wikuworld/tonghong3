@@ -572,14 +572,20 @@ export function getMarketingDeliveryToday(params = {}) {
   return apiFetch(`/marketing/delivery-today${suffix}`)
 }
 
-/** Unduhan PDF sales contract / sales order per PO. */
-export function salesContractPdfPath(poId) {
-  return `/documents/sales-contract/${poId}/pdf`
+/** Unduhan PDF sales contract / KPJB dari beberapa surat jalan. */
+export function salesContractPdfPath(deliveryIds = []) {
+  const ids = [...new Set((deliveryIds || []).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0))]
+  const q = new URLSearchParams()
+  q.set('delivery_ids', ids.join(','))
+  return `/documents/sales-contract.pdf?${q}`
 }
 
-/** Unduhan Word (.docx) sales contract per PO. */
-export function salesContractDocxPath(poId) {
-  return `/documents/sales-contract/${poId}/docx`
+/** Unduhan Word (.docx) sales contract / KPJB dari beberapa surat jalan. */
+export function salesContractDocxPath(deliveryIds = []) {
+  const ids = [...new Set((deliveryIds || []).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0))]
+  const q = new URLSearchParams()
+  q.set('delivery_ids', ids.join(','))
+  return `/documents/sales-contract.docx?${q}`
 }
 
 /** Unduhan PDF Proforma Invoice per PO. */
@@ -766,16 +772,26 @@ export function deleteMasterItem(id) {
   return apiFetch(`/masters/items/${id}`, { method: 'DELETE' })
 }
 
-export async function exportMasterItems() {
-  const r = await fetch(`/api/v1/masters/items/export`, {
+export async function exportMasterItems({ template = false } = {}) {
+  const q = template ? '?template=true' : ''
+  const r = await fetch(`/api/v1/masters/items/export${q}`, {
     headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
   })
-  if (!r.ok) throw new Error(r.statusText)
+  if (!r.ok) {
+    let msg = r.statusText
+    try {
+      const body = await r.json()
+      if (body?.detail) msg = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg || 'Export failed')
+  }
   const blob = await r.blob()
   const blobUrl = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = blobUrl
-  a.download = 'master_items.xlsx'
+  a.download = template ? 'master_items_template.xlsx' : 'master_items.xlsx'
   a.click()
   URL.revokeObjectURL(blobUrl)
 }
@@ -865,6 +881,64 @@ export function deleteCsiColor(id) {
 
 export function importCsiBundled() {
   return apiFetch('/masters/csi-colors/import-bundled', { method: 'POST' })
+}
+
+export function listColorWindowsPage(params = {}) {
+  const q = new URLSearchParams()
+  if (params.brand_code) q.set('brand_code', params.brand_code)
+  if (params.q) q.set('q', params.q)
+  if (params.sort_by) q.set('sort_by', params.sort_by)
+  if (params.sort_dir) q.set('sort_dir', params.sort_dir)
+  if (params.limit != null) q.set('limit', String(params.limit))
+  if (params.offset != null) q.set('offset', String(params.offset))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/masters/color-windows/page${suffix}`)
+}
+
+export function listColorWindowFormOptions() {
+  return apiFetch('/masters/color-windows/form-options')
+}
+
+export function createColorWindow(body) {
+  return apiFetch('/masters/color-windows', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateColorWindow(id, body) {
+  return apiFetch(`/masters/color-windows/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function deleteColorWindow(id) {
+  return apiFetch(`/masters/color-windows/${id}`, { method: 'DELETE' })
+}
+
+export async function exportColorWindows({ template = false } = {}) {
+  const q = template ? '?template=true' : ''
+  const r = await fetch(`/api/v1/masters/color-windows/export${q}`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+  })
+  if (!r.ok) {
+    let msg = r.statusText
+    try {
+      const body = await r.json()
+      if (body?.detail) msg = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg || 'Export failed')
+  }
+  const blob = await r.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = template ? 'color_window_template.xlsx' : 'color_window.xlsx'
+  a.click()
+  URL.revokeObjectURL(blobUrl)
+}
+
+export async function importColorWindows(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/masters/color-windows/import', { method: 'POST', body: fd })
 }
 
 export function getColorLinks({ color, color_code } = {}) {
@@ -1057,9 +1131,21 @@ export function addQcDetail(qcId, body) {
 export function listDelivery(params = {}) {
   const q = new URLSearchParams()
   if (params.q) q.set('q', params.q)
+  if (params.customer_id != null) q.set('customer_id', String(params.customer_id))
+  if (params.delivery_date_from) q.set('delivery_date_from', String(params.delivery_date_from).slice(0, 10))
+  if (params.delivery_date_to) q.set('delivery_date_to', String(params.delivery_date_to).slice(0, 10))
   appendPageParams(q, params)
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/delivery${suffix}`)
+}
+
+/** Path unduhan Excel AJU BC 2.7 dari beberapa surat jalan. */
+export function customsBc27XlsxPath(deliveryIds = [], params = {}) {
+  const ids = [...new Set((deliveryIds || []).map((x) => Number(x)).filter((n) => Number.isFinite(n) && n > 0))]
+  const q = new URLSearchParams()
+  q.set('delivery_ids', ids.join(','))
+  if (params.aju_seq != null) q.set('aju_seq', String(params.aju_seq).trim())
+  return `/documents/customs-bc27.xlsx?${q}`
 }
 
 export function getDelivery(id) {
@@ -1092,6 +1178,13 @@ export function updateDelivery(id, body) {
   return apiFetch(`/delivery/${id}`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
+export function cancelDelivery(id, reason) {
+  return apiFetch(`/delivery/${id}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+}
+
 export function scanDeliveryPackingOut(body) {
   return apiFetch('/delivery-shipments/scan-out', { method: 'POST', body: JSON.stringify(body) })
 }
@@ -1103,6 +1196,18 @@ export function markSuratJalanPrinted(deliveryId) {
 export function addDeliveryDetail(deliveryId, body, opts = {}) {
   const q = opts.bypass_qc ? '?bypass_qc=true' : ''
   return apiFetch(`/delivery/${deliveryId}/details${q}`, { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function updateDeliveryDetail(detailId, body, opts = {}) {
+  const q = opts.bypass_qc ? '?bypass_qc=true' : ''
+  return apiFetch(`/delivery-detail/${detailId}${q}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteDeliveryDetail(detailId) {
+  return apiFetch(`/delivery-detail/${detailId}`, { method: 'DELETE' })
 }
 
 export function returnDeliveryDetail(detailId, body) {
@@ -1216,7 +1321,7 @@ export function getBuyerPriceList(id) {
 
 /**
  * Resolusi harga satuan dari sheet list harga buyer (logika di server).
- * @param {object} body - buyer_code, material_name?, color?, style_article?, thickness_text?, color_family?, emboss?, factory_code?
+ * @param {object} body - buyer_code, as_of?, material_name?, color?, style_article?, thickness_text?, color_family?, emboss?, factory_code?
  */
 export function resolveBuyerUnitPrice(body) {
   return apiFetch('/buyer-prices/resolve-unit-price', { method: 'POST', body: JSON.stringify(body) })

@@ -86,6 +86,38 @@ def allocate_surat_jalan_number(
     return f"{_SJ_PREFIX}-{code}{ymd}{n:03d}"
 
 
+def raise_floor_surat_jalan_sequence(db: Session, delivery_number: str | None) -> None:
+    """Jika nomor manual pola THI-{kode}{YYMMDD}{seq} dan seq > counter, naikkan counter."""
+    raw = (delivery_number or "").strip()
+    m = _THI_FORM.match(raw)
+    if not m:
+        return
+    code = m.group(1).upper()
+    period = m.group(2)
+    try:
+        n = int(m.group(3))
+    except ValueError:
+        return
+    if n <= 0:
+        return
+    doc_type = f"{_SJ_PREFIX}-{code}"[:20]
+    seq = db.scalars(
+        select(DocumentSequence)
+        .where(
+            DocumentSequence.doc_type == doc_type,
+            DocumentSequence.period == period,
+        )
+        .with_for_update()
+    ).first()
+    if seq is None:
+        db.add(DocumentSequence(doc_type=doc_type, period=period, last_value=n))
+        db.flush()
+        return
+    if int(seq.last_value or 0) < n:
+        seq.last_value = n
+        db.flush()
+
+
 def allocate_invoice_number(
     db: Session,
     *,

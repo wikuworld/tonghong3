@@ -220,27 +220,28 @@ def invoice_summary(
     """Ringkasan invoice berdasarkan FK relationships."""
     from app.models import Customer
     
-    total_invoices = db.scalar(select(func.count()).select_from(Invoice)) or 0
+    open_invoice = Invoice.voided_at.is_(None)
+    total_invoices = db.scalar(select(func.count()).select_from(Invoice).where(open_invoice)) or 0
     total_amount = db.scalar(
-        select(func.coalesce(func.sum(Invoice.total_amount), 0)).select_from(Invoice)
+        select(func.coalesce(func.sum(Invoice.total_amount), 0)).select_from(Invoice).where(open_invoice)
     ) or 0
     
     paid_invoices = db.scalar(
-        select(func.count()).select_from(Invoice).where(Invoice.payment_status == "paid")
+        select(func.count()).select_from(Invoice).where(open_invoice, Invoice.payment_status == "paid")
     ) or 0
     paid_amount = db.scalar(
         select(func.coalesce(func.sum(Invoice.total_amount), 0))
         .select_from(Invoice)
-        .where(Invoice.payment_status == "paid")
+        .where(open_invoice, Invoice.payment_status == "paid")
     ) or 0
     
     unpaid_invoices = db.scalar(
-        select(func.count()).select_from(Invoice).where(Invoice.payment_status == "unpaid")
+        select(func.count()).select_from(Invoice).where(open_invoice, Invoice.payment_status == "unpaid")
     ) or 0
     unpaid_amount = db.scalar(
         select(func.coalesce(func.sum(Invoice.total_amount), 0))
         .select_from(Invoice)
-        .where(Invoice.payment_status == "unpaid")
+        .where(open_invoice, Invoice.payment_status == "unpaid")
     ) or 0
     
     overdue_invoices = db.scalar(
@@ -248,6 +249,7 @@ def invoice_summary(
         .select_from(Invoice)
         .where(
             and_(
+                open_invoice,
                 Invoice.payment_status == "unpaid",
                 Invoice.due_date < date.today(),
             )
@@ -258,6 +260,7 @@ def invoice_summary(
         .select_from(Invoice)
         .where(
             and_(
+                open_invoice,
                 Invoice.payment_status == "unpaid",
                 Invoice.due_date < date.today(),
             )
@@ -267,6 +270,7 @@ def invoice_summary(
     invoices_by_customer = db.execute(
         select(Customer.name, func.count(Invoice.id), func.coalesce(func.sum(Invoice.total_amount), 0))
         .join(Invoice, Invoice.customer_id == Customer.id)
+        .where(open_invoice)
         .group_by(Customer.id, Customer.name)
         .order_by(func.sum(Invoice.total_amount).desc())
         .limit(10)

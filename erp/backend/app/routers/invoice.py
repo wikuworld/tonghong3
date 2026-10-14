@@ -35,6 +35,7 @@ from app.services.notifications import create_notification_for_roles
 from app.services.document_numbers import allocate_invoice_number
 from app.services.invoice_outstanding import (
     enrich_outstanding_invoice,
+    exclude_voided_invoices,
     filter_outstanding_rows,
     invoice_ar_status,
     sync_payment_status_from_balance,
@@ -133,6 +134,8 @@ def list_invoice(
     )
     stmt = select(Invoice)
     count_stmt = select(func.count(Invoice.id))
+    stmt = exclude_voided_invoices(stmt)
+    count_stmt = exclude_voided_invoices(count_stmt)
 
     if customer_id is not None:
         stmt = stmt.where(Invoice.customer_id == customer_id)
@@ -211,7 +214,7 @@ def list_outstanding_invoice(
         sort_dir=sort_dir,
     )
     today = date.today()
-    stmt = select(Invoice).order_by(Invoice.id.desc())
+    stmt = exclude_voided_invoices(select(Invoice).order_by(Invoice.id.desc()))
     if due_within_days is not None and not overdue_only:
         stmt = stmt.where(
             and_(
@@ -399,7 +402,7 @@ def run_invoice_reminders(
         select(Invoice, DeliveryHeader, Customer)
         .join(DeliveryHeader, DeliveryHeader.id == Invoice.delivery_id)
         .join(Customer, Customer.id == DeliveryHeader.customer_id)
-        .where(Invoice.due_date.is_not(None))
+        .where(Invoice.due_date.is_not(None), Invoice.voided_at.is_(None))
     )
     if mode == "overdue":
         stmt = stmt.where(Invoice.due_date < today)

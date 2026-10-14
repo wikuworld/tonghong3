@@ -54,6 +54,11 @@
           @sort-change="onSortChange"
         >
           <el-table-column type="index" :label="t('common.noLabel')" width="56" align="center" :index="(i) => (page - 1) * pageSize + i + 1" />
+          <el-table-column prop="brand_name" :label="t('pages.buyerPrices.brand')" min-width="140" show-overflow-tooltip sortable="custom">
+            <template #default="{ row }">
+              {{ brandCell(row) }}
+            </template>
+          </el-table-column>
           <el-table-column prop="buyer_code" :label="t('pages.buyerPrices.buyerCode')" width="120" show-overflow-tooltip sortable="custom" />
           <el-table-column prop="currency" :label="t('pages.buyerPrices.currency')" width="90" align="center" sortable="custom" />
           <el-table-column prop="title" :label="t('pages.buyerPrices.listTitle')" min-width="160" show-overflow-tooltip sortable="custom" />
@@ -129,7 +134,7 @@
     <!-- Dialog: buat list buyer baru -->
     <el-dialog
       v-model="createVisible"
-      width="560px"
+      width="680px"
       destroy-on-close
       align-center
       class="buyer-price-dialog"
@@ -160,13 +165,56 @@
             <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top" @submit.prevent>
               <el-row :gutter="16">
                 <el-col :xs="24" :sm="12">
-                  <el-form-item :label="t('pages.buyerPrices.buyerCode')" prop="buyer_code">
-                    <el-input
-                      v-model="createForm.buyer_code"
-                      :placeholder="t('pages.buyerPrices.placeholderBuyerCode')"
-                      maxlength="32"
-                      show-word-limit
+                  <el-form-item :label="t('pages.buyerPrices.brand')" prop="brand_id">
+                    <el-select
+                      v-model="createForm.brand_id"
+                      class="w-full"
+                      filterable
                       clearable
+                      :placeholder="t('pages.buyerPrices.placeholderBrand')"
+                    >
+                      <el-option
+                        v-for="brand in brands"
+                        :key="brand.id"
+                        :label="brandOptionLabel(brand)"
+                        :value="brand.id"
+                      />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12">
+                  <el-form-item :label="t('pages.buyerPrices.buyerCode')" prop="buyer_code">
+                    <el-select
+                      v-if="brandBuyerCodes.length > 1"
+                      v-model="createForm.buyer_code"
+                      class="w-full"
+                      filterable
+                    >
+                      <el-option v-for="code in brandBuyerCodes" :key="code" :label="code" :value="code" />
+                    </el-select>
+                    <el-input v-else :model-value="createForm.buyer_code" disabled />
+                    <p v-if="createForm.brand_id && !brandBuyerCodes.length" class="buyer-map-hint">
+                      {{ t('pages.buyerPrices.ruleBrandBuyerMap') }}
+                    </p>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12">
+                  <el-form-item :label="t('pages.buyerPrices.periodStart')" prop="period_start">
+                    <el-date-picker
+                      v-model="createForm.period_start"
+                      type="date"
+                      value-format="YYYY-MM-DD"
+                      class="w-full"
+                    />
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12">
+                  <el-form-item :label="t('pages.buyerPrices.periodEnd')" prop="period_end">
+                    <el-date-picker
+                      v-model="createForm.period_end"
+                      type="date"
+                      value-format="YYYY-MM-DD"
+                      class="w-full"
                     />
                   </el-form-item>
                 </el-col>
@@ -177,6 +225,11 @@
                       <el-option label="IDR" value="IDR" />
                       <el-option label="EUR" value="EUR" />
                     </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12">
+                  <el-form-item :label="t('pages.buyerPrices.periodLabel')">
+                    <el-input v-model="createForm.period_label" maxlength="255" clearable />
                   </el-form-item>
                 </el-col>
                 <el-col :span="24">
@@ -228,6 +281,7 @@
           </div>
           <div class="buyer-dialog-panel__body">
             <el-descriptions :column="2" border size="small">
+              <el-descriptions-item :label="t('pages.buyerPrices.brand')">{{ brandCell(detailData) }}</el-descriptions-item>
               <el-descriptions-item :label="t('pages.buyerPrices.buyerCode')">{{ detailData.buyer_code || '—' }}</el-descriptions-item>
               <el-descriptions-item :label="t('pages.buyerPrices.currency')">{{ detailData.currency || '—' }}</el-descriptions-item>
               <el-descriptions-item :label="t('pages.buyerPrices.listTitle')">{{ detailData.title || '—' }}</el-descriptions-item>
@@ -325,6 +379,7 @@
             <h3 class="buyer-drawer-header__title">{{ masterDrawerTitle }}</h3>
             <p class="buyer-drawer-header__sub">{{ t('pages.buyerPrices.drawerManageSub') }}</p>
           </div>
+          <el-tag v-if="masterBrandLabel" type="success" effect="plain" size="small">{{ masterBrandLabel }}</el-tag>
           <el-tag v-if="masterBuyerCode" type="primary" effect="plain" size="small">{{ masterBuyerCode }}</el-tag>
         </div>
       </template>
@@ -421,22 +476,32 @@
                 @change="onItemChange(row)"
               >
                 <el-option
-                  v-for="item in masterItems"
-                  :key="`${item.item_code}-${item.material_name}`"
-                  :label="itemOptionLabel(item)"
-                  :value="item.material_name || item.item_code || ''"
+                  v-for="name in materialOptions"
+                  :key="name"
+                  :label="name"
+                  :value="name"
                 />
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column label="THICKNESS" min-width="120">
+          <el-table-column label="THICKNESS" min-width="140">
             <template #default="{ row }">
-              <el-input v-model="row.THICKNESS" size="small" disabled />
-            </template>
-          </el-table-column>
-          <el-table-column label="COLOR" min-width="120">
-            <template #default="{ row }">
-              <el-input v-model="row.COLOR" size="small" disabled />
+              <el-select
+                v-if="thicknessOptionsFor(row).length > 1"
+                v-model="row.THICKNESS"
+                filterable
+                clearable
+                class="w-full"
+                size="small"
+              >
+                <el-option
+                  v-for="thick in thicknessOptionsFor(row)"
+                  :key="thick"
+                  :label="thick"
+                  :value="thick"
+                />
+              </el-select>
+              <el-input v-else v-model="row.THICKNESS" size="small" disabled />
             </template>
           </el-table-column>
           <el-table-column label="COLOR WHITE (BASE)" min-width="150">
@@ -600,6 +665,7 @@ import {
   createBuyerPriceList,
   deleteBuyerPriceList,
   getBuyerPriceList,
+  listBrands,
   listBuyerPriceLists,
   listMasterItems,
   saveBuyerPriceSheet,
@@ -607,7 +673,9 @@ import {
   updateBuyerPriceList,
 } from '../../api/client'
 import { useModulePermission } from '../../composables/useModulePermission'
+import { parseApiErrorMessage } from '../../utils/poApi'
 import { buildPageParams, fromElSortChange, normalizePageResult } from '../../utils/tableQuery'
+import { applyItemSelection, thicknessOptionsForMaterial, uniqueMaterialNames } from '../../utils/buyerPriceSheet'
 
 const { t } = useI18n()
 const { canCreate, canUpdate, canDelete } = useModulePermission('buyerPrices')
@@ -630,13 +698,37 @@ const detailData = ref(null)
 const createVisible = ref(false)
 const createSaving = ref(false)
 const createFormRef = ref(null)
+const brands = ref([])
 const createForm = reactive({
+  brand_id: null,
   buyer_code: '',
   title: '',
   currency: 'USD',
+  period_label: '',
+  period_start: '',
+  period_end: '',
+})
+const brandBuyerCodes = computed(() => {
+  const brand = brands.value.find((row) => row.id === createForm.brand_id)
+  return [...new Set((brand?.buyer_codes || []).map((code) => String(code || '').trim()).filter(Boolean))]
 })
 const createRules = computed(() => ({
-  buyer_code: [{ required: true, message: t('pages.buyerPrices.ruleBuyerCode'), trigger: 'blur' }],
+  brand_id: [{ required: true, message: t('pages.buyerPrices.ruleBrand'), trigger: 'change' }],
+  buyer_code: [{ required: true, message: t('pages.buyerPrices.ruleBuyerCode'), trigger: 'change' }],
+  period_start: [{ required: true, message: t('pages.buyerPrices.rulePeriodStart'), trigger: 'change' }],
+  period_end: [
+    { required: true, message: t('pages.buyerPrices.rulePeriodEnd'), trigger: 'change' },
+    {
+      validator: (_rule, value, callback) => {
+        if (value && createForm.period_start && value < createForm.period_start) {
+          callback(new Error(t('pages.buyerPrices.rulePeriodOrder')))
+          return
+        }
+        callback()
+      },
+      trigger: 'change',
+    },
+  ],
 }))
 
 const masterDrawer = ref(false)
@@ -644,6 +736,7 @@ const masterLoading = ref(false)
 const masterSaving = ref(false)
 const activeListId = ref(null)
 const masterBuyerCode = ref('')
+const masterBrandLabel = ref('')
 
 const headerForm = reactive({
   title: '',
@@ -767,49 +860,64 @@ function onAddonPriceChange(row, addonKey, addonValue) {
   )
 }
 
+const materialOptions = computed(() => uniqueMaterialNames(masterItems.value))
+
+function thicknessOptionsFor(row) {
+  return thicknessOptionsForMaterial(masterItems.value, row?.ITEM)
+}
+
 function onItemChange(row) {
-  const selected = masterItems.value.find((i) => (i.material_name || '') === row.ITEM)
-  if (selected) {
-    row.THICKNESS = selected.thickness_range || ''
-    const suggestions = colorSuggestionsFromItem(selected)
-    row.COLOR = suggestions[0] || selected.color_standard || selected.color_reference || selected.color || ''
-  }
+  const next = applyItemSelection(row, row.ITEM, masterItems.value)
+  row.THICKNESS = next.THICKNESS
 }
 
-function itemOptionLabel(item) {
-  return item.material_name || item.item_code || '-'
+function brandOptionLabel(brand) {
+  const name = String(brand?.name || '').trim()
+  const code = String(brand?.code || '').trim()
+  if (code && name) return `${code} — ${name}`
+  return name || code || String(brand?.id || '')
 }
 
-function colorSuggestionsFromItem(item) {
-  const src = [item?.color_standard, item?.color_reference]
-    .filter(Boolean)
-    .join(',')
-  const out = []
-  for (const raw of src.split(/[,/;|]/)) {
-    const v = String(raw || '').trim()
-    if (v && !out.includes(v)) out.push(v)
-  }
-  return out
-}
-
-function queryColorSuggestions(row, queryString, cb) {
-  const selected = masterItems.value.find((i) => (i.material_name || '') === row.ITEM)
-  const options = selected ? colorSuggestionsFromItem(selected) : []
-  const q = (queryString || '').trim().toLowerCase()
-  cb(options.filter((x) => !q || x.toLowerCase().includes(q)).slice(0, 12).map((x) => ({ value: x })))
+function brandCell(row) {
+  const name = String(row?.brand_name || '').trim()
+  const code = String(row?.brand_code || '').trim()
+  if (code && name) return `${code} — ${name}`
+  return name || code || '—'
 }
 
 function resetCreateForm() {
+  createForm.brand_id = null
   createForm.buyer_code = ''
   createForm.title = ''
   createForm.currency = 'USD'
+  createForm.period_label = ''
+  createForm.period_start = ''
+  createForm.period_end = ''
   headerForm.currency = 'USD'
 }
 
-function openCreateDialog() {
+async function ensureBrands() {
+  if (brands.value.length) return
+  brands.value = (await listBrands()) || []
+}
+
+async function openCreateDialog() {
   resetCreateForm()
   createVisible.value = true
+  try {
+    await ensureBrands()
+  } catch (e) {
+    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
+  }
 }
+
+watch(
+  () => createForm.brand_id,
+  () => {
+    const codes = brandBuyerCodes.value
+    createForm.buyer_code = codes.length === 1 ? codes[0] : ''
+  },
+)
 
 function emptyToNull(s) {
   const v = typeof s === 'string' ? s.trim() : s
@@ -818,6 +926,10 @@ function emptyToNull(s) {
 
 async function submitCreate() {
   if (!createFormRef.value) return
+  if (createForm.brand_id && !brandBuyerCodes.value.length) {
+    ElMessage.error(t('pages.buyerPrices.ruleBrandBuyerMap'))
+    return
+  }
   try {
     await createFormRef.value.validate()
   } catch {
@@ -826,21 +938,20 @@ async function submitCreate() {
   createSaving.value = true
   try {
     const created = await createBuyerPriceList({
+      brand_id: createForm.brand_id,
       buyer_code: createForm.buyer_code.trim(),
       currency: createForm.currency || 'USD',
       title: emptyToNull(createForm.title),
+      period_label: emptyToNull(createForm.period_label),
+      period_start: toIsoDate(createForm.period_start),
+      period_end: toIsoDate(createForm.period_end),
     })
     ElMessage.success(t('pages.buyerPrices.saved'))
     createVisible.value = false
     await load()
     await openMaster(created.id)
   } catch (e) {
-    const msg = e?.message || ''
-    if (msg.includes('409') || msg.toLowerCase().includes('already')) {
-      ElMessage.error(t('pages.buyerPrices.duplicateBuyer'))
-    } else {
-      ElMessage.error(msg || t('common.errorGeneric'))
-    }
+    ElMessage.error(parseApiErrorMessage(e, t('pages.buyerPrices.duplicatePeriod')))
   } finally {
     createSaving.value = false
   }
@@ -849,6 +960,7 @@ async function submitCreate() {
 function onMasterClosed() {
   activeListId.value = null
   masterBuyerCode.value = ''
+  masterBrandLabel.value = ''
   sheetRows.value = []
 }
 
@@ -866,6 +978,7 @@ async function openMaster(id) {
   try {
     const d = await getBuyerPriceList(id)
     masterBuyerCode.value = d.buyer_code || ''
+    masterBrandLabel.value = brandCell(d) === '—' ? '' : brandCell(d)
     headerForm.title = d.title || ''
     headerForm.currency = d.currency || 'USD'
     headerForm.period_label = d.period_label || ''
@@ -873,7 +986,7 @@ async function openMaster(id) {
     headerForm.period_end = d.period_end || ''
     sheetRows.value = normalizeRows(d.rows)
   } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
+    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
     masterDrawer.value = false
     masterLoading.value = false
     return
@@ -936,7 +1049,7 @@ async function saveMaster() {
     await load()
     await openMaster(activeListId.value)
   } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
+    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
   } finally {
     masterSaving.value = false
   }
@@ -1002,6 +1115,13 @@ onMounted(load)
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.buyer-map-hint {
+  margin: 6px 0 0;
+  color: var(--el-color-warning);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .buyer-page-hint {

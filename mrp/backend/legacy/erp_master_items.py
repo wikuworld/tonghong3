@@ -79,9 +79,9 @@ def master_item_stats() -> dict[str, int]:
         cat = str(r.get("category") or "")
         counts[cat] = counts.get(cat, 0) + 1
     pu = counts.get("PU", 0)
-    suide = counts.get("Suide", 0)
+    suide = int(counts.get("Suede", 0)) + int(counts.get("Suide", 0))
     subkon = counts.get("SubKon", 0)
-    other = sum(v for k, v in counts.items() if k not in ("PU", "Suide", "SubKon"))
+    other = sum(v for k, v in counts.items() if k not in ("PU", "Suede", "Suide", "SubKon"))
     return {"total": pu + suide + subkon + other, "pu": pu, "suide": suide, "subkon": subkon}
 
 

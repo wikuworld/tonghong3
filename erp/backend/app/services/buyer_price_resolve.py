@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 import re
+from datetime import date
 from decimal import Decimal
 from typing import Any, Optional
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import BuyerPriceList
 from app.services.buyer_price_aliases import (
+    canonical_price_block,
     emboss_is_special,
     extract_emboss_tokens,
     infer_price_block,
     is_outside_banten_factory,
     normalize_material_alias,
+    split_material_and_thickness,
 )
 from app.services.buyer_price_import import list_to_api_dict
+from app.services.buyer_price_period import select_buyer_price_list
 
 
 def _norm(s: str | None) -> str:
@@ -137,7 +139,7 @@ def _parse_price_cell(val: Any) -> Decimal | None:
 
 
 def _row_block(row: dict[str, Any]) -> str:
-    return str(row.get("COLOR") or "").strip().upper()
+    return canonical_price_block(row.get("COLOR"))
 
 
 def _block_score(row_block: str, wanted: str) -> int:
@@ -169,6 +171,11 @@ def _score_row(
     emboss: str | None = None,
     wanted_block: str = "COMMON",
 ) -> int:
+    row = dict(row)
+    item_name, item_thick = split_material_and_thickness(row.get("ITEM"), row.get("THICKNESS"))
+    row["ITEM"] = item_name
+    if item_thick:
+        row["THICKNESS"] = item_thick
     mat_variants = _material_variants(material_name)
     col = _norm_alnum(color)
     sty = _norm_alnum(style_article)
@@ -231,6 +238,7 @@ def resolve_unit_price_for_buyer(
     color_family: Optional[str] = None,
     emboss: Optional[str] = None,
     factory_code: Optional[str] = None,
+    as_of: Optional[date] = None,
 ) -> dict[str, Any]:
     code = (buyer_code or "").strip().upper()
     if not code:
@@ -242,14 +250,15 @@ def resolve_unit_price_for_buyer(
             "detail": "buyer_code wajib diisi - tidak dapat mencari harga tanpa kode buyer",
         }
 
-    lst = db.scalars(select(BuyerPriceList).where(BuyerPriceList.buyer_code == code)).first()
+    when = as_of or date.today()
+    lst = select_buyer_price_list(db, code, when)
     if not lst:
         return {
             "unit_price": None,
             "matched": False,
             "price_column": None,
             "score": 0,
-            "detail": f"List harga untuk buyer '{code}' tidak ditemukan - pastikan master buyer sudah diimport",
+            "detail": f"List harga untuk buyer '{code}' pada tanggal {when.isoformat()} tidak ditemukan",
         }
 
     sheet = list_to_api_dict(db, lst.id)

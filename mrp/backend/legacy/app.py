@@ -574,7 +574,7 @@ def _make_rpi_barcode(thickness, emboss, color):
     return f"RPI-{short(thickness)}-{short(emboss)}-{short(color)}"
 
 
-def ensure_master_treatment(cur):
+def _ensure_master_treatment_body(cur):
     cur.execute(
         "CREATE TABLE IF NOT EXISTS tbl_master_treatment ("
         "id INT AUTO_INCREMENT PRIMARY KEY, "
@@ -626,6 +626,19 @@ def ensure_master_treatment(cur):
             "UPDATE tbl_master_treatment SET is_active=0 WHERE nama_treatment=%s AND is_active=1",
             (obsolete,),
         )
+
+
+def ensure_master_treatment(cur=None):
+    """Seed master treatment (koneksi sendiri + cursor buffered — hindari unread result / deadlock)."""
+    del cur  # API lama tetap terima cursor request; tidak dipakai agar tidak bentrok dengan cursor caller.
+    conn = get_db_connection()
+    bcur = conn.cursor(dictionary=True, buffered=True)
+    try:
+        _ensure_master_treatment_body(bcur)
+        conn.commit()
+    finally:
+        bcur.close()
+        conn.close()
 
 
 def ensure_lab_tables(cur):

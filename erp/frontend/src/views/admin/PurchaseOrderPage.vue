@@ -359,8 +359,6 @@ import {
   Download,
   Refresh,
   RefreshLeft,
-  Document,
-  FolderOpened,
   CopyDocument,
   InfoFilled,
   Tickets,
@@ -404,8 +402,6 @@ import {
   listPoDetails,
   listPoPage,
   fetchPoMaterialHints,
-  salesContractDocxPath,
-  salesContractPdfPath,
   proformaInvoiceDocxPath,
   proformaInvoicePdfPath,
 } from '../../api/client'
@@ -606,30 +602,6 @@ function categoryLabel(cat) {
   return poOrderCategoryLabel(cat, t, te)
 }
 
-async function downloadSalesContractPdf(row) {
-  try {
-    const path = salesContractPdfPath(row.id)
-    await fetchAuthenticatedDocument(path, {
-      mode: 'download',
-      downloadFallbackName: `sales-contract-${row.po_number || row.id}.pdf`,
-    })
-  } catch (e) {
-    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
-  }
-}
-
-async function downloadSalesContractDocx(row) {
-  try {
-    const path = salesContractDocxPath(row.id)
-    await fetchAuthenticatedDocument(path, {
-      mode: 'download',
-      downloadFallbackName: `sales-contract-${row.po_number || row.id}.docx`,
-    })
-  } catch (e) {
-    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
-  }
-}
-
 async function downloadProformaInvoicePdf(row) {
   try {
     const path = proformaInvoicePdfPath(row.id)
@@ -660,8 +632,6 @@ const poMoreItems = computed(() => {
     items.push({ command: 'duplicate', label: t('pages.po.duplicatePo'), icon: CopyDocument })
   }
   items.push(
-    { command: 'salesContractPdf', label: t('pages.po.salesContractPdf'), icon: Document, divided: canCreate.value },
-    { command: 'salesContractDocx', label: t('pages.po.salesContractDocx'), icon: FolderOpened },
     { command: 'proformaInvoicePdf', label: t('pages.po.proformaInvoicePdf'), icon: Tickets },
     { command: 'proformaInvoiceDocx', label: t('pages.po.proformaInvoiceDocx'), icon: Memo },
   )
@@ -672,12 +642,6 @@ function handlePoMoreAction(row, command) {
   switch (command) {
     case 'duplicate':
       onDuplicatePo(row)
-      break
-    case 'salesContractPdf':
-      downloadSalesContractPdf(row)
-      break
-    case 'salesContractDocx':
-      downloadSalesContractDocx(row)
       break
     case 'proformaInvoicePdf':
       downloadProformaInvoicePdf(row)

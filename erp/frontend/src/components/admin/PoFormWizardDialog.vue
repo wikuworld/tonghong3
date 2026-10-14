@@ -292,7 +292,7 @@
                 @change="w.onItemCategoryChange"
               >
                 <el-radio-button value="PU">PU</el-radio-button>
-                <el-radio-button value="Suide">{{ t('status.suede') }}</el-radio-button>
+                <el-radio-button value="Suede">{{ t('status.suede') }}</el-radio-button>
               </el-radio-group>
             </el-form-item>
           </section>
@@ -603,7 +603,13 @@
                 class="po-color-source-radio"
                 @change="w.onColorStandardSourceChange"
               >
-                <el-radio-button value="swatch">{{ t('pages.po.colorStandardSourceSwatch') }}</el-radio-button>
+                <el-radio-button value="swatch">
+                  {{
+                    w.isSuedeMaterial
+                      ? t('pages.po.colorStandardSourceColorWindow')
+                      : t('pages.po.colorStandardSourceSwatch')
+                  }}
+                </el-radio-button>
                 <el-radio-button value="csi">{{ t('pages.po.colorStandardSourceCsi') }}</el-radio-button>
                 <el-radio-button value="waiting">{{ t('pages.po.colorStandardSourceWaiting') }}</el-radio-button>
                 <el-radio-button value="manual">{{ t('pages.po.colorStandardSourceManual') }}</el-radio-button>
@@ -616,7 +622,7 @@
                 >
                   <el-tag type="success" size="small">{{ t('pages.po.swatchActiveTag') }}</el-tag>
                   <span class="text-sm text-slate-700">
-                    {{ w.swatchOptionLabel(w.selectedSwatchRecipe) }}
+                    {{ w.colorReferenceOptionLabel(w.selectedSwatchRecipe) }}
                     <template v-if="w.showBackingField && w.formModel.backing">
                       · {{ t('common.backing') }}: {{ w.formModel.backing }}
                     </template>
@@ -630,29 +636,36 @@
                 </div>
                 <template v-else>
                   <el-select
-                    v-model="w.selectedSwatchId"
+                    v-model="w.colorReferencePickerId"
                     filterable
                     clearable
                     class="w-full"
-                    :placeholder="t('pages.po.swatchPickerPlaceholder')"
+                    :placeholder="
+                      w.isSuedeMaterial
+                        ? t('pages.po.colorWindowPickerPlaceholder')
+                        : t('pages.po.swatchPickerPlaceholder')
+                    "
                     :loading="w.colorSwatchLoading"
-                    :disabled="!w.formModel.buyer"
+                    :disabled="w.isSuedeMaterial ? !w.formModel.brand_id : !w.formModel.buyer"
                     @change="w.applyColorSwatch"
                   >
                     <el-option
                       v-for="s in w.colorSwatchOptions"
                       :key="s.id"
-                      :label="w.swatchOptionLabel(s)"
+                      :label="w.colorReferenceOptionLabel(s)"
                       :value="s.id"
                     />
                   </el-select>
-                  <div class="mt-1 flex flex-wrap items-center gap-2">
+                  <div v-if="!w.isSuedeMaterial" class="mt-1 flex flex-wrap items-center gap-2">
                     <el-checkbox v-model="w.swatchAllMaterials" @change="w.loadColorSwatchOptions">
                       {{ t('pages.po.swatchAllMaterials') }}
                     </el-checkbox>
                   </div>
                 </template>
-                <p v-if="w.swatchRetriedWithoutMaterial" class="mt-1 text-xs text-slate-500">
+                <p
+                  v-if="!w.isSuedeMaterial && w.swatchRetriedWithoutMaterial"
+                  class="mt-1 text-xs text-slate-500"
+                >
                   {{ t('pages.po.swatchRetriedHint') }}
                 </p>
                 <p v-if="w.swatchHelperMessage && !w.selectedSwatchRecipe" class="mt-1 text-xs text-amber-600">
@@ -713,6 +726,16 @@
                   {{ t('pages.po.autoFilled') }}
                 </el-tag>
               </div>
+              <p
+                v-if="w.isSuedeMaterial && w.selectedSwatchRecipe"
+                class="mt-1 text-xs text-slate-500"
+              >
+                {{ t('pages.colorWindow.colCreatedAt') }}:
+                {{ formatColorWindowAudit(w.selectedSwatchRecipe.created_at) }}
+                ·
+                {{ t('pages.colorWindow.colUpdatedAt') }}:
+                {{ formatColorWindowAudit(w.selectedSwatchRecipe.updated_at) }}
+              </p>
             </el-form-item>
           </section>
 
@@ -1286,6 +1309,12 @@ import { sendToRowAnimation } from '../../composables/useSendToRowAnimation.js'
 const w = usePoWizardContext()
 const { t } = useI18n()
 const addLineBtnRef = ref(null)
+
+function formatColorWindowAudit(value) {
+  if (!value) return '—'
+  const s = String(value).replace('T', ' ')
+  return s.length > 19 ? s.slice(0, 19) : s
+}
 
 function addLineButtonEl() {
   const btn = addLineBtnRef.value

@@ -5,7 +5,7 @@
       <el-select v-model="filterCategory" clearable :placeholder="t('pages.mrpMasterErp.filterCategory')" class="w-36" @change="onSearch">
         <el-option :label="t('pages.mrpMasterErp.allCategory')" value="" />
         <el-option label="PU" value="PU" />
-        <el-option label="Suide" value="Suide" />
+        <el-option label="Suede" value="Suede" />
         <el-option label="SubKon" value="SubKon" />
       </el-select>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>

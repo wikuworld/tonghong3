@@ -88,13 +88,15 @@ describe('item category PU | Suede', () => {
   it('normalizes aliases', () => {
     expect(normalizeItemCategory('suede')).toBe(ITEM_CATEGORY_SUEDE)
     expect(normalizeItemCategory('Suide')).toBe(ITEM_CATEGORY_SUEDE)
+    expect(normalizeItemCategory('Suede')).toBe(ITEM_CATEGORY_SUEDE)
+    expect(ITEM_CATEGORY_SUEDE).toBe('Suede')
     expect(normalizeItemCategory('pu')).toBe(ITEM_CATEGORY_PU)
   })
 
   it('prefers explicit item_category over material name', () => {
     expect(
       inferItemCategory({
-        item_category: 'Suide',
+        item_category: 'Suede',
         material_name: 'VIRGIN HYDRO PU',
       }),
     ).toBe(ITEM_CATEGORY_SUEDE)
@@ -103,13 +105,13 @@ describe('item category PU | Suede', () => {
   it('reads master item category', () => {
     expect(
       inferItemCategory({ master_item_id: 4, material_name: 'X' }, [
-        { id: 4, category: 'Suide', material_name: 'SPLIT SUEDE' },
+        { id: 4, category: 'Suede', material_name: 'SPLIT SUEDE' },
       ]),
     ).toBe(ITEM_CATEGORY_SUEDE)
   })
 
   it('labels draft rows from item_category', () => {
     expect(resolveMaterialGroupLabel({ item_category: 'PU' })).toBe('PU')
-    expect(resolveMaterialGroupLabel({ item_category: 'Suide' })).toBe('Suede')
+    expect(resolveMaterialGroupLabel({ item_category: 'Suede' })).toBe('Suede')
   })
 })

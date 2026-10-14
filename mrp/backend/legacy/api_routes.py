@@ -610,23 +610,27 @@ def master_kulit_create():
 
 @api.get("/masters/kimia")
 def master_kimia_list():
-    from erp_raw_materials import list_materials
+    from erp_raw_materials import list_materials, material_ukuran
 
     pg = parse_page_args(request.args, default_page_size=50)
     rows = list_materials("kimia")
-    out = [
-        {
-            "id": r["id"],
-            "erp_material_id": r["id"],
-            "kode_kimia": r["code"],
-            "kode_barang": r["code"],
-            "nama_kimia": r["name"],
-            "nama_barang": r["name"],
-            "satuan": r.get("unit") or "kg",
-            "source": "raw_materials",
-        }
-        for r in rows
-    ]
+    out = []
+    for r in rows:
+        ukuran = material_ukuran(r)
+        out.append(
+            {
+                "id": r["id"],
+                "erp_material_id": r["id"],
+                "kode_kimia": r["code"],
+                "kode_barang": r["code"],
+                "nama_kimia": r["name"],
+                "nama_barang": r["name"],
+                "satuan": r.get("unit") or "kg",
+                "size": ukuran or None,
+                "ukuran": ukuran or None,
+                "source": "raw_materials",
+            }
+        )
     out = sort_rows(
         out,
         sort_by=pg["sort_by"],
@@ -648,6 +652,30 @@ def master_kimia_list():
             page_size=pg["page_size"],
             offset=pg["offset"],
         )
+    )
+
+
+@api.get("/masters/kimia/<int:kimia_id>")
+def master_kimia_get(kimia_id: int):
+    from erp_raw_materials import material_ukuran, resolve_material
+
+    mat = resolve_material(erp_material_id=kimia_id, material_type="kimia")
+    if not mat:
+        return _err("Material kimia tidak ditemukan", 404)
+    ukuran = material_ukuran(mat)
+    return jsonify(
+        {
+            "id": mat["id"],
+            "erp_material_id": mat["id"],
+            "kode_kimia": mat.get("code"),
+            "kode_barang": mat.get("code"),
+            "nama_kimia": mat.get("name"),
+            "nama_barang": mat.get("name"),
+            "satuan": mat.get("unit") or "kg",
+            "size": ukuran or None,
+            "ukuran": ukuran or None,
+            "source": "raw_materials",
+        }
     )
 
 
@@ -2130,6 +2158,36 @@ def _find_rencana_items_by_scan(cur, kode: str):
     return cur.fetchall() or []
 
 
+@api.get("/proses/rencana-search")
+def proses_rencana_search():
+    """Autocomplete RPI / RP / WIP untuk form buat proses."""
+    q = (request.args.get("q") or "").strip()
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    base_sql = (
+        "SELECT i.id, i.kode_rencana_item, i.kode_lot_wip, r.kode_rencana, r.nama_rencana, "
+        "r.tanggal_rencana "
+        "FROM tbl_rencana_item i "
+        "JOIN tbl_rencana_produksi r ON r.id = i.rencana_id "
+        "WHERE r.status IN ('draft','active') "
+    )
+    if not q:
+        cur.execute(base_sql + "ORDER BY r.date_created DESC, i.urutan, i.id LIMIT 50")
+    else:
+        like = f"%{q}%"
+        cur.execute(
+            base_sql
+            + "AND (i.kode_rencana_item LIKE %s OR i.kode_lot_wip LIKE %s OR "
+            "r.kode_rencana LIKE %s OR r.nama_rencana LIKE %s) "
+            "ORDER BY i.kode_rencana_item, i.id LIMIT 30",
+            (like, like, like, like),
+        )
+    items = _rows(cur.fetchall())
+    cur.close()
+    conn.close()
+    return jsonify({"items": items})
+
+
 @api.get("/proses/scan-rencana")
 def proses_scan_rencana():
     kode = (request.args.get("q") or "").strip()
@@ -2215,7 +2273,7 @@ def proses_list():
     cur.execute(
         "SELECT i.id, i.kode_rencana_item, i.kode_lot_wip, i.material_name, i.kode_kulit, "
         "i.thickness, i.color, i.emboss, i.color_swatch, r.kode_rencana, r.nama_rencana, "
-        "i.nama_customer "
+        "r.tanggal_rencana, i.nama_customer "
         "FROM tbl_rencana_item i "
         "JOIN tbl_rencana_produksi r ON r.id = i.rencana_id "
         "WHERE r.status IN ('draft','active') AND i.kode_lot_wip IS NOT NULL "
@@ -3645,6 +3703,69 @@ def proses_actions(persiapan_id: int):
 
 
 # ---- lab ----
+def _lab_sisa_consume(cur, *, lab_sisa_id: int, qty: float) -> None:
+    """Kurangi qty sisa lot warna (tab Sisa) saat dipakai sebagai bahan lot baru."""
+    cur.execute(
+        "SELECT id, kode_lot_warna, qty_sisa, status FROM tbl_lab_lot_sisa "
+        "WHERE id=%s FOR UPDATE",
+        (lab_sisa_id,),
+    )
+    row = cur.fetchone()
+    if not row or (row.get("status") or "open") != "open":
+        raise ValueError("Sisa lot warna tidak valid atau sudah Mixed")
+    avail = float(row.get("qty_sisa") or 0)
+    if qty > avail + 1e-9:
+        kode = (row.get("kode_lot_warna") or "").strip() or str(lab_sisa_id)
+        raise ValueError(
+            f"Qty melebihi sisa lot warna {kode} (butuh {qty}, tersedia {avail})"
+        )
+    new_qty = round(avail - qty, 3)
+    if new_qty <= 0:
+        cur.execute(
+            "UPDATE tbl_lab_lot_sisa SET qty_sisa=0, status='mixed' WHERE id=%s",
+            (lab_sisa_id,),
+        )
+    else:
+        cur.execute(
+            "UPDATE tbl_lab_lot_sisa SET qty_sisa=%s WHERE id=%s",
+            (new_qty, lab_sisa_id),
+        )
+
+
+def _lw_base_from_rpi(kode_rencana_item: str) -> str:
+    s = (kode_rencana_item or "").strip()
+    if not s:
+        return "LW"
+    upper = s.upper()
+    if upper.startswith("RPI-"):
+        return "LW-" + s[4:]
+    if upper.startswith("RPI"):
+        rest = s[3:].lstrip("-")
+        return f"LW-{rest}" if rest else "LW"
+    return f"LW-{s}"
+
+
+def _next_lw_kode(cur, kode_rencana_item: str) -> str:
+    base = _lw_base_from_rpi(kode_rencana_item)
+    cur.execute(
+        "SELECT kode_lot_warna FROM tbl_lab_lot "
+        "WHERE kode_lot_warna = %s OR kode_lot_warna LIKE %s",
+        (base, f"{base}-%"),
+    )
+    max_seq = 0
+    for row in cur.fetchall() or []:
+        kode = (row.get("kode_lot_warna") or "").strip()
+        if kode == base:
+            max_seq = max(max_seq, 1)
+            continue
+        prefix = base + "-"
+        if kode.startswith(prefix):
+            tail = kode[len(prefix) :]
+            if tail.isdigit():
+                max_seq = max(max_seq, int(tail))
+    return f"{base}-{max_seq + 1}"
+
+
 @api.get("/lab/options")
 def lab_options():
     from app import ensure_extended_tables, ensure_lab_tables, ensure_rencana_tables
@@ -3663,7 +3784,10 @@ def lab_options():
     conn.commit()
     cur.execute(
         "SELECT ri.id, ri.kode_rencana_item, ri.kode_lot_wip, ri.kode_kulit, ri.color, ri.thickness, "
+        "ri.emboss, ri.color_swatch, ri.keterangan, "
         "rp.nama_rencana, rp.tanggal_rencana, ri.nama_customer, "
+        "(SELECT COALESCE(SUM(p.qty_proses), 0) FROM tbl_rencana_item_po p WHERE p.item_id = ri.id) "
+        "AS total_qty_so, "
         "pk.id AS persiapan_id, pk.kode_proses, pk.status AS persiapan_status, "
         "pk.treatment_jenis, pk.total_size "
         "FROM tbl_rencana_item ri "
@@ -3716,10 +3840,62 @@ def lab_options():
             "kode_kimia": r["code"],
             "nama_kimia": r["name"],
             "satuan": r.get("unit") or "kg",
+            "erp_material_id": r.get("id"),
             "stok_lapangan": round(stok_by_code.get((r["code"] or "").strip(), 0.0), 3),
         }
         for r in kimia_rows
     ]
+    kimia_stock_lots: list[dict] = []
+    try:
+        cur.execute(
+            "SELECT id, kode_internal, kode_material, nama_material, lot_number, "
+            "qty_sisa, satuan, gudang, erp_material_id, kimia_id "
+            "FROM tbl_stok_kimia_in "
+            "WHERE gudang=%s AND qty_sisa > 0 "
+            "ORDER BY tanggal_in ASC, id ASC",
+            (GUDANG_LAPANGAN,),
+        )
+        for row in cur.fetchall() or []:
+            kimia_stock_lots.append(
+                {
+                    "stok_in_id": row.get("id"),
+                    "kode_internal": row.get("kode_internal"),
+                    "kode_kimia": row.get("kode_material"),
+                    "nama_kimia": row.get("nama_material"),
+                    "lot_number": row.get("lot_number"),
+                    "qty_sisa": round(float(row.get("qty_sisa") or 0), 3),
+                    "satuan": row.get("satuan") or "kg",
+                    "gudang": row.get("gudang"),
+                }
+            )
+    except Exception:
+        kimia_stock_lots = []
+    lab_lot_sisa_picks: list[dict] = []
+    try:
+        cur.execute(
+            "SELECT id, kode_lot_warna, nama_lot_warna, qty_sisa, notes "
+            "FROM tbl_lab_lot_sisa "
+            "WHERE COALESCE(status, 'open') = 'open' AND qty_sisa > 0 "
+            "ORDER BY date_created ASC, id ASC"
+        )
+        for row in cur.fetchall() or []:
+            kode = (row.get("kode_lot_warna") or "").strip()
+            if not kode:
+                continue
+            nama = (row.get("nama_lot_warna") or kode).strip()
+            lab_lot_sisa_picks.append(
+                {
+                    "source": "lab_sisa",
+                    "lab_sisa_id": row.get("id"),
+                    "kode_kimia": kode,
+                    "nama_kimia": nama,
+                    "lot_number": kode,
+                    "qty_sisa": round(float(row.get("qty_sisa") or 0), 3),
+                    "satuan": "kg",
+                }
+            )
+    except Exception:
+        lab_lot_sisa_picks = []
     try:
         cur.execute("SELECT nama_resep FROM master_resep ORDER BY nama_resep")
         reseps = [r["nama_resep"] for r in cur.fetchall()]
@@ -3731,9 +3907,12 @@ def lab_options():
         {
             "rencana_items": rencana_items,
             "kimia_list": kimia_list,
+            "kimia_stock_lots": kimia_stock_lots,
+            "lab_lot_sisa_picks": lab_lot_sisa_picks,
             "reseps": reseps,
             "gate": {
                 "link_rpi_requires_proses": True,
+                "rpi_required": True,
                 "allowed_persiapan_status": ["started", "saved", "completed"],
             },
         }
@@ -3984,22 +4163,24 @@ def lab_create():
         ensure_extended_tables,
         ensure_lab_tables,
         ensure_rencana_tables,
-        generate_code,
     )
 
     body = request.get_json(silent=True) or {}
-    nama_lot_warna = (body.get("nama_lot_warna") or "").strip()
     rencana_item_id = body.get("rencana_item_id") or None
-    rows_in = body.get("items") or []
-    if not nama_lot_warna:
-        return _err("Nama Lot Warna wajib diisi.")
-    rows = [
-        r
-        for r in rows_in
-        if (r.get("kode_kimia") or "").strip()
-    ]
-    if not rows:
-        return _err("Minimal satu chemical harus diisi.")
+    lots_in = body.get("lots") or body.get("color_lots") or []
+    # Legacy single-lot payload (nama + items flat).
+    if not lots_in and (body.get("nama_lot_warna") or body.get("items")):
+        lots_in = [
+            {
+                "nama_lot_warna": body.get("nama_lot_warna"),
+                "catatan": body.get("catatan") or body.get("notes"),
+                "items": body.get("items") or [],
+            }
+        ]
+    if not rencana_item_id:
+        return _err("Item rencana (RPI) wajib dipilih.")
+    if not lots_in:
+        return _err("Minimal satu baris lot warna (Nama Lot Warna) harus ditambahkan.")
 
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
@@ -4015,134 +4196,266 @@ def lab_create():
         )
         conn.commit()
 
-    # Gate: link RPI hanya jika sudah ada Persiapan (Proses) started/saved/completed.
-    if rencana_item_id is not None:
-        try:
-            rencana_item_id = int(rencana_item_id)
-        except (TypeError, ValueError):
-            cur.close()
-            conn.close()
-            return _err("rencana_item_id tidak valid")
-        cur.execute("SELECT id FROM tbl_rencana_item WHERE id=%s", (rencana_item_id,))
-        if not cur.fetchone():
-            cur.close()
-            conn.close()
-            return _err("Item rencana tidak ditemukan", 404)
-        cur.execute(
-            "SELECT id, kode_proses, status FROM tbl_persiapan_kulit "
-            "WHERE rencana_item_id=%s AND status IN ('started','saved','completed') "
-            "ORDER BY id DESC LIMIT 1",
-            (rencana_item_id,),
+    try:
+        rencana_item_id = int(rencana_item_id)
+    except (TypeError, ValueError):
+        cur.close()
+        conn.close()
+        return _err("rencana_item_id tidak valid")
+    cur.execute(
+        "SELECT id, kode_rencana_item, kode_lot_wip FROM tbl_rencana_item WHERE id=%s",
+        (rencana_item_id,),
+    )
+    ri_row = cur.fetchone()
+    if not ri_row:
+        cur.close()
+        conn.close()
+        return _err("Item rencana tidak ditemukan", 404)
+    kode_rencana_item = (ri_row.get("kode_rencana_item") or "").strip()
+    kode_wip = (ri_row.get("kode_lot_wip") or "").strip() or None
+    cur.execute(
+        "SELECT id, kode_proses, status FROM tbl_persiapan_kulit "
+        "WHERE rencana_item_id=%s AND status IN ('started','saved','completed') "
+        "ORDER BY id DESC LIMIT 1",
+        (rencana_item_id,),
+    )
+    prep = cur.fetchone()
+    if not prep:
+        cur.close()
+        conn.close()
+        return _err(
+            "RPI memerlukan Persiapan (Proses) yang sudah di-Start. Buat/Start proses dulu."
         )
-        prep = cur.fetchone()
-        if not prep:
-            cur.close()
-            conn.close()
-            return _err(
-                "Link RPI memerlukan Persiapan (Proses) yang sudah di-Start. "
-                "Buat/Start proses dulu, atau buat lot Lab tanpa link RPI."
-            )
 
-    # Pre-validate qty + stok lapangan sebelum INSERT lot.
     from erp_raw_materials import fetch_material_by_code
     from dual_gudang import GUDANG_LAPANGAN
 
-    prepared = []
-    for r in rows:
-        kode_kimia = (r.get("kode_kimia") or "").strip()
-        resep = (r.get("resep") or "").strip() or None
-        satuan = (r.get("satuan") or "kg").strip() or "kg"
-        try:
-            qty = float(r.get("qty") or 0)
-        except (TypeError, ValueError):
+    lots_prepared: list[dict] = []
+    for lot_idx, lot_in in enumerate(lots_in):
+        nama_lot_warna = (lot_in.get("nama_lot_warna") or "").strip()
+        if not nama_lot_warna:
             cur.close()
             conn.close()
-            return _err(f"Qty tidak valid untuk kimia {kode_kimia}")
-        if qty <= 0:
+            return _err(f"Nama Lot Warna wajib (baris {lot_idx + 1}).")
+        catatan = (lot_in.get("catatan") or lot_in.get("notes") or "").strip() or None
+        rows_in = lot_in.get("items") or []
+        rows = [
+            r
+            for r in rows_in
+            if r.get("lab_sisa_id") not in (None, "")
+            or (r.get("kode_kimia") or "").strip()
+        ]
+        if not rows:
             cur.close()
             conn.close()
-            return _err(f"Qty harus > 0 untuk kimia {kode_kimia}")
-        remarks = (r.get("remarks") or "").strip() or None
-        kimia = fetch_material_by_code(kode_kimia, material_type="kimia")
-        if kimia and not (r.get("satuan") or "").strip():
-            satuan = (kimia.get("unit") or satuan or "kg").strip() or "kg"
-        code_match = (kimia.get("code") if kimia else kode_kimia) or kode_kimia
-        cur.execute(
-            "SELECT COALESCE(SUM(qty_sisa), 0) AS qty "
-            "FROM tbl_stok_kimia_in "
-            "WHERE gudang=%s AND qty_sisa > 0 AND ("
-            "  kode_material=%s OR kode_material=%s"
-            ")",
-            (GUDANG_LAPANGAN, kode_kimia, code_match),
-        )
-        avail = float((cur.fetchone() or {}).get("qty") or 0)
-        if qty > avail:
-            cur.close()
-            conn.close()
-            return _err(
-                f"Stok lapangan tidak cukup untuk {kode_kimia} "
-                f"(butuh {qty}, tersedia {avail})",
-                400,
+            return _err(f"Minimal satu bahan kimia untuk lot \"{nama_lot_warna}\".")
+        prepared_items = []
+        for r in rows:
+            lab_sisa_id = r.get("lab_sisa_id")
+            try:
+                lab_sisa_id = (
+                    int(lab_sisa_id) if lab_sisa_id not in (None, "") else None
+                )
+            except (TypeError, ValueError):
+                lab_sisa_id = None
+            kode_kimia = (r.get("kode_kimia") or "").strip()
+            lot_number = (r.get("lot_number") or "").strip() or None
+            stok_in_id = r.get("stok_in_id")
+            try:
+                stok_in_id = int(stok_in_id) if stok_in_id not in (None, "") else None
+            except (TypeError, ValueError):
+                stok_in_id = None
+            satuan = (r.get("satuan") or "kg").strip() or "kg"
+            try:
+                qty = float(r.get("qty") or 0)
+            except (TypeError, ValueError):
+                cur.close()
+                conn.close()
+                return _err(f"Qty tidak valid untuk kimia {kode_kimia or 'sisa lot'}")
+            if qty <= 0:
+                cur.close()
+                conn.close()
+                return _err(f"Qty harus > 0 untuk kimia {kode_kimia or 'sisa lot'}")
+            line_remarks = (r.get("remarks") or "").strip()
+            if lab_sisa_id:
+                cur.execute(
+                    "SELECT id, kode_lot_warna, nama_lot_warna, qty_sisa, status "
+                    "FROM tbl_lab_lot_sisa WHERE id=%s",
+                    (lab_sisa_id,),
+                )
+                sisa_row = cur.fetchone()
+                if not sisa_row or (sisa_row.get("status") or "open") != "open":
+                    cur.close()
+                    conn.close()
+                    return _err("Sisa lot warna tidak valid atau sudah Mixed", 400)
+                kode_kimia = (sisa_row.get("kode_lot_warna") or kode_kimia or "").strip()
+                if not kode_kimia:
+                    cur.close()
+                    conn.close()
+                    return _err("Kode sisa lot warna kosong", 400)
+                lot_number = kode_kimia
+                avail = float(sisa_row.get("qty_sisa") or 0)
+                if qty > avail:
+                    cur.close()
+                    conn.close()
+                    return _err(
+                        f"Qty melebihi sisa lot warna {kode_kimia} "
+                        f"(butuh {qty}, tersedia {avail})",
+                        400,
+                    )
+                nama_sisa = (sisa_row.get("nama_lot_warna") or kode_kimia).strip()
+                sisa_note = "Bahan: sisa lot warna"
+                line_remarks = (
+                    f"{line_remarks} · {sisa_note}".strip(" ·")
+                    if line_remarks
+                    else sisa_note
+                )
+                prepared_items.append(
+                    {
+                        "kode_kimia": kode_kimia,
+                        "code_match": kode_kimia,
+                        "nama_kimia": nama_sisa,
+                        "resep": (r.get("resep") or "").strip() or None,
+                        "satuan": satuan,
+                        "qty": qty,
+                        "remarks": line_remarks or None,
+                        "stok_in_id": None,
+                        "lab_sisa_id": lab_sisa_id,
+                        "lot_number": lot_number,
+                    }
+                )
+                continue
+            if not kode_kimia:
+                cur.close()
+                conn.close()
+                return _err("Kode kimia wajib untuk bahan stok lapangan")
+            if lot_number:
+                lot_note = f"Lot No: {lot_number}"
+                line_remarks = f"{line_remarks} · {lot_note}".strip(" ·") if line_remarks else lot_note
+            kimia = fetch_material_by_code(kode_kimia, material_type="kimia")
+            if kimia and not (r.get("satuan") or "").strip():
+                satuan = (kimia.get("unit") or satuan or "kg").strip() or "kg"
+            code_match = (kimia.get("code") if kimia else kode_kimia) or kode_kimia
+            if stok_in_id:
+                cur.execute(
+                    "SELECT * FROM tbl_stok_kimia_in WHERE id=%s AND gudang=%s AND qty_sisa > 0",
+                    (stok_in_id, GUDANG_LAPANGAN),
+                )
+                stock_lot = cur.fetchone()
+                if not stock_lot:
+                    cur.close()
+                    conn.close()
+                    return _err(f"Lot stok kimia tidak valid untuk {kode_kimia}", 400)
+                sk = (stock_lot.get("kode_material") or "").strip()
+                if sk not in (kode_kimia, code_match):
+                    cur.close()
+                    conn.close()
+                    return _err(f"Lot stok tidak cocok dengan kimia {kode_kimia}", 400)
+                avail = float(stock_lot.get("qty_sisa") or 0)
+                if qty > avail:
+                    cur.close()
+                    conn.close()
+                    return _err(
+                        f"Qty melebihi sisa lot {lot_number or stock_lot.get('kode_internal')} "
+                        f"({kode_kimia}: butuh {qty}, tersedia {avail})",
+                        400,
+                    )
+            else:
+                cur.execute(
+                    "SELECT COALESCE(SUM(qty_sisa), 0) AS qty "
+                    "FROM tbl_stok_kimia_in "
+                    "WHERE gudang=%s AND qty_sisa > 0 AND ("
+                    "  kode_material=%s OR kode_material=%s"
+                    ")",
+                    (GUDANG_LAPANGAN, kode_kimia, code_match),
+                )
+                avail = float((cur.fetchone() or {}).get("qty") or 0)
+                if qty > avail:
+                    cur.close()
+                    conn.close()
+                    return _err(
+                        f"Stok lapangan tidak cukup untuk {kode_kimia} "
+                        f"(butuh {qty}, tersedia {avail})",
+                        400,
+                    )
+            prepared_items.append(
+                {
+                    "kode_kimia": kode_kimia,
+                    "code_match": code_match,
+                    "nama_kimia": (kimia.get("name") if kimia else kode_kimia),
+                    "resep": (r.get("resep") or "").strip() or None,
+                    "satuan": satuan,
+                    "qty": qty,
+                    "remarks": line_remarks or None,
+                    "stok_in_id": stok_in_id,
+                    "lab_sisa_id": None,
+                    "lot_number": lot_number,
+                }
             )
-        prepared.append(
+        lots_prepared.append(
             {
-                "kode_kimia": kode_kimia,
-                "code_match": code_match,
-                "nama_kimia": (kimia.get("name") if kimia else kode_kimia),
-                "resep": resep,
-                "satuan": satuan,
-                "qty": qty,
-                "remarks": remarks,
+                "nama_lot_warna": nama_lot_warna,
+                "catatan": catatan,
+                "items": prepared_items,
             }
         )
 
-    kode_wip = None
-    if rencana_item_id is not None:
-        cur.execute(
-            "SELECT kode_lot_wip FROM tbl_rencana_item WHERE id=%s",
-            (rencana_item_id,),
-        )
-        ri = cur.fetchone()
-        if ri:
-            kode_wip = (ri.get("kode_lot_wip") or "").strip() or None
-
-    kode_lot_warna = generate_code("LW")
     tanggal = date.today().isoformat()
-    cur.execute(
-        "INSERT INTO tbl_lab_lot (kode_lot_warna, nama_lot_warna, rencana_item_id) VALUES (%s, %s, %s)",
-        (kode_lot_warna, nama_lot_warna, rencana_item_id),
-    )
-    for row in prepared:
-        cur.execute(
-            "INSERT INTO tbl_lab_lot_detail "
-            "(kode_lot_warna, kode_kimia, nama_kimia, resep, satuan, qty, remarks) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-            (
-                kode_lot_warna,
-                row["kode_kimia"],
-                row["nama_kimia"],
-                row["resep"],
-                row["satuan"],
-                row["qty"],
-                row["remarks"],
-            ),
-        )
-
+    created_kodes: list[str] = []
     stok_outs: list[dict] = []
-    lab_note = f"Lab lot {kode_lot_warna}"
     try:
-        for row in prepared:
-            stok_outs.extend(
-                _kimia_consume_lapangan_fifo(
-                    cur,
-                    kode_kimia=row["kode_kimia"],
-                    code_match=row.get("code_match") or row["kode_kimia"],
-                    qty_needed=float(row["qty"]),
-                    kode_wip=kode_wip,
-                    keterangan=lab_note,
-                    tanggal=tanggal,
-                )
+        for lot in lots_prepared:
+            kode_lot_warna = _next_lw_kode(cur, kode_rencana_item)
+            created_kodes.append(kode_lot_warna)
+            catatan = lot.get("catatan")
+            cur.execute(
+                "INSERT INTO tbl_lab_lot (kode_lot_warna, nama_lot_warna, rencana_item_id) "
+                "VALUES (%s, %s, %s)",
+                (kode_lot_warna, lot["nama_lot_warna"], rencana_item_id),
             )
+            for row in lot["items"]:
+                detail_remarks = row["remarks"]
+                if catatan:
+                    detail_remarks = (
+                        f"{catatan} · {detail_remarks}".strip(" ·")
+                        if detail_remarks
+                        else catatan
+                    )
+                cur.execute(
+                    "INSERT INTO tbl_lab_lot_detail "
+                    "(kode_lot_warna, kode_kimia, nama_kimia, resep, satuan, qty, remarks) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (
+                        kode_lot_warna,
+                        row["kode_kimia"],
+                        row["nama_kimia"],
+                        row["resep"],
+                        row["satuan"],
+                        row["qty"],
+                        detail_remarks,
+                    ),
+                )
+            lab_note = f"Lab lot {kode_lot_warna}"
+            for row in lot["items"]:
+                if row.get("lab_sisa_id"):
+                    _lab_sisa_consume(
+                        cur,
+                        lab_sisa_id=int(row["lab_sisa_id"]),
+                        qty=float(row["qty"]),
+                    )
+                    continue
+                stok_outs.extend(
+                    _kimia_consume_lapangan_fifo(
+                        cur,
+                        kode_kimia=row["kode_kimia"],
+                        code_match=row.get("code_match") or row["kode_kimia"],
+                        qty_needed=float(row["qty"]),
+                        kode_wip=kode_wip,
+                        keterangan=lab_note,
+                        tanggal=tanggal,
+                        stok_in_id=row.get("stok_in_id"),
+                    )
+                )
     except ValueError as exc:
         conn.rollback()
         cur.close()
@@ -4152,10 +4465,12 @@ def lab_create():
     conn.commit()
     cur.close()
     conn.close()
+    primary = created_kodes[0] if created_kodes else None
     return jsonify(
         {
             "ok": True,
-            "kode_lot_warna": kode_lot_warna,
+            "kode_lot_warna": primary,
+            "kode_lot_warna_list": created_kodes,
             "stok_outs": stok_outs,
             "stok_deducted": bool(stok_outs),
         }
@@ -7289,17 +7604,21 @@ def stok_kimia_list():
     cur.execute(sql_out, params_out + [out_limit])
     stok_out = _rows(cur.fetchall())
 
-    from erp_raw_materials import list_materials
-    kimia_list = [
-        {
-            "id": r["id"],
-            "kode_barang": r["code"],
-            "nama_barang": r["name"],
-            "satuan": r.get("unit") or "kg",
-            "erp_material_id": r["id"],
-        }
-        for r in list_materials("kimia")
-    ]
+    from erp_raw_materials import list_materials, material_ukuran
+    kimia_list = []
+    for r in list_materials("kimia"):
+        ukuran = material_ukuran(r)
+        kimia_list.append(
+            {
+                "id": r["id"],
+                "kode_barang": r["code"],
+                "nama_barang": r["name"],
+                "satuan": r.get("unit") or "kg",
+                "size": ukuran or None,
+                "ukuran": ukuran or None,
+                "erp_material_id": r["id"],
+            }
+        )
     cur.close()
     conn.close()
     payload = page_payload(
@@ -7948,6 +8267,7 @@ def _kimia_consume_lapangan_fifo(
     kode_wip: str | None,
     keterangan: str,
     tanggal: str,
+    stok_in_id: int | None = None,
 ) -> list[dict]:
     """Potong stok kimia gudang lapangan (FIFO) dan catat OUT produksi."""
     from dual_gudang import GUDANG_LAPANGAN
@@ -7956,15 +8276,26 @@ def _kimia_consume_lapangan_fifo(
     if remaining <= 0:
         return []
 
-    cur.execute(
-        "SELECT * FROM tbl_stok_kimia_in "
-        "WHERE gudang=%s AND qty_sisa > 0 AND ("
-        "  kode_material=%s OR kode_material=%s"
-        ") ORDER BY tanggal_in ASC, id ASC",
-        (GUDANG_LAPANGAN, kode_kimia, code_match),
-    )
+    if stok_in_id:
+        cur.execute(
+            "SELECT * FROM tbl_stok_kimia_in WHERE id=%s AND gudang=%s AND qty_sisa > 0",
+            (int(stok_in_id), GUDANG_LAPANGAN),
+        )
+        preferred = cur.fetchone()
+        if not preferred:
+            raise ValueError(f"Lot stok kimia #{stok_in_id} tidak tersedia")
+        lots = [preferred]
+    else:
+        cur.execute(
+            "SELECT * FROM tbl_stok_kimia_in "
+            "WHERE gudang=%s AND qty_sisa > 0 AND ("
+            "  kode_material=%s OR kode_material=%s"
+            ") ORDER BY tanggal_in ASC, id ASC",
+            (GUDANG_LAPANGAN, kode_kimia, code_match),
+        )
+        lots = cur.fetchall() or []
     outs: list[dict] = []
-    for lot in cur.fetchall() or []:
+    for lot in lots:
         if remaining <= 1e-9:
             break
         sisa = float(lot.get("qty_sisa") or 0)

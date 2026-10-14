@@ -40,6 +40,7 @@ class MaterialIn(BaseModel):
     cost_price: Optional[float] = None
     thickness: Optional[str] = None
     color: Optional[str] = None
+    size: Optional[str] = None
     leather_type: Optional[str] = None
     is_active: bool = True
 
@@ -54,7 +55,20 @@ class MaterialPatch(BaseModel):
     cost_price: Optional[float] = None
     thickness: Optional[str] = None
     color: Optional[str] = None
+    size: Optional[str] = None
     leather_type: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class InventoryUnitIn(BaseModel):
+    material_type: str
+    unit: str
+    is_active: bool = True
+
+
+class InventoryUnitPatch(BaseModel):
+    material_type: Optional[str] = None
+    unit: Optional[str] = None
     is_active: Optional[bool] = None
 
 
@@ -156,6 +170,17 @@ def list_materials_page(
         raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
 
 
+@router.get("/materials/{material_id}")
+def get_material(material_id: int, _user: MrpUser = Depends(get_current_user)):
+    try:
+        row = erp_client.get_material(int(material_id))
+    except erp_client.ErpApiError as exc:
+        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+    if not row:
+        raise HTTPException(status_code=404, detail="Material tidak ditemukan")
+    return row
+
+
 @router.post("/materials")
 def create_material(body: MaterialIn, user: MrpUser = Depends(get_current_user)):
     if user.role not in ("admin", "warehouse", "gudang", "supervisor"):
@@ -183,6 +208,54 @@ def update_material(
 @router.delete("/materials/{material_id}")
 def delete_material(material_id: int, _user: MrpUser = Depends(get_current_user)):
     raise HTTPException(status_code=403, detail=_WRITE_BLOCKED)
+
+
+@router.get("/units")
+def list_inventory_units(
+    material_type: str | None = None,
+    active_only: bool = True,
+    _user: MrpUser = Depends(get_current_user),
+):
+    try:
+        return erp_client.list_inventory_units(
+            material_type=material_type, active_only=active_only
+        )
+    except erp_client.ErpApiError as exc:
+        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+
+
+@router.post("/units")
+def create_inventory_unit(body: InventoryUnitIn, user: MrpUser = Depends(get_current_user)):
+    if user.role not in ("admin", "warehouse", "gudang", "supervisor"):
+        raise HTTPException(status_code=403, detail=_WRITE_BLOCKED)
+    try:
+        return erp_client.create_inventory_unit(body.model_dump(exclude_none=True))
+    except erp_client.ErpApiError as exc:
+        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+
+
+@router.put("/units/{unit_id}")
+def update_inventory_unit(
+    unit_id: int, body: InventoryUnitPatch, user: MrpUser = Depends(get_current_user)
+):
+    if user.role not in ("admin", "warehouse", "gudang", "supervisor"):
+        raise HTTPException(status_code=403, detail=_WRITE_BLOCKED)
+    try:
+        return erp_client.update_inventory_unit(
+            unit_id, body.model_dump(exclude_unset=True)
+        )
+    except erp_client.ErpApiError as exc:
+        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
+
+
+@router.delete("/units/{unit_id}")
+def delete_inventory_unit(unit_id: int, user: MrpUser = Depends(get_current_user)):
+    if user.role not in ("admin", "warehouse", "gudang", "supervisor"):
+        raise HTTPException(status_code=403, detail=_WRITE_BLOCKED)
+    try:
+        return erp_client.delete_inventory_unit(unit_id)
+    except erp_client.ErpApiError as exc:
+        raise HTTPException(status_code=exc.status_code or 502, detail=str(exc)) from exc
 
 
 @router.get("/stocks")

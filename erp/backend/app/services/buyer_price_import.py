@@ -8,6 +8,12 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from app.services.buyer_price_aliases import (
+    canonical_price_block,
+    normalize_sheet_cells,
+    split_material_and_thickness,
+)
+
 PERIODE_RE = re.compile(
     r"PERIODE\s+(\d{4}/\d{2}/\d{2})\s*[-–]\s*(\d{4}/\d{2}/\d{2})",
     re.IGNORECASE,
@@ -96,7 +102,7 @@ def build_price_cells(
     metallic: Optional[float] = None,
     metallic_is_addon: bool = False,
 ) -> Optional[dict[str, Any]]:
-    name = str(item or "").strip()
+    name, thick = split_material_and_thickness(item, thickness or _thickness_from_text(item))
     if not name or white is None:
         return None
     metal = _fmt_num(metallic) if metallic_is_addon and metallic is not None else _addon(metallic, white)
@@ -104,8 +110,8 @@ def build_price_cells(
         metal = "0"
     return {
         "ITEM": name,
-        "THICKNESS": str(thickness or "").strip(),
-        "COLOR": str(block or "").strip(),
+        "THICKNESS": thick,
+        "COLOR": canonical_price_block(block),
         "COLOR WHITE": _fmt_num(white),
         "COLOR BLACK": _addon(black, white),
         "COLOR COLOR": _addon(color, white),
@@ -134,7 +140,7 @@ def normalize_buyer_cells(cells: dict[str, Any]) -> Optional[dict[str, Any]]:
         metallic_addon = 0.0
         if metallic_total is not None:
             metallic_addon = max(0.0, metallic_total - base)
-        return {
+        return normalize_sheet_cells({
             "ITEM": item,
             "THICKNESS": thickness,
             "COLOR": "",
@@ -145,11 +151,11 @@ def normalize_buyer_cells(cells: dict[str, Any]) -> Optional[dict[str, Any]]:
             "METALIC": _fmt_num(metallic_addon),
             "EMBOSS": "0",
             "SPESIAL EMBOSS": "0",
-        }
+        })
 
     # Sudah dalam format standar UI.
     if "ITEM" in upper and "COLOR WHITE" in upper:
-        return {
+        return normalize_sheet_cells({
             "ITEM": str(upper.get("ITEM") or "").strip(),
             "THICKNESS": str(upper.get("THICKNESS") or "").strip(),
             "COLOR": str(upper.get("COLOR") or "").strip(),
@@ -160,7 +166,7 @@ def normalize_buyer_cells(cells: dict[str, Any]) -> Optional[dict[str, Any]]:
             "METALIC": str(upper.get("METALIC") or "0").strip() or "0",
             "EMBOSS": str(upper.get("EMBOSS") or "0").strip() or "0",
             "SPESIAL EMBOSS": str(upper.get("SPESIAL EMBOSS") or "0").strip() or "0",
-        }
+        })
 
     return None
 
@@ -454,10 +460,9 @@ def persist_buyer_folder(
     folder: Path,
     source_label: Optional[str],
 ) -> list[Any]:
-    """Satu `BuyerPriceList` per file buyer; hapus data lama dengan `buyer_code` sama."""
-    from sqlalchemy import select
-
+    """Timpa list hanya bila buyer dan periode sama; periode lain tetap utuh."""
     from app.models import BuyerPriceList, BuyerPriceSheetRow
+    from app.services.buyer_price_period import find_list_same_period, unique_brand_id_for_buyer
 
     if not folder.is_dir():
         raise ValueError(f"Bukan folder: {folder}")
@@ -472,15 +477,16 @@ def persist_buyer_folder(
         parsed = parse_buyer_csv(p)
         data_rows = parsed["data_rows"]
 
-        existing = db.scalars(
-            select(BuyerPriceList).where(BuyerPriceList.buyer_code == buyer)
-        ).first()
+        existing = find_list_same_period(
+            db, buyer, parsed["period_start"], parsed["period_end"]
+        )
         if existing:
             db.delete(existing)
             db.flush()
 
         lst = BuyerPriceList(
             buyer_code=buyer,
+            brand_id=unique_brand_id_for_buyer(db, buyer),
             title=parsed["title"] or None,
             period_label=parsed["period_label"] or None,
             period_start=parsed["period_start"],
@@ -532,9 +538,9 @@ def _xlsx_metallic_addon(val: Any) -> Optional[float]:
 
 def _thickness_from_text(*parts: Any) -> str:
     blob = " ".join(str(p or "") for p in parts)
-    m = re.search(r"(\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?)\s*MM?", blob, re.I)
+    m = re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)", blob)
     if m:
-        return m.group(1).replace(" ", "")
+        return f"{m.group(1)}-{m.group(2)}"
     m = re.search(r"(\d+(?:\.\d+)?)\s*MM\b", blob, re.I)
     if m:
         return m.group(1)
@@ -672,13 +678,17 @@ def _replace_buyer_list(
     kind: str,
     extra_meta: Optional[dict[str, Any]] = None,
 ) -> Any:
-    from sqlalchemy import select
-
     from app.models import BuyerPriceList, BuyerPriceSheetRow
+    from app.services.buyer_price_period import find_list_same_period, unique_brand_id_for_buyer
     from app.services.buyer_registry import ensure_buyer_code
 
     ensure_buyer_code(db, buyer_code)
-    existing = db.scalars(select(BuyerPriceList).where(BuyerPriceList.buyer_code == buyer_code)).first()
+    existing = find_list_same_period(
+        db,
+        buyer_code,
+        parsed.get("period_start"),
+        parsed.get("period_end"),
+    )
     if existing:
         db.delete(existing)
         db.flush()
@@ -693,6 +703,7 @@ def _replace_buyer_list(
         meta.update(extra_meta)
     lst = BuyerPriceList(
         buyer_code=buyer_code,
+        brand_id=unique_brand_id_for_buyer(db, buyer_code),
         title=parsed.get("title"),
         period_label=parsed.get("period_label"),
         period_start=parsed.get("period_start"),
@@ -796,9 +807,22 @@ def list_to_api_dict(db: Any, list_id: int) -> dict[str, Any]:
             cells["ITEM"] = material_by_code[item_val]
         rows_out.append(cells)
 
+    brand_code = None
+    brand_name = None
+    if row.brand_id:
+        from app.models import Brand
+
+        brand = db.get(Brand, row.brand_id)
+        if brand:
+            brand_code = brand.code
+            brand_name = brand.name
+
     return {
         "id": row.id,
         "buyer_code": row.buyer_code,
+        "brand_id": row.brand_id,
+        "brand_code": brand_code,
+        "brand_name": brand_name,
         "title": row.title,
         "period_label": row.period_label,
         "period_start": row.period_start.isoformat() if row.period_start else None,

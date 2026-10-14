@@ -144,6 +144,7 @@ class DeliveryLinesStatusFilter(str, Enum):
     all = "all"
     draft = "draft"
     sent = "sent"
+    cancelled = "cancelled"
 
 
 class PackingLinesStatusFilter(str, Enum):
@@ -1335,7 +1336,10 @@ def _query_delivery_lines_rows(
     inv_by_delivery: dict[int, Invoice] = {}
     if delivery_ids:
         inv_rows = db.scalars(
-            select(Invoice).where(Invoice.delivery_id.in_(delivery_ids))
+            select(Invoice).where(
+                Invoice.delivery_id.in_(delivery_ids),
+                Invoice.voided_at.is_(None),
+            )
         ).all()
         for inv in inv_rows:
             did = inv.delivery_id

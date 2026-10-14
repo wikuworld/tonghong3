@@ -56,7 +56,7 @@ def test_wrong_color_reference_rejected():
 
 def test_csi_style_color_reference_accepted_when_code_matches():
     db = MagicMock()
-    db.get.return_value = _item(color_code="3HK")
+    db.get.return_value = _item(color="COURT GREEN (3HK)", color_code="3HK")
     assert (
         align_po_line_to_master_item(
             db,
@@ -68,6 +68,41 @@ def test_csi_style_color_reference_accepted_when_code_matches():
             color_reference="COURT GREEN (3HK)",
         )
         == "3HK"
+    )
+
+
+def test_waiting_cs_skips_all_master_identity_checks():
+    db = MagicMock()
+    db.get.return_value = _item(color_code="55V")
+    assert (
+        align_po_line_to_master_item(
+            db,
+            master_item_id=2032,
+            material_name="WRONG MATERIAL",
+            color="WRONG COLOR",
+            emboss="WRONG EMBOSS",
+            thickness_text="9.9-9.9",
+            color_reference="WAITING C/S",
+            color_standard="WAITING C/S",
+        )
+        == "WAITING C/S"
+    )
+
+
+def test_waiting_color_reference_allowed_without_master_code_match():
+    db = MagicMock()
+    db.get.return_value = _item(color_code="55V")
+    assert (
+        align_po_line_to_master_item(
+            db,
+            master_item_id=2032,
+            material_name="ACTION LEATHER",
+            color="CORE BLACK (A0QM)",
+            emboss="AW-44 SG",
+            thickness_text="1.2-1.4",
+            color_reference="WAITING C/S",
+        )
+        == "WAITING C/S"
     )
 
 

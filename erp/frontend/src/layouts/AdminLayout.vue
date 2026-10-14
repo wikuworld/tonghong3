@@ -321,6 +321,7 @@ const erpSalesMenus = [
 
 const erpFulfillmentMenus = [
   { path: '/admin/delivery', labelKey: 'menu.delivery', icon: Van },
+  { path: '/admin/customs-bc27', labelKey: 'menu.customs', icon: Document },
   { path: '/admin/invoice', labelKey: 'menu.invoice', icon: Tickets },
   { path: '/admin/reports', labelKey: 'menu.reports', icon: Document },
 ]
@@ -361,6 +362,7 @@ const erpMasterMenus = [
       { path: '/admin/color-swatch', labelKey: 'menu.colorSwatch', icon: CollectionTag },
       { path: '/admin/fluorescent-colors', labelKey: 'menu.fluorescentColors', icon: CollectionTag },
       { path: '/admin/csi-colors', labelKey: 'menu.csiColors', icon: CollectionTag },
+      { path: '/admin/color-window', labelKey: 'menu.colorWindow', icon: CollectionTag },
     ],
   },
   { path: '/admin/data-intelligent', labelKey: 'menu.dataIntelligent', icon: DataAnalysis },

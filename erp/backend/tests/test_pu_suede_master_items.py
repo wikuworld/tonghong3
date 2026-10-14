@@ -1,4 +1,4 @@
-"""Unit tests for PU / Suide master item import."""
+"""Unit tests for PU / Suede master item import."""
 
 from pathlib import Path
 
@@ -14,7 +14,7 @@ FIXTURE_CSV = Path(__file__).resolve().parent / "fixtures" / "pu_suede_sample.cs
 
 def test_infer_pu_suede_category_from_material_name():
     assert infer_pu_suede_category("VIRGIN HYDRO PU") == "PU"
-    assert infer_pu_suede_category("SPLIT SUEDE") == "Suide"
+    assert infer_pu_suede_category("SPLIT SUEDE") == "Suede"
 
 
 def test_resolve_pu_suede_category_prefers_explicit_column():
@@ -41,4 +41,4 @@ def test_pu_suede_fixture_csv_has_rows():
     rows = list(iter_pu_suede_rows_from_csv(FIXTURE_CSV))
     assert len(rows) == 3
     assert rows[0]["item_code"] == "FG00001"
-    assert rows[2]["category"] == "Suide"
+    assert rows[2]["category"] == "Suede"

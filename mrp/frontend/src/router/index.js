@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import AdminLayout from '../layouts/AdminLayout.vue'
 import DashboardPage from '../views/admin/DashboardPage.vue'
 import InventoryPage from '../views/admin/InventoryPage.vue'
+import InventoryUnitMasterPage from '../views/admin/InventoryUnitMasterPage.vue'
 import MrpRencanaProduksiPage from '../views/admin/mrp/MrpRencanaProduksiPage.vue'
 import MrpPaletPage from '../views/admin/mrp/MrpPaletPage.vue'
 import MrpMasterErpPage from '../views/admin/mrp/MrpMasterErpPage.vue'
@@ -47,6 +48,11 @@ const router = createRouter({
         { path: '', redirect: MRP_HOME },
         { path: 'dashboard', component: DashboardPage, meta: { titleKey: 'menu.dashboard', module: 'dashboard' } },
         { path: 'inventory', component: InventoryPage, meta: { titleKey: 'menu.inventory', module: 'inventory' } },
+        {
+          path: 'inventory/units',
+          component: InventoryUnitMasterPage,
+          meta: { titleKey: 'menu.inventoryUnitMaster', module: 'inventory' },
+        },
         {
           path: 'mrp/rencana-produksi',
           component: MrpRencanaProduksiPage,

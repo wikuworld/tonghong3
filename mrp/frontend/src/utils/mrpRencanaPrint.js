@@ -1,5 +1,3 @@
-import QRCode from 'qrcode'
-
 const MIN_ROWS = 18
 const DAY_ID = ['SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU', 'MINGGU']
 const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -15,14 +13,9 @@ const PRINT_STYLES = `
   .rp-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; margin-top: -1px; }
   .rp-table th, .rp-table td { border: 1px solid #000; padding: 3px 5px; vertical-align: middle; word-wrap: break-word; }
   .rp-table th { text-align: center; font-weight: 700; }
-  .rp-col-barcode { width: 8%; } .rp-col-emboss { width: 8%; } .rp-col-customer { width: 14%; }
-  .rp-col-color { width: 11%; } .rp-col-qty { width: 6%; } .rp-col-schedule { width: 11%; }
-  .rp-col-cs { width: 17%; } .rp-col-remarks { width: 14%; } .rp-col-backer { width: 8%; }
-  .rp-barcode-cell { text-align: center; padding: 2px; }
-  .rp-barcode-stack { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-  .rp-barcode-img { display: block; width: 52px; height: 52px; margin: 0 auto; }
-  .rp-barcode-text { font-family: ui-monospace, monospace; font-size: 9px; line-height: 1.2; word-break: break-all; }
-  .rp-rpi-no { font-family: ui-monospace, monospace; font-size: 8px; line-height: 1.1; word-break: break-all; font-weight: 700; }
+  .rp-col-emboss { width: 9%; } .rp-col-customer { width: 15%; }
+  .rp-col-color { width: 12%; } .rp-col-qty { width: 7%; } .rp-col-schedule { width: 12%; }
+  .rp-col-cs { width: 18%; } .rp-col-remarks { width: 15%; } .rp-col-backer { width: 9%; }
   .rp-center { text-align: center; }
   .rp-sign { border-collapse: collapse; width: 220px; font-size: 11px; margin-top: 0; }
   .rp-sign td { border: 1px solid #000; padding: 4px 8px; height: 24px; }
@@ -43,11 +36,6 @@ function parsePlanDate(rencana) {
   if (!raw) return null
   const d = new Date(raw)
   return Number.isNaN(d.getTime()) ? null : d
-}
-
-function itemBarcode(row) {
-  const code = row?.barcode || row?.kode_barcode || row?.kode_rencana_item
-  return (code == null ? '' : String(code)).trim()
 }
 
 function formatCustomer(name) {
@@ -89,61 +77,28 @@ function dayBoxLabel(planDate) {
   return DAY_ID[pyIdx] || '-'
 }
 
-async function buildQrCodes(items) {
-  const map = {}
-  const seen = new Set()
-  for (const item of items || []) {
-    const code = itemBarcode(item)
-    if (!code || seen.has(code)) continue
-    seen.add(code)
-    try {
-      map[code] = await QRCode.toDataURL(code, {
-        width: 56,
-        margin: 0,
-        errorCorrectionLevel: 'M',
-      })
-    } catch {
-      map[code] = ''
-    }
-  }
-  return map
-}
-
-function buildBarcodeCell(row, qrByCode) {
-  const code = itemBarcode(row)
-  const rpi = escapeHtml(row?.kode_rencana_item || '')
-  const qr = qrByCode[code]
-  const img = qr
-    ? `<img src="${qr}" alt="${escapeHtml(code)}" class="rp-barcode-img" />`
-    : `<span class="rp-barcode-text">${escapeHtml(code)}</span>`
-  const rpiHtml = rpi ? `<div class="rp-rpi-no">${rpi}</div>` : ''
-  return `<div class="rp-barcode-stack">${img}${rpiHtml}</div>`
-}
-
-function buildTableRows(items, planDate, qrByCode) {
+function buildTableRows(items, planDate) {
   const rows = (items || []).map((item) => {
-    const row = { ...item, barcode: itemBarcode(item) }
     return `
       <tr>
-        <td class="rp-barcode-cell">${buildBarcodeCell(row, qrByCode)}</td>
-        <td class="rp-center">${escapeHtml(row.emboss || '')}</td>
-        <td>${escapeHtml(formatCustomer(row.nama_customer))}</td>
-        <td>${escapeHtml(row.color || '')}</td>
-        <td class="rp-center">${escapeHtml(formatQtyCell(row.total_qty_so))}</td>
-        <td class="rp-center">${escapeHtml(formatSchedule(row, planDate))}</td>
-        <td>${escapeHtml(row.color_swatch || '')}</td>
-        <td>${escapeHtml(formatRemarks(row))}</td>
-        <td class="rp-center">${escapeHtml(row.backer || '')}</td>
+        <td class="rp-center">${escapeHtml(item.emboss || '')}</td>
+        <td>${escapeHtml(formatCustomer(item.nama_customer))}</td>
+        <td>${escapeHtml(item.color || '')}</td>
+        <td class="rp-center">${escapeHtml(formatQtyCell(item.total_qty_so))}</td>
+        <td class="rp-center">${escapeHtml(formatSchedule(item, planDate))}</td>
+        <td>${escapeHtml(item.color_swatch || '')}</td>
+        <td>${escapeHtml(formatRemarks(item))}</td>
+        <td class="rp-center">${escapeHtml(item.backer || '')}</td>
       </tr>`
   })
   const emptyCount = Math.max(0, MIN_ROWS - rows.length)
   for (let i = 0; i < emptyCount; i += 1) {
-    rows.push('<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>')
+    rows.push('<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>')
   }
   return rows.join('')
 }
 
-function buildPrintHtml(data, labels, qrByCode) {
+function buildPrintHtml(data, labels) {
   const rencana = data?.rencana || {}
   const planDate = parsePlanDate(rencana)
   const title = escapeHtml(rencana.nama_rencana || labels.title || 'Rencana Produksi')
@@ -173,7 +128,6 @@ function buildPrintHtml(data, labels, qrByCode) {
     <table class="rp-table">
       <thead>
         <tr>
-          <th class="rp-col-barcode">${escapeHtml(labels.barcode)}</th>
           <th class="rp-col-emboss">${escapeHtml(labels.emboss)}</th>
           <th class="rp-col-customer">${escapeHtml(labels.customer)}</th>
           <th class="rp-col-color">${escapeHtml(labels.color)}</th>
@@ -184,7 +138,7 @@ function buildPrintHtml(data, labels, qrByCode) {
           <th class="rp-col-backer">${escapeHtml(labels.backer)}</th>
         </tr>
       </thead>
-      <tbody>${buildTableRows(data?.items, planDate, qrByCode)}</tbody>
+      <tbody>${buildTableRows(data?.items, planDate)}</tbody>
     </table>
     <table class="rp-sign">
       <tr><td>TTD</td><td></td></tr>
@@ -204,8 +158,7 @@ function buildPrintHtml(data, labels, qrByCode) {
 }
 
 export async function printMrpRencana(data, labels) {
-  const qrByCode = await buildQrCodes(data?.items)
-  const html = buildPrintHtml(data, labels, qrByCode)
+  const html = buildPrintHtml(data, labels)
   const printWindow = window.open('', '_blank')
   if (!printWindow) {
     throw new Error('Popup diblokir browser. Izinkan popup untuk cetak.')
