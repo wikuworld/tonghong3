@@ -1,12 +1,14 @@
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 from fastapi import HTTPException
 import pytest
 
 from app.routers.marketing import (
     _classify_line_material_group,
+    _delivered_qty_by_po_detail,
     _delivery_slots,
     _line_to_row,
     _normalize_material_group_filter,
@@ -182,15 +184,16 @@ def test_delivery_slots_use_actual_sjs_not_single_plan():
     assert out["delivery_3_date"] == "2026-09-25"
 
 
-def test_delivery_slots_fall_back_to_plan_when_no_actual():
+def test_delivery_slots_empty_when_no_actual_waves():
+    """Slot delivery_* hanya dari SJ aktual; rencana ada di plan_slots."""
     ln = SimpleNamespace(
         delivery_schedules=[
             SimpleNamespace(sequence_no=1, qty=Decimal("400"), delivery_date=date(2026, 9, 22)),
         ]
     )
     out = _delivery_slots(ln)
-    assert out["delivery_1_qty"] == "400"
-    assert out["delivery_1_date"] == "2026-09-22"
+    assert out["delivery_1_qty"] == ""
+    assert out["delivery_1_date"] == ""
     assert out["delivery_2_qty"] == ""
     assert out["delivery_2_date"] == ""
 
@@ -238,3 +241,23 @@ def test_po_q_matches_so_number_or_customer_po():
     assert _po_q_matches(header, "260823") is True
     assert _po_q_matches(header, "CVVV") is True
     assert _po_q_matches(header, "tidak-ada") is False
+
+
+def test_delivered_qty_by_po_detail_excludes_cancelled_headers():
+    captured = []
+    db = MagicMock()
+
+    def execute(stmt):
+        captured.append(stmt)
+        result = MagicMock()
+        result.all.return_value = []
+        return result
+
+    db.execute.side_effect = execute
+    assert _delivered_qty_by_po_detail(db) == {}
+    assert len(captured) == 2
+    for stmt in captured:
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+        assert "delivery_headers" in sql
+        assert "cancelled" in sql
+        assert "canceled" in sql

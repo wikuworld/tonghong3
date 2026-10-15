@@ -913,9 +913,10 @@ def create_po(
             ).first()
             if existing:
                 data["po_number"] = next_so_number(db, **so_number_kwargs)
-        # Auto-generate po_customer_ref if empty
-        if not data.get("po_customer_ref"):
-            data["po_customer_ref"] = f"PO-{data['po_number']}"
+        # Jangan isi otomatis PO Customer — harus diketik manual saat input SO
+        # (dipakai sebagai P.O. NO. di Surat Jalan).
+        if not (data.get("po_customer_ref") or "").strip():
+            data["po_customer_ref"] = None
         _apply_po_customer_ref_fields(data)
         row = PoHeader(**data)
         db.add(row)

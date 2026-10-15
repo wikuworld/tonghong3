@@ -1,6 +1,10 @@
 /** Master Color Window untuk baris SO material Suede. */
 
-import { COLOR_WINDOW_STANDARD_LABEL, normalizeColorRefKey } from './poColorStandard.js'
+import {
+  COLOR_WINDOW_STANDARD_LABEL,
+  extractColorCodeFromReference,
+  normalizeColorRefKey,
+} from './poColorStandard.js'
 import { compactSwatchColorName, normalizeSwatchColorName } from './poColorSwatch.js'
 
 export { COLOR_WINDOW_STANDARD_LABEL }
@@ -20,6 +24,19 @@ export function poBrandCodeForColorWindow(formModel, brands = []) {
   return code
 }
 
+/** "COLLEGIATE GREEN (024A)" bukan substring nama maupun kode di master. */
+export function colorWindowSearchQueries(color) {
+  const raw = String(color || '').trim()
+  if (!raw) return []
+  const code = extractColorCodeFromReference(raw)
+  const name = raw.replace(/\s*\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim()
+  const queries = []
+  if (code && name.toUpperCase() !== code) queries.push(code)
+  if (name && !queries.includes(name)) queries.push(name)
+  if (!queries.length) queries.push(raw)
+  return queries
+}
+
 export async function fetchColorWindowOptionList({
   formModel,
   brands,
@@ -29,22 +46,26 @@ export async function fetchColorWindowOptionList({
   if (!brandCode) return []
 
   const color = String(formModel.color || '').trim()
-  const page = await listColorWindowsPage({
-    brand_code: brandCode,
-    q: color || undefined,
-    limit: 200,
-    offset: 0,
-    sort_by: 'color_name',
-    sort_dir: 'asc',
-  })
-  let items = page.items || []
+  const colorCode = extractColorCodeFromReference(color)
+  const queries = colorWindowSearchQueries(color)
+  const attempts = queries.length ? queries : [undefined]
 
-  if (color && items.length) {
-    const matched = pickMatchingColorWindows(items, { color })
-    if (matched.length) items = matched
+  for (const q of attempts) {
+    const page = await listColorWindowsPage({
+      brand_code: brandCode,
+      q: q || undefined,
+      limit: 200,
+      offset: 0,
+      sort_by: 'color_name',
+      sort_dir: 'asc',
+    })
+    const items = page.items || []
+    if (!color) return items
+    const matched = pickMatchingColorWindows(items, { color, colorCode })
+    if (matched.length) return matched
   }
 
-  return items
+  return []
 }
 
 export function pickMatchingColorWindows(options, { color, colorCode } = {}) {

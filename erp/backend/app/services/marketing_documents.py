@@ -229,6 +229,19 @@ def _pod_chain_from_delivery_detail(db: Session, dd: DeliveryDetail):
     return pod, poh, master
 
 
+def sj_po_no_from_header(poh: PoHeader | None) -> str:
+    """P.O. NO. di Surat Jalan = No. PO Customer yang diketik saat input SO.
+
+    Fallback ke nomor SO internal hanya jika PO Customer kosong (data lama).
+    """
+    if not poh:
+        return ""
+    cust = (getattr(poh, "po_customer_ref", None) or "").strip()
+    if cust:
+        return cust
+    return (getattr(poh, "po_number", None) or "").strip()
+
+
 def _invpl_line_dict(
     *,
     no: int,
@@ -944,19 +957,11 @@ def gather_sj_rows(db: Session, delivery_id: int) -> dict[str, Any]:
     ph_for_cat: PoHeader | None = None
     extra_header_remark = (dh.destination or "").strip()
     for i, dd in enumerate(details, 1):
-        pod: PoDetail | None = None
-        poh: PoHeader | None = None
-        pd_row: ProductionDetail | None = None
-        if dd.production_detail_id:
-            pd_row = db.get(ProductionDetail, dd.production_detail_id)
-            if pd_row and pd_row.po_detail_id:
-                pod = db.get(PoDetail, pd_row.po_detail_id)
-                if pod and pod.po_id:
-                    poh = db.get(PoHeader, pod.po_id)
+        pod, poh, _master = _pod_chain_from_delivery_detail(db, dd)
         if ph_for_cat is None and poh is not None:
             ph_for_cat = poh
-        # PO NO. pada cetakan SJ = No. PO Customer (fallback ke nomor SO internal).
-        po_no = ((poh.po_customer_ref or poh.po_number) or "").strip() if poh else ""
+        # P.O. NO. = No. PO Customer (input manual SO); fallback nomor SO internal bila kosong.
+        po_no = sj_po_no_from_header(poh)
         mat = _item_description(pod) if pod else "—"
         thick = _thickness_mm(pod) if pod else ""
         color = (pod.color or "").strip() if pod else ""

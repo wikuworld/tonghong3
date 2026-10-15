@@ -726,16 +726,19 @@
                   {{ t('pages.po.autoFilled') }}
                 </el-tag>
               </div>
-              <p
+              <div
                 v-if="w.isSuedeMaterial && w.selectedSwatchRecipe"
-                class="mt-1 text-xs text-slate-500"
+                class="po-cw-audit"
               >
-                {{ t('pages.colorWindow.colCreatedAt') }}:
-                {{ formatColorWindowAudit(w.selectedSwatchRecipe.created_at) }}
-                ·
-                {{ t('pages.colorWindow.colUpdatedAt') }}:
-                {{ formatColorWindowAudit(w.selectedSwatchRecipe.updated_at) }}
-              </p>
+                <span class="po-cw-audit__badge po-cw-audit__badge--created">
+                  <span class="po-cw-audit__label">{{ t('pages.colorWindow.colCreatedAt') }}</span>
+                  <span class="po-cw-audit__value">{{ formatColorWindowAudit(w.selectedSwatchRecipe.created_at) }}</span>
+                </span>
+                <span class="po-cw-audit__badge po-cw-audit__badge--updated">
+                  <span class="po-cw-audit__label">{{ t('pages.colorWindow.colUpdatedAt') }}</span>
+                  <span class="po-cw-audit__value">{{ formatColorWindowAudit(w.selectedSwatchRecipe.updated_at) }}</span>
+                </span>
+              </div>
             </el-form-item>
           </section>
 
@@ -1337,6 +1340,45 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.po-cw-audit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.po-cw-audit__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  line-height: 1.2;
+}
+.po-cw-audit__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.po-cw-audit__value {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.po-cw-audit__badge--created {
+  color: #0f766e;
+  background: #f0fdfa;
+  border-color: #99f6e4;
+}
+.po-cw-audit__badge--updated {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
 :deep(.draft-line-active > td) {
   background-color: rgb(239 246 255) !important;
 }

@@ -12,6 +12,11 @@ from app.models import MasterItem
 _WS = re.compile(r"\s+")
 _THICKNESS_GAP = re.compile(r"\s*([-–])\s*")
 _CODE_IN_PARENS = re.compile(r"\(([A-Za-z0-9][A-Za-z0-9._/\- ]{0,62})\)")
+# Tanggal terkadang ikut terisi ke color_reference (mis. Created at Color Window).
+_DATEISH_REF = re.compile(
+    r"^(\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4})([ T]\d{1,2}:\d{2}(:\d{2})?)?$"
+)
+_COLOR_WINDOW_LABEL = "COLOR WINDOW"
 
 
 def _norm(value: str | None) -> str:
@@ -29,12 +34,22 @@ def _is_waiting_color_ref(value: str | None) -> bool:
     return key in ("WAITINGC/S", "WAITINGCS", "WAITC/S", "WAITCS")
 
 
+def _is_dateish_color_ref(value: str | None) -> bool:
+    """True jika nilai terlihat seperti tanggal, bukan kode warna."""
+    return bool(_DATEISH_REF.match(str(value or "").strip()))
+
+
 def po_line_uses_waiting_cs(
     color_reference: str | None,
     color_standard: str | None = None,
 ) -> bool:
     """Baris pakai opsi Waiting C/S — lewati validasi identitas/kode vs master item."""
     return _is_waiting_color_ref(color_reference) or _is_waiting_color_ref(color_standard)
+
+
+def po_line_uses_color_window(color_standard: str | None = None) -> bool:
+    """Baris Suede dari master Color Window — kode referensi bisa beda format dari master item."""
+    return _norm(color_standard) == _norm(_COLOR_WINDOW_LABEL)
 
 
 def _color_code_token(value: str | None) -> str:
@@ -89,10 +104,18 @@ def align_po_line_to_master_item(
         )
     code = str(item.color_code or "").strip()
     ref = str(color_reference or "").strip()
+    # Jangan anggap tanggal (Created at / Updated at) sebagai kode warna.
+    if _is_dateish_color_ref(ref):
+        ref = ""
     if not code:
         return ref or None
     if not ref:
         return code
+    if po_line_uses_color_window(color_standard):
+        # Color Window: simpan label/kode window; isi master hanya jika token cocok.
+        if _color_code_token(ref) == _color_code_token(code):
+            return ref
+        return ref
     if _color_code_token(ref) != _color_code_token(code):
         raise HTTPException(
             status_code=400,

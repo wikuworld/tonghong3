@@ -281,14 +281,23 @@ def _actual_delivery_waves_by_po_detail(
 
 
 def _delivered_qty_by_po_detail(db: Session) -> dict[int, Decimal]:
-    """Qty terkirim per baris SO: jalur produksi + DeliveryDetail.po_detail_id langsung (MRP)."""
+    """Qty terkirim per baris SO: jalur produksi + DeliveryDetail.po_detail_id langsung (MRP).
+
+    Header ``cancelled`` / ``canceled`` tidak dihitung (sama seperti saldo packing/PO).
+    """
+    from app.services.po_delivery_balance import _delivery_not_cancelled, _net_delivered_qty_expr
+
+    net = _net_delivered_qty_expr()
     delivered: dict[int, Decimal] = {}
     rows = db.execute(
         select(
             ProductionDetail.po_detail_id,
-            func.sum(DeliveryDetail.qty - func.coalesce(DeliveryDetail.returned_qty, 0)),
+            func.sum(net),
         )
-        .join(DeliveryDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
+        .select_from(DeliveryDetail)
+        .join(ProductionDetail, DeliveryDetail.production_detail_id == ProductionDetail.id)
+        .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
+        .where(_delivery_not_cancelled())
         .group_by(ProductionDetail.po_detail_id)
     ).all()
     for pod_id, total in rows:
@@ -298,14 +307,17 @@ def _delivered_qty_by_po_detail(db: Session) -> dict[int, Decimal]:
     direct_rows = db.execute(
         select(
             DeliveryDetail.po_detail_id,
-            func.sum(DeliveryDetail.qty - func.coalesce(DeliveryDetail.returned_qty, 0)),
+            func.sum(net),
         )
+        .select_from(DeliveryDetail)
+        .join(DeliveryHeader, DeliveryHeader.id == DeliveryDetail.delivery_id)
         .where(
             DeliveryDetail.po_detail_id.is_not(None),
             or_(
                 DeliveryDetail.production_detail_id.is_(None),
                 DeliveryDetail.production_detail_id == 0,
             ),
+            _delivery_not_cancelled(),
         )
         .group_by(DeliveryDetail.po_detail_id)
     ).all()

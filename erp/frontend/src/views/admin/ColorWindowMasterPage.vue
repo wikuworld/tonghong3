@@ -59,11 +59,15 @@
             </template>
           </el-table-column>
           <el-table-column prop="remark" :label="t('common.remark')" min-width="160" show-overflow-tooltip />
-          <el-table-column prop="created_at" :label="t('pages.colorWindow.colCreatedAt')" width="148" align="center" sortable="custom">
-            <template #default="{ row }">{{ formatAuditDateTime(row.created_at) }}</template>
+          <el-table-column prop="created_at" :label="t('pages.colorWindow.colCreatedAt')" width="210" align="center" sortable="custom">
+            <template #default="{ row }">
+              <span class="cw-date-badge cw-date-badge--created">{{ formatAuditDateTime(row.created_at) }}</span>
+            </template>
           </el-table-column>
-          <el-table-column prop="updated_at" :label="t('pages.colorWindow.colUpdatedAt')" width="148" align="center" sortable="custom">
-            <template #default="{ row }">{{ formatAuditDateTime(row.updated_at) }}</template>
+          <el-table-column prop="updated_at" :label="t('pages.colorWindow.colUpdatedAt')" width="210" align="center" sortable="custom">
+            <template #default="{ row }">
+              <span class="cw-date-badge cw-date-badge--updated">{{ formatAuditDateTime(row.updated_at) }}</span>
+            </template>
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="88" fixed="right" align="center">
             <template #default="{ row }">
@@ -480,6 +484,31 @@ onMounted(() => {
   margin: 4px 0 0;
   font-size: 0.875rem;
   color: var(--el-text-color-secondary);
+}
+.cw-date-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.cw-date-badge--created {
+  color: #0f766e;
+  background: #f0fdfa;
+  border-color: #99f6e4;
+}
+.cw-date-badge--updated {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
 }
 .cw-date-row {
   display: flex;

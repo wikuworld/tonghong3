@@ -121,3 +121,57 @@ def test_material_mismatch_rejected():
         )
     assert exc.value.status_code == 400
     assert "material" in exc.value.detail
+
+
+def test_dateish_color_reference_replaced_with_master_code():
+    """Created at Color Window (mis. 24/10/2024) tidak boleh dianggap kode warna."""
+    db = MagicMock()
+    db.get.return_value = _item(color="BLACK (145-17-00)", color_code="145-17-00")
+    assert (
+        align_po_line_to_master_item(
+            db,
+            master_item_id=32,
+            material_name="ACTION LEATHER",
+            color="BLACK (145-17-00)",
+            emboss="AW-44 SG",
+            thickness_text="1.2-1.4",
+            color_reference="24/10/2024",
+        )
+        == "145-17-00"
+    )
+
+
+def test_color_window_label_kept_when_code_matches():
+    db = MagicMock()
+    db.get.return_value = _item(color="BLACK (145-17-00)", color_code="145-17-00")
+    assert (
+        align_po_line_to_master_item(
+            db,
+            master_item_id=32,
+            material_name="ACTION LEATHER",
+            color="BLACK (145-17-00)",
+            emboss="AW-44 SG",
+            thickness_text="1.2-1.4",
+            color_reference="BLACK COLORO (145-17-00)",
+            color_standard="COLOR WINDOW",
+        )
+        == "BLACK COLORO (145-17-00)"
+    )
+
+
+def test_color_window_does_not_reject_nonmatching_window_code():
+    db = MagicMock()
+    db.get.return_value = _item(color="BLACK (145-17-00)", color_code="145-17-00")
+    assert (
+        align_po_line_to_master_item(
+            db,
+            master_item_id=32,
+            material_name="ACTION LEATHER",
+            color="BLACK (145-17-00)",
+            emboss="AW-44 SG",
+            thickness_text="1.2-1.4",
+            color_reference="BLACK COLORO (039-90-05)",
+            color_standard="COLOR WINDOW",
+        )
+        == "BLACK COLORO (039-90-05)"
+    )
