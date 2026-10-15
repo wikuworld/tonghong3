@@ -686,7 +686,7 @@ function labelQtyOverWip() {
   return null
 }
 
-async function printRollLabel() {
+async function printRollLabel(extra = {}) {
   if (!packingId.value || !ukurRows.value.length) return
   const over = labelQtyOverWip()
   if (over) {
@@ -704,6 +704,8 @@ async function printRollLabel() {
     const res = await mrpPackingAction(packingId.value, {
       action: 'print_roll_label',
       sizes: ukurRows.value.map((r) => r.size_val),
+      impactiva_grading: extra.impactiva_grading || '',
+      moisture: extra.moisture || '',
     })
     printMrpPackingRollLabel(res.label, t)
     ukurRows.value = []

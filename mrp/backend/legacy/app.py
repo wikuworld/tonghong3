@@ -481,6 +481,15 @@ def ensure_extended_tables(cur):
             cur.execute(
                 "ALTER TABLE tbl_packing_roll ADD COLUMN sizes_text VARCHAR(500) DEFAULT NULL"
             )
+        roll_cols = _col_names(cur, "tbl_packing_roll")
+        if "impactiva_grading" not in roll_cols:
+            cur.execute(
+                "ALTER TABLE tbl_packing_roll ADD COLUMN impactiva_grading VARCHAR(120) DEFAULT NULL"
+            )
+        if "moisture" not in roll_cols:
+            cur.execute(
+                "ALTER TABLE tbl_packing_roll ADD COLUMN moisture VARCHAR(40) DEFAULT NULL"
+            )
     # ERP-only: jangan ALTER/seed master_erp / master_* mirror (sudah di-drop).
     po_cols_ext = _col_names(cur, "tbl_master_po")
     if "color_swatch" not in po_cols_ext:

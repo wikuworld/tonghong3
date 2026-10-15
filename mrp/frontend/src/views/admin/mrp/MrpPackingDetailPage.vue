@@ -247,6 +247,7 @@ import AdminSection from '../../../components/AdminSection.vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
 import { can } from '../../../security/permissions'
 import { mrpGetPacking, mrpPackingAction, mrpPackingPrint, mrpPackingRollLabel } from '../../../api/client'
+import { printPackingList } from '../../../utils/mrpPackingListPrint'
 import { printMrpPackingRollLabel } from '../../../utils/mrpPackingRollLabelPrint'
 
 const { t } = useI18n()
@@ -273,14 +274,6 @@ function formatQty(v) {
   const n = Number(v)
   if (!Number.isFinite(n)) return '—'
   return Number.isInteger(n) ? String(n) : n.toLocaleString(undefined, { maximumFractionDigits: 2 })
-}
-
-function esc(v) {
-  return String(v ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
 }
 
 async function reload() {
@@ -419,75 +412,7 @@ async function finish() {
 async function printLabel() {
   try {
     const data = await mrpPackingPrint(route.params.id)
-    const p = data.packing || {}
-    const unit = p.qty_unit || 'SF'
-    const rollsHtml = (data.rolls || [])
-      .map(
-        (r) =>
-          `<tr><td class="num">${esc(r.roll_no)}</td><td class="num">${esc(r.lembar)}</td>` +
-          `<td class="qty">${esc(r.ukuran)}</td><td>${esc(r.remark || '')}</td></tr>`,
-      )
-      .join('')
-    const w = window.open('', '_blank')
-    if (!w) throw new Error(t('pages.mrpPacking.popupBlocked'))
-    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Packing List - ${esc(p.kode_packing)}</title>
-<style>
-@page{size:A4;margin:12mm}
-body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#111;margin:0;padding:16px}
-.company{text-align:center;line-height:1.25;margin-bottom:6px}
-.company .name{font-size:18px;font-weight:700}
-.company .name-zh{font-size:14px;margin-top:2px}
-.doc-title{text-align:center;font-size:20px;font-weight:700;margin:10px 0 4px}
-.doc-title-zh{text-align:center;font-size:13px;margin-bottom:12px}
-.meta{width:100%;border-collapse:collapse;margin-bottom:12px}
-.meta td{padding:3px 6px;vertical-align:top}
-.meta .lbl{width:18%;font-weight:700;white-space:nowrap}
-.meta .val{width:32%;border-bottom:1px solid #bbb}
-table.rolls{width:100%;border-collapse:collapse;margin-top:8px}
-table.rolls th,table.rolls td{border:1px solid #333;padding:5px 6px}
-table.rolls th{background:#f3f3f3;text-align:center}
-table.rolls td.num{text-align:center}
-table.rolls td.qty{text-align:right}
-.totals{margin-top:14px;width:100%;border-collapse:collapse}
-.totals td{padding:3px 6px}
-.totals .lbl{font-weight:700;width:22%}
-.totals .val{border-bottom:1px solid #bbb;width:28%}
-.footer{margin-top:18px;font-size:11px;color:#444}
-</style></head><body>
-<div class="company">
-  <div class="name">${esc(p.company_name || 'PT. TONG HONG TANNERY INDONESIA')}</div>
-  <div class="name-zh">${esc(p.company_name_zh || '東崇皮革印尼有限公司')}</div>
-</div>
-<div class="doc-title">PACKING LIST</div>
-<div class="doc-title-zh">裝貨單</div>
-<table class="meta">
-<tr><td class="lbl">Customer:</td><td class="val">${esc(p.customer)}</td>
-<td class="lbl">Date:</td><td class="val">${esc(p.date_created)}</td></tr>
-<tr><td class="lbl">Description:</td><td class="val" colspan="3">${esc(p.description)}</td></tr>
-<tr><td class="lbl">${esc(t('pages.mrpRencana.poCustomerRef'))}:</td><td class="val">${esc(p.no_po)}</td>
-<td class="lbl">Thickness:</td><td class="val">${esc(p.thickness)}</td></tr>
-<tr><td class="lbl">Color:</td><td class="val">${esc(p.color)}</td>
-<td class="lbl">Softness:</td><td class="val">${esc(p.softness || '-')}</td></tr>
-<tr><td class="lbl">Color Swatch:</td><td class="val">${esc(p.color_swatch)}</td>
-<td class="lbl">Work Order No:</td><td class="val">${esc(p.work_order || p.kode_wip)}</td></tr>
-<tr><td class="lbl">Packing Code:</td><td class="val">${esc(p.kode_packing)}</td>
-<td class="lbl">WIP:</td><td class="val">${esc(p.kode_wip)}</td></tr>
-</table>
-<table class="rolls">
-<thead><tr><th>Art.no</th><th>Pieces</th><th>Quantity</th><th>Remark</th></tr></thead>
-<tbody>${rollsHtml}</tbody>
-</table>
-<table class="totals">
-<tr><td class="lbl">Total Rolls:</td><td class="val">${esc(p.total_rolls ?? (data.rolls || []).length)} ROLL</td>
-<td class="lbl">Total Pieces:</td><td class="val">${esc(p.total_pieces ?? p.total_lembar ?? 0)} PIECES</td></tr>
-<tr><td class="lbl">Total Quantity:</td><td class="val">${esc(p.total_quantity ?? p.total_ukuran ?? 0)} ${esc(unit)}</td>
-<td class="lbl">Gross Weight:</td><td class="val">${esc(p.gross_weight ?? '')}</td></tr>
-<tr><td class="lbl">Net Weight:</td><td class="val">${esc(p.net_weight ?? '')}</td><td></td><td></td></tr>
-</table>
-<div class="footer">${esc(p.form_code || 'QER-48-A/0')}</div>
-<script>window.onload=function(){window.print()}<\/script>
-</body></html>`)
-    w.document.close()
+    printPackingList(data, t)
   } catch (e) {
     ElMessage.error(e.message || String(e))
   }

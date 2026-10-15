@@ -83,8 +83,19 @@
       </table>
     </div>
 
+    <div v-if="showPrintRoll" class="mrp-pack-ukur-panel__grade">
+      <label>
+        <span>{{ t('pages.mrpPacking.impactivaGrading') }}</span>
+        <el-input v-model="impactivaGrading" size="small" clearable />
+      </label>
+      <label>
+        <span>{{ t('pages.mrpPacking.moisture') }}</span>
+        <el-input v-model="moisture" size="small" clearable placeholder="10,30" />
+      </label>
+    </div>
+
     <div class="mrp-pack-ukur-panel__footer">
-      <el-button v-if="showPrintRoll" type="primary" :disabled="!canPrintRoll" @click="$emit('print-roll')">
+      <el-button v-if="showPrintRoll" type="primary" :disabled="!canPrintRoll" @click="emitPrintRoll">
         {{ t('pages.mrpPacking.printRollLabel') }}
       </el-button>
       <el-button @click="$emit('cancel')">{{ t('common.cancel') }}</el-button>
@@ -156,6 +167,15 @@ defineProps({
 const emit = defineEmits(['start', 'stop', 'add', 'edit', 'delete', 'print-roll', 'cancel', 'finish', 'view-rolls'])
 
 const { t } = useI18n()
+const impactivaGrading = ref('')
+const moisture = ref('')
+
+function emitPrintRoll() {
+  emit('print-roll', {
+    impactiva_grading: impactivaGrading.value.trim(),
+    moisture: moisture.value.trim(),
+  })
+}
 const addDialogOpen = ref(false)
 const addDialogValue = ref('')
 const addInputRef = ref(null)
@@ -307,6 +327,15 @@ function rowKey(row, idx) {
 .mrp-pack-ukur-table td.is-action,
 .mrp-pack-ukur-table th.is-action { width: 112px; text-align: center; }
 .mrp-pack-ukur-table td.is-empty { text-align: center; color: var(--el-text-color-secondary); }
+.mrp-pack-ukur-panel__grade {
+  display: grid;
+  gap: 0.35rem;
+}
+.mrp-pack-ukur-panel__grade label {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.75rem;
+}
 .mrp-pack-ukur-panel__footer {
   display: flex;
   flex-wrap: wrap;

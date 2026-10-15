@@ -8,6 +8,7 @@ import mysql.connector
 from flask import Blueprint, jsonify, request
 
 from db import get_db_connection
+from mod_label import _mod_label_identity
 from mrp_api.paging import order_sql, page_payload, parse_page_args, slice_page, sort_rows
 
 api = Blueprint("mrp_api", __name__, url_prefix="/api/mrp")
@@ -3004,20 +3005,35 @@ def gudang_mod_label_api(mod_id: int):
     ensure_extended_tables(cur)
     conn.commit()
     cur.execute(
-        "SELECT gm.*, pk.kode_proses, pk.treatment_jenis "
+        "SELECT gm.*, pk.kode_proses, pk.treatment_jenis, pk.rencana_item_id, "
+        "i.material_name AS rencana_material_name, i.thickness AS rencana_thickness, "
+        "i.backer AS rencana_backer "
         "FROM tbl_gudang_mod gm "
         "LEFT JOIN tbl_persiapan_kulit pk ON pk.id = gm.persiapan_id "
+        "LEFT JOIN tbl_rencana_item i ON i.id = pk.rencana_item_id "
         "WHERE gm.id=%s",
         (mod_id,),
     )
     row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return _err("Data MOD tidak ditemukan", 404)
+    identity = _mod_label_identity(cur, row)
     cur.close()
     conn.close()
-    if not row:
-        return _err("Data MOD tidak ditemukan", 404)
+    payload = _row(row) or {}
+    for key in (
+        "rencana_item_id",
+        "rencana_material_name",
+        "rencana_thickness",
+        "rencana_backer",
+    ):
+        payload.pop(key, None)
+    payload.update(identity)
     return jsonify(
         {
-            "mod": _row(row),
+            "mod": payload,
             "title": "LABEL REJECT KULIT",
         }
     )
@@ -4501,6 +4517,32 @@ def _erp_lot_nos_for_source_details(source_ids) -> dict[int, str]:
         return out
 
 
+def _attach_so_remark(spec: dict | None) -> dict:
+    spec = dict(spec or {})
+    if not (spec.get("so_remark") or "").strip():
+        spec["so_remark"] = _so_remark_for_source_detail(spec.get("source_detail_id"))
+    return spec
+
+
+def _so_remark_for_source_detail(source_detail_id) -> str:
+    """Remark baris SO (po_details.detail_remark) via snapshot HTTP ERP."""
+    if not source_detail_id:
+        return ""
+    try:
+        sid = int(source_detail_id)
+    except (TypeError, ValueError):
+        return ""
+    if not sid:
+        return ""
+    try:
+        from mrp_api import erp_client
+
+        line = (erp_client.po_detail_mrp_lines([sid]) or {}).get(sid) or {}
+        return (line.get("detail_remark") or "").strip()
+    except Exception:
+        return ""
+
+
 def _erp_lot_no_for_source_detail(source_detail_id: int | None) -> str:
     """Lot No dari baris item SO ERP (po_details.thi_line_ref / system_reference)."""
     if not source_detail_id:
@@ -4881,6 +4923,8 @@ def _packing_roll_label_payload(
 
     color = spec.get("color") or "-"
     swatch = (spec.get("color_swatch") or "").strip()
+    if swatch == "-":
+        swatch = ""
     if swatch and swatch not in str(color):
         color = f"{color} ({swatch})" if color and color != "-" else swatch
 
@@ -4890,6 +4934,14 @@ def _packing_roll_label_payload(
     ukuran = float(roll.get("ukuran") or 0)
     qty_text = f"{int(ukuran) if ukuran == int(ukuran) else ukuran:g} {qty_unit}"
     roll_kode = (roll.get("kode_packing") or packing.get("kode_packing") or "").strip()
+    produced = roll.get("created_at")
+    if produced:
+        producing_date = str(produced)[:10]
+    else:
+        producing_date = date.today().isoformat()
+    material_name = (spec.get("material_name") or "").strip()
+    if not material_name or material_name == "-":
+        material_name = (spec.get("description") or packing.get("description") or "-").strip() or "-"
 
     return {
         "kode_packing": roll_kode,
@@ -4905,20 +4957,23 @@ def _packing_roll_label_payload(
         "factory_prod_code": factory_code,
         "customer": packing.get("customer") or spec.get("customer_from_rencana") or "-",
         "description": spec.get("description") or packing.get("description") or "-",
+        "material_name": material_name,
         "color": color or "-",
         "thickness": spec.get("thickness") or "-",
         "color_swatch": spec.get("color_swatch") or "",
         "emboss": spec.get("emboss") or "-",
+        "so_remark": (spec.get("so_remark") or "").strip(),
+        "impactiva_grading": (roll.get("impactiva_grading") or "").strip(),
+        "moisture": (roll.get("moisture") or "").strip(),
         "softness": packing.get("softness") or spec.get("softness") or "SOFT",
         "mass_material": packing.get("softness") or spec.get("softness") or "SOFT",
         "gross_weight": packing.get("gross_weight"),
         "net_weight": packing.get("net_weight"),
         "work_order": lot_no,
         "qty_unit": qty_unit,
-        "producing_date": date.today().isoformat(),
+        "producing_date": producing_date,
         "expiration_text": "1 年 (One Year)",
-        "anti_moldy": "",
-        "moisture": "",
+        "anti_moldy": "TCMTB",
         "sizes": size_vals,
         "sizes_text": sizes_text,
         "md_code": "ND",
@@ -5206,11 +5261,13 @@ def packing_roll_label_reprint(roll_id: int):
         packing = dict(packing)
         packing["kode_packing"] = roll_kode
     sizes = _parse_sizes_text(roll.get("sizes_text"))
-    spec = _packing_spec_for_wip(
-        cur,
-        packing.get("kode_wip") or "",
-        packing.get("no_po"),
-        packing.get("rencana_item_id"),
+    spec = _attach_so_remark(
+        _packing_spec_for_wip(
+            cur,
+            packing.get("kode_wip") or "",
+            packing.get("no_po"),
+            packing.get("rencana_item_id"),
+        )
     )
     label = _packing_roll_label_payload(_row(packing), _row(roll), spec, sizes)
     cur.close()
@@ -5889,6 +5946,8 @@ def packing_actions(packing_id: int):
         )
         roll_no = int(cur.fetchone()["nxt"])
         remark = (body.get("remark") or "").strip() or None
+        impactiva = (body.get("impactiva_grading") or "").strip() or None
+        moisture = (body.get("moisture") or "").strip() or None
         sizes_text = "+".join(_format_label_size_part(v) for v in parsed_sizes)
         from app import _col_names
 
@@ -5898,12 +5957,32 @@ def packing_actions(packing_id: int):
         next_kode = _alloc_unique_fg_code(cur)
         roll_cols = _col_names(cur, "tbl_packing_roll")
         if "kode_packing" in roll_cols and "sizes_text" in roll_cols:
-            cur.execute(
-                "INSERT INTO tbl_packing_roll "
-                "(packing_id, roll_no, lembar, ukuran, remark, kode_packing, sizes_text) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
-                (packing_id, roll_no, lembar, ukuran, remark, roll_kode, sizes_text),
-            )
+            grade_cols = "impactiva_grading" in roll_cols and "moisture" in roll_cols
+            if grade_cols:
+                cur.execute(
+                    "INSERT INTO tbl_packing_roll "
+                    "(packing_id, roll_no, lembar, ukuran, remark, kode_packing, sizes_text, "
+                    "impactiva_grading, moisture) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (
+                        packing_id,
+                        roll_no,
+                        lembar,
+                        ukuran,
+                        remark,
+                        roll_kode,
+                        sizes_text,
+                        impactiva,
+                        moisture,
+                    ),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO tbl_packing_roll "
+                    "(packing_id, roll_no, lembar, ukuran, remark, kode_packing, sizes_text) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                    (packing_id, roll_no, lembar, ukuran, remark, roll_kode, sizes_text),
+                )
         else:
             cur.execute(
                 "INSERT INTO tbl_packing_roll (packing_id, roll_no, lembar, ukuran, remark) "
@@ -5927,11 +6006,13 @@ def packing_actions(packing_id: int):
             (packing_id, roll_no),
         )
         roll_row = cur.fetchone()
-        spec = _packing_spec_for_wip(
-            cur,
-            pkg.get("kode_wip") or "",
-            pkg.get("no_po"),
-            pkg.get("rencana_item_id"),
+        spec = _attach_so_remark(
+            _packing_spec_for_wip(
+                cur,
+                pkg.get("kode_wip") or "",
+                pkg.get("no_po"),
+                pkg.get("rencana_item_id"),
+            )
         )
         pkg_label = dict(pkg)
         pkg_label["kode_packing"] = roll_kode

@@ -111,6 +111,9 @@
                 <tr><td>{{ t('pages.mrpProses.ylCode') }}</td><td><strong>{{ dash(labelPayload.m.kode_yl) }}</strong></td></tr>
                 <tr><td>{{ t('pages.mrpGudangMod.kodeMod') }}</td><td><strong>{{ dash(labelPayload.m.kode_mod) }}</strong></td></tr>
                 <tr><td>WIP</td><td><strong>{{ dash(labelPayload.m.kode_wip) }}</strong></td></tr>
+                <tr><td>{{ t('pages.mrpGudangMod.materialName') }}</td><td><strong>{{ dash(labelPayload.m.material_name) }}</strong></td></tr>
+                <tr><td>{{ t('pages.mrpGudangMod.backingColor') }}</td><td><strong>{{ dash(labelPayload.m.backer) }}</strong></td></tr>
+                <tr><td>{{ t('pages.mrpGudangMod.thickness') }}</td><td><strong>{{ dash(labelPayload.m.thickness) }}</strong></td></tr>
                 <tr>
                   <td colspan="2" class="mrp-mod-label-sheet__tx">
                     <div class="mrp-mod-label-sheet__tx-title">{{ t('pages.mrpProses.treatmentList') }}</div>
@@ -211,7 +214,15 @@ async function qrForCode(code) {
   }
 }
 
-function buildRejectLabelHtml(m, title, tanggal, qrDataUrl = '') {
+function rejectLabelNames() {
+  return {
+    material: t('pages.mrpGudangMod.materialName'),
+    backing: t('pages.mrpGudangMod.backingColor'),
+    thickness: t('pages.mrpGudangMod.thickness'),
+  }
+}
+
+function buildRejectLabelHtml(m, title, tanggal, qrDataUrl = '', labels = rejectLabelNames()) {
   const txItems = treatmentItems(m.treatment_list)
   const txHtml = txItems.length
     ? `<ul class="tx-list">${txItems.map((name) => `<li><span>${escHtml(name)}</span><span class="tx-box"></span></li>`).join('')}</ul>`
@@ -227,8 +238,8 @@ function buildRejectLabelHtml(m, title, tanggal, qrDataUrl = '') {
   .label-head { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
   .label-head h2 { margin: 0; font-size: 12px; flex: 1; }
   .label-qr { width: 0.72in; height: 0.72in; }
-  table { width: 100%; border-collapse: collapse; font-size: 10px; }
-  td { padding: 2px 0; vertical-align: top; }
+  table { width: 100%; border-collapse: collapse; font-size: 9px; }
+  td { padding: 1px 0; vertical-align: top; }
   td:first-child:not([colspan]) { width: 38%; }
   .tx-title { font-weight: 700; margin-bottom: 2px; }
   .tx-list { list-style: none; margin: 0; padding: 0; }
@@ -242,6 +253,9 @@ function buildRejectLabelHtml(m, title, tanggal, qrDataUrl = '') {
     <tr><td>Kode YL</td><td><strong>${escHtml(m.kode_yl)}</strong></td></tr>
     <tr><td>Kode MOD</td><td><strong>${escHtml(m.kode_mod)}</strong></td></tr>
     <tr><td>WIP</td><td><strong>${escHtml(m.kode_wip)}</strong></td></tr>
+    <tr><td>${escHtml(labels.material)}</td><td><strong>${escHtml(m.material_name || '')}</strong></td></tr>
+    <tr><td>${escHtml(labels.backing)}</td><td><strong>${escHtml(m.backer || '')}</strong></td></tr>
+    <tr><td>${escHtml(labels.thickness)}</td><td><strong>${escHtml(m.thickness || '')}</strong></td></tr>
     <tr><td colspan="2"><div class="tx-title">Daftar Treatment</div>${txHtml}</td></tr>
     <tr><td>SF</td><td><strong>${escHtml(m.reject_qty)}</strong></td></tr>
     <tr><td>Qty lembar</td><td><strong>${escHtml(m.reject_lembar ?? '')}</strong></td></tr>

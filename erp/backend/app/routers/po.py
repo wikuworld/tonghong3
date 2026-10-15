@@ -189,6 +189,7 @@ def _mrp_line_snapshot(db: Session, d: PoDetail, ph: PoHeader | None) -> dict[st
         "lot_ref": lot,
         "no_so": no_so,
         "no_po": no_po,
+        "detail_remark": (d.detail_remark or "").strip(),
     }
 
 
