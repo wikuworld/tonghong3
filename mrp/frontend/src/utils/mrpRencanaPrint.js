@@ -13,9 +13,10 @@ const PRINT_STYLES = `
   .rp-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; margin-top: -1px; }
   .rp-table th, .rp-table td { border: 1px solid #000; padding: 3px 5px; vertical-align: middle; word-wrap: break-word; }
   .rp-table th { text-align: center; font-weight: 700; }
-  .rp-col-emboss { width: 9%; } .rp-col-customer { width: 15%; }
-  .rp-col-color { width: 12%; } .rp-col-qty { width: 7%; } .rp-col-schedule { width: 12%; }
-  .rp-col-cs { width: 18%; } .rp-col-remarks { width: 15%; } .rp-col-backer { width: 9%; }
+  .rp-col-rpi { width: 11%; } .rp-col-emboss { width: 8%; } .rp-col-customer { width: 13%; }
+  .rp-col-color { width: 11%; } .rp-col-qty { width: 7%; } .rp-col-cs { width: 12%; }
+  .rp-col-backer { width: 8%; } .rp-col-kode { width: 8%; }
+  .rp-col-schedule { width: 11%; } .rp-col-remarks { width: 11%; }
   .rp-center { text-align: center; }
   .rp-sign { border-collapse: collapse; width: 220px; font-size: 11px; margin-top: 0; }
   .rp-sign td { border: 1px solid #000; padding: 4px 8px; height: 24px; }
@@ -43,26 +44,33 @@ function formatCustomer(name) {
 }
 
 function formatQtyCell(v) {
+  if (v == null || v === '') return ''
   const n = Number(v)
-  if (!Number.isFinite(n) || n <= 0) return ''
+  if (!Number.isFinite(n)) return ''
   return Number.isInteger(n) ? String(n) : String(n)
 }
 
-function formatRemarks(item) {
-  const thick = (item?.thickness || '').replace(/mm/gi, '').replace(/\s/g, '')
-  const ket = (item?.keterangan || '').trim()
-  if (thick && ket) return `${thick} ${ket}`
-  if (thick) return thick
-  return ket
-}
-
-function formatSchedule(item, date) {
-  const schedule = (item?.schedule_text || '').trim()
-  if (schedule) return schedule
-  if (!date) return ''
-  const mm = String(date.getMonth() + 1).padStart(2, '0')
-  const dd = String(date.getDate()).padStart(2, '0')
-  return `SUHP ${mm}${dd}`
+function buildTableRows(items) {
+  const rows = (items || []).map((item) => {
+    return `
+      <tr>
+        <td class="rp-center">${escapeHtml(item.kode_rencana_item || '')}</td>
+        <td class="rp-center">${escapeHtml(item.emboss || '')}</td>
+        <td>${escapeHtml(formatCustomer(item.nama_customer))}</td>
+        <td>${escapeHtml(item.color || '')}</td>
+        <td class="rp-center">${escapeHtml(formatQtyCell(item.print_qty))}</td>
+        <td>${escapeHtml(item.color_swatch || '')}</td>
+        <td class="rp-center">${escapeHtml(item.backer || '')}</td>
+        <td class="rp-center">${escapeHtml(item.kode_kulit || '')}</td>
+        <td class="rp-center">${escapeHtml((item.print_schedule || '').trim())}</td>
+        <td>${escapeHtml((item.print_remarks || '').trim())}</td>
+      </tr>`
+  })
+  const emptyCount = Math.max(0, MIN_ROWS - rows.length)
+  for (let i = 0; i < emptyCount; i += 1) {
+    rows.push('<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>')
+  }
+  return rows.join('')
 }
 
 function dateBoxLabel(planDate) {
@@ -75,27 +83,6 @@ function dayBoxLabel(planDate) {
   const jsDay = planDate.getDay()
   const pyIdx = jsDay === 0 ? 6 : jsDay - 1
   return DAY_ID[pyIdx] || '-'
-}
-
-function buildTableRows(items, planDate) {
-  const rows = (items || []).map((item) => {
-    return `
-      <tr>
-        <td class="rp-center">${escapeHtml(item.emboss || '')}</td>
-        <td>${escapeHtml(formatCustomer(item.nama_customer))}</td>
-        <td>${escapeHtml(item.color || '')}</td>
-        <td class="rp-center">${escapeHtml(formatQtyCell(item.total_qty_so))}</td>
-        <td class="rp-center">${escapeHtml(formatSchedule(item, planDate))}</td>
-        <td>${escapeHtml(item.color_swatch || '')}</td>
-        <td>${escapeHtml(formatRemarks(item))}</td>
-        <td class="rp-center">${escapeHtml(item.backer || '')}</td>
-      </tr>`
-  })
-  const emptyCount = Math.max(0, MIN_ROWS - rows.length)
-  for (let i = 0; i < emptyCount; i += 1) {
-    rows.push('<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>')
-  }
-  return rows.join('')
 }
 
 function buildPrintHtml(data, labels) {
@@ -128,17 +115,19 @@ function buildPrintHtml(data, labels) {
     <table class="rp-table">
       <thead>
         <tr>
+          <th class="rp-col-rpi">${escapeHtml(labels.kodeRpi)}</th>
           <th class="rp-col-emboss">${escapeHtml(labels.emboss)}</th>
           <th class="rp-col-customer">${escapeHtml(labels.customer)}</th>
           <th class="rp-col-color">${escapeHtml(labels.color)}</th>
           <th class="rp-col-qty">${escapeHtml(labels.qty)}</th>
-          <th class="rp-col-schedule">${escapeHtml(labels.schedule)}</th>
           <th class="rp-col-cs">${escapeHtml(labels.cs)}</th>
-          <th class="rp-col-remarks">${escapeHtml(labels.remarks)}</th>
           <th class="rp-col-backer">${escapeHtml(labels.backer)}</th>
+          <th class="rp-col-kode">${escapeHtml(labels.kode)}</th>
+          <th class="rp-col-schedule">${escapeHtml(labels.schedule)}</th>
+          <th class="rp-col-remarks">${escapeHtml(labels.remarks)}</th>
         </tr>
       </thead>
-      <tbody>${buildTableRows(data?.items, planDate)}</tbody>
+      <tbody>${buildTableRows(data?.items)}</tbody>
     </table>
     <table class="rp-sign">
       <tr><td>TTD</td><td></td></tr>
@@ -155,6 +144,10 @@ function buildPrintHtml(data, labels) {
   <\/script>
 </body>
 </html>`
+}
+
+export function buildMrpRencanaPrintHtml(data, labels) {
+  return buildPrintHtml(data, labels)
 }
 
 export async function printMrpRencana(data, labels) {

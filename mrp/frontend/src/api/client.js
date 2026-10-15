@@ -2078,6 +2078,13 @@ export function mrpRencanaPoByCombination(params = {}) {
   return apiFetch(`/mrp/rencana/po/by-combination${suffix}`)
 }
 
+export function mrpRencanaItemSavePrintFields(itemId, body) {
+  return apiFetch(`/mrp/rencana-produksi/item/${itemId}/print-fields`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
 export function mrpRencanaPrint(id) {
   return apiFetch(`/mrp/rencana-produksi/${id}/print`)
 }

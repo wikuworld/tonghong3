@@ -3258,6 +3258,11 @@ def proses_label_api(persiapan_id: int):
         (persiapan_id,),
     )
     ky_sessions = _rows(cur.fetchall())
+    cur.execute(
+        "SELECT COUNT(*) AS c FROM tbl_persiapan_ukur WHERE persiapan_id=%s",
+        (persiapan_id,),
+    )
+    persiapan["jml_pcs"] = int((cur.fetchone() or {}).get("c") or 0)
     cur.close()
     conn.close()
     return jsonify(
@@ -9566,12 +9571,59 @@ def rencana_po_by_combination():
     return jsonify(items)
 
 
-@api.get("/rencana-produksi/<int:rencana_id>/print")
-def rencana_print_api(rencana_id: int):
-    from app import _make_rpi_barcode
+@api.put("/rencana-produksi/item/<int:item_id>/print-fields")
+def rencana_item_print_fields(item_id: int):
+    """Qty, schedule, dan remarks untuk cetak rencana. Tidak mengubah alokasi SO."""
+    from app import ensure_rencana_tables
+
+    body = request.get_json(silent=True) or {}
+    qty_raw = body.get("print_qty")
+    print_qty = None
+    if qty_raw not in (None, ""):
+        try:
+            print_qty = round(float(qty_raw), 2)
+        except (TypeError, ValueError):
+            return _err("print_qty tidak valid")
+        if print_qty < 0:
+            return _err("print_qty tidak valid")
+    schedule = (body.get("print_schedule") or "").strip() or None
+    remarks = (body.get("print_remarks") or "").strip() or None
 
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
+    ensure_rencana_tables(cur)
+    conn.commit()
+    cur.execute("SELECT id FROM tbl_rencana_item WHERE id=%s", (item_id,))
+    if not cur.fetchone():
+        cur.close()
+        conn.close()
+        return _err("Item rencana tidak ditemukan", 404)
+    cur.execute(
+        "UPDATE tbl_rencana_item SET print_qty=%s, print_schedule=%s, print_remarks=%s WHERE id=%s",
+        (print_qty, schedule, remarks, item_id),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify(
+        {
+            "ok": True,
+            "id": item_id,
+            "print_qty": print_qty,
+            "print_schedule": schedule or "",
+            "print_remarks": remarks or "",
+        }
+    )
+
+
+@api.get("/rencana-produksi/<int:rencana_id>/print")
+def rencana_print_api(rencana_id: int):
+    from app import _make_rpi_barcode, ensure_rencana_tables
+
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_rencana_tables(cur)
+    conn.commit()
     cur.execute("SELECT * FROM tbl_rencana_produksi WHERE id = %s", (rencana_id,))
     rencana = cur.fetchone()
     if not rencana:

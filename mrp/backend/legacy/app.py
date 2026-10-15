@@ -162,6 +162,18 @@ def ensure_rencana_tables(cur):
             "ALTER TABLE tbl_rencana_item ADD COLUMN nama_customer VARCHAR(150) DEFAULT NULL "
             "AFTER customer_id"
         )
+    if item_cols and "print_qty" not in item_cols:
+        cur.execute(
+            "ALTER TABLE tbl_rencana_item ADD COLUMN print_qty DECIMAL(12,2) DEFAULT NULL"
+        )
+    if item_cols and "print_schedule" not in item_cols:
+        cur.execute(
+            "ALTER TABLE tbl_rencana_item ADD COLUMN print_schedule VARCHAR(80) DEFAULT NULL"
+        )
+    if item_cols and "print_remarks" not in item_cols:
+        cur.execute(
+            "ALTER TABLE tbl_rencana_item ADD COLUMN print_remarks VARCHAR(255) DEFAULT NULL"
+        )
     try:
         cur.execute(
             "UPDATE tbl_rencana_item i "

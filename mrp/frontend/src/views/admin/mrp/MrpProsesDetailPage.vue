@@ -438,8 +438,6 @@
                 <tr><td>Kode Proses</td><td><strong>{{ dash(labelPayload.p.kode_proses) }}</strong></td></tr>
                 <tr><td>Kode WIP</td><td><strong>{{ dash(labelPayload.p.kode_wip) }}</strong></td></tr>
                 <tr><td>Rencana</td><td>{{ dash(labelPayload.p.kode_rencana) }}</td></tr>
-                <tr><td>{{ t('pages.mrpRencana.poCustomerRef') }}</td><td>{{ dash(labelPayload.p.no_po) }}</td></tr>
-                <tr><td>{{ t('pages.mrpRencana.soRef') }}</td><td>{{ dash(labelPayload.p.no_so) }}</td></tr>
                 <tr><td>{{ t('common.color') }}</td><td>{{ dash(labelPayload.p.warna) }}</td></tr>
                 <tr><td>{{ t('pages.mrpProses.thickness') }}</td><td>{{ dash(labelPayload.p.tebal) }}</td></tr>
                 <tr><td>Emboss</td><td>{{ dash(labelPayload.p.emboss) }}</td></tr>
@@ -456,6 +454,7 @@
                     <div v-else class="mrp-proses-label-sheet__tx-empty">—</div>
                   </td>
                 </tr>
+                <tr><td>{{ t('pages.mrpProses.labelPcs') }}</td><td><strong>{{ formatQty(labelPayload.p.jml_pcs) }}</strong></td></tr>
                 <tr><td>{{ t('pages.mrpProses.labelTotalQtySf') }}</td><td><strong>{{ formatQty(labelPayload.p.total_size) }}</strong></td></tr>
                 <tr><td>{{ t('common.date') }}</td><td>{{ dash(labelPayload.tanggal) }}</td></tr>
               </table>
@@ -1051,8 +1050,6 @@ function buildLabelHtml(p, labelTitle, tanggal, qty, qrDataUrl = '') {
       <tr><td>Kode Proses</td><td><strong>${esc(p.kode_proses)}</strong></td></tr>
       <tr><td>Kode WIP</td><td><strong>${esc(p.kode_wip)}</strong></td></tr>
       <tr><td>Rencana</td><td>${esc(p.kode_rencana || '—')}</td></tr>
-      <tr><td>${esc(t('pages.mrpRencana.poCustomerRef'))}</td><td>${esc(p.no_po || '—')}</td></tr>
-      <tr><td>${esc(t('pages.mrpRencana.soRef'))}</td><td>${esc(p.no_so || '—')}</td></tr>
       <tr><td>Warna</td><td>${esc(p.warna || '—')}</td></tr>
       <tr><td>Tebal</td><td>${esc(p.tebal || '—')}</td></tr>
       <tr><td>Emboss</td><td>${esc(p.emboss || '—')}</td></tr>
@@ -1063,6 +1060,7 @@ function buildLabelHtml(p, labelTitle, tanggal, qty, qrDataUrl = '') {
           ${txHtml}
         </td>
       </tr>
+      <tr><td>${esc(t('pages.mrpProses.labelPcs'))}</td><td><strong>${esc(p.jml_pcs ?? 0)}</strong></td></tr>
       <tr><td>Total Qty (Sf)</td><td><strong>${esc(p.total_size ?? 0)}</strong></td></tr>
       <tr><td>Tanggal</td><td>${esc(tanggal)}</td></tr>
     </table>

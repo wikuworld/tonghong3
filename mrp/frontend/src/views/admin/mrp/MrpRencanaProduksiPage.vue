@@ -325,6 +325,41 @@
       </div>
     </el-dialog>
 
+    <el-dialog
+      v-model="printDialogOpen"
+      :title="t('pages.mrpRencana.printDialogTitle')"
+      width="920px"
+      destroy-on-close
+      append-to-body
+    >
+      <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpRencana.printDialogHint') }}</p>
+      <el-table :data="printRows" border size="small" :empty-text="t('common.tableEmpty')">
+        <el-table-column prop="kode_rencana_item" :label="t('pages.mrpRencana.printKodeRpi')" min-width="140" />
+        <el-table-column prop="nama_customer" :label="t('pages.mrpRencana.printCustomer')" min-width="140" show-overflow-tooltip />
+        <el-table-column :label="t('pages.mrpRencana.printQty')" width="120">
+          <template #default="{ row }">
+            <el-input v-model="row.print_qty" size="small" />
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpRencana.printSchedule')" min-width="150">
+          <template #default="{ row }">
+            <el-input v-model="row.print_schedule" size="small" />
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpRencana.printRemarks')" min-width="170">
+          <template #default="{ row }">
+            <el-input v-model="row.print_remarks" size="small" />
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="printDialogOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="printSaving" @click="confirmPrint">
+          {{ t('pages.mrpRencana.print') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
     <MrpRencanaCreateDialog
       v-model="createOpen"
       :edit-id="editTargetId"
@@ -351,6 +386,7 @@ import {
   mrpRencanaItemBarcode,
   mrpRencanaItemListPo,
   mrpRencanaItemSavePo,
+  mrpRencanaItemSavePrintFields,
   mrpRencanaPrint,
   mrpSyncPo,
 } from '../../../api/client'
@@ -375,7 +411,6 @@ const createOpen = ref(false)
 const editTargetId = ref(null)
 const poOpen = ref(false)
 const barcodeOpen = ref(false)
-const printingId = ref(null)
 const poList = ref([])
 const poTableRef = ref(null)
 const selectedPoRows = ref([])
@@ -384,6 +419,10 @@ const selectedPos = ref([])
 const currentItemId = ref(null)
 const currentPoItem = ref(null)
 const barcodeData = ref(null)
+const printDialogOpen = ref(false)
+const printSaving = ref(false)
+const printRows = ref([])
+const printPayload = ref(null)
 const canCreate = computed(() => can('mrpShopfloor', 'create'))
 const canUpdate = computed(() => can('mrpShopfloor', 'update'))
 const canEditPo = computed(() => canUpdate.value)
@@ -675,27 +714,87 @@ async function openDetail(row) {
   }
 }
 
+function printLabels() {
+  return {
+    title: t('pages.mrpRencana.print'),
+    planName: t('pages.mrpRencana.printPlanName'),
+    planNo: t('pages.mrpRencana.printPlanNo'),
+    kodeRpi: t('pages.mrpRencana.printKodeRpi'),
+    emboss: t('pages.mrpRencana.printEmboss'),
+    customer: t('pages.mrpRencana.printCustomer'),
+    color: t('pages.mrpRencana.printColor'),
+    qty: t('pages.mrpRencana.printQty'),
+    cs: t('pages.mrpRencana.printCs'),
+    backer: t('pages.mrpRencana.printBacker'),
+    kode: t('pages.mrpRencana.printKode'),
+    schedule: t('pages.mrpRencana.printSchedule'),
+    remarks: t('pages.mrpRencana.printRemarks'),
+  }
+}
+
+function printFieldBody(row) {
+  const qtyRaw = String(row.print_qty ?? '').trim().replace(',', '.')
+  if (qtyRaw !== '' && (!Number.isFinite(Number(qtyRaw)) || Number(qtyRaw) < 0)) return null
+  return {
+    qtyRaw,
+    print_qty: qtyRaw === '' ? null : qtyRaw,
+    print_schedule: row.print_schedule || '',
+    print_remarks: row.print_remarks || '',
+  }
+}
+
 async function printRencana(row) {
-  printingId.value = row.id
   try {
     const data = await mrpRencanaPrint(row.id)
-    await printMrpRencana(data, {
-      title: t('pages.mrpRencana.print'),
-      planName: t('pages.mrpRencana.printPlanName'),
-      planNo: t('pages.mrpRencana.printPlanNo'),
-      emboss: t('pages.mrpRencana.printEmboss'),
-      customer: t('pages.mrpRencana.printCustomer'),
-      color: t('pages.mrpRencana.printColor'),
-      qty: t('pages.mrpRencana.printQty'),
-      schedule: t('pages.mrpRencana.printSchedule'),
-      cs: t('pages.mrpRencana.printCs'),
-      remarks: t('pages.mrpRencana.printRemarks'),
-      backer: t('pages.mrpRencana.printBacker'),
+    printPayload.value = data
+    printRows.value = (data.items || []).map((item) => ({
+      id: item.id,
+      kode_rencana_item: item.kode_rencana_item,
+      nama_customer: item.nama_customer,
+      print_qty: item.print_qty == null ? '' : item.print_qty,
+      print_schedule: item.print_schedule || '',
+      print_remarks: item.print_remarks || '',
+    }))
+    printDialogOpen.value = true
+  } catch (e) {
+    ElMessage.error(e.message || String(e))
+  }
+}
+
+async function confirmPrint() {
+  const prepared = []
+  for (const row of printRows.value) {
+    const body = printFieldBody(row)
+    if (!body) {
+      ElMessage.error(t('pages.mrpRencana.printQtyInvalid'))
+      return
+    }
+    prepared.push({ id: row.id, body })
+  }
+  printSaving.value = true
+  try {
+    await Promise.all(prepared.map(({ id, body }) => mrpRencanaItemSavePrintFields(id, {
+      print_qty: body.print_qty,
+      print_schedule: body.print_schedule,
+      print_remarks: body.print_remarks,
+    })))
+    const byId = new Map(prepared.map(({ id, body }) => [id, body]))
+    const items = (printPayload.value?.items || []).map((item) => {
+      const body = byId.get(item.id)
+      if (!body) return item
+      return {
+        ...item,
+        print_qty: body.qtyRaw === '' ? null : Number(body.qtyRaw),
+        print_schedule: body.print_schedule.trim(),
+        print_remarks: body.print_remarks.trim(),
+      }
     })
+    await printMrpRencana({ ...printPayload.value, items }, printLabels())
+    printDialogOpen.value = false
   } catch (e) {
     ElMessage.error(e.message || String(e))
   } finally {
-    printingId.value = null
+    printSaving.value = false
   }
 }
 
