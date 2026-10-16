@@ -20,8 +20,16 @@
         <strong>{{ dash(factorySo) }}</strong>
       </div>
       <div class="mrp-pack-ukur-panel__meta-row">
+        <span>{{ t('pages.mrpPacking.colQtyActual') }}:</span>
+        <strong>{{ formatQty(qtyActual) }}</strong>
+      </div>
+      <div class="mrp-pack-ukur-panel__meta-row">
         <span>{{ t('pages.mrpProses.totalSize') }}:</span>
         <strong>{{ formatQty(totalSize) }}</strong>
+      </div>
+      <div class="mrp-pack-ukur-panel__meta-row mrp-pack-ukur-panel__meta-row--projected">
+        <span>{{ t('pages.mrpPacking.qtyActualPlusTotalSize') }}:</span>
+        <strong>{{ formatQty(projectedQty) }}</strong>
       </div>
       <div class="mrp-pack-ukur-panel__meta-row">
         <span>{{ t('pages.mrpProses.totalQty') }}:</span>
@@ -133,15 +141,16 @@
 </template>
 
 <script setup>
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { View } from '@element-plus/icons-vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
 
-defineProps({
+const props = defineProps({
   rows: { type: Array, default: () => [] },
   totalSize: { type: Number, default: 0 },
+  qtyActual: { type: Number, default: 0 },
   totalQty: { type: Number, default: 0 },
   packingNo: { type: String, default: '' },
   lotNo: { type: String, default: '' },
@@ -162,6 +171,13 @@ defineProps({
   title: { type: String, default: '' },
   finishLabel: { type: String, default: '' },
   showPrintRoll: { type: Boolean, default: true },
+})
+
+/** Qty Actual (sudah cetak) + Total size (ukur sebelum cetak label). */
+const projectedQty = computed(() => {
+  const actual = Number(props.qtyActual) || 0
+  const size = Number(props.totalSize) || 0
+  return Math.round((actual + size) * 100) / 100
 })
 
 const emit = defineEmits(['start', 'stop', 'add', 'edit', 'delete', 'print-roll', 'cancel', 'finish', 'view-rolls'])
@@ -273,6 +289,13 @@ function rowKey(row, idx) {
   font-size: 0.78rem;
 }
 .mrp-pack-ukur-panel__meta-row strong { margin-left: 0.25rem; }
+.mrp-pack-ukur-panel__meta-row--projected {
+  grid-column: 1 / -1;
+  font-weight: 600;
+}
+.mrp-pack-ukur-panel__meta-row--projected strong {
+  color: var(--el-color-primary);
+}
 .mrp-pack-ukur-panel__actions {
   display: flex;
   flex-wrap: nowrap;

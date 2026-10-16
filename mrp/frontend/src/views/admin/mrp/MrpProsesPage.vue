@@ -601,7 +601,7 @@
             </el-table-column>
           </el-table>
         </template>
-        <el-form-item :label="t('pages.mrpProses.treatmentList')" required>
+        <el-form-item :label="t('pages.mrpProses.treatmentList')">
           <div class="mrp-proses-treatment-box">
             <template v-if="treatmentsFiltered.length">
               <el-checkbox-group v-model="form.treatment_list">
@@ -765,7 +765,6 @@ const canCreate = computed(() => can('mrpShopfloor', 'create'))
 const canSaveCreate = computed(() => {
   if (!processKyRows.value.length) return false
   if (candidateRows.value.length && !processRows.value.length) return false
-  if (!form.treatment_list?.length) return false
   return true
 })
 const ukurPanelHint = computed(() => {
@@ -1730,10 +1729,6 @@ async function submit() {
   }
   if (!processKyRows.value.length) {
     ElMessage.warning(t('pages.mrpProses.kySelectRequired'))
-    return
-  }
-  if (!form.treatment_list?.length) {
-    ElMessage.warning(t('pages.mrpProses.treatmentRequired'))
     return
   }
   for (const row of processKyRows.value) {

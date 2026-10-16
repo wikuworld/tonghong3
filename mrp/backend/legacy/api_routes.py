@@ -230,6 +230,123 @@ def palet_out():
     return jsonify({"ok": True, "kode_palet": kode_palet, "yl_cleared": yl_cleared})
 
 
+def _yl_spek_used(cur, kode_palet: str, kode_yl: str) -> bool:
+    cur.execute(
+        "SELECT id FROM tbl_persiapan_ky WHERE kode_palet=%s AND kode_yl=%s LIMIT 1",
+        (kode_palet, kode_yl),
+    )
+    if cur.fetchone():
+        return True
+    cur.execute(
+        "SELECT id FROM tbl_yl_movement WHERE kode_palet=%s AND kode_yl=%s LIMIT 1",
+        (kode_palet, kode_yl),
+    )
+    return cur.fetchone() is not None
+
+
+def _yl_delete_block_reason(cur, kode_palet: str, kode_yl: str) -> str | None:
+    if _yl_spek_used(cur, kode_palet, kode_yl):
+        return "YL sudah dipakai proses atau punya riwayat movement. Tidak bisa dihapus."
+    cur.execute(
+        "SELECT id FROM tbl_kulit_lebih WHERE kode_palet=%s AND kode_yl=%s LIMIT 1",
+        (kode_palet, kode_yl),
+    )
+    if cur.fetchone():
+        return "YL sudah tercatat sebagai kulit lebih. Tidak bisa dihapus."
+    return None
+
+
+def _yl_body_pair(body):
+    kode_palet = (body.get("kode_palet") or "").strip()
+    kode_yl = (body.get("kode_yl") or "").strip()
+    if not kode_palet or not kode_yl:
+        return None, None, "kode_palet dan kode_yl wajib"
+    return kode_palet, kode_yl, None
+
+
+@api.put("/palet/yl")
+def palet_yl_update():
+    body = request.get_json(silent=True) or {}
+    kode_palet, kode_yl, err = _yl_body_pair(body)
+    if err:
+        return _err(err)
+    thickness = (body.get("thickness") or "").strip()
+    warna = (body.get("warna") or "").strip()
+    try:
+        qty = round(float(body.get("qty")), 3)
+    except (TypeError, ValueError):
+        return _err("qty harus angka")
+    if qty <= 0:
+        return _err("qty harus > 0")
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    from app import ensure_extended_tables
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.execute(
+        "SELECT * FROM tbl_yl WHERE kode_palet=%s AND kode_yl=%s LIMIT 1 FOR UPDATE",
+        (kode_palet, kode_yl),
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return _err("YL tidak ditemukan di stok palet", 404)
+    reserved = _yl_reserved_qty(cur, kode_palet, kode_yl)
+    if qty + 1e-9 < reserved:
+        cur.close()
+        conn.close()
+        return _err(f"Qty baru di bawah reservasi proses ({reserved})")
+    spek_changed = (
+        str(row.get("thickness") or "").strip() != thickness
+        or str(row.get("warna") or "").strip() != warna
+    )
+    if spek_changed and _yl_spek_used(cur, kode_palet, kode_yl):
+        cur.close()
+        conn.close()
+        return _err("Tebal dan warna terkunci karena YL sudah dipakai proses atau punya riwayat movement")
+    cur.execute(
+        "UPDATE tbl_yl SET thickness=%s, warna=%s, qty=%s WHERE id=%s",
+        (thickness or None, warna or None, qty, row["id"]),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "kode_palet": kode_palet, "kode_yl": kode_yl, "qty": qty})
+
+
+@api.delete("/palet/yl")
+def palet_yl_delete():
+    body = request.get_json(silent=True) or {}
+    kode_palet, kode_yl, err = _yl_body_pair(body)
+    if err:
+        return _err(err)
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    from app import ensure_extended_tables
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.execute(
+        "SELECT id FROM tbl_yl WHERE kode_palet=%s AND kode_yl=%s LIMIT 1 FOR UPDATE",
+        (kode_palet, kode_yl),
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return _err("YL tidak ditemukan di stok palet", 404)
+    reason = _yl_delete_block_reason(cur, kode_palet, kode_yl)
+    if reason:
+        cur.close()
+        conn.close()
+        return _err(reason)
+    cur.execute("DELETE FROM tbl_yl WHERE id=%s", (row["id"],))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "kode_palet": kode_palet, "kode_yl": kode_yl, "deleted": True})
+
+
 @api.get("/palet/<kode_palet>/yl")
 def palet_yl(kode_palet):
     conn = get_db_connection()
@@ -290,6 +407,13 @@ def yl_list():
     )
     cur.execute(sql, params + [pg["page_size"], pg["offset"]])
     data = _rows(cur.fetchall())
+    for row in data:
+        palet = row.get("kode_palet") or ""
+        yl_code = row.get("kode_yl") or ""
+        stock = float(row.get("qty") or 0)
+        available = _yl_available_qty(cur, palet, yl_code)
+        row["reserved_qty"] = round(max(stock - available, 0.0), 3)
+        row["spek_locked"] = _yl_spek_used(cur, palet, yl_code)
     cur.close()
     conn.close()
     return jsonify(
@@ -2358,10 +2482,6 @@ def proses_create():
         cur.close()
         conn.close()
         return _err("Pilih jenis PU atau Suede.")
-    if not selected:
-        cur.close()
-        conn.close()
-        return _err("Pilih minimal satu treatment dari master.")
     if not isinstance(ky_lines, list) or not ky_lines:
         cur.close()
         conn.close()
@@ -4871,6 +4991,9 @@ def _fg_code_taken(cur, kode: str) -> bool:
         )
         if cur.fetchone():
             return True
+    cur.execute("SELECT 1 FROM tbl_gudang_fg WHERE TRIM(kode_packing)=%s LIMIT 1", (kode,))
+    if cur.fetchone():
+        return True
     return False
 
 
@@ -5382,6 +5505,20 @@ def packing_list():
         params + [pg["page_size"], pg["offset"]],
     )
     data = _rows(cur.fetchall())
+    fg_status_by_packing: dict = {}
+    packing_ids = [r.get("id") for r in data if r.get("id") is not None]
+    if packing_ids:
+        placeholders = ",".join(["%s"] * len(packing_ids))
+        cur.execute(
+            "SELECT gf.packing_id, gf.status FROM tbl_gudang_fg gf "
+            f"INNER JOIN ("
+            f"  SELECT packing_id, MAX(id) AS mid FROM tbl_gudang_fg "
+            f"  WHERE packing_id IN ({placeholders}) GROUP BY packing_id"
+            f") latest ON latest.mid = gf.id",
+            packing_ids,
+        )
+        for fg in cur.fetchall() or []:
+            fg_status_by_packing[fg.get("packing_id")] = (fg.get("status") or "").strip()
     for row in data:
         spec = _packing_spec_for_wip(
             cur,
@@ -5403,6 +5540,16 @@ def packing_list():
             spec.get("lot_no")
             or row.get("kode_wip")
             or ""
+        )
+        fg_status = fg_status_by_packing.get(row.get("id")) or ""
+        row["fg_status"] = fg_status or None
+        # Finished boleh dikoreksi selama FG belum OUT (termasuk jika baris FG belum ada).
+        row["can_correct"] = bool(
+            row.get("status") == "in_progress"
+            or (
+                row.get("status") == "finished"
+                and fg_status not in ("out", "repacked")
+            )
         )
     cur.close()
     conn.close()
@@ -5711,6 +5858,15 @@ def packing_detail_api(packing_id: int):
         rencana_item_id=packing.get("rencana_item_id"),
         kode_wip=(packing.get("kode_wip") or "").strip(),
     )
+    fg_row = _fg_row_for_packing(cur, packing_id)
+    fg_status = (fg_row.get("status") or "") if fg_row else ""
+    packing_out["fg_id"] = fg_row.get("id") if fg_row else None
+    packing_out["fg_status"] = fg_status or None
+    # Finished boleh dikoreksi selama FG belum OUT (termasuk jika baris FG belum ada).
+    packing_out["can_correct"] = bool(
+        packing.get("status") == "in_progress"
+        or (packing.get("status") == "finished" and fg_status != "out")
+    )
     cur.close()
     conn.close()
     return jsonify(
@@ -5779,24 +5935,6 @@ def _packing_roll_qty_actual(cur, packing_id: int) -> float:
     return round(float((cur.fetchone() or {}).get("qty") or 0), 2)
 
 
-def _packing_finish_qty_error(cur, packing) -> str | None:
-    """Selesai packing: tolak hanya bila Qty Actual melebihi Qty WIP."""
-    if packing.get("stock_sisa_id"):
-        return None
-    cap = _packing_wip_qty_limit(cur, packing)
-    if cap is None:
-        return None
-    qty_wip, _ = cap
-    qty_actual = _packing_roll_qty_actual(cur, int(packing["id"]))
-    target = round(qty_wip, 2)
-    if qty_actual > target + 1e-9:
-        return (
-            f"Qty Actual ({qty_actual}) melebihi Qty WIP ({target}). "
-            "Periksa roll label yang sudah dicetak."
-        )
-    return None
-
-
 def _packing_wip_qty_limit(cur, packing) -> tuple[float, float] | None:
     """Qty WIP persiapan dan Qty Actual roll in-progress. None untuk packing barang sisa."""
     if packing.get("stock_sisa_id"):
@@ -5834,6 +5972,121 @@ def _packing_wip_qty_limit(cur, packing) -> tuple[float, float] | None:
     return qty_wip, qty_actual
 
 
+_PACKING_FINISHED_CORRECT_ACTIONS = frozenset(
+    {"update_header", "add_roll", "delete_roll", "add_po", "delete_po"}
+)
+
+
+def _fg_row_for_packing(cur, packing_id: int, *, lock: bool = False):
+    sql = "SELECT * FROM tbl_gudang_fg WHERE packing_id=%s ORDER BY id DESC LIMIT 1"
+    if lock:
+        sql += " FOR UPDATE"
+    cur.execute(sql, (packing_id,))
+    return cur.fetchone()
+
+
+def _fg_roll_locked_reason(cur, packing_id: int) -> str | None:
+    fg = _fg_row_for_packing(cur, packing_id)
+    if not fg:
+        return None
+    status = (fg.get("status") or "").strip()
+    if status == "out":
+        return "Gudang FG sudah OUT — tidak bisa diedit"
+    if status == "repacked":
+        return "Gudang FG sudah di-repack — tidak bisa diedit"
+    if fg.get("erp_delivery_id"):
+        return (
+            "Surat jalan sudah menempel. Roll tidak bisa diubah "
+            "sampai kaitan surat jalan dilepas."
+        )
+    return None
+
+
+def _packing_finished_mutation_error(cur, packing, action: str):
+    """None if mutation allowed; error message if blocked.
+
+    Finished packing may still be corrected while Gudang FG is not OUT
+    (including when the FG row is missing and will be upserted on sync).
+    """
+    if (packing.get("status") or "") != "finished":
+        return None
+    if action == "finish":
+        return None
+    if action not in _PACKING_FINISHED_CORRECT_ACTIONS:
+        return "Packing sudah finished"
+    return _fg_roll_locked_reason(cur, packing["id"])
+
+
+def _sync_gudang_fg_from_packing(cur, packing_id: int) -> None:
+    """Buat atau segarkan satu baris FG. Kode FG tidak ikut kode header yang maju."""
+    cur.execute("SELECT * FROM tbl_packing WHERE id=%s", (packing_id,))
+    pkg = cur.fetchone()
+    if not pkg:
+        return
+    fg = _fg_row_for_packing(cur, packing_id, lock=True)
+    if fg and (fg.get("status") or "") in ("out", "repacked"):
+        return
+    cur.execute(
+        "SELECT COUNT(*) AS n, COALESCE(SUM(lembar),0) AS lembar, "
+        "COALESCE(SUM(ukuran),0) AS ukuran "
+        "FROM tbl_packing_roll WHERE packing_id=%s",
+        (packing_id,),
+    )
+    totals = cur.fetchone() or {}
+    n_roll = int(totals.get("n") or 0)
+    lembar = int(totals.get("lembar") or 0)
+    ukuran = round(float(totals.get("ukuran") or 0), 2)
+    if n_roll <= 0:
+        if (
+            fg
+            and (fg.get("status") or "") == "in_stock"
+            and not fg.get("erp_delivery_id")
+        ):
+            cur.execute(
+                "DELETE FROM tbl_gudang_fg WHERE id=%s AND status='in_stock'",
+                (fg["id"],),
+            )
+        return
+    if fg and (fg.get("status") or "") == "in_stock":
+        cur.execute(
+            "UPDATE tbl_gudang_fg SET kode_wip=%s, customer=%s, "
+            "total_lembar=%s, total_ukuran=%s "
+            "WHERE id=%s AND status='in_stock'",
+            (
+                pkg.get("kode_wip"),
+                pkg.get("customer"),
+                lembar,
+                ukuran,
+                fg["id"],
+            ),
+        )
+        return
+    kode = (pkg.get("kode_packing") or "").strip()
+    if not kode or _fg_kode_used_by_other(cur, kode, packing_id):
+        kode = _alloc_unique_fg_code(cur)
+    cur.execute(
+        "INSERT INTO tbl_gudang_fg "
+        "(packing_id, kode_packing, kode_wip, customer, total_lembar, total_ukuran, status) "
+        "VALUES (%s,%s,%s,%s,%s,%s,'in_stock')",
+        (
+            packing_id,
+            kode,
+            pkg.get("kode_wip"),
+            pkg.get("customer"),
+            lembar,
+            ukuran,
+        ),
+    )
+
+
+def _fg_kode_used_by_other(cur, kode: str, packing_id: int) -> bool:
+    cur.execute(
+        "SELECT id FROM tbl_gudang_fg WHERE TRIM(kode_packing)=%s AND packing_id<>%s LIMIT 1",
+        ((kode or "").strip(), int(packing_id)),
+    )
+    return cur.fetchone() is not None
+
+
 @api.post("/packing/<int:packing_id>/actions")
 def packing_actions(packing_id: int):
     from app import ensure_extended_tables
@@ -5853,19 +6106,15 @@ def packing_actions(packing_id: int):
         cur.close()
         conn.close()
         return _err("Packing tidak ditemukan", 404)
-    if packing["status"] == "finished" and action != "finish":
-        # allow idempotent finish; block mutations after finished
-        if action != "finish":
-            cur.close()
-            conn.close()
-            return _err("Packing sudah finished")
+    finished_err = _packing_finished_mutation_error(cur, packing, action)
+    if finished_err:
+        cur.close()
+        conn.close()
+        return _err(finished_err)
 
     msg = "ok"
+    sync_fg = False
     if action == "update_header":
-        if packing["status"] == "finished":
-            cur.close()
-            conn.close()
-            return _err("Packing sudah finished")
         softness = body.get("softness")
         if softness is not None:
             softness = str(softness).strip() or None
@@ -5878,12 +6127,14 @@ def packing_actions(packing_id: int):
             (softness, gross_weight, net_weight, packing_id),
         )
         msg = "Header packing diperbarui"
+        sync_fg = packing["status"] == "finished"
 
     elif action == "add_roll":
-        if packing["status"] == "finished":
+        locked = _fg_roll_locked_reason(cur, packing_id)
+        if locked:
             cur.close()
             conn.close()
-            return _err("Packing sudah finished")
+            return _err(locked)
         lembar = int(body.get("lembar") or 1)
         ukuran = float(body.get("ukuran") or 0)
         remark = (body.get("remark") or "").strip() or None
@@ -5910,12 +6161,14 @@ def packing_actions(packing_id: int):
             (lembar, ukuran, packing_id),
         )
         msg = f"Roll #{roll_no} ditambahkan"
+        sync_fg = True
 
     elif action == "print_roll_label":
-        if packing["status"] == "finished":
+        locked = _fg_roll_locked_reason(cur, packing_id)
+        if locked:
             cur.close()
             conn.close()
-            return _err("Packing sudah finished")
+            return _err(locked)
         sizes = body.get("sizes") or []
         if not sizes:
             cur.close()
@@ -5935,16 +6188,19 @@ def packing_actions(packing_id: int):
             return _err("Size pengukuran tidak valid")
         lembar = len(parsed_sizes)
         ukuran = round(sum(parsed_sizes), 2)
+        overage_warn = None
         cap = _packing_wip_qty_limit(cur, packing)
         if cap is not None:
             qty_wip, qty_actual = cap
-            if round(ukuran + qty_actual, 2) > qty_wip:
-                cur.close()
-                conn.close()
-                return _err(
-                    f"Qty diukur ({ukuran}) + Qty Actual ({qty_actual}) "
-                    f"tidak boleh lebih dari Qty WIP ({qty_wip})"
-                )
+            projected = round(ukuran + qty_actual, 2)
+            if projected > qty_wip + 1e-9:
+                overage_warn = {
+                    "ukuran": ukuran,
+                    "qty_actual": qty_actual,
+                    "qty_wip": qty_wip,
+                    "projected": projected,
+                    "overage": round(projected - qty_wip, 2),
+                }
         cur.execute(
             "SELECT COALESCE(MAX(roll_no),0)+1 AS nxt FROM tbl_packing_roll WHERE packing_id=%s",
             (packing_id,),
@@ -6003,6 +6259,7 @@ def packing_actions(packing_id: int):
             "UPDATE tbl_packing SET kode_packing=%s WHERE id=%s",
             (next_kode, packing_id),
         )
+        _sync_gudang_fg_from_packing(cur, packing_id)
         conn.commit()
         cur.execute("SELECT * FROM tbl_packing WHERE id=%s", (packing_id,))
         pkg = cur.fetchone()
@@ -6025,24 +6282,40 @@ def packing_actions(packing_id: int):
         next_roll = roll_no + 1
         cur.close()
         conn.close()
-        return jsonify(
-            {
-                "ok": True,
-                "message": f"Label roll #{roll_no} siap cetak",
-                "roll_no": roll_no,
-                "roll_kode_packing": roll_kode,
-                "next_roll_no": next_roll,
-                "kode_packing": next_kode,
-                "label": label,
-            }
-        )
+        payload = {
+            "ok": True,
+            "message": f"Label roll #{roll_no} siap cetak",
+            "roll_no": roll_no,
+            "roll_kode_packing": roll_kode,
+            "next_roll_no": next_roll,
+            "kode_packing": next_kode,
+            "label": label,
+        }
+        if overage_warn:
+            payload["wip_overage"] = overage_warn
+            payload["warning"] = (
+                f"Qty packing ({overage_warn['projected']}) melebihi Qty WIP "
+                f"({overage_warn['qty_wip']}) sebanyak {overage_warn['overage']}."
+            )
+        return jsonify(payload)
 
     elif action == "delete_roll":
-        if packing["status"] == "finished":
+        locked = _fg_roll_locked_reason(cur, packing_id)
+        if locked:
             cur.close()
             conn.close()
-            return _err("Packing sudah finished")
+            return _err(locked)
         roll_id = body.get("roll_id")
+        if packing["status"] == "finished":
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM tbl_packing_roll WHERE packing_id=%s",
+                (packing_id,),
+            )
+            n_roll = int((cur.fetchone() or {}).get("n") or 0)
+            if n_roll <= 1:
+                cur.close()
+                conn.close()
+                return _err("Packing finished harus menyisakan minimal satu roll")
         cur.execute(
             "SELECT lembar, ukuran FROM tbl_packing_roll WHERE id=%s AND packing_id=%s",
             (roll_id, packing_id),
@@ -6056,12 +6329,9 @@ def packing_actions(packing_id: int):
                 (roll["lembar"], roll["ukuran"], packing_id),
             )
         msg = "Roll dihapus"
+        sync_fg = True
 
     elif action == "add_po":
-        if packing["status"] == "finished":
-            cur.close()
-            conn.close()
-            return _err("Packing sudah finished")
         no_po = (body.get("no_po") or "").strip()
         no_so = (body.get("no_so") or "").strip()
         qty_sq = float(body.get("qty_sq") or 0)
@@ -6102,10 +6372,6 @@ def packing_actions(packing_id: int):
         msg = "PO ditambahkan"
 
     elif action == "delete_po":
-        if packing["status"] == "finished":
-            cur.close()
-            conn.close()
-            return _err("Packing sudah finished")
         po_row_id = body.get("po_row_id")
         cur.execute(
             "DELETE FROM tbl_packing_po WHERE id=%s AND packing_id=%s",
@@ -6124,36 +6390,21 @@ def packing_actions(packing_id: int):
                 cur.close()
                 conn.close()
                 return _err("Tambah minimal satu roll sebelum Finish → Gudang FG")
-            qty_err = _packing_finish_qty_error(cur, packing)
-            if qty_err:
-                cur.close()
-                conn.close()
-                return _err(qty_err)
+            # Qty Actual boleh melebihi Qty WIP; warning kelebihan ditangani di UI.
             cur.execute(
                 "UPDATE tbl_packing SET status='finished', date_finished=NOW() WHERE id=%s",
                 (packing_id,),
             )
-        cur.execute("SELECT * FROM tbl_packing WHERE id=%s", (packing_id,))
-        pkg = cur.fetchone()
-        cur.execute(
-            "INSERT IGNORE INTO tbl_gudang_fg "
-            "(packing_id, kode_packing, kode_wip, customer, total_lembar, total_ukuran, status) "
-            "VALUES (%s,%s,%s,%s,%s,%s,'in_stock')",
-            (
-                packing_id,
-                pkg["kode_packing"],
-                pkg["kode_wip"],
-                pkg["customer"],
-                pkg["total_lembar"],
-                pkg["total_ukuran"],
-            ),
-        )
         msg = "Finish Good selesai. Masuk Gudang FG."
+        sync_fg = True
 
     else:
         cur.close()
         conn.close()
         return _err(f"action tidak dikenal: {action}")
+
+    if sync_fg:
+        _sync_gudang_fg_from_packing(cur, packing_id)
 
     conn.commit()
     cur.close()
@@ -6844,37 +7095,42 @@ def gudang_fg_list():
     pg = parse_page_args(request.args, default_page_size=20)
     order = order_sql(
         {
-            "date_in": "date_in",
-            "kode_packing": "kode_packing",
-            "kode_wip": "kode_wip",
-            "status": "status",
-            "customer": "customer",
-            "id": "id",
+            "date_in": "gf.date_in",
+            "kode_packing": "gf.kode_packing",
+            "kode_wip": "gf.kode_wip",
+            "status": "gf.status",
+            "customer": "gf.customer",
+            "id": "gf.id",
         },
         sort_by=pg["sort_by"],
         sort_dir=pg["sort_dir"],
-        default_sql="date_in DESC",
+        default_sql="gf.date_in DESC",
     )
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
     ensure_extended_tables(cur)
     conn.commit()
+    from_sql = (
+        " FROM tbl_gudang_fg gf "
+        "LEFT JOIN tbl_packing p ON p.id = gf.packing_id"
+    )
     where = " WHERE 1=1"
     params: list = []
-    if status in ("in_stock", "out"):
-        where += " AND status=%s"
+    if status in ("in_stock", "out", "repacked"):
+        where += " AND gf.status=%s"
         params.append(status)
     if q:
         like = f"%{q}%"
         where += (
-            " AND (kode_packing LIKE %s OR kode_wip LIKE %s OR customer LIKE %s "
-            "OR IFNULL(erp_delivery_number,'') LIKE %s)"
+            " AND (gf.kode_packing LIKE %s OR gf.kode_wip LIKE %s OR gf.customer LIKE %s "
+            "OR IFNULL(gf.erp_delivery_number,'') LIKE %s)"
         )
         params.extend([like, like, like, like])
-    cur.execute(f"SELECT COUNT(*) AS c FROM tbl_gudang_fg{where}", params)
+    cur.execute(f"SELECT COUNT(*) AS c{from_sql}{where}", params)
     total = int((cur.fetchone() or {}).get("c") or 0)
     cur.execute(
-        f"SELECT * FROM tbl_gudang_fg{where} ORDER BY {order} LIMIT %s OFFSET %s",
+        f"SELECT gf.*, p.status AS packing_status{from_sql}{where} "
+        f"ORDER BY {order} LIMIT %s OFFSET %s",
         params + [pg["page_size"], pg["offset"]],
     )
     data = _rows(cur.fetchall())
@@ -7093,6 +7349,11 @@ def gudang_fg_surat_jalan_out():
         if row.get("status") != "in_stock":
             skipped.append({"id": fid, "kode_packing": row.get("kode_packing"), "reason": "invalid_status"})
             continue
+        blocked = _fg_packing_not_finished(cur, row)
+        if blocked:
+            cur.close()
+            conn.close()
+            return _err(blocked)
         cur.execute(
             "UPDATE tbl_gudang_fg SET status='out', date_out=NOW(), keterangan_out=%s "
             "WHERE id=%s AND status='in_stock'",
@@ -7310,7 +7571,7 @@ def gudang_fg_by_lot():
     conn.commit()
     where = " WHERE 1=1"
     params: list = []
-    if status in ("in_stock", "out"):
+    if status in ("in_stock", "out", "repacked"):
         where += " AND status=%s"
         params.append(status)
     cur.execute(f"SELECT * FROM tbl_gudang_fg{where} ORDER BY kode_packing ASC", params)
@@ -7451,6 +7712,21 @@ def gudang_fg_detail(fg_id: int):
     )
 
 
+def _fg_packing_not_finished(cur, fg) -> str | None:
+    """Pesan bila FG belum boleh keluar fisik. None bila packing sudah finished."""
+    kode = fg.get("kode_packing") or ""
+    if (fg.get("status") or "") == "repacked":
+        return f"FG {kode} sudah di-repack"
+    packing_id = fg.get("packing_id")
+    if not packing_id:
+        return "Packing belum selesai"
+    cur.execute("SELECT status FROM tbl_packing WHERE id=%s", (int(packing_id),))
+    pkg = cur.fetchone()
+    if not pkg or (pkg.get("status") or "") != "finished":
+        return "Packing belum selesai"
+    return None
+
+
 @api.post("/gudang-fg/out")
 def gudang_fg_out():
     from app import ensure_extended_tables
@@ -7481,6 +7757,11 @@ def gudang_fg_out():
         if existing and existing.get("status") == "out":
             return _err("Kode Packing List sudah OUT", 400)
         return _err("Kode Packing List tidak ditemukan di stok FG", 404)
+    blocked = _fg_packing_not_finished(cur, fg)
+    if blocked:
+        cur.close()
+        conn.close()
+        return _err(blocked)
     cur.execute(
         "UPDATE tbl_gudang_fg SET status='out', date_out=NOW(), keterangan_out=%s, "
         "bridge_status=NULL, bridge_error=NULL WHERE id=%s",
@@ -7490,6 +7771,154 @@ def gudang_fg_out():
     cur.close()
     conn.close()
     return jsonify({"ok": True, "id": fg["id"], "kode_packing": kode_packing})
+
+
+def _repack_child_packing(cur, src: dict, kode: str, lembar: int, ukuran: float) -> int:
+    from app import _col_names
+
+    cols = set(_col_names(cur, "tbl_packing"))
+    no_po = (src.get("no_po") or "").strip() or "-"
+    fields = [
+        "kode_packing",
+        "kode_wip",
+        "no_po",
+        "customer",
+        "status",
+        "total_lembar",
+        "total_ukuran",
+    ]
+    vals = [
+        kode,
+        src.get("kode_wip") or "",
+        no_po,
+        src.get("customer"),
+        "finished",
+        int(lembar),
+        ukuran,
+    ]
+    if "rencana_item_id" in cols:
+        fields.append("rencana_item_id")
+        vals.append(src.get("rencana_item_id"))
+    placeholders = ",".join(["%s"] * len(vals))
+    date_sql = ", date_finished" if "date_finished" in cols else ""
+    date_val = ", NOW()" if "date_finished" in cols else ""
+    cur.execute(
+        f"INSERT INTO tbl_packing ({', '.join(fields)}{date_sql}) "
+        f"VALUES ({placeholders}{date_val})",
+        tuple(vals),
+    )
+    new_id = cur.lastrowid
+    cur.execute("SELECT * FROM tbl_packing_po WHERE packing_id=%s", (src["id"],))
+    for po in cur.fetchall() or []:
+        cur.execute(
+            "INSERT INTO tbl_packing_po (packing_id, po_id, no_po, no_so, qty_sq) "
+            "VALUES (%s,%s,%s,%s,%s)",
+            (
+                new_id,
+                po.get("po_id"),
+                po.get("no_po") or no_po,
+                po.get("no_so"),
+                po.get("qty_sq") or 0,
+            ),
+        )
+    roll_cols = set(_col_names(cur, "tbl_packing_roll"))
+    if "kode_packing" in roll_cols:
+        cur.execute(
+            "INSERT INTO tbl_packing_roll (packing_id, roll_no, lembar, ukuran, kode_packing) "
+            "VALUES (%s,1,%s,%s,%s)",
+            (new_id, int(lembar), ukuran, kode),
+        )
+    else:
+        cur.execute(
+            "INSERT INTO tbl_packing_roll (packing_id, roll_no, lembar, ukuran) "
+            "VALUES (%s,1,%s,%s)",
+            (new_id, int(lembar), ukuran),
+        )
+    return int(new_id)
+
+
+@api.post("/gudang-fg/<int:fg_id>/repack")
+def gudang_fg_repack(fg_id: int):
+    from app import ensure_extended_tables
+    from fg_repack_rules import validate_repack_lines
+
+    body = request.get_json(silent=True) or {}
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.execute("SELECT * FROM tbl_gudang_fg WHERE id=%s FOR UPDATE", (fg_id,))
+    fg = cur.fetchone()
+    if not fg:
+        cur.close()
+        conn.close()
+        return _err("Data tidak ditemukan", 404)
+    if (fg.get("status") or "") != "in_stock":
+        cur.close()
+        conn.close()
+        return _err("Hanya FG in stock yang bisa di-repack")
+    if fg.get("erp_delivery_id"):
+        cur.close()
+        conn.close()
+        return _err(
+            "Surat jalan sudah menempel. Repack ditolak sampai kaitan surat jalan dilepas."
+        )
+    blocked = _fg_packing_not_finished(cur, fg)
+    if blocked:
+        cur.close()
+        conn.close()
+        return _err(blocked)
+    err, lines = validate_repack_lines(
+        body.get("lines"), fg.get("total_lembar"), fg.get("total_ukuran")
+    )
+    if err:
+        cur.close()
+        conn.close()
+        return _err(err)
+    cur.execute("SELECT * FROM tbl_packing WHERE id=%s FOR UPDATE", (fg["packing_id"],))
+    src = cur.fetchone()
+    if not src:
+        cur.close()
+        conn.close()
+        return _err("Packing sumber tidak ditemukan", 404)
+    created = []
+    for line in lines:
+        kode = _alloc_unique_fg_code(cur)
+        new_packing_id = _repack_child_packing(
+            cur, src, kode, line["lembar"], line["ukuran"]
+        )
+        cur.execute(
+            "INSERT INTO tbl_gudang_fg "
+            "(packing_id, kode_packing, kode_wip, customer, total_lembar, total_ukuran, "
+            "status, repacked_from_id) "
+            "VALUES (%s,%s,%s,%s,%s,%s,'in_stock',%s)",
+            (
+                new_packing_id,
+                kode,
+                src.get("kode_wip"),
+                src.get("customer"),
+                line["lembar"],
+                line["ukuran"],
+                fg_id,
+            ),
+        )
+        created.append(
+            {
+                "id": cur.lastrowid,
+                "packing_id": new_packing_id,
+                "kode_packing": kode,
+                "lembar": line["lembar"],
+                "ukuran": line["ukuran"],
+            }
+        )
+    cur.execute(
+        "UPDATE tbl_gudang_fg SET status='repacked' WHERE id=%s AND status='in_stock'",
+        (fg_id,),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "id": fg_id, "status": "repacked", "created": created})
 
 
 @api.post("/gudang-fg/<int:fg_id>/rollback-out")
@@ -8007,6 +8436,228 @@ def _stok_kimia_do_out(cur, conn, body, *, from_gudang: str, tujuan_default: str
     return jsonify(payload)
 
 
+_STOCK_LOT_KIND = {
+    "kimia": {
+        "table": "tbl_stok_kimia_in",
+        "out_table": "tbl_stok_kimia_out",
+        "qty_in": "qty",
+        "qty_out": "qty",
+        "usage_table": "tbl_usage_color",
+        "block_lapangan": True,
+        "lot": True,
+        "satuan": True,
+        "kemasan": True,
+        "expired": True,
+    },
+    "rp": {
+        "table": "tbl_stok_rp_in",
+        "out_table": "tbl_stok_rp_out",
+        "qty_in": "meter_roll",
+        "qty_out": "meter_roll",
+        "usage_table": "tbl_usage_rp",
+        "block_lapangan": True,
+        "lot": True,
+        "satuan": False,
+        "kemasan": False,
+        "expired": False,
+    },
+    "material_lain": {
+        "table": "tbl_stok_material_lain_in",
+        "out_table": "tbl_stok_material_lain_out",
+        "qty_in": "qty",
+        "qty_out": "qty",
+        "usage_table": "tbl_usage_material_lain",
+        "block_lapangan": False,
+        "lot": False,
+        "satuan": True,
+        "kemasan": False,
+        "expired": False,
+    },
+}
+
+
+def _stock_lot_id(body):
+    raw = body.get("id") or body.get("stok_in_id")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _stock_lot_out_stats(cur, spec, stok_in_id: int) -> dict:
+    kemasan_sql = "COALESCE(SUM(jumlah_kemasan),0)" if spec["kemasan"] else "0"
+    cur.execute(
+        f"SELECT COALESCE(SUM({spec['qty_out']}),0) AS issued, COUNT(*) AS n, "
+        f"{kemasan_sql} AS kemasan FROM {spec['out_table']} WHERE stok_in_id=%s",
+        (int(stok_in_id),),
+    )
+    row = cur.fetchone() or {}
+    return {
+        "issued": round(float(row.get("issued") or 0), 3),
+        "n": int(row.get("n") or 0),
+        "kemasan": int(float(row.get("kemasan") or 0)),
+    }
+
+
+def _stock_lot_has_sisa_note(cur, kode_internal: str) -> bool:
+    from app import _col_names
+
+    cols = _col_names(cur, "tbl_stock_sisa")
+    if not cols or "barcode" not in cols or not kode_internal:
+        return False
+    cur.execute(
+        "SELECT id FROM tbl_stock_sisa WHERE barcode=%s LIMIT 1",
+        (kode_internal,),
+    )
+    return cur.fetchone() is not None
+
+
+def _stock_lot_has_usage(cur, spec, stok_in_id: int) -> bool:
+    from app import _col_names
+
+    cols = _col_names(cur, spec["usage_table"])
+    if not cols or "stok_in_id" not in cols:
+        return False
+    cur.execute(
+        f"SELECT id FROM {spec['usage_table']} WHERE stok_in_id=%s LIMIT 1",
+        (int(stok_in_id),),
+    )
+    return cur.fetchone() is not None
+
+
+def _stock_lot_mutate(cur, body, kind: str):
+    """Return (payload, None) atau (None, pesan). Pemanggil yang commit."""
+    from dual_gudang import normalize_gudang
+    from stock_lot_rules import (
+        parse_date_text,
+        parse_kemasan,
+        parse_positive_qty,
+        validate_lot_delete,
+        validate_lot_update,
+    )
+
+    spec = _STOCK_LOT_KIND[kind]
+    action = (body.get("action") or "").strip().lower()
+    lot_id = _stock_lot_id(body)
+    if not lot_id:
+        return None, "id lot wajib"
+    cur.execute(
+        f"SELECT * FROM {spec['table']} WHERE id=%s FOR UPDATE",
+        (lot_id,),
+    )
+    lot = cur.fetchone()
+    if not lot:
+        return None, "Lot tidak ditemukan"
+    stats = _stock_lot_out_stats(cur, spec, lot_id)
+    qty_col = spec["qty_in"]
+    if action == "delete":
+        gudang = normalize_gudang(lot.get("gudang")) if spec["block_lapangan"] else None
+        err = validate_lot_delete(
+            out_count=stats["n"],
+            gudang=gudang,
+            has_sisa_note=_stock_lot_has_sisa_note(cur, lot.get("kode_internal") or ""),
+            has_usage=_stock_lot_has_usage(cur, spec, lot_id),
+            block_lapangan=spec["block_lapangan"],
+        )
+        if err:
+            return None, err
+        cur.execute(f"DELETE FROM {spec['table']} WHERE id=%s", (lot_id,))
+        return {"ok": True, "id": lot_id, "deleted": True}, None
+
+    if action != "update":
+        return None, "action harus update|delete"
+
+    qty_new, err = parse_positive_qty(body.get("qty") if "qty" in body else body.get("meter_roll"))
+    if err:
+        return None, err
+    tanggal, err = parse_date_text(body.get("tanggal") or body.get("tanggal_in"))
+    if err:
+        return None, err
+    lot_number = (body.get("lot_number") or body.get("lot_no") or "")
+    if spec["lot"]:
+        lot_number = str(lot_number).strip()
+    satuan = str(body.get("satuan") or lot.get("satuan") or "").strip()
+    kemasan_new = None
+    if spec["kemasan"]:
+        kemasan_new, err = parse_kemasan(body.get("jumlah_kemasan"))
+        if err:
+            return None, err
+    expired_text = ""
+    if spec["expired"]:
+        expired_text, err = parse_date_text(
+            body.get("expired_date"), required=False, label="tanggal kedaluwarsa"
+        )
+        if err:
+            return None, err
+
+    def _d(value):
+        if value is None or value == "":
+            return ""
+        if hasattr(value, "isoformat"):
+            return value.isoformat()[:10]
+        return str(value)[:10]
+
+    locked_changed = False
+    if _d(lot.get("tanggal_in")) != tanggal:
+        locked_changed = True
+    if spec["lot"] and str(lot.get("lot_number") or "").strip() != str(lot_number).strip():
+        locked_changed = True
+    if spec["satuan"] and str(lot.get("satuan") or "").strip() != satuan:
+        locked_changed = True
+    if spec["kemasan"]:
+        current_kemasan = lot.get("jumlah_kemasan")
+        current_kemasan = int(current_kemasan) if current_kemasan not in (None, "") else None
+        if current_kemasan != kemasan_new:
+            locked_changed = True
+    if spec["expired"] and _d(lot.get("expired_date")) != expired_text:
+        locked_changed = True
+
+    err = validate_lot_update(
+        qty_new=qty_new,
+        issued=stats["issued"],
+        qty_book=lot.get(qty_col) or 0,
+        qty_sisa_book=lot.get("qty_sisa") or 0,
+        out_count=stats["n"],
+        locked_changed=locked_changed,
+        kemasan_new=kemasan_new,
+        kemasan_issued=stats["kemasan"],
+        satuan=satuan,
+        lot_number=lot_number,
+        check_satuan=spec["satuan"],
+        check_lot=spec["lot"],
+        check_kemasan=spec["kemasan"],
+    )
+    if err:
+        return None, err
+    qty_sisa = round(float(qty_new) - float(stats["issued"]), 3)
+    sets = [f"{qty_col}=%s", "qty_sisa=%s", "tanggal_in=%s"]
+    params = [qty_new, qty_sisa, tanggal]
+    if spec["lot"]:
+        sets.append("lot_number=%s")
+        params.append(lot_number or None)
+    if spec["satuan"]:
+        sets.append("satuan=%s")
+        params.append(satuan[:20])
+    if spec["kemasan"]:
+        sets.append("jumlah_kemasan=%s")
+        params.append(kemasan_new)
+    if spec["expired"]:
+        sets.append("expired_date=%s")
+        params.append(expired_text or None)
+    params.append(lot_id)
+    cur.execute(
+        f"UPDATE {spec['table']} SET {', '.join(sets)} WHERE id=%s",
+        tuple(params),
+    )
+    return {
+        "ok": True,
+        "id": lot_id,
+        "qty": qty_new,
+        "qty_sisa": qty_sisa,
+        "meter_roll": qty_new if kind == "rp" else None,
+    }, None
+
+
 @api.post("/stok-kimia")
 def stok_kimia_action():
     from app import ensure_extended_tables, generate_code
@@ -8019,6 +8670,17 @@ def stok_kimia_action():
     cur = conn.cursor(dictionary=True)
     ensure_extended_tables(cur)
     conn.commit()
+
+    if action in ("update", "delete"):
+        payload, err = _stock_lot_mutate(cur, body, "kimia")
+        if err:
+            cur.close()
+            conn.close()
+            return _err(err)
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify(payload)
 
     if action == "in":
         kimia_id = body.get("kimia_id")
@@ -8183,7 +8845,7 @@ def stok_kimia_action():
 
     cur.close()
     conn.close()
-    return _err("action harus in|out|out_lapangan|sisa")
+    return _err("action harus in|out|out_lapangan|sisa|update|delete")
 
 
 @api.get("/stok-rp")
@@ -8599,6 +9261,17 @@ def stok_rp_action():
     ensure_extended_tables(cur)
     conn.commit()
 
+    if action in ("update", "delete"):
+        payload, err = _stock_lot_mutate(cur, body, "rp")
+        if err:
+            cur.close()
+            conn.close()
+            return _err(err)
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify(payload)
+
     if action == "in":
         rp_id = body.get("rp_id")
         try:
@@ -8683,7 +9356,197 @@ def stok_rp_action():
 
     cur.close()
     conn.close()
-    return _err("action harus in|out|out_lapangan")
+    return _err("action harus in|out|out_lapangan|update|delete")
+
+
+_USAGE_KIND = {
+    "color": {
+        "table": "tbl_usage_color",
+        "qty": "qty_digunakan",
+        "in_table": "tbl_stok_kimia_in",
+        "out_table": "tbl_stok_kimia_out",
+        "out_qty": "qty",
+    },
+    "rp": {
+        "table": "tbl_usage_rp",
+        "qty": "qty_used",
+        "in_table": "tbl_stok_rp_in",
+        "out_table": "tbl_stok_rp_out",
+        "out_qty": "meter_roll",
+    },
+    "material_lain": {
+        "table": "tbl_usage_material_lain",
+        "qty": "qty_used",
+        "in_table": "tbl_stok_material_lain_in",
+        "out_table": "tbl_stok_material_lain_out",
+        "out_qty": "qty",
+    },
+}
+
+
+def _sync_color_lot_status(cur, kode_lot_warna: str):
+    cur.execute(
+        "SELECT status FROM tbl_lab_lot WHERE kode_lot_warna=%s",
+        (kode_lot_warna,),
+    )
+    lot = cur.fetchone()
+    if not lot:
+        return
+    cur.execute(
+        "SELECT COALESCE(SUM(qty),0) AS total_qty FROM tbl_lab_lot_detail WHERE kode_lot_warna=%s",
+        (kode_lot_warna,),
+    )
+    pembuatan = float((cur.fetchone() or {}).get("total_qty") or 0)
+    cur.execute(
+        "SELECT COALESCE(SUM(qty_digunakan),0) AS used FROM tbl_usage_color WHERE kode_lot_warna=%s",
+        (kode_lot_warna,),
+    )
+    used = float((cur.fetchone() or {}).get("used") or 0)
+    status = (lot.get("status") or "").strip()
+    if status == "used" and used + 0.001 < pembuatan:
+        cur.execute(
+            "UPDATE tbl_lab_lot SET status='active' WHERE kode_lot_warna=%s",
+            (kode_lot_warna,),
+        )
+    elif status == "active" and pembuatan > 0 and used + 0.001 >= pembuatan:
+        cur.execute(
+            "UPDATE tbl_lab_lot SET status='used' WHERE kode_lot_warna=%s",
+            (kode_lot_warna,),
+        )
+
+
+def _usage_mutate(cur, kind: str, usage_id: int, body, *, delete: bool):
+    from stock_lot_rules import parse_positive_qty
+
+    spec = _USAGE_KIND[kind]
+    cur.execute(
+        f"SELECT * FROM {spec['table']} WHERE id=%s FOR UPDATE",
+        (int(usage_id),),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None, "Pemakaian tidak ditemukan"
+    in_id = row.get("stok_in_id")
+    out_id = row.get("stok_out_id")
+    if not in_id or not out_id:
+        return None, "Pemakaian tanpa jejak lot tidak bisa diubah atau dihapus"
+    cur.execute(
+        f"SELECT * FROM {spec['out_table']} WHERE id=%s FOR UPDATE",
+        (int(out_id),),
+    )
+    out = cur.fetchone()
+    if not out or int(out.get("stok_in_id") or 0) != int(in_id):
+        return None, "Jejak keluar tidak milik lot pemakaian ini"
+    cur.execute(
+        f"SELECT * FROM {spec['in_table']} WHERE id=%s FOR UPDATE",
+        (int(in_id),),
+    )
+    lot = cur.fetchone()
+    if not lot:
+        return None, "Lot stok tidak ditemukan"
+    old_qty = round(float(row.get(spec["qty"]) or 0), 3)
+    out_qty = round(float(out.get(spec["out_qty"]) or 0), 3)
+    if abs(old_qty - out_qty) > 0.001:
+        return None, "Qty pemakaian tidak cocok dengan baris keluar. Data tidak diubah."
+    if delete:
+        new_qty = 0.0
+    else:
+        raw_qty = body.get("qty")
+        if raw_qty in (None, ""):
+            raw_qty = body.get(spec["qty"])
+        new_qty, err = parse_positive_qty(raw_qty)
+        if err:
+            return None, err
+        if kind == "color":
+            kode_lot = row.get("kode_lot_warna") or ""
+            cur.execute(
+                "SELECT COALESCE(SUM(qty),0) AS total_qty FROM tbl_lab_lot_detail WHERE kode_lot_warna=%s",
+                (kode_lot,),
+            )
+            pembuatan = float((cur.fetchone() or {}).get("total_qty") or 0)
+            cur.execute(
+                "SELECT COALESCE(SUM(qty_digunakan),0) AS used FROM tbl_usage_color "
+                "WHERE kode_lot_warna=%s AND id<>%s",
+                (kode_lot, int(usage_id)),
+            )
+            other = float((cur.fetchone() or {}).get("used") or 0)
+            if pembuatan > 0 and other + new_qty > pembuatan + 0.001:
+                return None, f"Qty melebihi sisa lot warna ({round(pembuatan - other, 3)})"
+    delta = round(new_qty - old_qty, 3)
+    sisa = round(float(lot.get("qty_sisa") or 0), 3)
+    if delta > sisa + 0.001:
+        return None, "Kenaikan qty melebihi sisa lot"
+    new_sisa = round(sisa - delta, 3)
+    cur.execute(
+        f"UPDATE {spec['in_table']} SET qty_sisa=%s WHERE id=%s",
+        (new_sisa, int(in_id)),
+    )
+    if delete:
+        cur.execute(f"DELETE FROM {spec['out_table']} WHERE id=%s", (int(out_id),))
+        cur.execute(f"DELETE FROM {spec['table']} WHERE id=%s", (int(usage_id),))
+    else:
+        cur.execute(
+            f"UPDATE {spec['out_table']} SET {spec['out_qty']}=%s WHERE id=%s",
+            (new_qty, int(out_id)),
+        )
+        cur.execute(
+            f"UPDATE {spec['table']} SET {spec['qty']}=%s WHERE id=%s",
+            (new_qty, int(usage_id)),
+        )
+    if kind == "color":
+        _sync_color_lot_status(cur, row.get("kode_lot_warna") or "")
+    return {"ok": True, "id": int(usage_id), "deleted": delete, "qty": new_qty, "qty_sisa": new_sisa}, None
+
+
+def _usage_mutate_response(kind: str, usage_id: int, *, delete: bool):
+    from app import ensure_extended_tables
+
+    body = {} if delete else (request.get_json(silent=True) or {})
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    payload, err = _usage_mutate(cur, kind, usage_id, body, delete=delete)
+    if err:
+        conn.rollback()
+        cur.close()
+        conn.close()
+        code = 404 if "tidak ditemukan" in err else 400
+        return _err(err, code)
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify(payload)
+
+
+@api.put("/usage-color/<int:usage_id>")
+def usage_color_update(usage_id: int):
+    return _usage_mutate_response("color", usage_id, delete=False)
+
+
+@api.delete("/usage-color/<int:usage_id>")
+def usage_color_delete(usage_id: int):
+    return _usage_mutate_response("color", usage_id, delete=True)
+
+
+@api.put("/usage-rp/<int:usage_id>")
+def usage_rp_update(usage_id: int):
+    return _usage_mutate_response("rp", usage_id, delete=False)
+
+
+@api.delete("/usage-rp/<int:usage_id>")
+def usage_rp_delete(usage_id: int):
+    return _usage_mutate_response("rp", usage_id, delete=True)
+
+
+@api.put("/usage-material-lain/<int:usage_id>")
+def usage_material_update(usage_id: int):
+    return _usage_mutate_response("material_lain", usage_id, delete=False)
+
+
+@api.delete("/usage-material-lain/<int:usage_id>")
+def usage_material_delete(usage_id: int):
+    return _usage_mutate_response("material_lain", usage_id, delete=True)
 
 
 # ---- P4: usage color / rp ----
@@ -8879,7 +9742,11 @@ def usage_rp_create():
         return _err("Jenis RP tidak ditemukan di ERP", 404)
     conn = get_db_connection()
     cur = conn.cursor(dictionary=True)
+    from app import ensure_extended_tables
+    ensure_extended_tables(cur)
+    conn.commit()
     bridge = None
+    stock_out_id = None
     if stok_in_id:
         cur.execute("SELECT * FROM tbl_stok_rp_in WHERE id=%s", (stok_in_id,))
         stok = cur.fetchone()
@@ -8914,6 +9781,7 @@ def usage_rp_create():
                 date.today().isoformat(),
             ),
         )
+        stock_out_id = cur.lastrowid
         cur.execute(
             "UPDATE tbl_stok_rp_in SET qty_sisa = %s WHERE id=%s",
             (sisa - qty_used, stok_in_id),
@@ -8928,12 +9796,15 @@ def usage_rp_create():
             "mrp_ref": f"usage-rp:{jenis_scan}",
         }
     cur.execute(
-        "INSERT INTO tbl_usage_rp (kode_wip, jenis_rp, qty_used, satuan) VALUES (%s,%s,%s,%s)",
+        "INSERT INTO tbl_usage_rp (kode_wip, jenis_rp, qty_used, satuan, stok_in_id, stok_out_id) "
+        "VALUES (%s,%s,%s,%s,%s,%s)",
         (
             kode_wip,
             mat.get("name") or jenis_scan,
             qty_used,
             body.get("satuan") or mat.get("unit") or "meter",
+            stok_in_id,
+            stock_out_id,
         ),
     )
     new_id = cur.lastrowid
@@ -9107,6 +9978,17 @@ def stok_material_lain_action():
     ensure_extended_tables(cur)
     conn.commit()
 
+    if action in ("update", "delete"):
+        payload, err = _stock_lot_mutate(cur, body, "material_lain")
+        if err:
+            cur.close()
+            conn.close()
+            return _err(err)
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify(payload)
+
     if action == "in":
         material_id = body.get("material_id")
         try:
@@ -9260,7 +10142,7 @@ def stok_material_lain_action():
 
     cur.close()
     conn.close()
-    return _err("action harus in atau out")
+    return _err("action harus in|out|update|delete")
 
 
 @api.get("/usage-material-lain/scan")
@@ -9362,6 +10244,7 @@ def usage_material_create():
         cur.close()
         conn.close()
         return _err("Material tidak ditemukan", 404)
+    stock_out_id = None
     if stok_in_id:
         cur.execute("SELECT * FROM tbl_stok_material_lain_in WHERE id=%s", (stok_in_id,))
         stok = cur.fetchone()
@@ -9379,19 +10262,23 @@ def usage_material_create():
             "VALUES (%s,%s,%s,%s,%s)",
             (stok_in_id, stok["material_id"], qty_used, kode_wip, date.today().isoformat()),
         )
+        stock_out_id = cur.lastrowid
         cur.execute(
             "UPDATE tbl_stok_material_lain_in SET qty_sisa=%s WHERE id=%s",
             (sisa - qty_used, stok_in_id),
         )
     cur.execute(
-        "INSERT INTO tbl_usage_material_lain (kode_wip, kode_material, nama_material, qty_used, satuan) "
-        "VALUES (%s,%s,%s,%s,%s)",
+        "INSERT INTO tbl_usage_material_lain "
+        "(kode_wip, kode_material, nama_material, qty_used, satuan, stok_in_id, stok_out_id) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
         (
             kode_wip,
             kode_material,
             mat.get("nama_material"),
             qty_used,
             satuan or mat.get("satuan") or "pcs",
+            stok_in_id,
+            stock_out_id,
         ),
     )
     conn.commit()
@@ -10981,6 +11868,7 @@ def _apply_usage_color(
         return None, f"Qty melebihi sisa lot ({qty_sisa})"
 
     bridge = None
+    stock_out_id = None
     if stok_in_id:
         from dual_gudang import GUDANG_LAPANGAN, normalize_gudang
 
@@ -11002,6 +11890,7 @@ def _apply_usage_color(
             "VALUES (%s,%s,%s,NULL,'produksi',%s,%s)",
             (stok_in_id, stok["kimia_id"], qty_digunakan, kode_wip, date.today().isoformat()),
         )
+        stock_out_id = cur.lastrowid
         cur.execute(
             "UPDATE tbl_stok_kimia_in SET qty_sisa=%s WHERE id=%s",
             (sisa - qty_digunakan, stok_in_id),
@@ -11022,9 +11911,18 @@ def _apply_usage_color(
             return None, "Lot kimia belum ter-map erp_material_id"
 
     cur.execute(
-        "INSERT INTO tbl_usage_color (kode_wip, kode_lot_warna, nama_warna, qty_pembuatan, qty_digunakan) "
-        "VALUES (%s,%s,%s,%s,%s)",
-        (kode_wip, kode_lot_warna, lot["nama_lot_warna"], qty_pembuatan, qty_digunakan),
+        "INSERT INTO tbl_usage_color "
+        "(kode_wip, kode_lot_warna, nama_warna, qty_pembuatan, qty_digunakan, stok_in_id, stok_out_id) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+        (
+            kode_wip,
+            kode_lot_warna,
+            lot["nama_lot_warna"],
+            qty_pembuatan,
+            qty_digunakan,
+            stok_in_id,
+            stock_out_id,
+        ),
     )
     new_id = cur.lastrowid
 

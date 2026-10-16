@@ -1665,6 +1665,14 @@ export function mrpPaletIn(body) {
   return apiFetch('/mrp/palet/in', { method: 'POST', body: JSON.stringify(body) })
 }
 
+export function mrpPaletYlUpdate(body) {
+  return apiFetch('/mrp/palet/yl', { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function mrpPaletYlDelete(body) {
+  return apiFetch('/mrp/palet/yl', { method: 'DELETE', body: JSON.stringify(body) })
+}
+
 export function mrpPaletYl(kodePalet) {
   return apiFetch(`/mrp/palet/${encodeURIComponent(kodePalet)}/yl`)
 }
@@ -1868,6 +1876,10 @@ export function mrpGudangFgOut(body) {
   return apiFetch('/mrp/gudang-fg/out', { method: 'POST', body: JSON.stringify(body) })
 }
 
+export function mrpGudangFgRepack(id, body) {
+  return apiFetch(`/mrp/gudang-fg/${id}/repack`, { method: 'POST', body: JSON.stringify(body) })
+}
+
 export function mrpGudangFgSuratJalanPending() {
   return apiFetch('/mrp/gudang-fg/surat-jalan/pending')
 }
@@ -1970,6 +1982,14 @@ export function mrpUsageColorCreate(body) {
   return apiFetch('/mrp/usage-color', { method: 'POST', body: JSON.stringify(body) })
 }
 
+export function mrpUsageColorUpdate(id, body) {
+  return apiFetch(`/mrp/usage-color/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function mrpUsageColorDelete(id) {
+  return apiFetch(`/mrp/usage-color/${id}`, { method: 'DELETE' })
+}
+
 export function mrpUsageRp(params = {}) {
   const q = appendPageParams(new URLSearchParams(), params)
   const suffix = q.toString() ? `?${q}` : ''
@@ -1982,6 +2002,14 @@ export function mrpUsageRpScan(q) {
 
 export function mrpUsageRpCreate(body) {
   return apiFetch('/mrp/usage-rp', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpUsageRpUpdate(id, body) {
+  return apiFetch(`/mrp/usage-rp/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function mrpUsageRpDelete(id) {
+  return apiFetch(`/mrp/usage-rp/${id}`, { method: 'DELETE' })
 }
 
 export function mrpListMasterMaterialLain(params = {}) {
@@ -2022,6 +2050,14 @@ export function mrpUsageMaterialScan(q) {
 
 export function mrpUsageMaterialCreate(body) {
   return apiFetch('/mrp/usage-material-lain', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpUsageMaterialUpdate(id, body) {
+  return apiFetch(`/mrp/usage-material-lain/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function mrpUsageMaterialDelete(id) {
+  return apiFetch(`/mrp/usage-material-lain/${id}`, { method: 'DELETE' })
 }
 
 export function mrpUpdateMasterKulit(id, body) {

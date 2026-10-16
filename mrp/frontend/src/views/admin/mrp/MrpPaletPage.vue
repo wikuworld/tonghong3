@@ -116,10 +116,14 @@
         <el-table-column :label="t('pages.mrpPalet.qty')" width="90" align="right">
           <template #default="{ row }">{{ formatQty(row.qty) }}</template>
         </el-table-column>
-        <el-table-column v-if="canUpdate" :label="t('common.actions')" width="88" align="center" fixed="right">
+        <el-table-column v-if="canUpdate" :label="t('common.actions')" width="140" align="center" fixed="right">
           <template #default="{ row }">
             <AdminTableActions
+              :show-edit="true"
+              :show-delete="true"
               :more-items="[{ command: 'out', label: 'OUT', icon: Upload }]"
+              @edit="openYlEdit(row)"
+              @delete="deleteYl(row)"
               @more="(cmd) => cmd === 'out' && ylOutFromRow(row)"
             />
           </template>
@@ -272,6 +276,37 @@
         <el-button type="danger" :loading="saving" @click="submitYlOut">{{ t('pages.mrpPalet.ylOut') }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="ylEditOpen"
+      :title="t('pages.mrpPalet.ylEditTitle')"
+      width="440px"
+      destroy-on-close
+      append-to-body
+    >
+      <p v-if="ylEditForm.spek_locked" class="text-sm text-amber-700 mb-3">{{ t('pages.mrpPalet.ylEditLocked') }}</p>
+      <el-form label-position="top">
+        <el-form-item :label="t('pages.mrpPalet.kodePalet')">
+          <el-input :model-value="ylEditForm.kode_palet" disabled />
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpPalet.kulitMaster')">
+          <el-input :model-value="ylEditForm.kode_yl" disabled />
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpPalet.qty')" required>
+          <el-input v-model="ylEditForm.qty" type="number" />
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpPalet.thickness')">
+          <el-input v-model="ylEditForm.thickness" :disabled="ylEditForm.spek_locked" />
+        </el-form-item>
+        <el-form-item :label="t('common.color')">
+          <el-input v-model="ylEditForm.warna" :disabled="ylEditForm.spek_locked" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="ylEditOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="saving" @click="saveYlEdit">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -290,6 +325,8 @@ import {
   mrpPaletIn,
   mrpPaletOut,
   mrpPaletYl,
+  mrpPaletYlDelete,
+  mrpPaletYlUpdate,
   mrpYlMovement,
 } from '../../../api/client'
 import { buildPageParams, fromElSortChange, normalizePageResult } from '../../../utils/tableQuery'
@@ -315,6 +352,15 @@ const inOpen = ref(false)
 const ylOpen = ref(false)
 const paletOutOpen = ref(false)
 const ylOutOpen = ref(false)
+const ylEditOpen = ref(false)
+const ylEditForm = reactive({
+  kode_palet: '',
+  kode_yl: '',
+  qty: '',
+  thickness: '',
+  warna: '',
+  spek_locked: false,
+})
 const ylPalet = ref('')
 const ylDetail = ref([])
 const ylOutKey = ref('')
@@ -654,6 +700,54 @@ function openYlOut() {
   ylOutForm.keterangan = ''
   ylOutForm.tanggal = new Date().toISOString().slice(0, 10)
   ylOutOpen.value = true
+}
+
+function openYlEdit(row) {
+  ylEditForm.kode_palet = row.kode_palet || ''
+  ylEditForm.kode_yl = row.kode_yl || ''
+  ylEditForm.qty = row.qty ?? ''
+  ylEditForm.thickness = row.thickness || ''
+  ylEditForm.warna = row.warna || ''
+  ylEditForm.spek_locked = Boolean(row.spek_locked)
+  ylEditOpen.value = true
+}
+
+async function saveYlEdit() {
+  saving.value = true
+  try {
+    await mrpPaletYlUpdate({
+      kode_palet: ylEditForm.kode_palet,
+      kode_yl: ylEditForm.kode_yl,
+      qty: ylEditForm.qty,
+      thickness: ylEditForm.thickness,
+      warna: ylEditForm.warna,
+    })
+    ElMessage.success(t('pages.mrpPalet.ylEditOk', { kode: ylEditForm.kode_yl }))
+    ylEditOpen.value = false
+    await reload()
+  } catch (e) {
+    ElMessage.error(errMsg(e))
+  } finally {
+    saving.value = false
+  }
+}
+
+async function deleteYl(row) {
+  try {
+    await ElMessageBox.confirm(
+      t('pages.mrpPalet.ylDeleteConfirm', { kode: row.kode_yl, palet: row.kode_palet }),
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await mrpPaletYlDelete({ kode_palet: row.kode_palet, kode_yl: row.kode_yl })
+    ElMessage.success(t('pages.mrpPalet.ylDeleteOk', { kode: row.kode_yl }))
+    await reload()
+  } catch (e) {
+    ElMessage.error(errMsg(e))
+  }
 }
 
 function ylOutFromRow(row) {

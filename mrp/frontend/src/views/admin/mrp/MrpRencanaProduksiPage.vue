@@ -717,16 +717,14 @@ async function openDetail(row) {
 function printLabels() {
   return {
     title: t('pages.mrpRencana.print'),
-    planName: t('pages.mrpRencana.printPlanName'),
-    planNo: t('pages.mrpRencana.printPlanNo'),
     kodeRpi: t('pages.mrpRencana.printKodeRpi'),
-    emboss: t('pages.mrpRencana.printEmboss'),
     customer: t('pages.mrpRencana.printCustomer'),
+    emboss: t('pages.mrpRencana.printEmboss'),
     color: t('pages.mrpRencana.printColor'),
+    thickness: t('pages.mrpRencana.printThickness'),
     qty: t('pages.mrpRencana.printQty'),
     cs: t('pages.mrpRencana.printCs'),
     backer: t('pages.mrpRencana.printBacker'),
-    kode: t('pages.mrpRencana.printKode'),
     schedule: t('pages.mrpRencana.printSchedule'),
     remarks: t('pages.mrpRencana.printRemarks'),
   }
@@ -751,7 +749,7 @@ async function printRencana(row) {
       id: item.id,
       kode_rencana_item: item.kode_rencana_item,
       nama_customer: item.nama_customer,
-      print_qty: item.print_qty == null ? '' : item.print_qty,
+      print_qty: item.print_qty ?? item.total_qty_so ?? '',
       print_schedule: item.print_schedule || '',
       print_remarks: item.print_remarks || '',
     }))

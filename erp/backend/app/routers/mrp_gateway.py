@@ -67,6 +67,31 @@ def _num(v: Any) -> float:
         return 0.0
 
 
+def _distribute_qty(weights: list[float], total: float) -> list[float]:
+    """Bagi qty aktual ke beberapa baris PO; baris terakhir menyesuaikan sisa pembulatan."""
+    n = len(weights)
+    if n <= 0:
+        return []
+    if n == 1:
+        return [float(total)]
+    wsum = sum(max(0.0, float(w or 0.0)) for w in weights)
+    if wsum <= 0:
+        base = round(float(total) / n, 4)
+        parts = [base] * (n - 1)
+        parts.append(round(float(total) - sum(parts), 4))
+        return parts
+    parts: list[float] = []
+    assigned = 0.0
+    for i, w in enumerate(weights):
+        if i == n - 1:
+            parts.append(round(float(total) - assigned, 4))
+        else:
+            q = round(float(total) * (max(0.0, float(w or 0.0)) / wsum), 4)
+            parts.append(q)
+            assigned += q
+    return parts
+
+
 class MrpBridgeFgOutIn(BaseModel):
     mrp_fg_id: int
     mrp_packing_id: Optional[int] = None
@@ -77,6 +102,7 @@ class MrpBridgeFgOutIn(BaseModel):
 
 
 def _collect_bridge_lines(detail: dict[str, Any], fg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Baris Delivery dari FG: QTY kirim mengikuti ukur aktual FG (total_ukuran)."""
     lines: list[dict[str, Any]] = []
     seen: set[int] = set()
 
@@ -102,20 +128,19 @@ def _collect_bridge_lines(detail: dict[str, Any], fg: dict[str, Any]) -> list[di
             continue
         qty = _num(pp.get("qty_sq") or pp.get("qty_out"))
         if qty <= 0:
-            qty = _num(fg.get("total_ukuran"))
-        if qty <= 0:
             continue
         lines.append({"source_detail_id": sid_i, "qty_out": qty})
         seen.add(sid_i)
 
-    # Fallback: satu baris dari packing_pos/bridge kosong → bagi total_ukuran ke semua
     if not lines:
         return []
 
-    total_assigned = sum(_num(x.get("qty_out")) for x in lines)
     fg_total = _num(fg.get("total_ukuran"))
-    if total_assigned <= 0 and fg_total > 0 and len(lines) == 1:
-        lines[0]["qty_out"] = fg_total
+    if fg_total > 0:
+        weights = [_num(x.get("qty_out")) for x in lines]
+        parts = _distribute_qty(weights, fg_total)
+        for i, line in enumerate(lines):
+            line["qty_out"] = parts[i]
     return lines
 
 
@@ -354,21 +379,32 @@ async def _run_production_bridge_for_packing(
                 detail="Bridge production gagal: packing tanpa source_detail_id / kode_wip",
             )
         return None
+    fg_total = _num(qty_actual) if qty_actual is not None else _num(packing.get("total_ukuran"))
+    weights = [_num(ln.get("qty_sq")) for ln in usable]
+    if finish and fg_total > 0:
+        pack_qtys = _distribute_qty(weights if sum(weights) > 0 else [1.0] * len(usable), fg_total)
+    else:
+        pack_qtys = [
+            (_num(ln.get("qty_sq")) or fg_total or 0.0) for ln in usable
+        ]
+
     mirrored: list[tuple[Any, dict, Any]] = []
     last = None
-    for line in usable:
-        qty = line.get("qty_sq") or packing.get("total_ukuran")
+    for idx, line in enumerate(usable):
+        qty_plan = _num(line.get("qty_sq")) or fg_total
+        pack_qty = pack_qtys[idx] if idx < len(pack_qtys) else qty_plan
+        # qty_planned = alokasi rencana; qty_actual / packing = ukur FG aktual
         last = upsert_production_mirror(
             db,
             source_detail_id=int(line["source_detail_id"]),
             kode_wip=kode_wip,
             mrp_packing_id=packing_id,
-            qty_planned=qty,
-            qty_actual=qty_actual if qty_actual is not None else (qty if finish else None),
+            qty_planned=qty_plan if qty_plan > 0 else None,
+            qty_actual=pack_qty if finish else (qty_actual if qty_actual is not None else None),
             finish=finish,
             actor=getattr(user, "username", None),
         )
-        mirrored.append((last, line, qty))
+        mirrored.append((last, line, pack_qty if finish else qty_plan))
     if last is None:
         return None
     packing_ready = None

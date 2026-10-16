@@ -5,6 +5,14 @@
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
       <el-button v-if="packing" @click="printLabel">{{ t('pages.mrpPacking.printList') }}</el-button>
       <el-button
+        v-if="canCorrect"
+        type="warning"
+        :icon="EditPen"
+        @click="focusEditSection"
+      >
+        {{ t('common.edit') }}
+      </el-button>
+      <el-button
         v-if="canUpdate && packing?.status === 'in_progress'"
         type="success"
         :loading="acting"
@@ -101,6 +109,22 @@
           :title="t('pages.mrpPacking.needRollHint')"
         />
         <el-alert
+          v-else-if="packing.status === 'finished' && packing.fg_status === 'out'"
+          class="mt-3"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="t('pages.mrpPacking.finishedLockedHint')"
+        />
+        <el-alert
+          v-else-if="packing.status === 'finished' && packing.can_correct"
+          class="mt-3"
+          :type="canUpdate ? 'info' : 'success'"
+          :closable="false"
+          show-icon
+          :title="finishedCorrectHint"
+        />
+        <el-alert
           v-else-if="packing.status === 'finished'"
           class="mt-3"
           type="success"
@@ -111,7 +135,7 @@
         </div>
       </div>
 
-      <div v-if="canUpdate && packing?.status === 'in_progress'" class="admin-inner-card mb-4">
+      <div v-if="canCorrect" ref="headerEditEl" class="admin-inner-card mb-4">
         <div class="admin-inner-card__body">
         <h3 class="admin-inner-card__title mb-2">{{ t('pages.mrpPacking.editHeader') }}</h3>
         <div class="mrp-pack-form-row">
@@ -129,7 +153,7 @@
         </div>
       </div>
 
-      <div v-if="canUpdate && packing?.status === 'in_progress'" class="admin-inner-card mb-4">
+      <div v-if="canCorrect" class="admin-inner-card mb-4">
         <div class="admin-inner-card__body">
         <h3 class="admin-inner-card__title mb-2">{{ t('pages.mrpPacking.addRoll') }}</h3>
         <div class="mrp-pack-form-row">
@@ -170,7 +194,7 @@
             <template #default="{ row }">
               <AdminTableActions
                 :show-view="false"
-                :show-delete="canUpdate && packing?.status === 'in_progress'"
+                :show-delete="canCorrect"
                 :more-items="
                   row.id
                     ? [{ command: 'print', label: t('pages.mrpPacking.reprintRollLabel'), icon: Printer }]
@@ -188,7 +212,7 @@
         <div class="admin-inner-card__head">
           <h3 class="admin-inner-card__title">{{ t('pages.mrpPacking.poSection') }}</h3>
           <el-button
-            v-if="canUpdate && packing?.status === 'in_progress' && availablePos.length"
+            v-if="canCorrect && availablePos.length"
             size="small"
             @click="showAddPo = !showAddPo"
           >
@@ -221,7 +245,7 @@
             <template #default="{ row }">{{ formatQty(row.qty_sq) }}</template>
           </el-table-column>
           <el-table-column
-            v-if="canUpdate && packing?.status === 'in_progress'"
+            v-if="canCorrect"
             :label="t('common.actions')"
             width="88"
             align="center"
@@ -238,11 +262,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Printer, Refresh } from '@element-plus/icons-vue'
+import { EditPen, Plus, Printer, Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
 import { can } from '../../../security/permissions'
@@ -261,9 +285,27 @@ const rolls = ref([])
 const packingPos = ref([])
 const availablePos = ref([])
 const canUpdate = computed(() => can('mrpShopfloor', 'update'))
+const canCorrect = computed(() => canUpdate.value && !!packing.value?.can_correct)
+const finishedCorrectHint = computed(() => {
+  if (!canUpdate.value) return t('pages.mrpPacking.finishedHint')
+  if (!packing.value?.fg_status) return t('pages.mrpPacking.finishedMissingFgHint')
+  return t('pages.mrpPacking.finishedEditableHint')
+})
 const title = computed(() => packing.value?.kode_packing || t('pages.mrpPacking.title'))
 const rollForm = reactive({ lembar: 1, ukuran: '', remark: '' })
 const headerForm = reactive({ softness: '', gross_weight: '', net_weight: '' })
+const headerEditEl = ref(null)
+
+async function focusEditSection() {
+  if (!canCorrect.value) return
+  await nextTick()
+  headerEditEl.value?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+}
+
+async function focusEditSectionFromQuery() {
+  if (String(route.query.edit || '') !== '1') return
+  await focusEditSection()
+}
 
 function dash(v) {
   const s = (v == null ? '' : String(v)).trim()
@@ -287,12 +329,20 @@ async function reload() {
     headerForm.softness = data.packing?.softness || ''
     headerForm.gross_weight = data.packing?.gross_weight ?? ''
     headerForm.net_weight = data.packing?.net_weight ?? ''
+    await focusEditSectionFromQuery()
   } catch (e) {
     ElMessage.error(e.message || String(e))
   } finally {
     loading.value = false
   }
 }
+
+watch(
+  () => [route.query.edit, packing.value?.can_correct],
+  () => {
+    focusEditSectionFromQuery()
+  },
+)
 
 async function act(body) {
   acting.value = true
@@ -386,9 +436,9 @@ async function finish() {
       t('pages.mrpPacking.finishActualExceedsWip', {
         actual: formatQty(actual),
         wip: formatQty(wip),
+        more: formatQty(actual - wip),
       }),
     )
-    return
   }
   const shortfall = wip - actual
   try {

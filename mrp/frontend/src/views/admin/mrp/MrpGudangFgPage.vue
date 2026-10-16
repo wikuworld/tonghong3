@@ -55,6 +55,7 @@
             <el-radio-button value="">{{ t('pages.mrpGudangFg.filterAll') }}</el-radio-button>
             <el-radio-button value="in_stock">{{ t('pages.mrpGudangFg.statusInStock') }}</el-radio-button>
             <el-radio-button value="out">{{ t('pages.mrpGudangFg.statusOut') }}</el-radio-button>
+            <el-radio-button value="repacked">{{ t('pages.mrpGudangFg.statusRepacked') }}</el-radio-button>
           </el-radio-group>
           <el-input
             v-model="search" @keyup.enter="() => { page = 1; reload() }" @clear="() => { page = 1; reload() }"
@@ -93,11 +94,16 @@
         <el-table-column :label="t('pages.mrpPacking.quantity')" width="100" align="right">
           <template #default="{ row }">{{ formatQty(row.total_ukuran) }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.status')" width="110" align="center">
+        <el-table-column :label="t('common.status')" width="150" align="center">
           <template #default="{ row }">
-            <el-tag :type="statusType(row.status)" size="small" effect="plain">
-              {{ statusLabel(row.status) }}
-            </el-tag>
+            <div class="flex flex-col items-center gap-1">
+              <el-tag :type="statusType(row.status)" size="small" effect="plain">
+                {{ statusLabel(row.status) }}
+              </el-tag>
+              <el-tag v-if="row.packing_status === 'in_progress'" type="warning" size="small" effect="plain">
+                {{ t('pages.mrpGudangFg.packingOpen') }}
+              </el-tag>
+            </div>
           </template>
         </el-table-column>
         <el-table-column :label="t('pages.mrpGudangFg.erpDelivery')" min-width="170">
@@ -128,17 +134,15 @@
         <el-table-column :label="t('pages.mrpGudangFg.dateOut')" width="120">
           <template #default="{ row }">{{ formatDate(row.date_out) }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="112" align="center" fixed="right">
+        <el-table-column :label="t('common.actions')" width="140" align="center" fixed="right">
           <template #default="{ row }">
             <AdminTableActions
               :show-view="true"
-              :more-items="
-                canUpdate && row.status === 'in_stock'
-                  ? [{ command: 'out', label: 'OUT', icon: Upload }]
-                  : []
-              "
+              :show-edit="canUpdate && row.status === 'in_stock' && !!row.packing_id"
+              :more-items="fgMoreItems(row)"
               @view="openDetail(row)"
-              @more="(cmd) => cmd === 'out' && fillOut(row)"
+              @edit="goEdit(row)"
+              @more="(cmd) => onFgMore(cmd, row)"
             />
           </template>
         </el-table-column>
@@ -336,8 +340,18 @@
             </el-tag>
           </div>
           <div class="mrp-fg-meta__item">
-            <span class="mrp-fg-meta__label">{{ t('pages.mrpPacking.pieces') }} / {{ t('pages.mrpPacking.quantity') }}</span>
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpPacking.pieces') }} / {{ t('pages.mrpGudangFg.qtyActual') }}</span>
             <span>{{ formatQty(detail.fg.total_lembar) }} / {{ formatQty(detail.fg.total_ukuran) }}</span>
+          </div>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.qtyAlloc') }}</span>
+            <span>{{ formatQty(detailQtyAlloc) }}</span>
+          </div>
+          <div v-if="detailQtyDelta != null && Math.abs(detailQtyDelta) > 1e-9" class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.qtyDelta') }}</span>
+            <span :class="detailQtyDelta > 0 ? 'text-amber-700 font-semibold' : 'text-rose-700 font-semibold'">
+              {{ detailQtyDelta > 0 ? '+' : '' }}{{ formatQty(detailQtyDelta) }}
+            </span>
           </div>
           <div class="mrp-fg-meta__item">
             <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.dateIn') }}</span>
@@ -355,9 +369,24 @@
           </div>
         </div>
 
-        <div v-if="canUpdate && detail.fg.status === 'in_stock'" class="mb-4">
+        <div v-if="canUpdate && detail.fg.status === 'in_stock'" class="mb-4 flex gap-2 flex-wrap">
+          <el-button
+            v-if="detail.fg.packing_id"
+            type="warning"
+            size="small"
+            @click="goEdit(detail.fg)"
+          >
+            {{ t('common.edit') }}
+          </el-button>
           <el-button type="danger" size="small" :loading="outing" @click="outFromDetail">
             {{ t('pages.mrpGudangFg.outBtn') }}
+          </el-button>
+          <el-button
+            v-if="canRepackFg(detail.fg, detail.packing?.status)"
+            size="small"
+            @click="openRepack(detail.fg, detail.packing?.status)"
+          >
+            {{ t('pages.mrpGudangFg.repack') }}
           </el-button>
         </div>
 
@@ -407,6 +436,34 @@
         </template>
       </template>
     </el-drawer>
+
+    <el-dialog
+      v-model="repackOpen"
+      :title="t('pages.mrpGudangFg.repackTitle', { kode: repackKode })"
+      width="520px"
+      destroy-on-close
+      append-to-body
+    >
+      <p class="text-sm text-slate-500 mt-0 mb-3">{{ t('pages.mrpGudangFg.repackHint') }}</p>
+      <div v-for="(line, index) in repackLines" :key="index" class="flex gap-2 mb-2 items-end">
+        <el-form-item :label="t('pages.mrpPacking.pieces')" class="mb-0 flex-1">
+          <el-input v-model="line.lembar" type="number" />
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpPacking.quantity')" class="mb-0 flex-1">
+          <el-input v-model="line.ukuran" type="number" />
+        </el-form-item>
+        <el-button v-if="repackLines.length > 1" text type="danger" @click="repackLines.splice(index, 1)">
+          {{ t('common.delete') }}
+        </el-button>
+      </div>
+      <el-button text type="primary" @click="repackLines.push({ lembar: '', ukuran: '' })">
+        {{ t('pages.mrpGudangFg.repackAddLine') }}
+      </el-button>
+      <template #footer>
+        <el-button @click="repackOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="repackSaving" @click="saveRepack">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -422,6 +479,7 @@ import { can } from '../../../security/permissions'
 import {
   mrpGetGudangFg,
   mrpGudangFgOut,
+  mrpGudangFgRepack,
   mrpGudangFgSuratJalan,
   mrpGudangFgSuratJalanOut,
   mrpGudangFgSuratJalanPending,
@@ -433,6 +491,11 @@ const { t } = useI18n()
 const router = useRouter()
 const loading = ref(false)
 const outing = ref(false)
+const repackOpen = ref(false)
+const repackSaving = ref(false)
+const repackId = ref(null)
+const repackKode = ref('')
+const repackLines = ref([{ lembar: '', ukuran: '' }])
 const rows = ref([])
 const page = ref(1)
 const pageSize = ref(20)
@@ -443,6 +506,17 @@ const search = ref('')
 const statusFilter = ref('')
 const detailOpen = ref(false)
 const detail = ref(null)
+const detailQtyAlloc = computed(() => {
+  const rowsPo = detail.value?.packing_pos || []
+  if (!rowsPo.length) return null
+  return rowsPo.reduce((sum, row) => sum + (Number(row.qty_sq) || 0), 0)
+})
+const detailQtyDelta = computed(() => {
+  const actual = Number(detail.value?.fg?.total_ukuran)
+  const alloc = detailQtyAlloc.value
+  if (!Number.isFinite(actual) || alloc == null || !Number.isFinite(alloc)) return null
+  return actual - alloc
+})
 const canUpdate = computed(() => can('mrpShopfloor', 'update'))
 const outForm = reactive({ kode_packing: '', keterangan: '' })
 const scanSjOpen = ref(false)
@@ -525,12 +599,14 @@ function formatDateTime(v) {
 
 function statusType(status) {
   if (status === 'in_stock') return 'success'
+  if (status === 'repacked') return 'info'
   if (status === 'out') return 'info'
   return 'warning'
 }
 
 function statusLabel(status) {
   if (status === 'in_stock') return t('pages.mrpGudangFg.statusInStock')
+  if (status === 'repacked') return t('pages.mrpGudangFg.statusRepacked')
   if (status === 'out') return t('pages.mrpGudangFg.statusOut')
   return status || '—'
 }
@@ -551,6 +627,79 @@ function errMsg(e) {
 
 function goDelivery(id) {
   router.push({ path: '/admin/delivery', query: { delivery_id: id } })
+}
+
+function goEdit(row) {
+  const packingId = row?.packing_id
+  if (!packingId) {
+    ElMessage.warning(t('pages.mrpGudangFg.editNoPacking'))
+    return
+  }
+  detailOpen.value = false
+  router.push({ path: `/admin/mrp/packing/${packingId}`, query: { from: 'gudang-fg' } })
+}
+
+function canRepackFg(fg, packingStatus) {
+  return Boolean(
+    canUpdate.value
+    && fg
+    && fg.status === 'in_stock'
+    && packingStatus === 'finished'
+    && !fg.erp_delivery_id,
+  )
+}
+
+function fgMoreItems(row) {
+  if (!canUpdate.value || row.status !== 'in_stock') return []
+  const items = [{ command: 'out', label: 'OUT', icon: Upload }]
+  if (canRepackFg(row, row.packing_status)) {
+    items.push({ command: 'repack', label: t('pages.mrpGudangFg.repack'), icon: Refresh })
+  }
+  return items
+}
+
+function onFgMore(cmd, row) {
+  if (cmd === 'out') fillOut(row)
+  if (cmd === 'repack') openRepack(row, row.packing_status)
+}
+
+function openRepack(fg, packingStatus) {
+  if (!canRepackFg(fg, packingStatus)) {
+    ElMessage.warning(t('pages.mrpGudangFg.packingOpen'))
+    return
+  }
+  repackId.value = fg.id
+  repackKode.value = fg.kode_packing || ''
+  repackLines.value = [{
+    lembar: fg.total_lembar ?? '',
+    ukuran: fg.total_ukuran ?? '',
+  }]
+  repackOpen.value = true
+}
+
+async function saveRepack() {
+  const id = repackId.value
+  if (!id) return
+  repackSaving.value = true
+  try {
+    const res = await mrpGudangFgRepack(id, {
+      lines: repackLines.value.map((line) => ({
+        lembar: line.lembar,
+        ukuran: line.ukuran,
+      })),
+    })
+    ElMessage.success(t('pages.mrpGudangFg.repackOk', {
+      kode: repackKode.value,
+      n: (res?.created || []).length || repackLines.value.length,
+    }))
+    repackOpen.value = false
+    detailOpen.value = false
+    await reload()
+  } catch (e) {
+    ElMessage.error(errMsg(e))
+  } finally {
+    repackSaving.value = false
+  }
 }
 
 function fillOut(row) {

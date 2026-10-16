@@ -10,6 +10,10 @@ from sqlalchemy.orm import Session
 
 from app.models import DeliveryDetail, DeliveryHeader, PoDetail, ProductionDetail
 
+# Toleransi ukur kecil: max(2 SF, 0.5% qty order). Izinkan overship otomatis dalam batas ini.
+OVERSHIP_ABS_SF = Decimal("2")
+OVERSHIP_PCT = Decimal("0.005")
+
 
 def _net_delivered_qty_expr():
     return DeliveryDetail.qty - func.coalesce(DeliveryDetail.returned_qty, 0)
@@ -18,6 +22,37 @@ def _net_delivered_qty_expr():
 def _delivery_not_cancelled():
     status = func.lower(func.trim(func.coalesce(DeliveryHeader.status, "")))
     return status.notin_(("cancelled", "canceled"))
+
+
+def _dec_qty(v: Decimal | float | int | None) -> Decimal:
+    if v is None:
+        return Decimal(0)
+    return Decimal(str(v))
+
+
+def overship_allowance(order_qty: Decimal | float | int | None) -> Decimal:
+    """Batas overship otomatis terhadap saldo order (SF)."""
+    order = _dec_qty(order_qty)
+    if order <= 0:
+        return OVERSHIP_ABS_SF
+    pct = (order * OVERSHIP_PCT).quantize(Decimal("0.01"))
+    return max(OVERSHIP_ABS_SF, pct)
+
+
+def within_overship_tolerance(
+    qty: Decimal | float | int | None,
+    remaining: Decimal | float | int | None,
+    *,
+    order_qty: Decimal | float | int | None = None,
+) -> bool:
+    """True jika qty > remaining tetapi selisih masih dalam toleransi ukur."""
+    q = _dec_qty(qty)
+    rem = _dec_qty(remaining)
+    if q <= rem:
+        return True
+    overage = q - rem
+    base = order_qty if order_qty is not None else rem
+    return overage <= overship_allowance(base) + Decimal("0.0000001")
 
 
 def sum_delivered_qty_for_po_detail(
@@ -81,7 +116,7 @@ def validate_delivery_qty_against_po_balance(
     qty: Decimal | None,
     exclude_delivery_detail_id: int | None = None,
 ) -> None:
-    """Tolak kiriman yang melebihi saldo order PO (qty_order − terkirim)."""
+    """Tolak kiriman yang melebihi saldo order di luar toleransi ukur kecil."""
     if qty is None or qty <= 0:
         return
     resolved_po_detail_id = po_detail_id
@@ -92,19 +127,27 @@ def validate_delivery_qty_against_po_balance(
         resolved_po_detail_id = int(pd.po_detail_id)
     if resolved_po_detail_id is None:
         return
+    pod = db.get(PoDetail, int(resolved_po_detail_id))
     remaining = remaining_po_detail_qty(
         db, int(resolved_po_detail_id), exclude_delivery_detail_id=exclude_delivery_detail_id
     )
     if remaining is None:
         return
-    if qty > remaining:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Qty kirim ({qty}) melebihi saldo order ({remaining} SF). "
-                "Revisi PO/marketing jika perlu menambah qty order."
-            ),
-        )
+    q = _dec_qty(qty)
+    if q <= remaining:
+        return
+    order_qty = pod.quantity_order if pod else remaining
+    if within_overship_tolerance(q, remaining, order_qty=order_qty):
+        return
+    allow = overship_allowance(order_qty)
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"Qty kirim ({q}) melebihi saldo order ({remaining} SF) "
+            f"di luar toleransi ukur ({allow} SF). "
+            "Revisi PO/marketing jika perlu menambah qty order."
+        ),
+    )
 
 
 def sync_po_detail_balance_qty(db: Session, po_detail_id: int) -> Decimal | None:
@@ -118,12 +161,6 @@ def sync_po_detail_balance_qty(db: Session, po_detail_id: int) -> Decimal | None
         bal = Decimal("0")
     pod.balance_qty = bal
     return bal
-
-
-def _dec_qty(v: Decimal | float | int | None) -> Decimal:
-    if v is None:
-        return Decimal(0)
-    return Decimal(str(v))
 
 
 def schedule_qty_total(schedules: list) -> Decimal:

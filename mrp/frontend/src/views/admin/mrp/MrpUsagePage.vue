@@ -94,6 +94,16 @@
             <el-table-column :label="t('common.date')" width="150">
               <template #default="{ row }">{{ formatDateTime(row.date_created) }}</template>
             </el-table-column>
+            <el-table-column v-if="canUpdate" :label="t('common.actions')" width="112" align="center" fixed="right">
+              <template #default="{ row }">
+                <AdminTableActions
+                  :show-edit="!!row.stok_out_id"
+                  :show-delete="!!row.stok_out_id"
+                  @edit="openUsageEdit(row, 'color')"
+                  @delete="deleteUsage(row, 'color')"
+                />
+              </template>
+            </el-table-column>
           </el-table>
           <div class="mt-3 flex justify-end">
             <el-pagination
@@ -188,6 +198,16 @@
             </el-table-column>
             <el-table-column :label="t('common.date')" width="150">
               <template #default="{ row }">{{ formatDateTime(row.date_created) }}</template>
+            </el-table-column>
+            <el-table-column v-if="canUpdate" :label="t('common.actions')" width="112" align="center" fixed="right">
+              <template #default="{ row }">
+                <AdminTableActions
+                  :show-edit="!!row.stok_out_id"
+                  :show-delete="!!row.stok_out_id"
+                  @edit="openUsageEdit(row, 'rp')"
+                  @delete="deleteUsage(row, 'rp')"
+                />
+              </template>
             </el-table-column>
           </el-table>
           <div class="mt-3 flex justify-end">
@@ -287,6 +307,16 @@
             <el-table-column :label="t('common.date')" width="150">
               <template #default="{ row }">{{ formatDateTime(row.date_created) }}</template>
             </el-table-column>
+            <el-table-column v-if="canUpdate" :label="t('common.actions')" width="112" align="center" fixed="right">
+              <template #default="{ row }">
+                <AdminTableActions
+                  :show-edit="!!row.stok_out_id"
+                  :show-delete="!!row.stok_out_id"
+                  @edit="openUsageEdit(row, 'material')"
+                  @delete="deleteUsage(row, 'material')"
+                />
+              </template>
+            </el-table-column>
           </el-table>
           <div class="mt-3 flex justify-end">
             <el-pagination
@@ -304,15 +334,35 @@
         </div>
       </el-tab-pane>
     </el-tabs>
+
+    <el-dialog
+      v-model="usageEditOpen"
+      :title="t('pages.mrpUsage.editTitle')"
+      width="420px"
+      destroy-on-close
+      append-to-body
+    >
+      <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpUsage.editHint') }}</p>
+      <el-form label-position="top">
+        <el-form-item :label="t('pages.mrpUsage.qty')" required>
+          <el-input v-model="usageEditQty" type="number" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="usageEditOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="usageSaving" @click="saveUsageEdit">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
+import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
 import { can } from '../../../security/permissions'
 import {
   mrpStokKimia,
@@ -320,13 +370,19 @@ import {
   mrpStokRp,
   mrpUsageColor,
   mrpUsageColorCreate,
+  mrpUsageColorDelete,
   mrpUsageColorScanLot,
+  mrpUsageColorUpdate,
   mrpUsageMaterial,
   mrpUsageMaterialCreate,
+  mrpUsageMaterialDelete,
   mrpUsageMaterialScan,
+  mrpUsageMaterialUpdate,
   mrpUsageRp,
   mrpUsageRpCreate,
+  mrpUsageRpDelete,
   mrpUsageRpScan,
+  mrpUsageRpUpdate,
 } from '../../../api/client'
 import { buildPageParams, fromElSortChange, normalizePageResult } from '../../../utils/tableQuery'
 
@@ -336,6 +392,80 @@ const loading = ref(false)
 const saving = ref(false)
 const scanning = ref(false)
 const canCreate = computed(() => can('mrpShopfloor', 'create'))
+const canUpdate = computed(() => can('mrpShopfloor', 'update'))
+const usageEditOpen = ref(false)
+const usageSaving = ref(false)
+const usageEditKind = ref('color')
+const usageEditId = ref(null)
+const usageEditQty = ref('')
+
+function usageApiError(e) {
+  const raw = e?.message || String(e)
+  try {
+    const body = JSON.parse(raw)
+    if (body?.detail) return String(body.detail)
+  } catch {
+    /* teks biasa */
+  }
+  return raw
+}
+
+function openUsageEdit(row, kind) {
+  if (!row.stok_out_id) {
+    ElMessage.warning(t('pages.mrpUsage.noTrace'))
+    return
+  }
+  usageEditKind.value = kind
+  usageEditId.value = row.id
+  usageEditQty.value = row.qty_digunakan ?? row.qty_used ?? ''
+  usageEditOpen.value = true
+}
+
+async function saveUsageEdit() {
+  const id = usageEditId.value
+  const body = { qty: usageEditQty.value }
+  const call = {
+    color: () => mrpUsageColorUpdate(id, body),
+    rp: () => mrpUsageRpUpdate(id, body),
+    material: () => mrpUsageMaterialUpdate(id, body),
+  }[usageEditKind.value]
+  usageSaving.value = true
+  try {
+    await call()
+    ElMessage.success(t('pages.mrpUsage.editOk'))
+    usageEditOpen.value = false
+    await reload()
+  } catch (e) {
+    ElMessage.error(usageApiError(e))
+  } finally {
+    usageSaving.value = false
+  }
+}
+
+async function deleteUsage(row, kind) {
+  if (!row.stok_out_id) {
+    ElMessage.warning(t('pages.mrpUsage.noTrace'))
+    return
+  }
+  try {
+    await ElMessageBox.confirm(t('pages.mrpUsage.deleteConfirm'), { type: 'warning' })
+  } catch {
+    return
+  }
+  const call = {
+    color: () => mrpUsageColorDelete(row.id),
+    rp: () => mrpUsageRpDelete(row.id),
+    material: () => mrpUsageMaterialDelete(row.id),
+  }[kind]
+  try {
+    await call()
+    ElMessage.success(t('pages.mrpUsage.deleteOk'))
+    await reload()
+  } catch (e) {
+    ElMessage.error(usageApiError(e))
+  }
+}
+
 const colorRows = ref([])
 const page = ref(1)
 const pageSize = ref(20)

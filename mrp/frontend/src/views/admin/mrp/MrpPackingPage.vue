@@ -60,11 +60,13 @@
             <el-table-column prop="date_created" :label="t('common.date')" width="120" sortable="custom">
               <template #default="{ row }">{{ formatDate(row.date_created) }}</template>
             </el-table-column>
-            <el-table-column :label="t('common.actions')" width="88" align="center" fixed="right">
+            <el-table-column :label="t('common.actions')" width="120" align="center" fixed="right">
               <template #default="{ row }">
                 <AdminTableActions
                   :show-view="true"
+                  :show-edit="canUpdate && !!row.can_correct"
                   @view="$router.push(`/admin/mrp/packing/${row.id}`)"
+                  @edit="$router.push(`/admin/mrp/packing/${row.id}?edit=1`)"
                 />
               </template>
             </el-table-column>
@@ -84,51 +86,6 @@
           </div>
         </div>
       </el-tab-pane>
-
-      <el-tab-pane :label="t('pages.mrpPacking.tabStockSisa')" name="stock-sisa">
-        <div class="admin-inner-card">
-          <div class="admin-inner-card__head">
-            <div>
-              <h3 class="admin-inner-card__title">{{ t('pages.mrpGudangSisa.listTitle') }}</h3>
-              <p class="admin-inner-card__sub">
-                {{ t('pages.mrpGudangSisa.statsLine', {
-                  n: sisaRows.length,
-                  open: sisaCount('open'),
-                  reserved: sisaCount('reserved'),
-                  approved: sisaCount('approved'),
-                }) }}
-              </p>
-            </div>
-            <el-button size="small" @click="$router.push('/admin/mrp/gudang-sisa')">
-              {{ t('menu.mrpGudangSisa') }}
-            </el-button>
-          </div>
-          <el-table
-            :data="sisaRows"
-            v-loading="sisaLoading"
-            border
-            stripe
-            size="small"
-            class="admin-table"
-            :empty-text="t('common.tableEmpty')"
-          >
-            <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
-            <el-table-column prop="sumber" :label="t('pages.mrpGudangSisa.sumber')" width="90" align="center" />
-            <el-table-column prop="barcode" :label="t('pages.mrpGudangSisa.barcode')" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="lot" :label="t('pages.mrpGudangSisa.lot')" min-width="100" show-overflow-tooltip />
-            <el-table-column :label="t('pages.mrpGudangSisa.qty')" width="90" align="right">
-              <template #default="{ row }">{{ formatQty(row.qty) }}</template>
-            </el-table-column>
-            <el-table-column prop="status" :label="t('common.status')" width="110" align="center" />
-            <el-table-column label="PO" width="80" align="center">
-              <template #default="{ row }">{{ row.po_id || '—' }}</template>
-            </el-table-column>
-            <el-table-column :label="t('common.notes')" min-width="140" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.notes || '—' }}</template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </el-tab-pane>
     </el-tabs>
   </AdminSection>
 </template>
@@ -142,13 +99,12 @@ import AdminSection from '../../../components/AdminSection.vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
 import MrpPackingCreateDialog from './MrpPackingCreateDialog.vue'
 import { can } from '../../../security/permissions'
-import { mrpListPacking, mrpStockSisaList } from '../../../api/client'
+import { mrpListPacking } from '../../../api/client'
 import { buildPageParams, fromElSortChange, normalizePageResult } from '../../../utils/tableQuery'
 
 const { t } = useI18n()
 const workspaceRef = ref(null)
 const loading = ref(false)
-const sisaLoading = ref(false)
 const tab = ref('workspace')
 const historyRows = ref([])
 const historySearch = ref('')
@@ -157,8 +113,8 @@ const historyPageSize = ref(20)
 const historyTotal = ref(0)
 const historySortBy = ref('date_created')
 const historySortDir = ref('desc')
-const sisaRows = ref([])
 const canCreate = computed(() => can('mrpShopfloor', 'create'))
+const canUpdate = computed(() => can('mrpShopfloor', 'update'))
 
 const filteredHistoryRows = computed(() => {
   const q = historySearch.value.trim().toLowerCase()
@@ -187,10 +143,6 @@ function statusLabel(status) {
   if (status === 'finished') return t('pages.mrpPacking.statusFinished')
   if (status === 'in_progress') return t('pages.mrpPacking.statusInProgress')
   return status || '—'
-}
-
-function sisaCount(st) {
-  return (sisaRows.value || []).filter((r) => r.status === st).length
 }
 
 async function loadHistory() {
@@ -225,31 +177,13 @@ function onHistorySortChange(payload) {
   loadHistory()
 }
 
-async function loadSisa() {
-  sisaLoading.value = true
-  try {
-    const data = await mrpStockSisaList(buildPageParams({ page: 1, pageSize: 50 }))
-    sisaRows.value = normalizePageResult(data).items
-  } catch (e) {
-    sisaRows.value = []
-    ElMessage.error(e.message || String(e))
-  } finally {
-    sisaLoading.value = false
-  }
-}
-
 function onTabChange(name) {
   if (name === 'history') loadHistory()
-  if (name === 'stock-sisa') loadSisa()
 }
 
 async function reload() {
   if (tab.value === 'history') {
     await loadHistory()
-    return
-  }
-  if (tab.value === 'stock-sisa') {
-    await loadSisa()
     return
   }
   loading.value = true

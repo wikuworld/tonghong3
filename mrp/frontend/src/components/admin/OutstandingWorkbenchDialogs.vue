@@ -223,6 +223,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18n } from 'vue-i18n'
+import { withinOvershipTolerance } from '../../utils/overshipTolerance.js'
 
 import {
   createOutstandingShipBatch,
@@ -304,13 +305,25 @@ function suggestedScheduleQty(r) {
   return base
 }
 
+function orderQtyForRow(row) {
+  return parseNum(row?.quantity_order ?? row?.qty_sf ?? row?.source?.qty_sf)
+}
+
 function suggestedShipQty(row, opt) {
   const avail = parseNum(opt?.qty_available)
+  const packed = parseNum(opt?.qty_packed)
   const bal = parseNum(row.balance_qty)
   const wip = parseNum(row.mrp_qty_wip)
-  const nums = [avail, bal, wip != null && wip > 0 ? wip : null].filter((x) => x != null)
-  if (!nums.length) return ''
-  return Math.min(...nums)
+  let q = avail != null && avail > 0 ? avail : packed
+  if (q == null || q <= 0) {
+    q = wip != null && wip > 0 ? wip : bal
+  }
+  if (q == null) return ''
+  if (bal != null && bal >= 0 && q > bal) {
+    if (withinOvershipTolerance(q, bal, orderQtyForRow(row))) return q
+    return bal
+  }
+  return q
 }
 
 function onPickPacking(row) {
@@ -387,7 +400,10 @@ watch(
       system_reference: r.system_reference || r.thi_order,
       material_name: r.material_name,
       balance_qty: r.balance_qty,
+      qty_sf: r.qty_sf,
+      quantity_order: r.quantity_order ?? r.qty_sf,
       mrp_qty_wip: r.mrp_qty_wip || '',
+      source: r,
       pickedKey: '',
       packing_id: null,
       packing_detail_id: null,
@@ -517,6 +533,11 @@ async function submitShip() {
       ElMessage.warning(t('pages.marketingFlow.shipQtyExceedsAvailable', { avail }))
       return
     }
+    const bal = parseNum(r.balance_qty)
+    if (bal != null && qty > bal + 1e-9 && !withinOvershipTolerance(qty, bal, orderQtyForRow(r))) {
+      ElMessage.warning(t('pages.marketingFlow.shipQtyExceedsBalance', { bal }))
+      return
+    }
     lines.push({
       po_detail_id: r.po_detail_id,
       packing_id: r.packing_id,
@@ -538,6 +559,15 @@ async function submitShip() {
   })
   if (overWip.length) {
     ElMessage.warning(t('pages.marketingFlow.scheduleQtyOverWip', { n: overWip.length }))
+  }
+  const overBalTol = shipRows.value.filter((r) => {
+    if (!r.packing_id) return false
+    const q = parseNum(r.qty)
+    const bal = parseNum(r.balance_qty)
+    return q != null && bal != null && q > bal + 1e-9 && withinOvershipTolerance(q, bal, orderQtyForRow(r))
+  })
+  if (overBalTol.length) {
+    ElMessage.info(t('pages.marketingFlow.shipQtyOverBalanceTolerance', { n: overBalTol.length }))
   }
   if (shipSoCount.value > 1) {
     try {

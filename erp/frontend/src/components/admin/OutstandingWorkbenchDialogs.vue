@@ -216,6 +216,7 @@ import {
   mostCommonPlannedDeliveryDate,
   extractPlanSlots,
 } from '../../utils/outstandingWork.js'
+import { withinOvershipTolerance } from '../../utils/overshipTolerance.js'
 
 const props = defineProps({
   rows: { type: Array, default: () => [] },
@@ -337,7 +338,10 @@ function emptyShipRow(source) {
     material_name: source.material_name,
     lot_no: outstandingLotNo(source),
     balance_qty: source.balance_qty,
+    qty_sf: source.qty_sf,
+    quantity_order: source.quantity_order ?? source.qty_sf,
     mrp_qty_wip: source.mrp_qty_wip || '',
+    source,
     pickedKey: '',
     packing_id: null,
     packing_number: '',
@@ -371,7 +375,10 @@ function rebuildShipRows() {
       material_name: source.material_name || opt.material_name,
       lot_no: String(opt.lot_no || '').trim() || outstandingLotNo(source),
       balance_qty: source.balance_qty,
+      qty_sf: source.qty_sf,
+      quantity_order: source.quantity_order ?? source.qty_sf,
       mrp_qty_wip: source.mrp_qty_wip || '',
+      source,
       pickedKey: '',
       packing_id: null,
       packing_number: '',
@@ -412,13 +419,27 @@ function parseNum(v) {
   return Number.isFinite(n) ? n : null
 }
 
+function orderQtyForRow(row) {
+  return parseNum(row?.quantity_order ?? row?.qty_sf ?? row?.source?.qty_sf ?? row?.source?.quantity_order)
+}
+
 function suggestedShipQty(row, opt) {
+  // Prefer qty packing/FG aktual untuk QTY (S/F) surat jalan.
+  // Overship vs saldo order diizinkan dalam toleransi ukur kecil (max 2 SF / 0.5%).
   const avail = parseNum(opt?.qty_available)
+  const packed = parseNum(opt?.qty_packed)
   const bal = parseNum(row.balance_qty)
   const wip = parseNum(row.mrp_qty_wip)
-  const nums = [avail, bal, wip != null && wip > 0 ? wip : null].filter((x) => x != null)
-  if (!nums.length) return null
-  return Math.min(...nums)
+  let q = avail != null && avail > 0 ? avail : packed
+  if (q == null || q <= 0) {
+    q = wip != null && wip > 0 ? wip : bal
+  }
+  if (q == null) return null
+  if (bal != null && bal >= 0 && q > bal) {
+    if (withinOvershipTolerance(q, bal, orderQtyForRow(row))) return q
+    return bal
+  }
+  return q
 }
 
 function packingOptForRow(row) {
@@ -618,6 +639,11 @@ async function submitShip() {
       ElMessage.warning(t('pages.marketingFlow.shipQtyExceedsAvailable', { avail }))
       return
     }
+    const bal = parseNum(r.balance_qty)
+    if (bal != null && qty > bal + 1e-9 && !withinOvershipTolerance(qty, bal, orderQtyForRow(r))) {
+      ElMessage.warning(t('pages.marketingFlow.shipQtyExceedsBalance', { bal }))
+      return
+    }
     lines.push({
       po_detail_id: r.po_detail_id,
       packing_id: r.packing_id,
@@ -634,6 +660,14 @@ async function submitShip() {
   })
   if (overWip.length) {
     ElMessage.warning(t('pages.marketingFlow.scheduleQtyOverWip', { n: overWip.length }))
+  }
+  const overBalTol = picked.filter((r) => {
+    const q = resolveShipQty(r)
+    const bal = parseNum(r.balance_qty)
+    return q != null && bal != null && q > bal + 1e-9 && withinOvershipTolerance(q, bal, orderQtyForRow(r))
+  })
+  if (overBalTol.length) {
+    ElMessage.info(t('pages.marketingFlow.shipQtyOverBalanceTolerance', { n: overBalTol.length }))
   }
   if (shipSoCount.value > 1) {
     try {

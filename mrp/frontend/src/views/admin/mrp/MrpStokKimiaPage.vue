@@ -361,11 +361,14 @@
         <el-table-column :label="t('common.date')" width="120">
           <template #default="{ row }">{{ formatDate(row.tanggal_in) }}</template>
         </el-table-column>
-        <el-table-column v-if="canUpdate" :label="t('common.actions')" width="88" align="center" fixed="right">
+        <el-table-column v-if="canUpdate" :label="t('common.actions')" width="140" align="center" fixed="right">
           <template #default="{ row }">
             <AdminTableActions
-              v-if="Number(row.qty_sisa) > 0"
-              :more-items="[{ command: 'out', label: gudangTab === 'lapangan' ? t('pages.mrpStokKimia.outLapanganBtn') : 'OUT', icon: Upload }]"
+              :show-edit="true"
+              :show-delete="true"
+              :more-items="Number(row.qty_sisa) > 0 ? [{ command: 'out', label: gudangTab === 'lapangan' ? t('pages.mrpStokKimia.outLapanganBtn') : 'OUT', icon: Upload }] : []"
+              @edit="openEditLot(row)"
+              @delete="deleteLot(row)"
               @more="(cmd) => cmd === 'out' && outFromRow(row)"
             />
           </template>
@@ -418,6 +421,43 @@
         </el-table-column>
       </el-table>
     </div>
+
+    <el-dialog
+      v-model="editOpen"
+      :title="t('pages.mrpStokKimia.editTitle')"
+      width="480px"
+      destroy-on-close
+      append-to-body
+    >
+      <p v-if="editLocked" class="text-sm text-amber-700 mb-3">{{ t('pages.mrpStokKimia.editLocked') }}</p>
+      <el-form label-position="top">
+        <el-form-item :label="t('pages.mrpStokKimia.bc')">
+          <el-input :model-value="editForm.kode_internal" disabled />
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpStokKimia.qty')" required>
+          <el-input v-model="editForm.qty" type="number" />
+        </el-form-item>
+        <el-form-item :label="t('common.date')">
+          <el-date-picker v-model="editForm.tanggal" type="date" value-format="YYYY-MM-DD" class="w-full" :disabled="editLocked" />
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpStokKimia.lotNumber')">
+          <el-input v-model="editForm.lot_number" :disabled="editLocked" />
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpStokKimia.kemasan')">
+          <el-input v-model="editForm.jumlah_kemasan" :disabled="editLocked" />
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpStokKimia.expired')">
+          <el-date-picker v-model="editForm.expired_date" type="date" value-format="YYYY-MM-DD" class="w-full" :disabled="editLocked" />
+        </el-form-item>
+        <el-form-item label="Satuan">
+          <el-input v-model="editForm.satuan" :disabled="editLocked" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="editSaving" @click="saveEditLot">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -466,6 +506,20 @@ const inForm = reactive({
   kemasan: '',
   tanggal: new Date().toISOString().slice(0, 10),
 })
+const editOpen = ref(false)
+const editSaving = ref(false)
+const editIssued = ref(0)
+const editForm = reactive({
+  id: null,
+  kode_internal: '',
+  qty: '',
+  tanggal: '',
+  lot_number: '',
+  jumlah_kemasan: '',
+  expired_date: '',
+  satuan: '',
+})
+const editLocked = computed(() => editIssued.value > 0.001)
 
 function findKimiaInList(id) {
   if (id == null || id === '') return null
@@ -774,6 +828,73 @@ function onSortChange(payload) {
   sortDir.value = mapped.sortDir || 'desc'
   page.value = 1
   reload()
+}
+
+function openEditLot(row) {
+  const booked = Number(row.qty)
+  const sisa = Number(row.qty_sisa)
+  editIssued.value = Number.isFinite(booked) && Number.isFinite(sisa) ? Math.max(0, booked - sisa) : 0
+  editForm.id = row.id
+  editForm.kode_internal = row.kode_internal || ''
+  editForm.qty = row.qty ?? ''
+  editForm.tanggal = String(row.tanggal_in || '').slice(0, 10)
+  editForm.lot_number = row.lot_number || ''
+  editForm.jumlah_kemasan = row.jumlah_kemasan ?? ''
+  editForm.expired_date = String(row.expired_date || '').slice(0, 10)
+  editForm.satuan = row.satuan || ''
+  editOpen.value = true
+}
+
+function stockApiError(e) {
+  const raw = e?.message || String(e)
+  try {
+    const body = JSON.parse(raw)
+    if (body?.detail) return String(body.detail)
+  } catch {
+    /* teks biasa */
+  }
+  return raw
+}
+
+async function saveEditLot() {
+  editSaving.value = true
+  try {
+    await mrpStokKimiaAction({
+      action: 'update',
+      id: editForm.id,
+      qty: editForm.qty,
+      tanggal: editForm.tanggal,
+      lot_number: editForm.lot_number,
+      jumlah_kemasan: editForm.jumlah_kemasan,
+      expired_date: editForm.expired_date || null,
+      satuan: editForm.satuan,
+    })
+    ElMessage.success(t('pages.mrpStokKimia.editOk', { kode: editForm.kode_internal }))
+    editOpen.value = false
+    await reload()
+  } catch (e) {
+    ElMessage.error(stockApiError(e))
+  } finally {
+    editSaving.value = false
+  }
+}
+
+async function deleteLot(row) {
+  try {
+    await ElMessageBox.confirm(
+      t('pages.mrpStokKimia.deleteConfirm', { kode: row.kode_internal }),
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await mrpStokKimiaAction({ action: 'delete', id: row.id })
+    ElMessage.success(t('pages.mrpStokKimia.deleteOk', { kode: row.kode_internal }))
+    await reload()
+  } catch (e) {
+    ElMessage.error(stockApiError(e))
+  }
 }
 
 async function reload() {

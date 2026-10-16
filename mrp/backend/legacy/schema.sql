@@ -431,10 +431,11 @@ CREATE TABLE IF NOT EXISTS tbl_gudang_fg (
     customer VARCHAR(150) DEFAULT NULL,
     total_lembar INT DEFAULT 0,
     total_ukuran DECIMAL(12,2) DEFAULT 0,
-    status ENUM('in_stock','out') DEFAULT 'in_stock',
+    status ENUM('in_stock','out','repacked') DEFAULT 'in_stock',
     date_in DATETIME DEFAULT CURRENT_TIMESTAMP,
     date_out DATETIME DEFAULT NULL,
-    keterangan_out VARCHAR(255) DEFAULT NULL
+    keterangan_out VARCHAR(255) DEFAULT NULL,
+    repacked_from_id INT DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS tbl_persiapan_ky (

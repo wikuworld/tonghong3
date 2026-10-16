@@ -139,6 +139,7 @@
         <MrpPackingUkurPanel
         :rows="ukurRows"
         :total-size="ukurTotalSize"
+        :qty-actual="activeQtyActual"
         :total-qty="ukurRows.length"
         :packing-no="kodePacking"
         :lot-no="lotNo"
@@ -330,6 +331,11 @@ const sessionActive = computed(() => {
 const ukurTotalSize = computed(() =>
   ukurRows.value.reduce((sum, row) => sum + (Number(row.size_val) || 0), 0),
 )
+/** Qty Actual packing aktif (roll sudah dicetak); ditambah total size sebelum cetak di panel. */
+const activeQtyActual = computed(() => {
+  if (sessionKind.value === 'sisa') return 0
+  return Number(activeRow.value?.qty_actual || 0)
+})
 function packingQtyBalance(row) {
   const wip = Number(row?.qty_wip ?? row?.prep_total_size ?? 0)
   const actual = Number(row?.qty_actual || 0)
@@ -338,10 +344,8 @@ function packingQtyBalance(row) {
 
 function packingCanFinishRow(row) {
   if (!row?.rencana_item_id) return true
-  const { wip, actual } = packingQtyBalance(row)
-  if (actual <= 0) return false
-  if (!Number.isFinite(wip) || wip <= 0) return true
-  return actual <= wip + 1e-9
+  const { actual } = packingQtyBalance(row)
+  return actual > 0
 }
 
 const canFinishSession = computed(() => {
@@ -376,6 +380,7 @@ const sessionHint = computed(() => {
       return t('pages.mrpPacking.finishActualExceedsWip', {
         actual: formatQty(actual),
         wip: formatQty(wip),
+        more: formatQty(actual - wip),
       })
     }
   }
@@ -679,9 +684,12 @@ function labelQtyOverWip() {
   const wip = Number(row.qty_wip ?? row.prep_total_size ?? 0)
   const actual = Number(row.qty_actual || 0)
   const measured = ukurTotalSize.value
-  if (!Number.isFinite(wip) || !Number.isFinite(actual) || !Number.isFinite(measured)) return null
-  if (Math.round((measured + actual) * 100) > Math.round(wip * 100)) {
-    return { measured, actual, wip }
+  if (!Number.isFinite(wip) || wip <= 0 || !Number.isFinite(actual) || !Number.isFinite(measured)) {
+    return null
+  }
+  const projected = measured + actual
+  if (Math.round(projected * 100) > Math.round(wip * 100)) {
+    return { measured, actual, wip, projected, more: projected - wip }
   }
   return null
 }
@@ -695,9 +703,10 @@ async function printRollLabel(extra = {}) {
         ukur: formatQty(over.measured),
         actual: formatQty(over.actual),
         wip: formatQty(over.wip),
+        total: formatQty(over.projected),
+        more: formatQty(over.more),
       }),
     )
-    return
   }
   printing.value = true
   try {
@@ -720,6 +729,19 @@ async function printRollLabel(extra = {}) {
     }
     if (rollHistoryOpen.value && rollHistoryRow.value) {
       await loadRollHistory(rollHistoryRow.value, false)
+    }
+    if (!over && (res.warning || res.wip_overage)) {
+      const wo = res.wip_overage || {}
+      ElMessage.warning(
+        res.warning ||
+          t('pages.mrpPacking.labelExceedsWip', {
+            ukur: formatQty(wo.ukuran),
+            actual: formatQty(wo.qty_actual),
+            wip: formatQty(wo.qty_wip),
+            total: formatQty(wo.projected),
+            more: formatQty(wo.overage),
+          }),
+      )
     }
     ElMessage.success(res.message || t('pages.mrpPacking.rollPrinted'))
   } catch (e) {
@@ -816,9 +838,9 @@ async function confirmFinishDialogs(row) {
       t('pages.mrpPacking.finishActualExceedsWip', {
         actual: formatQty(actual),
         wip: formatQty(wip),
+        more: formatQty(actual - wip),
       }),
     )
-    return false
   }
   if (row && Number.isFinite(wip) && wip > 0 && shortfall > 0.009) {
     try {

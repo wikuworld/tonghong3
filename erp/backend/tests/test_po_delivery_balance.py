@@ -60,6 +60,29 @@ def test_validate_delivery_qty_exceeds_balance():
     assert "melebihi saldo" in str(exc.value.detail).lower()
 
 
+def test_validate_delivery_qty_within_measure_tolerance():
+    """Overshoot kecil vs saldo (mis. 1205 vs 1200) diizinkan otomatis."""
+    db = _mock_db(quantity_order=Decimal("1200"))
+    svc.validate_delivery_qty_against_po_balance(
+        db, production_detail_id=99, qty=Decimal("1205")
+    )
+
+
+def test_validate_delivery_qty_beyond_measure_tolerance():
+    db = _mock_db(quantity_order=Decimal("1200"))
+    with pytest.raises(HTTPException) as exc:
+        svc.validate_delivery_qty_against_po_balance(
+            db, production_detail_id=99, qty=Decimal("1210")
+        )
+    assert exc.value.status_code == 400
+    assert "toleransi" in str(exc.value.detail).lower()
+
+
+def test_overship_allowance():
+    assert svc.overship_allowance(Decimal("100")) == Decimal("2")
+    assert svc.overship_allowance(Decimal("1200")) == Decimal("6.00")
+
+
 def test_remaining_po_detail_qty():
     db = _mock_db(delivered_prod=Decimal("30"), delivered_direct=Decimal("0"))
     remaining = svc.remaining_po_detail_qty(db, 10)

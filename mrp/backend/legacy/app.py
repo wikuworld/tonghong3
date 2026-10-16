@@ -248,6 +248,12 @@ def ensure_extended_tables(cur):
         "qty_used DECIMAL(12,2) DEFAULT 0, satuan VARCHAR(20) DEFAULT 'pcs', "
         "date_created DATETIME DEFAULT CURRENT_TIMESTAMP, INDEX idx_kode_wip (kode_wip))"
     )
+    for usage_table in ("tbl_usage_color", "tbl_usage_rp", "tbl_usage_material_lain"):
+        usage_cols = _col_names(cur, usage_table)
+        if usage_cols and "stok_in_id" not in usage_cols:
+            cur.execute(f"ALTER TABLE {usage_table} ADD COLUMN stok_in_id INT DEFAULT NULL")
+        if usage_cols and "stok_out_id" not in usage_cols:
+            cur.execute(f"ALTER TABLE {usage_table} ADD COLUMN stok_out_id INT DEFAULT NULL")
     cur.execute(
         "CREATE TABLE IF NOT EXISTS tbl_packing_po ("
         "id INT AUTO_INCREMENT PRIMARY KEY, packing_id INT NOT NULL, po_id INT DEFAULT NULL, "
@@ -259,9 +265,9 @@ def ensure_extended_tables(cur):
         "id INT AUTO_INCREMENT PRIMARY KEY, packing_id INT NOT NULL UNIQUE, "
         "kode_packing VARCHAR(30) NOT NULL UNIQUE, kode_wip VARCHAR(30) NOT NULL, "
         "customer VARCHAR(150) DEFAULT NULL, total_lembar INT DEFAULT 0, "
-        "total_ukuran DECIMAL(12,2) DEFAULT 0, status ENUM('in_stock','out') DEFAULT 'in_stock', "
+        "total_ukuran DECIMAL(12,2) DEFAULT 0, status ENUM('in_stock','out','repacked') DEFAULT 'in_stock', "
         "date_in DATETIME DEFAULT CURRENT_TIMESTAMP, date_out DATETIME DEFAULT NULL, "
-        "keterangan_out VARCHAR(255) DEFAULT NULL)"
+        "keterangan_out VARCHAR(255) DEFAULT NULL, repacked_from_id INT DEFAULT NULL)"
     )
     cur.execute(
         "CREATE TABLE IF NOT EXISTS tbl_persiapan_ky ("
@@ -584,6 +590,22 @@ def ensure_extended_tables(cur):
         if "bridge_error" not in fg_cols:
             cur.execute(
                 "ALTER TABLE tbl_gudang_fg ADD COLUMN bridge_error VARCHAR(255) DEFAULT NULL"
+            )
+        if "repacked_from_id" not in fg_cols:
+            cur.execute(
+                "ALTER TABLE tbl_gudang_fg ADD COLUMN repacked_from_id INT DEFAULT NULL"
+            )
+        cur.execute("SHOW COLUMNS FROM tbl_gudang_fg LIKE 'status'")
+        status_col = cur.fetchone() or {}
+        status_type = ""
+        if isinstance(status_col, dict):
+            status_type = str(status_col.get("Type") or status_col.get("type") or "")
+        elif status_col:
+            status_type = str(status_col[1])
+        if "repacked" not in status_type.lower():
+            cur.execute(
+                "ALTER TABLE tbl_gudang_fg MODIFY status "
+                "ENUM('in_stock','out','repacked') DEFAULT 'in_stock'"
             )
 
 

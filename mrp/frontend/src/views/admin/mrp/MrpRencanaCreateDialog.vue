@@ -203,20 +203,6 @@
       append-to-body
     >
       <div class="mrp-rencana-so-filters mb-3 flex flex-wrap gap-2 items-end">
-        <div class="min-w-[180px]">
-          <div class="text-xs text-slate-500 mb-1">{{ t('pages.mrpRencana.material') }}</div>
-          <el-select
-            v-model="soSpek.material"
-            clearable
-            filterable
-            size="small"
-            class="w-full"
-            :placeholder="t('pages.mrpRencana.material')"
-            @change="onSpekFieldChange"
-          >
-            <el-option v-for="m in spekMaterialOptions" :key="m" :label="m" :value="m" />
-          </el-select>
-        </div>
         <div class="min-w-[160px]">
           <div class="text-xs text-slate-500 mb-1">{{ t('pages.mrpRencana.color') }}</div>
           <el-select
@@ -382,7 +368,6 @@ const soLoading = ref(false)
 const soListAll = ref([])
 const soListMatched = ref([])
 const soSpek = reactive({
-  material: '',
   color: '',
   emboss: '',
   thickness: '',
@@ -405,13 +390,7 @@ const visible = computed({
 const showHeaderFields = computed(() => isEdit.value || itemRows.value.length > 0 || !!props.tourOpen)
 
 const spekComplete = computed(
-  () =>
-    !!(
-      soSpek.material?.trim() &&
-      soSpek.color?.trim() &&
-      soSpek.emboss?.trim() &&
-      soSpek.thickness?.trim()
-    ),
+  () => !!(soSpek.color?.trim() && soSpek.emboss?.trim() && soSpek.thickness?.trim()),
 )
 
 const soSelectedIds = computed(() => new Set(soSelected.value.map((r) => r.id)))
@@ -432,13 +411,6 @@ function normText(v) {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, ' ')
-}
-
-function rowMatchesMaterial(row, material) {
-  const want = normText(material)
-  if (!want) return true
-  const got = normText(row.item_name)
-  return got === want || got.startsWith(want) || want.startsWith(got)
 }
 
 function rowMatchesColor(row, color) {
@@ -477,9 +449,6 @@ function uniqueSorted(values) {
 /** Opsi cascade: awalnya semua, lalu berkurang sesuai filter spek lain yang sudah dipilih. */
 function rowsForSpekOptions(excludeField) {
   return soListAll.value.filter((r) => {
-    if (excludeField !== 'material' && soSpek.material && !rowMatchesMaterial(r, soSpek.material)) {
-      return false
-    }
     if (excludeField !== 'color' && soSpek.color && !rowMatchesColor(r, soSpek.color)) {
       return false
     }
@@ -496,10 +465,6 @@ function rowsForSpekOptions(excludeField) {
     return true
   })
 }
-
-const spekMaterialOptions = computed(() =>
-  uniqueSorted(rowsForSpekOptions('material').map((r) => r.item_name)),
-)
 
 const spekColorOptions = computed(() =>
   uniqueSorted(rowsForSpekOptions('color').map((r) => r.warna)),
@@ -697,9 +662,9 @@ function soSelectable(row) {
   return !usedPoIds.value.has(Number(row.id))
 }
 
-function normSpekKeyFromDialog() {
+function normSpekKeyFromSoLine(p) {
   return [
-    soSpek.material.trim().toLowerCase(),
+    (p.item_name || '').trim().toLowerCase(),
     soSpek.emboss.trim().toLowerCase(),
     soSpek.thickness.trim().toLowerCase(),
     soSpek.color.trim().toLowerCase(),
@@ -758,7 +723,6 @@ async function syncPoWithFeedback() {
 function applyMatchedFromAll() {
   soListMatched.value = soListAll.value.filter(
     (r) =>
-      rowMatchesMaterial(r, soSpek.material) &&
       rowMatchesColor(r, soSpek.color) &&
       rowMatchesEmboss(r, soSpek.emboss) &&
       rowMatchesThickness(r, soSpek.thickness),
@@ -770,9 +734,6 @@ function applyMatchedFromAll() {
 }
 
 function pruneSpekToAvailableOptions() {
-  if (soSpek.material && !spekMaterialOptions.value.includes(soSpek.material)) {
-    soSpek.material = ''
-  }
   if (soSpek.color && !spekColorOptions.value.includes(soSpek.color)) {
     soSpek.color = ''
   }
@@ -790,7 +751,6 @@ async function refreshMatchedList() {
   try {
     const list = await mrpRencanaPoByCombination({
       limit: 1000,
-      material_name: soSpek.material,
       color: soSpek.color,
       emboss: soSpek.emboss,
       thickness: soSpek.thickness,
@@ -829,7 +789,6 @@ async function openSoDialog() {
   soListAll.value = []
   soListMatched.value = []
   Object.keys(soQty).forEach((k) => delete soQty[k])
-  soSpek.material = ''
   soSpek.color = ''
   soSpek.emboss = ''
   soSpek.thickness = ''
@@ -903,15 +862,18 @@ async function saveSoDialog() {
       ElMessage.warning(t('pages.mrpRencana.soAlreadyAdded', { so: p.no_so || p.no_po || p.id }))
       return
     }
-    const key = normSpekKeyFromDialog()
+    if (!(p.item_name || '').trim()) {
+      ElMessage.warning(t('pages.mrpRencana.rowIncomplete', { n: p.no_so || p.no_po || p.id, field: t('pages.mrpRencana.material') }))
+      return
+    }
+    const key = normSpekKeyFromSoLine(p)
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(p)
   }
 
   let added = 0
   const rowsToEnrich = []
-  const spekKey = normSpekKeyFromDialog()
-  for (const [, lines] of groups) {
+  for (const [spekKey, lines] of groups) {
     const first = lines[0]
     let row = findRowBySpekKey(spekKey)
     const newPos = lines.map((p) => ({ po_id: p.id, qty: Number(soQty[p.id] || 0) }))
@@ -926,7 +888,7 @@ async function saveSoDialog() {
         (acc, p) => mergeCustomerLabels(acc, p.customer),
         '',
       )
-      row.material_name = soSpek.material.trim()
+      row.material_name = (first.item_name || '').trim()
       row.emboss = soSpek.emboss.trim()
       row.color = soSpek.color.trim()
       row.thickness = soSpek.thickness.trim()
