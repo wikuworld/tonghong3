@@ -108,8 +108,8 @@ def _mark_deliveries_sent(
         if status == "sent":
             already_sent.append(did)
             continue
-        if status in ("cancelled", "canceled"):
-            skipped.append({"delivery_id": did, "reason": "cancelled"})
+        if bool(getattr(hdr, "is_deleted", False)) or status in ("cancelled", "canceled"):
+            skipped.append({"delivery_id": did, "reason": "deleted"})
             continue
         has_detail = db.scalars(
             select(DeliveryDetail.id).where(DeliveryDetail.delivery_id == did).limit(1)

@@ -180,6 +180,8 @@ def test_resolve_prefers_common_without_emboss(monkeypatch):
     monkeypatch.setattr("app.services.buyer_price_resolve.is_outside_banten_factory", lambda *_a, **_k: False)
     r = resolve_unit_price_for_buyer(db, "NIKE", material_name="VIRGIN HYDRO PU", color_family="color")
     assert r["unit_price"] == Decimal("1.23")
+    assert r["base_price"] == Decimal("1.13")
+    assert r["addons"] == [{"key": "COLOR COLOR", "label": "+ COLOR", "amount": Decimal("0.10")}]
 
 
 def test_resolve_special_emboss_and_outside(monkeypatch):

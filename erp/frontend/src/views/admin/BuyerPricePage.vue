@@ -98,8 +98,24 @@
                   effect="plain"
                   type="info"
                 >
-                  {{ comp }}
+                  {{ addonLabel(comp) }}
                 </el-tag>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('pages.buyerPrices.missingPriceAddons')" min-width="220">
+            <template #default="{ row }">
+              <div v-if="!(row.missing_price_addons || []).length" class="buyer-cell-empty">—</div>
+              <div v-else class="buyer-missing-addons">
+                <span
+                  v-for="comp in row.missing_price_addons"
+                  :key="comp"
+                  class="buyer-missing-addon"
+                  :title="t('pages.buyerPrices.missingAddonHint')"
+                >
+                  <span class="buyer-addon-arrow" aria-hidden="true">→</span>
+                  <span>{{ addonLabel(comp) }}</span>
+                </span>
               </div>
             </template>
           </el-table-column>
@@ -345,12 +361,54 @@
                 <el-table-column prop="THICKNESS" label="THICKNESS" min-width="110" show-overflow-tooltip />
                 <el-table-column prop="COLOR" label="COLOR" min-width="110" show-overflow-tooltip />
                 <el-table-column prop="COLOR WHITE" label="COLOR WHITE" min-width="130" />
-                <el-table-column prop="COLOR BLACK" label="+ COLOR BLACK" min-width="130" />
-                <el-table-column prop="COLOR COLOR" label="+ COLOR" min-width="130" />
-                <el-table-column prop="FLOURASENT" label="FLOURASENT" min-width="120" />
-                <el-table-column prop="METALIC" label="METALIC" min-width="110" />
-                <el-table-column prop="EMBOSS" label="EMBOSS" min-width="110" />
-                <el-table-column prop="SPESIAL EMBOSS" label="SPESIAL EMBOSS" min-width="150" />
+                <el-table-column label="+ COLOR BLACK" min-width="140">
+                  <template #default="{ row }">
+                    <span class="buyer-addon-cell">
+                      <span v-if="rowMissingAddon(row, 'COLOR BLACK')" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
+                      <span>{{ displayAddon(row['COLOR BLACK']) }}</span>
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="+ COLOR" min-width="130">
+                  <template #default="{ row }">
+                    <span class="buyer-addon-cell">
+                      <span v-if="rowMissingAddon(row, 'COLOR COLOR')" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
+                      <span>{{ displayAddon(row['COLOR COLOR']) }}</span>
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="FLOURASENT" min-width="130">
+                  <template #default="{ row }">
+                    <span class="buyer-addon-cell">
+                      <span v-if="rowMissingAddon(row, 'FLOURASENT')" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
+                      <span>{{ displayAddon(row.FLOURASENT) }}</span>
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="METALIC" min-width="120">
+                  <template #default="{ row }">
+                    <span class="buyer-addon-cell">
+                      <span v-if="rowMissingAddon(row, 'METALIC')" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
+                      <span>{{ displayAddon(row.METALIC) }}</span>
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="EMBOSS" min-width="120">
+                  <template #default="{ row }">
+                    <span class="buyer-addon-cell">
+                      <span v-if="rowMissingAddon(row, 'EMBOSS')" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
+                      <span>{{ displayAddon(row.EMBOSS) }}</span>
+                    </span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="SPESIAL EMBOSS" min-width="160">
+                  <template #default="{ row }">
+                    <span class="buyer-addon-cell">
+                      <span v-if="rowMissingAddon(row, 'SPESIAL EMBOSS')" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
+                      <span>{{ displayAddon(row['SPESIAL EMBOSS']) }}</span>
+                    </span>
+                  </template>
+                </el-table-column>
               </el-table>
             </div>
           </div>
@@ -504,8 +562,10 @@
               <el-input v-else v-model="row.THICKNESS" size="small" disabled />
             </template>
           </el-table-column>
-          <el-table-column label="COLOR WHITE (BASE)" min-width="150">
+          <el-table-column label="COLOR WHITE (BASE)" min-width="170">
             <template #default="{ row }">
+              <div class="buyer-addon-cell">
+              <span v-if="rowMissingBase(row)" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
               <el-input-number
                 v-model="row['COLOR WHITE']"
                 size="small"
@@ -520,10 +580,13 @@
                   <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
                 </template>
               </el-input-number>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="+ COLOR BLACK" min-width="120">
+          <el-table-column label="+ COLOR BLACK" min-width="140">
             <template #default="{ row }">
+              <div class="buyer-addon-cell">
+              <span v-if="rowMissingAddon(row, 'COLOR BLACK')" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
               <el-input-number
                 v-model="row['COLOR BLACK']"
                 size="small"
@@ -539,10 +602,13 @@
                   <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
                 </template>
               </el-input-number>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="+ COLOR" min-width="120">
+          <el-table-column label="+ COLOR" min-width="140">
             <template #default="{ row }">
+              <div class="buyer-addon-cell">
+              <span v-if="rowMissingAddon(row, 'COLOR COLOR')" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
               <el-input-number
                 v-model="row['COLOR COLOR']"
                 size="small"
@@ -558,10 +624,13 @@
                   <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
                 </template>
               </el-input-number>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="+ FLOURASENT" min-width="120">
+          <el-table-column label="+ FLOURASENT" min-width="140">
             <template #default="{ row }">
+              <div class="buyer-addon-cell">
+              <span v-if="rowMissingAddon(row, 'FLOURASENT')" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
               <el-input-number
                 v-model="row.FLOURASENT"
                 size="small"
@@ -577,10 +646,13 @@
                   <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
                 </template>
               </el-input-number>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="+ METALIC" min-width="120">
+          <el-table-column label="+ METALIC" min-width="140">
             <template #default="{ row }">
+              <div class="buyer-addon-cell">
+              <span v-if="rowMissingAddon(row, 'METALIC')" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
               <el-input-number
                 v-model="row.METALIC"
                 size="small"
@@ -596,10 +668,13 @@
                   <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
                 </template>
               </el-input-number>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="+ EMBOSS" min-width="120">
+          <el-table-column label="+ EMBOSS" min-width="140">
             <template #default="{ row }">
+              <div class="buyer-addon-cell">
+              <span v-if="rowMissingAddon(row, 'EMBOSS')" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
               <el-input-number
                 v-model="row.EMBOSS"
                 size="small"
@@ -615,10 +690,13 @@
                   <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
                 </template>
               </el-input-number>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="+ SPESIAL EMBOSS" min-width="140">
+          <el-table-column label="+ SPESIAL EMBOSS" min-width="160">
             <template #default="{ row }">
+              <div class="buyer-addon-cell">
+              <span v-if="rowMissingAddon(row, 'SPESIAL EMBOSS')" class="buyer-addon-arrow" :title="t('pages.buyerPrices.missingAddonHint')" aria-hidden="true">→</span>
               <el-input-number
                 v-model="row['SPESIAL EMBOSS']"
                 size="small"
@@ -634,6 +712,7 @@
                   <span class="buyer-price-currency-suffix">{{ headerForm.currency || 'USD' }}</span>
                 </template>
               </el-input-number>
+              </div>
             </template>
           </el-table-column>
           <el-table-column :label="t('common.actions')" width="88" align="center" fixed="right">
@@ -655,7 +734,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Plus, Close, Check, Refresh, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -675,7 +754,7 @@ import {
 import { useModulePermission } from '../../composables/useModulePermission'
 import { parseApiErrorMessage } from '../../utils/poApi'
 import { buildPageParams, fromElSortChange, normalizePageResult } from '../../utils/tableQuery'
-import { applyItemSelection, thicknessOptionsForMaterial, uniqueMaterialNames } from '../../utils/buyerPriceSheet'
+import { applyItemSelection, missingAddonsForRow, missingRequiredPricesForRow, priceAddonFilled, thicknessOptionsForMaterial, uniqueMaterialNames } from '../../utils/buyerPriceSheet'
 
 const { t } = useI18n()
 const { canCreate, canUpdate, canDelete } = useModulePermission('buyerPrices')
@@ -862,8 +941,46 @@ function onAddonPriceChange(row, addonKey, addonValue) {
 
 const materialOptions = computed(() => uniqueMaterialNames(masterItems.value))
 
+const ADDON_LABEL_KEYS = {
+  'COLOR BLACK': 'pages.masterItems.flagColorBlack',
+  'COLOR COLOR': 'pages.masterItems.flagColor',
+  FLOURASENT: 'pages.masterItems.flagFlourasent',
+  METALIC: 'pages.masterItems.flagMetalic',
+  EMBOSS: 'pages.masterItems.flagEmboss',
+  'SPESIAL EMBOSS': 'pages.masterItems.flagSpecialEmboss',
+  'COLOR WHITE': 'COLOR WHITE',
+}
+
+function addonLabel(key) {
+  const i18nKey = ADDON_LABEL_KEYS[key]
+  if (!i18nKey || i18nKey === key) return key
+  return t(i18nKey)
+}
+
+function rowMissingAddon(row, key) {
+  return missingAddonsForRow(row, masterItems.value).includes(key)
+}
+
+function rowMissingBase(row) {
+  return Boolean(String(row?.ITEM || '').trim()) && !priceAddonFilled(row?.['COLOR WHITE'])
+}
+
+function displayAddon(value) {
+  if (value == null || value === '') return '—'
+  return value
+}
+
 function thicknessOptionsFor(row) {
   return thicknessOptionsForMaterial(masterItems.value, row?.ITEM)
+}
+
+async function ensureMasterItems() {
+  try {
+    masterItems.value = (await listMasterItems()) || []
+  } catch (e) {
+    console.warn('Failed to load master items:', e)
+    masterItems.value = []
+  }
 }
 
 function onItemChange(row) {
@@ -992,11 +1109,7 @@ async function openMaster(id) {
     return
   }
   try {
-    const items = await listMasterItems()
-    masterItems.value = items || []
-  } catch (e) {
-    console.warn('Failed to load master items:', e)
-    masterItems.value = []
+    await ensureMasterItems()
   } finally {
     masterLoading.value = false
   }
@@ -1006,7 +1119,8 @@ async function openDetail(id) {
   detailVisible.value = true
   detailLoading.value = true
   try {
-    detailData.value = await getBuyerPriceList(id)
+    const [detail] = await Promise.all([getBuyerPriceList(id), ensureMasterItems()])
+    detailData.value = detail
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
     detailVisible.value = false
@@ -1025,6 +1139,29 @@ function removeSheetRow(index) {
 
 async function saveMaster() {
   if (activeListId.value == null) return
+  const gaps = []
+  sheetRows.value.forEach((row, index) => {
+    const missing = missingRequiredPricesForRow(row)
+    if (!missing.length) return
+    gaps.push(
+      t('pages.buyerPrices.priceRequiredRow', {
+        n: index + 1,
+        item: String(row.ITEM || '').trim(),
+        fields: missing.map((key) => addonLabel(key)).join(', '),
+      }),
+    )
+  })
+  if (gaps.length) {
+    await ElMessageBox.alert(
+      h(
+        'div',
+        gaps.map((line) => h('p', { style: 'margin: 0 0 6px' }, line)),
+      ),
+      t('pages.buyerPrices.priceRequiredTitle'),
+      { type: 'warning' },
+    )
+    return
+  }
   masterSaving.value = true
   try {
     await updateBuyerPriceList(activeListId.value, {
@@ -1209,6 +1346,50 @@ onMounted(load)
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+}
+
+.buyer-missing-addons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.buyer-missing-addon,
+.buyer-addon-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.buyer-addon-cell :deep(.el-input-number) {
+  flex: 1;
+  width: auto;
+}
+
+.buyer-addon-arrow {
+  display: inline-block;
+  flex-shrink: 0;
+  color: #d97706;
+  font-weight: 700;
+  line-height: 1;
+  animation: buyer-addon-nudge 0.9s ease-in-out infinite;
+}
+
+@keyframes buyer-addon-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buyer-addon-arrow {
+    animation: none;
+  }
 }
 
 .buyer-component-tags--detail {

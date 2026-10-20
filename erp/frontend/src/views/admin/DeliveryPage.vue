@@ -77,7 +77,6 @@
                   <el-select v-model="statusFilter" clearable class="w-full" :placeholder="t('common.status')">
                     <el-option :label="t('status.draft')" value="draft" />
                     <el-option :label="t('status.sent')" value="sent" />
-                    <el-option :label="t('status.cancelled')" value="cancelled" />
                   </el-select>
                 </el-form-item>
               </el-col>
@@ -775,12 +774,12 @@
       <template #footer>
         <div class="delivery-dialog-footer">
           <el-button
-            v-if="canCancelCurrent"
+            v-if="canDeleteCurrent"
             type="danger"
             plain
-            @click="openCancelFromDetail"
+            @click="openDeleteFromDetail"
           >
-            {{ t('pages.delivery.cancelAction') }}
+            {{ t('pages.delivery.deleteAction') }}
           </el-button>
           <el-button type="primary" @click="detailVisible = false">{{ t('pages.delivery.closeDetail') }}</el-button>
         </div>
@@ -979,23 +978,23 @@
     </el-dialog>
 
     <el-dialog
-      v-model="cancelVisible"
-      :title="t('pages.delivery.cancelDialogTitle')"
+      v-model="deleteVisible"
+      :title="t('pages.delivery.deleteDialogTitle')"
       width="480px"
       destroy-on-close
       align-center
-      @closed="resetCancelForm"
+      @closed="resetDeleteForm"
     >
-      <p class="delivery-field-hint mb-3">{{ t('pages.delivery.cancelHint') }}</p>
+      <p class="delivery-field-hint mb-3">{{ t('pages.delivery.deleteHint') }}</p>
       <el-form label-position="top">
-        <el-form-item :label="t('pages.delivery.cancelReasonLabel')" required>
-          <el-input v-model="cancelReason" type="textarea" :rows="3" maxlength="2000" show-word-limit />
+        <el-form-item :label="t('pages.delivery.deleteReasonLabel')" required>
+          <el-input v-model="deleteReason" type="textarea" :rows="3" maxlength="2000" show-word-limit />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="cancelVisible = false">{{ t('common.cancel') }}</el-button>
-        <el-button type="danger" :loading="cancelSaving" @click="submitCancel">
-          {{ t('pages.delivery.cancelAction') }}
+        <el-button @click="deleteVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="danger" :loading="deleteSaving" @click="submitDelete">
+          {{ t('pages.delivery.deleteAction') }}
         </el-button>
       </template>
     </el-dialog>
@@ -1034,7 +1033,7 @@ import {
   marketingDeliveryXlsxPath,
   returnDeliveryDetail,
   scanDeliveryPackingOut,
-  cancelDelivery,
+  deleteDelivery,
   toIsoDate,
   updateDelivery,
   updateDeliveryDetail,
@@ -1046,7 +1045,7 @@ const canCreate = can('delivery', 'create')
 const canUpdate = can('delivery', 'update')
 const canPrint = can('delivery', 'print')
 const canCreateInvoice = can('invoice', 'create')
-const canCancelDelivery = canUpdate || can('invoice', 'update')
+const canDeleteDelivery = canUpdate || can('invoice', 'update')
 /** Align with API roles: admin, warehouse, finance, marketing */
 const canReturn = canUpdate || can('invoice', 'update') || canPrint
 const route = useRoute()
@@ -1263,8 +1262,13 @@ async function load() {
       : Array.isArray(linesResp?.data)
         ? linesResp.data
         : []
-    totalLines.value = Number(linesResp?.total ?? pageData.total ?? lines.length)
-    lineRows.value = lines.map((r) => ({
+    const visible = lines.filter((r) => {
+      if (r?.is_deleted) return false
+      const st = String(r?.delivery_status || r?.status || '').toLowerCase()
+      return st !== 'cancelled' && st !== 'canceled'
+    })
+    totalLines.value = Number(linesResp?.total ?? pageData.total ?? visible.length)
+    lineRows.value = visible.map((r) => ({
       ...r,
       delivery_date: r.delivery_date ? String(r.delivery_date).slice(0, 10) : '',
       po_date: r.po_date ? String(r.po_date).slice(0, 10) : '',
@@ -1348,10 +1352,13 @@ function goPoFromLine(row) {
   router.push({ path: '/admin/po', query: { po_id: String(row.po_id) } })
 }
 
-const isSentOrCancelled = computed(() => {
-  const status = (detailRow.value?.status || '').toLowerCase()
+const isSentOrDeleted = computed(() => {
+  const row = detailRow.value
+  if (row?.is_deleted) return true
+  const status = (row?.status || '').toLowerCase()
   return status === 'sent' || status === 'cancelled' || status === 'canceled'
 })
+const isSentOrCancelled = isSentOrDeleted
 
 const isDetailDraft = computed(() => {
   const status = String(detailRow.value?.status || '').toLowerCase()
@@ -1659,7 +1666,8 @@ function isDeliverySent(row) {
   return String(row?.delivery_status || row?.status || '').toLowerCase() === 'sent'
 }
 
-function isDeliveryCancelled(row) {
+function isDeliveryDeleted(row) {
+  if (row?.is_deleted) return true
   const status = String(row?.delivery_status || row?.status || '').toLowerCase()
   return status === 'cancelled' || status === 'canceled'
 }
@@ -1669,61 +1677,60 @@ function isDeliveryDraft(row) {
   return status === 'draft' || status === ''
 }
 
-function canCancelRow(row) {
+function canDeleteRow(row) {
   return (
-    canCancelDelivery &&
+    canDeleteDelivery &&
     row &&
     isDeliveryDraft(row) &&
-    !isDeliveryCancelled(row) &&
+    !isDeliveryDeleted(row) &&
+    !isDeliverySent(row) &&
     (row.delivery_id != null || row.id != null)
   )
 }
 
-const canCancelCurrent = computed(() => canCancelRow(detailRow.value))
+const canDeleteCurrent = computed(() => canDeleteRow(detailRow.value))
 
-const cancelVisible = ref(false)
-const cancelSaving = ref(false)
-const cancelReason = ref('')
-const cancelTargetId = ref(null)
+const deleteVisible = ref(false)
+const deleteSaving = ref(false)
+const deleteReason = ref('')
+const deleteTargetId = ref(null)
 
-function resetCancelForm() {
-  cancelReason.value = ''
-  cancelTargetId.value = null
+function resetDeleteForm() {
+  deleteReason.value = ''
+  deleteTargetId.value = null
 }
 
-function openCancel(deliveryId) {
+function openDelete(deliveryId) {
   if (deliveryId == null) return
-  cancelTargetId.value = deliveryId
-  cancelReason.value = ''
-  cancelVisible.value = true
+  deleteTargetId.value = deliveryId
+  deleteReason.value = ''
+  deleteVisible.value = true
 }
 
-function openCancelFromDetail() {
+function openDeleteFromDetail() {
   if (!detailRow.value?.id) return
-  openCancel(detailRow.value.id)
+  openDelete(detailRow.value.id)
 }
 
-async function submitCancel() {
-  const reason = cancelReason.value.trim()
+async function submitDelete() {
+  const reason = deleteReason.value.trim()
   if (!reason) {
-    ElMessage.warning(t('pages.delivery.cancelReasonRequired'))
+    ElMessage.warning(t('pages.delivery.deleteReasonRequired'))
     return
   }
-  if (cancelTargetId.value == null) return
-  cancelSaving.value = true
+  if (deleteTargetId.value == null) return
+  deleteSaving.value = true
   try {
-    await cancelDelivery(cancelTargetId.value, reason)
-    ElMessage.success(t('pages.delivery.cancelSuccess'))
-    const refreshedId = cancelTargetId.value
-    cancelVisible.value = false
+    await deleteDelivery(deleteTargetId.value, reason)
+    ElMessage.success(t('pages.delivery.deleteSuccess'))
+    deleteVisible.value = false
+    detailVisible.value = false
+    detailRow.value = null
     await load()
-    if (detailVisible.value && detailRow.value?.id === refreshedId) {
-      await openDetailById(refreshedId)
-    }
   } catch (e) {
     ElMessage.error(e?.message || String(e))
   } finally {
-    cancelSaving.value = false
+    deleteSaving.value = false
   }
 }
 
@@ -1767,8 +1774,8 @@ function deliveryListMoreItems(row) {
   if (canShowReturn(row)) {
     items.push({ command: 'return', label: t('pages.delivery.returnAction') })
   }
-  if (canCancelRow(row)) {
-    items.push({ command: 'cancel', label: t('pages.delivery.cancelAction') })
+  if (canDeleteRow(row)) {
+    items.push({ command: 'delete', label: t('pages.delivery.deleteAction') })
   }
   return items
 }
@@ -1777,7 +1784,7 @@ function handleDeliveryListMore(row, command) {
   if (command === 'createArInvoice') goCreateInvoiceFromLine(row)
   else if (command === 'viewOutstanding') goViewOutstandingFromLine(row)
   else if (command === 'return') openReturnFromList(row)
-  else if (command === 'cancel') openCancel(row.delivery_id)
+  else if (command === 'delete') openDelete(row.delivery_id)
 }
 
 function goInvoiceFromDelivery(deliveryId, { create = false, amount = 0 } = {}) {

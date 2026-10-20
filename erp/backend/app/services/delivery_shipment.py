@@ -58,8 +58,9 @@ def so_number_for_line(ph: PoHeader | None, pod: PoDetail | None) -> str:
 
 
 def _delivery_not_cancelled():
-    status = func.lower(func.trim(func.coalesce(DeliveryHeader.status, "")))
-    return status.notin_(("cancelled", "canceled"))
+    from app.services.delivery_active import delivery_header_is_active_clause
+
+    return delivery_header_is_active_clause()
 
 
 def sum_delivered_qty(db: Session, production_detail_id: int) -> Decimal:

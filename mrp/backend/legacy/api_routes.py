@@ -4081,6 +4081,7 @@ def _lab_group_lots(flat: list[dict]) -> list[dict]:
                 "tanggal_rencana": row.get("tanggal_rencana"),
                 "color": row.get("color"),
                 "thickness": row.get("thickness"),
+                "emboss": row.get("emboss"),
                 "jml_kimia": 0,
                 "total_qty": 0.0,
                 "items": [],
@@ -4170,7 +4171,7 @@ def lab_list():
         "SELECT l.id AS lot_id, l.kode_lot_warna, l.nama_lot_warna, l.status, l.date_created, "
         "l.rencana_item_id, "
         "d.id AS detail_id, d.kode_kimia, d.nama_kimia, d.resep, d.satuan, d.qty, d.remarks, "
-        "ri.kode_rencana_item, ri.kode_lot_wip, ri.color, ri.thickness, "
+        "ri.kode_rencana_item, ri.kode_lot_wip, ri.color, ri.thickness, ri.emboss, "
         "rp.nama_rencana, rp.tanggal_rencana, ri.nama_customer "
         "FROM tbl_lab_lot l "
         "JOIN tbl_lab_lot_detail d ON d.kode_lot_warna = l.kode_lot_warna "

@@ -14,7 +14,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Brand, BuyerPriceList, BuyerPriceSheetRow
+from app.models import Brand, BuyerPriceList, BuyerPriceSheetRow, MasterItem
+from app.services.buyer_price_addons import format_required_price_gaps, missing_addons_for_sheet
 from app.paging import apply_sort, page_dict, parse_page_params
 from app.routers.auth import get_current_user, require_roles
 from app.schemas import (
@@ -51,6 +52,7 @@ class BuyerPriceSummaryOut(BaseModel):
     period_end: Optional[str] = None
     item_codes: list[str] = Field(default_factory=list)
     filled_price_components: list[str] = Field(default_factory=list)
+    missing_price_addons: list[str] = Field(default_factory=list)
 
 
 def _normalize_cell_value(val: Any) -> Any:
@@ -205,12 +207,15 @@ def list_buyer_prices(
     if brand_ids:
         for brand in db.scalars(select(Brand).where(Brand.id.in_(brand_ids))).all():
             brand_map[int(brand.id)] = brand
+    master_items = list(db.scalars(select(MasterItem)).all())
     out: list[BuyerPriceSummaryOut] = []
     for r in rows:
         summary = _row_to_summary(r, brand_map.get(int(r.brand_id)) if r.brand_id else None)
-        item_codes, filled_components = _extract_sheet_overview(grouped.get(r.id, []))
+        sheet = grouped.get(r.id, [])
+        item_codes, filled_components = _extract_sheet_overview(sheet)
         summary.item_codes = item_codes
         summary.filled_price_components = filled_components
+        summary.missing_price_addons = missing_addons_for_sheet(sheet, master_items)
         out.append(summary)
     return page_dict(items=out, total=total, params=params)
 
@@ -304,6 +309,11 @@ def save_buyer_price_sheet(
     lst = db.get(BuyerPriceList, list_id)
     if not lst:
         raise HTTPException(status_code=404, detail="List harga tidak ditemukan")
+
+    master_items = list(db.scalars(select(MasterItem)).all())
+    gaps = format_required_price_gaps(body.rows, master_items)
+    if gaps:
+        raise HTTPException(status_code=400, detail=gaps)
 
     seen: set[str] = set()
     column_keys: list[str] = []

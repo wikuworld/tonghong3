@@ -33,6 +33,21 @@ describe('hydrateFormFromMasterItemRow', () => {
     expect(formModel.color).toBe('CORE BLACK (A0QM)')
     expect(autoFieldMeta.color_reference).toBe(true)
   })
+
+  it('keeps a typed unit price when the preview has not arrived', () => {
+    const formModel = { unit_price_input: 1.6, color_reference: '', color_standard: '', backing: '' }
+    const autoFieldMeta = { color_reference: false, color_standard: false, backing: false, softness: false, model: false }
+    hydrateFormFromMasterItemRow(
+      {
+        material_name: 'VIRGIN HYDRO PU',
+        thickness_range: '1.2-1.4',
+        color: 'BLACK (00A)',
+        emboss: 'AR-167 DM',
+      },
+      { formModel, autoFieldMeta, previewResolvedUnitPrice: null, colorFamilyAutoMode: { value: true } },
+    )
+    expect(formModel.unit_price_input).toBe(1.6)
+  })
 })
 
 describe('inferColorFamilyFromColor', () => {

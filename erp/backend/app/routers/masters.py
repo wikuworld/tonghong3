@@ -18,10 +18,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas import (
     MasterItemCreate,
     MasterItemDimensionValuesOut,
+    MasterItemNextCodeOut,
     MasterItemOut,
     MasterItemPageOut,
     MasterItemResolveByDimensionsOut,
     MasterItemStatsOut,
+    MasterItemSwatchCascadeOut,
+    MasterItemSwatchEmbossOut,
     MasterPriceOut,
 )
 from sqlalchemy import func, or_, select
@@ -59,6 +62,12 @@ from app.services.master_items_excel import (
     import_master_items_xlsx,
 )
 from app.services.color_swatch import UnknownBuyerRejectError
+from app.services.master_item_code import (
+    allocate_next_item_code,
+    list_swatch_colors,
+    list_swatch_embosses,
+    list_swatch_materials,
+)
 from app.services.master_item_dimensions import (
     distinct_colors,
     distinct_embosses,
@@ -1074,6 +1083,41 @@ def resolve_master_item_by_dimensions(
     )
 
 
+@router.get("/masters/items/next-code", response_model=MasterItemNextCodeOut)
+def next_master_item_code(
+    category: str = Query(..., description="PU | Suede | SubKon"),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> MasterItemNextCodeOut:
+    return MasterItemNextCodeOut(item_code=allocate_next_item_code(db, category))
+
+
+@router.get("/masters/items/swatch-cascade", response_model=MasterItemSwatchCascadeOut)
+def master_item_swatch_cascade(
+    material_name: Optional[str] = Query(None),
+    color: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> MasterItemSwatchCascadeOut:
+    embosses, _matched = list_swatch_embosses(db, material_name=material_name, color=color)
+    return MasterItemSwatchCascadeOut(
+        materials=list_swatch_materials(db),
+        colors=list_swatch_colors(db, material_name),
+        embosses=embosses,
+    )
+
+
+@router.get("/masters/items/swatch-embosses", response_model=MasterItemSwatchEmbossOut)
+def master_item_swatch_embosses(
+    material_name: Optional[str] = Query(None),
+    color: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin")),
+) -> MasterItemSwatchEmbossOut:
+    embosses, matched_color = list_swatch_embosses(db, material_name=material_name, color=color)
+    return MasterItemSwatchEmbossOut(embosses=embosses, matched_color=matched_color)
+
+
 @router.post("/masters/items", response_model=MasterItemOut)
 def create_master_item(
     body: MasterItemCreate,
@@ -1082,12 +1126,18 @@ def create_master_item(
 ) -> MasterItem:
     data = body.model_dump(exclude_unset=True)
     row = MasterItem(
-        item_code=data.get("item_code"),
+        item_code=allocate_next_item_code(db, data.get("category")),
         category=data.get("category"),
         material_name=data.get("material_name"),
         thickness_range=data.get("thickness_range"),
         color=data.get("color"),
         emboss=data.get("emboss"),
+        flag_color_black=bool(data.get("flag_color_black")),
+        flag_color=bool(data.get("flag_color")),
+        flag_flourasent=bool(data.get("flag_flourasent")),
+        flag_metalic=bool(data.get("flag_metalic")),
+        flag_emboss=bool(data.get("flag_emboss")),
+        flag_special_emboss=bool(data.get("flag_special_emboss")),
         # Kolom lama tetap ada di DB namun tidak dipakai lagi di input.
         thickness_mm=None,
         softness=None,
@@ -1118,12 +1168,7 @@ def update_master_item(
     if not row:
         raise HTTPException(status_code=404, detail="Master item tidak ditemukan")
     data = body.model_dump(exclude_unset=True)
-    if "item_code" in data and str(data["item_code"]).strip() != row.item_code:
-        exists = db.scalars(
-            select(MasterItem).where(MasterItem.item_code == str(data["item_code"]).strip())
-        ).first()
-        if exists and exists.id != item_id:
-            raise HTTPException(status_code=400, detail="item_code sudah dipakai")
+    data.pop("item_code", None)
     for k, v in data.items():
         setattr(row, k, v)
     # Pastikan kolom lama dikosongkan agar konsisten dengan form baru.

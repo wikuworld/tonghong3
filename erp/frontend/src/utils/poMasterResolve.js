@@ -178,8 +178,6 @@ export function hydrateFormFromMasterItemRow(
   }
   if (previewResolvedUnitPrice != null) {
     formModel.unit_price_input = previewResolvedUnitPrice
-  } else {
-    formModel.unit_price_input = null
   }
 }
 

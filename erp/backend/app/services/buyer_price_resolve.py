@@ -323,6 +323,15 @@ def resolve_unit_price_for_buyer(
     unit: Decimal | None = None
     chosen_col = price_col
     color_text = _norm(color)
+    base_price: Decimal | None = None
+    addons: list[dict[str, Any]] = []
+
+    def _apply_addon(total: Decimal, key: str, label: str, cell_key: str | None) -> Decimal:
+        if not cell_key:
+            return total
+        amount = _parse_price_cell(best_row.get(cell_key)) or Decimal("0")
+        addons.append({"key": key, "label": label, "amount": amount})
+        return total + amount
 
     # New pricing matrix: COLOR WHITE is base; other columns are additive toppings.
     if base_key and best_row.get(base_key) not in (None, ""):
@@ -330,21 +339,20 @@ def resolve_unit_price_for_buyer(
         if base is not None:
             add_total = Decimal("0")
             cf = (color_family or "").strip().lower()
-            if cf == "black" and add_black_key:
-                add_total += _parse_price_cell(best_row.get(add_black_key)) or Decimal("0")
-            if cf == "color" and add_color_key:
-                add_total += _parse_price_cell(best_row.get(add_color_key)) or Decimal("0")
-            if cf == "fluorescent" and add_fluor_key:
-                add_total += _parse_price_cell(best_row.get(add_fluor_key)) or Decimal("0")
+            if cf == "black":
+                add_total = _apply_addon(add_total, "COLOR BLACK", "+ COLOR BLACK", add_black_key)
+            if cf == "color":
+                add_total = _apply_addon(add_total, "COLOR COLOR", "+ COLOR", add_color_key)
+            if cf == "fluorescent":
+                add_total = _apply_addon(add_total, "FLOURASENT", "FLOURASENT", add_fluor_key)
             if "metalic" in color_text or "metallic" in color_text:
-                if add_metalic_key:
-                    add_total += _parse_price_cell(best_row.get(add_metalic_key)) or Decimal("0")
+                add_total = _apply_addon(add_total, "METALIC", "METALIC", add_metalic_key)
             if "spesial emboss" in color_text or "special emboss" in color_text:
-                if add_special_emboss_key:
-                    add_total += _parse_price_cell(best_row.get(add_special_emboss_key)) or Decimal("0")
-            elif "emboss" in color_text and add_emboss_key:
-                add_total += _parse_price_cell(best_row.get(add_emboss_key)) or Decimal("0")
+                add_total = _apply_addon(add_total, "SPESIAL EMBOSS", "SPESIAL EMBOSS", add_special_emboss_key)
+            elif "emboss" in color_text:
+                add_total = _apply_addon(add_total, "EMBOSS", "EMBOSS", add_emboss_key)
             unit = base + add_total
+            base_price = base
             chosen_col = "COLOR WHITE (+addons)"
 
     if unit is None:
@@ -368,6 +376,8 @@ def resolve_unit_price_for_buyer(
 
     return {
         "unit_price": unit,
+        "base_price": base_price,
+        "addons": addons,
         "matched": True,
         "price_column": chosen_col,
         "score": best_score,

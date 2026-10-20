@@ -768,6 +768,12 @@
                 <span v-else-if="col.kind === 'plan_qty'">{{ formatOutstandingCell(outstandingPlanSlotField(row, 'qty')) }}</span>
                 <span v-else-if="col.kind === 'plan_date'">{{ formatOutstandingDate(outstandingPlanSlotField(row, 'delivery_date')) }}</span>
                 <span v-else-if="col.kind === 'date'">{{ formatOutstandingDate(row[col.prop]) }}</span>
+                <span v-else-if="col.kind === 'color_std'" class="out-color-std">
+                  <span>{{ formatOutstandingCell(row.color_standard) }}</span>
+                  <span v-if="row.color_standard_created_at" class="out-color-std__date">
+                    {{ formatColorStdCreatedBadge(row.color_standard_created_at) }}
+                  </span>
+                </span>
                 <span v-else-if="col.kind === 'mkt_stage'">{{ labelFor(row.mkt_stage) }}</span>
                 <span v-else-if="col.kind === 'surat_jalan'">
                   <template v-if="outstandingSjEntries(row).length">
@@ -1453,6 +1459,12 @@ const outstandingTableKey = computed(
   () => `out-${outstandingPoCategory.value || 'all'}-${outstandingDeliverySlotCount.value}-${outstandingCompactView.value ? 'work' : 'xls'}`,
 )
 
+function formatColorStdCreatedBadge(val) {
+  if (!val) return ''
+  const s = String(val).trim().replace('T', ' ')
+  return s.length > 19 ? s.slice(0, 19) : s
+}
+
 function formatOutstandingDate(val) {
   if (!val) return '—'
   // Jaga agar nilai tanggal ISO tidak terbaca sebagai nomor/serial
@@ -1623,7 +1635,7 @@ const outstandingTableColumnGroups = computed(() => {
       { prop: 'color', label: 'COLOR', width: 96, kind: 'text' },
       { prop: 'qty_sf', label: 'QTY (S/F)', width: 108, align: 'right', kind: 'text' },
       { prop: 'unit_price', label: 'PRICE', width: 88, align: 'right', kind: 'text' },
-      { prop: 'color_standard', label: 'COLOR STD', minWidth: 112, kind: 'text' },
+      { prop: 'color_standard', label: 'COLOR STD', minWidth: 188, kind: 'color_std' },
       { prop: 'backing', label: 'BACKING', width: 96, kind: 'text' },
       { prop: 'model', label: 'MODEL', width: 96, kind: 'text' },
       { prop: 'style_article', label: 'ARTICLE', minWidth: 108, kind: 'text' },
@@ -3660,6 +3672,27 @@ function handleOutstandingExportCommand(command) {
 }
 
 /* Angka yang berasal dari MRP, bukan dari order ERP. */
+.out-color-std {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  line-height: 1.25;
+}
+.out-color-std__date {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid #99f6e4;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .out-mrp-qty {
   color: #7c3aed;
   font-weight: 600;

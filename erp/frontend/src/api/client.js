@@ -760,6 +760,25 @@ export function resolveMasterItemByDimensions({ material_name, thickness_text, c
   return apiFetch(`/masters/items/resolve-by-dimensions?${p}`)
 }
 
+export function getNextMasterItemCode(category) {
+  const p = new URLSearchParams({ category: String(category || '').trim() })
+  return apiFetch(`/masters/items/next-code?${p}`)
+}
+
+export function getMasterItemSwatchCascade({ material_name, color } = {}) {
+  const p = new URLSearchParams()
+  if (material_name != null && String(material_name).trim()) p.append('material_name', String(material_name).trim())
+  if (color != null && String(color).trim()) p.append('color', String(color).trim())
+  return apiFetch(`/masters/items/swatch-cascade?${p}`)
+}
+
+export function listMasterItemSwatchEmbosses({ material_name, color } = {}) {
+  const p = new URLSearchParams()
+  if (material_name != null && String(material_name).trim()) p.append('material_name', String(material_name).trim())
+  if (color != null && String(color).trim()) p.append('color', String(color).trim())
+  return apiFetch(`/masters/items/swatch-embosses?${p}`)
+}
+
 export function createMasterItem(body) {
   return apiFetch('/masters/items', { method: 'POST', body: JSON.stringify(body) })
 }
@@ -1178,11 +1197,16 @@ export function updateDelivery(id, body) {
   return apiFetch(`/delivery/${id}`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
-export function cancelDelivery(id, reason) {
-  return apiFetch(`/delivery/${id}/cancel`, {
+export function deleteDelivery(id, reason) {
+  return apiFetch(`/delivery/${id}/delete`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
   })
+}
+
+/** @deprecated Alias soft-delete — prefer deleteDelivery */
+export function cancelDelivery(id, reason) {
+  return deleteDelivery(id, reason)
 }
 
 export function scanDeliveryPackingOut(body) {

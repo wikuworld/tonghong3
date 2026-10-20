@@ -9,6 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models import DeliveryDetail, DeliveryHeader, PoDetail, ProductionDetail
+from app.services.delivery_active import delivery_header_is_active_clause
 
 # Toleransi ukur kecil: max(2 SF, 0.5% qty order). Izinkan overship otomatis dalam batas ini.
 OVERSHIP_ABS_SF = Decimal("2")
@@ -20,8 +21,7 @@ def _net_delivered_qty_expr():
 
 
 def _delivery_not_cancelled():
-    status = func.lower(func.trim(func.coalesce(DeliveryHeader.status, "")))
-    return status.notin_(("cancelled", "canceled"))
+    return delivery_header_is_active_clause()
 
 
 def _dec_qty(v: Decimal | float | int | None) -> Decimal:

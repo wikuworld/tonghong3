@@ -23,6 +23,7 @@ from app.models import (
 from app.services.po_delivery_balance import validate_delivery_qty_against_po_balance
 from app.schemas import (
     DeliveryCancelIn,
+    DeliveryDeleteIn,
     DeliveryDetailCreate,
     DeliveryDetailEnrichedOut,
     DeliveryDetailOut,
@@ -49,7 +50,8 @@ from app.services.document_numbers import (
     raise_floor_surat_jalan_sequence,
 )
 from app.services.delivery_return import apply_delivery_line_return
-from app.services.delivery_cancel import cancel_delivery
+from app.services.delivery_active import delivery_header_is_active_clause, delivery_header_is_deleted
+from app.services.delivery_cancel import cancel_delivery, soft_delete_delivery
 from app.services.delivery_auto_invoice import sync_invoice_lines_from_delivery
 from app.services.delivery_shipment import (
     list_ready_to_ship,
@@ -76,9 +78,9 @@ def _parse_iso_date_optional(s: Optional[str]) -> Optional[date]:
 
 
 def _require_draft_delivery(hdr: DeliveryHeader) -> None:
+    if delivery_header_is_deleted(hdr):
+        raise HTTPException(status_code=400, detail="Delivery sudah dihapus")
     status = (hdr.status or "").strip().lower()
-    if status in ("cancelled", "canceled"):
-        raise HTTPException(status_code=400, detail="Delivery sudah dibatalkan")
     if status in ("sent", "delivered", "completed"):
         raise HTTPException(
             status_code=400,
@@ -468,7 +470,7 @@ def list_delivery(
         sort_dir=sort_dir or "desc",
         default_page_size=20,
     )
-    filters = []
+    filters = [delivery_header_is_active_clause()]
     if q:
         like = f"%{q}%"
         filters.append(
@@ -482,11 +484,8 @@ def list_delivery(
         filters.append(DeliveryHeader.delivery_date >= d_from)
     if d_to is not None:
         filters.append(DeliveryHeader.delivery_date <= d_to)
-    count_stmt = select(func.count(DeliveryHeader.id))
-    stmt = select(DeliveryHeader)
-    if filters:
-        count_stmt = count_stmt.where(*filters)
-        stmt = stmt.where(*filters)
+    count_stmt = select(func.count(DeliveryHeader.id)).where(*filters)
+    stmt = select(DeliveryHeader).where(*filters)
     total = int(db.scalar(count_stmt) or 0)
     stmt = apply_sort(
         stmt,
@@ -515,6 +514,8 @@ def update_delivery(
     row = db.get(DeliveryHeader, delivery_id)
     if not row:
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
+    if delivery_header_is_deleted(row):
+        raise HTTPException(status_code=400, detail="Delivery sudah dihapus")
     before = {
         "status": row.status,
         "packing_id": row.packing_id,
@@ -524,7 +525,7 @@ def update_delivery(
     if "status" in data and (data.get("status") or "").strip().lower() in ("cancelled", "canceled"):
         raise HTTPException(
             status_code=400,
-            detail="Status cancelled hanya lewat aksi batalkan delivery",
+            detail="Status cancelled tidak dipakai. Hapus delivery lewat aksi Hapus.",
         )
     if "delivery_number" in data:
         _require_draft_delivery(row)
@@ -583,13 +584,30 @@ def update_delivery(
     return row
 
 
+@router.post("/delivery/{delivery_id}/delete", response_model=DeliveryHeaderOut)
+def delete_delivery_route(
+    delivery_id: int,
+    body: DeliveryDeleteIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("warehouse", "finance", "admin")),
+) -> DeliveryHeader:
+    return soft_delete_delivery(
+        db,
+        delivery_id,
+        reason=body.reason,
+        actor=user.username,
+        role=getattr(user, "role", None),
+    )
+
+
 @router.post("/delivery/{delivery_id}/cancel", response_model=DeliveryHeaderOut)
 def cancel_delivery_route(
     delivery_id: int,
     body: DeliveryCancelIn,
     db: Session = Depends(get_db),
-    user=Depends(require_roles("warehouse", "finance")),
+    user=Depends(require_roles("warehouse", "finance", "admin")),
 ) -> DeliveryHeader:
+    """Alias lama → soft-delete."""
     return cancel_delivery(
         db,
         delivery_id,
@@ -605,6 +623,8 @@ def get_delivery(
 ) -> DeliveryHeader:
     row = db.get(DeliveryHeader, delivery_id)
     if not row:
+        raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
+    if delivery_header_is_deleted(row):
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
     return row
 

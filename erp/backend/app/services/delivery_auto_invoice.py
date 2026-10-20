@@ -179,7 +179,10 @@ def ensure_invoice_for_delivery(
         return existing
 
     hdr = db.get(DeliveryHeader, int(delivery_id))
-    if hdr and (hdr.status or "").strip().lower() in ("cancelled", "canceled"):
+    if hdr and (
+        bool(getattr(hdr, "is_deleted", False))
+        or (hdr.status or "").strip().lower() in ("cancelled", "canceled")
+    ):
         return None
 
     details = db.scalars(

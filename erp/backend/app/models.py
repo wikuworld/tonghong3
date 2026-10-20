@@ -92,6 +92,12 @@ class MasterItem(Base):
     style_article: Mapped[Optional[str]] = mapped_column(String(100))
     model: Mapped[Optional[str]] = mapped_column(String(100))
     category: Mapped[Optional[str]] = mapped_column(String(100))
+    flag_color_black: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    flag_color: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    flag_flourasent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    flag_metalic: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    flag_emboss: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    flag_special_emboss: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     exim_material_code: Mapped[Optional[str]] = mapped_column(String(80))
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
@@ -799,6 +805,10 @@ class DeliveryHeader(Base):
     cancel_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     cancelled_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    deleted_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    delete_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     customs_declaration_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("customs_declarations.id", ondelete="SET NULL")
     )

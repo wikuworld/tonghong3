@@ -51,6 +51,16 @@
         </template>
       </el-table-column>
       <el-table-column prop="emboss" :label="t('common.emboss')" min-width="120" show-overflow-tooltip />
+      <el-table-column :label="t('pages.masterItems.addonFlags')" min-width="180">
+        <template #default="{ row }">
+          <div v-if="activeAddonFlags(row).length" class="master-items-flag-tags">
+            <el-tag v-for="flag in activeAddonFlags(row)" :key="flag.key" size="small" effect="plain">
+              {{ t(flag.label) }}
+            </el-tag>
+          </div>
+          <span v-else>—</span>
+        </template>
+      </el-table-column>
       <el-table-column
         prop="created_at"
         :label="t('pages.masterItems.colCreatedAt')"
@@ -108,12 +118,32 @@
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.code')" required>
-              <el-input v-model="form.item_code" maxlength="50" />
+              <el-input v-model="form.item_code" maxlength="50" disabled :placeholder="t('pages.masterItems.codeSystemPlaceholder')" />
+              <p class="master-items-flag-hint">{{ codeSystemHint }}</p>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.material')">
-              <el-input v-model="form.material_name" maxlength="500" />
+              <el-input
+                v-if="isSuedeForm"
+                v-model="form.material_name"
+                maxlength="500"
+                :placeholder="t('pages.masterItems.materialSuedePlaceholder')"
+              />
+              <el-select
+                v-else
+                v-model="form.material_name"
+                filterable
+                clearable
+                class="w-full"
+                :placeholder="t('pages.masterItems.materialFromSwatch')"
+                @change="onSwatchMaterialChange"
+              >
+                <el-option v-for="name in materialOptions" :key="name" :label="name" :value="name" />
+              </el-select>
+              <p class="master-items-flag-hint">
+                {{ isSuedeForm ? t('pages.masterItems.materialSuedeHint') : t('pages.masterItems.materialFromSwatchHint') }}
+              </p>
             </el-form-item>
           </el-col>
           <el-col :xs="24" :md="12">
@@ -138,21 +168,23 @@
               <el-select
                 v-model="form.color"
                 filterable
-                allow-create
+                :allow-create="isSuedeForm"
                 default-first-option
                 clearable
                 class="w-full"
-                :placeholder="t('pages.masterItems.colorFromCsi')"
-                @change="onColorChange"
+                :disabled="!isSuedeForm && !String(form.material_name || '').trim()"
+                :placeholder="isSuedeForm ? t('pages.masterItems.colorFromWindow') : t('pages.masterItems.colorFromSwatch')"
+                @change="isSuedeForm ? onColorChange() : onSwatchColorChange()"
               >
                 <el-option
-                  v-for="opt in colorLinkOptions"
+                  v-for="opt in activeColorOptions"
                   :key="opt.value"
                   :label="opt.label"
                   :value="opt.value"
                 />
               </el-select>
-              <div v-if="colorLinks.color_code" class="master-items-color-panel">
+              <p v-if="isSuedeForm" class="master-items-flag-hint">{{ t('pages.masterItems.colorFromWindowHint') }}</p>
+              <div v-if="!isSuedeForm && colorLinks.color_code" class="master-items-color-panel">
                 <div class="master-items-color-panel__row">
                   <span class="master-items-color-panel__code">{{ t('pages.masterItems.colorCodeLabel') }}: {{ colorLinks.color_code }}</span>
                   <el-tag v-if="colorLinks.in_csi" size="small" type="success" effect="plain">{{ t('pages.masterItems.linkCsi') }}</el-tag>
@@ -180,7 +212,37 @@
           </el-col>
           <el-col :xs="24" :md="12">
             <el-form-item :label="t('common.emboss')">
-              <el-input v-model="form.emboss" maxlength="500" />
+              <el-input
+                v-if="isSuedeForm"
+                v-model="form.emboss"
+                maxlength="500"
+                :placeholder="t('pages.masterItems.embossSuedePlaceholder')"
+              />
+              <el-select
+                v-else
+                v-model="form.emboss"
+                filterable
+                clearable
+                class="w-full"
+                :disabled="!String(form.color || '').trim()"
+                :loading="embossLoading"
+                :placeholder="t('pages.masterItems.embossFromSwatchPlaceholder')"
+              >
+                <el-option v-for="emboss in embossOptions" :key="emboss" :label="emboss" :value="emboss" />
+              </el-select>
+              <p class="master-items-flag-hint">
+                {{ isSuedeForm ? t('pages.masterItems.embossSuedeHint') : t('pages.masterItems.embossFromSwatchHint') }}
+              </p>
+            </el-form-item>
+          </el-col>
+          <el-col :span="24">
+            <el-form-item :label="t('pages.masterItems.addonFlags')">
+              <p class="master-items-flag-hint">{{ t('pages.masterItems.addonFlagHint') }}</p>
+              <div class="master-items-flags">
+                <el-checkbox v-for="flag in ADDON_FLAG_FIELDS" :key="flag.key" v-model="form[flag.key]">
+                  {{ t(flag.label) }}
+                </el-checkbox>
+              </div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -214,6 +276,14 @@
           {{ t('pages.masterItems.colorLinkedSwatch', { n: detailColorLinks.swatch_count }) }}
         </el-descriptions-item>
         <el-descriptions-item :label="t('common.emboss')">{{ detailRow.emboss || '-' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('pages.masterItems.addonFlags')" :span="2">
+          <div v-if="activeAddonFlags(detailRow).length" class="master-items-flag-tags">
+            <el-tag v-for="flag in activeAddonFlags(detailRow)" :key="flag.key" size="small" effect="plain">
+              {{ t(flag.label) }}
+            </el-tag>
+          </div>
+          <span v-else>—</span>
+        </el-descriptions-item>
         <el-descriptions-item :label="t('pages.masterItems.colCreatedAt')">{{ formatAuditDateTime(detailRow.created_at) }}</el-descriptions-item>
         <el-descriptions-item :label="t('pages.masterItems.colUpdatedAt')">{{ formatAuditDateTime(detailRow.updated_at) }}</el-descriptions-item>
       </el-descriptions>
@@ -273,13 +343,13 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Close, Check, Upload, Download } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import AdminTableActions from '../../components/admin/AdminTableActions.vue'
-import { createMasterItem, deleteMasterItem, listMasterItemsPage, updateMasterItem, exportMasterItems, importMasterItems, getColorLinks, listColorLinkOptions } from '../../api/client'
+import { createMasterItem, deleteMasterItem, listMasterItemsPage, updateMasterItem, exportMasterItems, importMasterItems, getColorLinks, listColorLinkOptions, getNextMasterItemCode, getMasterItemSwatchCascade, listColorWindowsPage } from '../../api/client'
 import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
@@ -305,6 +375,15 @@ const importDialogVisible = ref(false)
 const importFile = ref(null)
 const uploadRef = ref(null)
 
+const ADDON_FLAG_FIELDS = [
+  { key: 'flag_color_black', label: 'pages.masterItems.flagColorBlack' },
+  { key: 'flag_color', label: 'pages.masterItems.flagColor' },
+  { key: 'flag_flourasent', label: 'pages.masterItems.flagFlourasent' },
+  { key: 'flag_metalic', label: 'pages.masterItems.flagMetalic' },
+  { key: 'flag_emboss', label: 'pages.masterItems.flagEmboss' },
+  { key: 'flag_special_emboss', label: 'pages.masterItems.flagSpecialEmboss' },
+]
+
 const form = reactive({
   item_code: '',
   material_name: '',
@@ -312,8 +391,52 @@ const form = reactive({
   color: '',
   emboss: '',
   category: '',
+  flag_color_black: false,
+  flag_color: false,
+  flag_flourasent: false,
+  flag_metalic: false,
+  flag_emboss: false,
+  flag_special_emboss: false,
 })
 const colorLinkOptions = ref([])
+const colorWindowOptions = ref([])
+const swatchMaterials = ref([])
+const swatchColors = ref([])
+const embossOptions = ref([])
+const embossLoading = ref(false)
+let embossAutoValue = ''
+let nextCodeSeq = 0
+
+function isSuedeCategory(category) {
+  const cat = String(category || '').trim().toLowerCase()
+  return cat === 'suede' || cat === 'suide'
+}
+
+const isSuedeForm = computed(() => isSuedeCategory(form.category))
+
+const activeColorOptions = computed(() => {
+  if (isSuedeForm.value) return colorWindowOptions.value
+  const options = [...swatchColors.value]
+  const current = String(form.color || '').trim()
+  if (current && !options.some((opt) => opt.value === current)) {
+    options.unshift({ label: current, value: current })
+  }
+  return options
+})
+
+const materialOptions = computed(() => {
+  const list = [...swatchMaterials.value]
+  const current = String(form.material_name || '').trim()
+  if (current && !list.some((name) => name.toLowerCase() === current.toLowerCase())) list.unshift(current)
+  return list
+})
+
+const codeSystemHint = computed(() => {
+  const cat = String(form.category || '').trim().toLowerCase()
+  if (!cat) return t('pages.masterItems.codeSystemHintNeedCategory')
+  if (cat === 'subkon' || cat === 'subcont' || cat === 'subcontract') return t('pages.masterItems.codeSystemHintSub')
+  return t('pages.masterItems.codeSystemHintFg')
+})
 const colorLinks = reactive({
   color_code: '',
   color_qualifier: null,
@@ -371,6 +494,106 @@ function onColorChange() {
   colorLinkTimer = setTimeout(() => {
     void refreshColorLinks(form.color)
   }, 280)
+}
+
+function onSwatchMaterialChange() {
+  form.color = ''
+  form.emboss = ''
+  embossAutoValue = ''
+  embossOptions.value = []
+  swatchColors.value = []
+  resetColorLinks()
+  void loadSwatchCascade()
+}
+
+function onSwatchColorChange() {
+  form.emboss = ''
+  embossAutoValue = ''
+  onColorChange()
+  void loadSwatchCascade()
+}
+
+async function refreshNextItemCode() {
+  if (!formVisible.value || isEdit.value) return
+  const category = String(form.category || '').trim()
+  if (!category) {
+    form.item_code = ''
+    return
+  }
+  const seq = ++nextCodeSeq
+  try {
+    const payload = await getNextMasterItemCode(category)
+    if (seq !== nextCodeSeq || isEdit.value) return
+    form.item_code = payload.item_code || ''
+  } catch {
+    if (seq === nextCodeSeq) form.item_code = ''
+  }
+}
+
+let cascadeSeq = 0
+
+async function loadSwatchCascade() {
+  if (!formVisible.value || isSuedeForm.value) return
+  const seq = ++cascadeSeq
+  const material = String(form.material_name || '').trim()
+  const color = String(form.color || '').trim()
+  embossLoading.value = true
+  try {
+    const payload = await getMasterItemSwatchCascade({
+      material_name: material || undefined,
+      color: color || undefined,
+    })
+    if (seq !== cascadeSeq || !formVisible.value || isSuedeForm.value) return
+    swatchMaterials.value = Array.isArray(payload.materials) ? payload.materials : []
+    swatchColors.value = Array.isArray(payload.colors) ? payload.colors : []
+    embossOptions.value = Array.isArray(payload.embosses) ? payload.embosses : []
+    const currentEmboss = String(form.emboss || '').trim()
+    if (currentEmboss && !embossOptions.value.includes(currentEmboss)) {
+      embossOptions.value = [currentEmboss, ...embossOptions.value]
+    }
+    if (!isEdit.value && material && color && payload.embosses?.length === 1) {
+      form.emboss = embossOptions.value[0]
+      embossAutoValue = embossOptions.value[0]
+    }
+  } catch {
+    if (seq === cascadeSeq) {
+      swatchColors.value = []
+      embossOptions.value = []
+    }
+  } finally {
+    if (seq === cascadeSeq) embossLoading.value = false
+  }
+}
+
+function colorWindowLabel(row) {
+  const name = String(row?.color_name || '').trim()
+  const code = String(row?.color_code || '').trim()
+  if (name && code) return `${name} (${code})`
+  return name || code
+}
+
+async function loadColorWindowOptions() {
+  try {
+    const page = await listColorWindowsPage({ limit: 200, offset: 0, sort_by: 'color_name', sort_dir: 'asc' })
+    const seen = new Set()
+    const options = []
+    for (const row of page.items || []) {
+      const value = colorWindowLabel(row)
+      if (!value) continue
+      const key = value.toUpperCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      const brand = String(row.brand_code || '').trim()
+      options.push({ label: brand ? `${brand} · ${value}` : value, value })
+    }
+    colorWindowOptions.value = options
+    if (formVisible.value && isSuedeForm.value && !isEdit.value && form.color) {
+      const allowed = new Set(options.map((opt) => opt.value))
+      if (allowed.size && !allowed.has(form.color)) form.color = ''
+    }
+  } catch {
+    colorWindowOptions.value = []
+  }
 }
 
 async function loadColorLinkOptions() {
@@ -442,6 +665,35 @@ watch(
   },
 )
 
+watch(
+  () => form.category,
+  () => {
+    if (!formVisible.value) return
+    if (isSuedeForm.value) {
+      void loadColorWindowOptions()
+      embossOptions.value = []
+      if (!isEdit.value) {
+        form.material_name = ''
+        form.color = ''
+        form.emboss = ''
+        embossAutoValue = ''
+        swatchColors.value = []
+      }
+    } else if (!isEdit.value) {
+      form.material_name = ''
+      form.color = ''
+      form.emboss = ''
+      embossAutoValue = ''
+      swatchColors.value = []
+      embossOptions.value = []
+      void loadSwatchCascade()
+    } else {
+      void loadSwatchCascade()
+    }
+    if (!isEdit.value) void refreshNextItemCode()
+  },
+)
+
 watch(keyword, () => {
   if (keywordTimer) clearTimeout(keywordTimer)
   keywordTimer = setTimeout(() => {
@@ -450,6 +702,10 @@ watch(keyword, () => {
   }, 350)
 })
 
+function activeAddonFlags(row) {
+  return ADDON_FLAG_FIELDS.filter((flag) => Boolean(row?.[flag.key]))
+}
+
 function resetForm() {
   form.item_code = ''
   form.material_name = ''
@@ -457,6 +713,9 @@ function resetForm() {
   form.color = ''
   form.emboss = ''
   form.category = ''
+  embossAutoValue = ''
+  embossOptions.value = []
+  for (const flag of ADDON_FLAG_FIELDS) form[flag.key] = false
   resetColorLinks()
 }
 
@@ -485,7 +744,11 @@ function openEdit(row) {
   form.color = row.color || ''
   form.emboss = row.emboss || ''
   form.category = row.category || ''
+  for (const flag of ADDON_FLAG_FIELDS) form[flag.key] = Boolean(row[flag.key])
   formVisible.value = true
+  embossAutoValue = ''
+  if (isSuedeCategory(form.category)) void loadColorWindowOptions()
+  else void loadSwatchCascade()
   void refreshColorLinks(form.color)
 }
 
@@ -507,6 +770,12 @@ async function submit() {
       thickness_range: form.thickness_range || undefined,
       color: form.color || undefined,
       emboss: form.emboss || undefined,
+      flag_color_black: Boolean(form.flag_color_black),
+      flag_color: Boolean(form.flag_color),
+      flag_flourasent: Boolean(form.flag_flourasent),
+      flag_metalic: Boolean(form.flag_metalic),
+      flag_emboss: Boolean(form.flag_emboss),
+      flag_special_emboss: Boolean(form.flag_special_emboss),
     }
     if (isEdit.value && editingId.value) {
       await updateMasterItem(editingId.value, payload)
@@ -631,6 +900,19 @@ onMounted(() => {
   margin-top: 0;
   margin-left: 6px;
   vertical-align: middle;
+}
+
+.master-items-flag-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.master-items-flags,
+.master-items-flag-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .master-items-color-panel {

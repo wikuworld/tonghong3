@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -14,6 +14,7 @@ from app.routers.marketing import (
     _normalize_material_group_filter,
     _passes_mkt_stage_min,
     _po_q_matches,
+    color_standard_created_at_for_line,
 )
 
 
@@ -261,3 +262,90 @@ def test_delivered_qty_by_po_detail_excludes_cancelled_headers():
         assert "delivery_headers" in sql
         assert "cancelled" in sql
         assert "canceled" in sql
+
+
+def test_color_standard_created_at_uses_linked_recipe_then_window_and_csi():
+    created = datetime(2026, 8, 3, 22, 57, 57)
+    header = SimpleNamespace(buyer="NIKE", brand_id=1)
+    linked = SimpleNamespace(
+        color_swatch_recipe_id=3656,
+        color_standard="TMAD0022024062801",
+        color_reference="",
+        color="BLACK",
+        material_name="VIRGIN HYDRO PU",
+        emboss="AR-20 M",
+    )
+    assert (
+        color_standard_created_at_for_line(
+            header,
+            linked,
+            brand_code="NIKE",
+            recipes_by_id={3656: created},
+            windows_by_key={},
+            csi_by_key={},
+            recipes_by_key={},
+        )
+        == "2026-08-03 22:57:57"
+    )
+
+    window = SimpleNamespace(
+        color_swatch_recipe_id=None,
+        color_standard="COLOR WINDOW",
+        color_reference="COLLEGIATE GREEN (024A)",
+        color="COLLEGIATE GREEN (024A)",
+        material_name="SUEDE",
+        emboss="",
+    )
+    assert (
+        color_standard_created_at_for_line(
+            SimpleNamespace(buyer="ADIDAS", brand_id=2),
+            window,
+            brand_code="ADIDAS",
+            recipes_by_id={},
+            windows_by_key={("ADIDAS", "024A"): datetime(2026, 10, 15, 0, 0)},
+            csi_by_key={},
+            recipes_by_key={},
+        )
+        == "2026-10-15 00:00:00"
+    )
+
+    csi = SimpleNamespace(
+        color_swatch_recipe_id=None,
+        color_standard="CSI",
+        color_reference="10A",
+        color="WHITE (10A)",
+        material_name="VIRGIN HYDRO PU",
+        emboss="",
+    )
+    assert (
+        color_standard_created_at_for_line(
+            header,
+            csi,
+            brand_code="NIKE",
+            recipes_by_id={},
+            windows_by_key={},
+            csi_by_key={("NIKE", "10A"): datetime(2026, 8, 5, 2, 6, 29)},
+            recipes_by_key={},
+        )
+        == "2026-08-05 02:06:29"
+    )
+    waiting = SimpleNamespace(
+        color_swatch_recipe_id=None,
+        color_standard="WAITING C/S",
+        color_reference="",
+        color="",
+        material_name="",
+        emboss="",
+    )
+    assert (
+        color_standard_created_at_for_line(
+            header,
+            waiting,
+            brand_code="NIKE",
+            recipes_by_id={},
+            windows_by_key={},
+            csi_by_key={},
+            recipes_by_key={("NIKE", "", "", "waiting c/s"): created},
+        )
+        == ""
+    )

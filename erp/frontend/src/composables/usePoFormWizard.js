@@ -350,6 +350,9 @@ const {
 
 const pricePreviewLoading = ref(false)
 const previewResolvedUnitPrice = ref(null)
+const previewPriceBase = ref(null)
+const previewPriceDetail = ref('')
+const previewPriceAddons = ref([])
 const fluorescentColorOptions = ref([])
 const colorSwatchOptions = ref([])
 const colorSwatchLoading = ref(false)
@@ -566,6 +569,7 @@ const skipMasterResolve = ref(false)
 const loadedDetailMasterSnapshot = ref(null)
 
 let pricePreviewTimer = null
+let pricePreviewSeq = 0
 function schedulePricePreview() {
   clearTimeout(pricePreviewTimer)
   pricePreviewTimer = setTimeout(() => {
@@ -573,10 +577,20 @@ function schedulePricePreview() {
   }, 400)
 }
 
+function typedUnitPrice(value) {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
 async function fetchResolvedUnitPricePreview() {
+  const seq = ++pricePreviewSeq
   const b = (formModel.buyer || '').trim()
   if (!b) {
     previewResolvedUnitPrice.value = null
+    previewPriceBase.value = null
+    previewPriceAddons.value = []
+    previewPriceDetail.value = ''
     return
   }
   const prevPreview = previewResolvedUnitPrice.value
@@ -593,21 +607,29 @@ async function fetchResolvedUnitPricePreview() {
       emboss: formModel.emboss || null,
       factory_code: formModel.factory_code || null,
     })
+    if (seq !== pricePreviewSeq) return
     const nextPreview = r.unit_price != null ? Number(r.unit_price) : null
     previewResolvedUnitPrice.value = nextPreview
-    // Sinkronkan otomatis ke input harga selama user belum override manual.
+    previewPriceBase.value = r.base_price != null ? Number(r.base_price) : null
+    previewPriceAddons.value = Array.isArray(r.addons) ? r.addons : []
+    previewPriceDetail.value = nextPreview == null ? String(r.detail || '') : ''
+    const currentTyped = typedUnitPrice(formModel.unit_price_input)
     const userHasManualValue =
-      formModel.unit_price_input != null &&
+      currentTyped != null &&
       prevPreview != null &&
-      Number(formModel.unit_price_input) !== Number(prevPreview)
+      currentTyped !== Number(prevPreview)
     if (!formModel.is_special_price && !userHasManualValue) {
       formModel.unit_price_input = nextPreview
     }
   } catch (e) {
+    if (seq !== pricePreviewSeq) return
     console.error('Error resolving unit price:', e)
     previewResolvedUnitPrice.value = null
+    previewPriceBase.value = null
+    previewPriceAddons.value = []
+    previewPriceDetail.value = ''
   } finally {
-    pricePreviewLoading.value = false
+    if (seq === pricePreviewSeq) pricePreviewLoading.value = false
   }
 }
 
@@ -1606,6 +1628,9 @@ watch(
     formModel.vir_softness_type = ''
   autoFieldMeta.vir_softness_type = false
     previewResolvedUnitPrice.value = null
+    previewPriceBase.value = null
+    previewPriceAddons.value = []
+    previewPriceDetail.value = ''
     schedulePricePreview()
     applyVirSoftDefault()
   },
@@ -1624,6 +1649,13 @@ watch(
   () => {
     schedulePricePreview()
     applyReferenceDefaults()
+  },
+)
+
+watch(
+  () => formModel.order_date,
+  () => {
+    schedulePricePreview()
   },
 )
 
@@ -1796,6 +1828,9 @@ function resetForm() {
   brandLockedCustomerId.value = null
   selectedCustomer.value = null
   previewResolvedUnitPrice.value = null
+  previewPriceBase.value = null
+  previewPriceAddons.value = []
+  previewPriceDetail.value = ''
   fluorescentColorOptions.value = []
   ambiguousMasterVisible.value = false
   ambiguousMasterCandidates.value = []
@@ -2002,6 +2037,7 @@ function applyPickedMasterItem(item) {
   }
   lastResolveHadNoMaster.value = false
   scheduleAutoLotGenerate()
+  schedulePricePreview()
 }
 
 async function refreshColorOptionsFromApi() {
@@ -2360,6 +2396,8 @@ async function pushCurrentLine(copyCurrent = false) {
     line.unit_price != null &&
     Number(line.unit_price) !== Number(previewResolvedUnitPrice.value)
   const hasMaterialOverride = Object.values(materialFieldOverride).some(Boolean)
+  line.price_base = previewPriceBase.value
+  line.price_addons = previewPriceAddons.value.map((addon) => ({ ...addon }))
   line.manual_override = Boolean(isManualOverride)
   line.material_master_override = Boolean(hasMaterialOverride)
   line.material_master_matched = Boolean(line.master_item_id) && !hasMaterialOverride
@@ -2439,6 +2477,38 @@ async function removeDraftLine(index) {
   }
 }
 
+async function annotateDraftPriceAddons() {
+  const buyer = (formModel.buyer || '').trim()
+  if (!buyer) return
+  const asOf = toIsoDate(formModel.order_date) || null
+  const factory = formModel.factory_code || null
+  await Promise.all(
+    draftLines.value.map(async (line) => {
+      try {
+        const r = await resolveBuyerUnitPrice({
+          buyer_code: buyer,
+          as_of: asOf,
+          material_name: line.material_name || null,
+          color: line.color || null,
+          style_article: line.style_article || null,
+          thickness_text: line.thickness_text || null,
+          color_family: line.color_family || null,
+          emboss: line.emboss || null,
+          factory_code: factory,
+        })
+        line.price_base = r.base_price != null ? Number(r.base_price) : null
+        line.price_addons = Array.isArray(r.addons) ? r.addons : []
+        if (!line.is_special_price && r.unit_price != null && line.unit_price == null) {
+          line.unit_price = Number(r.unit_price)
+        }
+      } catch {
+        line.price_base = null
+        line.price_addons = []
+      }
+    }),
+  )
+}
+
 const openEditDialog = async (row) => {
   const seq = ++editOpenSeq
   isEditMode.value = true
@@ -2505,8 +2575,11 @@ const openEditDialog = async (row) => {
       manual_override: false,
       material_master_override: false,
       material_master_matched: Boolean(d.master_item_id),
+      price_base: null,
+      price_addons: [],
     }))
     editingDetailIds.value = (details || []).map((d) => d.id)
+    void annotateDraftPriceAddons()
     draftLines.value = draftLines.value.map((line) => ({
       ...line,
       item_category: inferItemCategory(line, masterItems.value),
@@ -2916,6 +2989,9 @@ function addCopiedItems() {
     removeDraftLine,
     editDraftLine,
     previewResolvedUnitPrice,
+    previewPriceBase,
+    previewPriceAddons,
+    previewPriceDetail,
     onSpecialPriceChange,
     calculateSpecialPrice,
     lotGenerateLoading,

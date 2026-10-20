@@ -178,8 +178,18 @@ class BuyerPriceResolveIn(BaseModel):
         return raw
 
 
+class BuyerPriceAddonOut(BaseModel):
+    """Tambahan harga yang sudah masuk ke unit price. Label saja, bukan input."""
+
+    key: str
+    label: str
+    amount: Decimal
+
+
 class BuyerPriceResolveOut(BaseModel):
     unit_price: Optional[Decimal] = None
+    base_price: Optional[Decimal] = None
+    addons: list[BuyerPriceAddonOut] = Field(default_factory=list)
     matched: bool = False
     price_column: Optional[str] = None
     score: int = 0
@@ -576,6 +586,7 @@ class MarketingOutstandingLineOut(BaseModel):
     unit_price: Optional[str] = None
     color_reference: Optional[str] = None
     color_standard: Optional[str] = None
+    color_standard_created_at: Optional[str] = None
     backing: Optional[str] = None
     model: Optional[str] = None
     style_article: Optional[str] = None
@@ -1011,8 +1022,12 @@ class DeliveryCancelIn(BaseModel):
     def reason_required(cls, value: str) -> str:
         text = (value or "").strip()
         if not text:
-            raise ValueError("Alasan pembatalan wajib diisi")
+            raise ValueError("Alasan hapus wajib diisi")
         return text
+
+
+class DeliveryDeleteIn(DeliveryCancelIn):
+    """Body soft-delete delivery (alias schema cancel)."""
 
 
 class DeliveryHeaderUpdate(BaseModel):
@@ -1084,6 +1099,10 @@ class DeliveryHeaderOut(ORMBase):
     cancel_reason: Optional[str] = None
     cancelled_at: Optional[datetime] = None
     cancelled_by: Optional[str] = None
+    is_deleted: bool = False
+    deleted_at: Optional[datetime] = None
+    deleted_by: Optional[str] = None
+    delete_reason: Optional[str] = None
 
 
 class DeliveryHeaderPageOut(BaseModel):
@@ -1450,6 +1469,12 @@ class MasterItemCreate(BaseModel):
     thickness_range: Optional[str] = None
     color: Optional[str] = None
     emboss: Optional[str] = None
+    flag_color_black: bool = False
+    flag_color: bool = False
+    flag_flourasent: bool = False
+    flag_metalic: bool = False
+    flag_emboss: bool = False
+    flag_special_emboss: bool = False
 
     @field_validator("category")
     @classmethod
@@ -1469,6 +1494,26 @@ class MasterItemCreate(BaseModel):
         return out
 
 
+class MasterItemNextCodeOut(BaseModel):
+    item_code: str
+
+
+class MasterItemSwatchEmbossOut(BaseModel):
+    embosses: list[str] = Field(default_factory=list)
+    matched_color: bool = False
+
+
+class MasterItemSwatchColorOut(BaseModel):
+    label: str
+    value: str
+
+
+class MasterItemSwatchCascadeOut(BaseModel):
+    materials: list[str] = Field(default_factory=list)
+    colors: list[MasterItemSwatchColorOut] = Field(default_factory=list)
+    embosses: list[str] = Field(default_factory=list)
+
+
 class MasterItemOut(ORMBase):
     id: int
     item_code: str
@@ -1477,6 +1522,12 @@ class MasterItemOut(ORMBase):
     material_name: Optional[str] = None
     emboss: Optional[str] = None
     color: Optional[str] = None
+    flag_color_black: bool = False
+    flag_color: bool = False
+    flag_flourasent: bool = False
+    flag_metalic: bool = False
+    flag_emboss: bool = False
+    flag_special_emboss: bool = False
     color_code: Optional[str] = None
     color_qualifier: Optional[str] = None
     in_csi: Optional[bool] = None

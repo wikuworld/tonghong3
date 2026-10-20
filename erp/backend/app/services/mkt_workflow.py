@@ -6,7 +6,7 @@ from app.timeutil import app_now
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -66,18 +66,20 @@ def prev_mkt_stage(current: str | None) -> str | None:
 
 
 def _delivery_status_posted():
-    """Delivery yang menggerakkan tahap MKT: bukan draft, kosong, atau dibatalkan."""
+    """Delivery yang menggerakkan tahap MKT: aktif, bukan draft/kosong/cancelled."""
     from app.models import DeliveryHeader
 
     st = func.lower(func.trim(func.coalesce(DeliveryHeader.status, "")))
-    return st.notin_(("", "draft", "cancelled", "canceled"))
+    return and_(
+        DeliveryHeader.is_deleted.is_(False),
+        st.notin_(("", "draft", "cancelled", "canceled")),
+    )
 
 
 def _delivery_not_cancelled():
-    from app.models import DeliveryHeader
+    from app.services.delivery_active import delivery_header_is_active_clause
 
-    st = func.lower(func.trim(func.coalesce(DeliveryHeader.status, "")))
-    return st.notin_(("cancelled", "canceled"))
+    return delivery_header_is_active_clause()
 
 
 def _direct_po_detail_delivery_clause():
@@ -193,6 +195,8 @@ def po_has_sj_invpl_prints(db: "Session", po_id: int) -> bool:
     if not rows:
         return False
     for dh in rows:
+        if bool(getattr(dh, "is_deleted", False)):
+            continue
         if (dh.status or "").strip().lower() in ("cancelled", "canceled"):
             continue
         if not dh.packing_id:

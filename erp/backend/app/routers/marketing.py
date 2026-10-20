@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import io
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from enum import Enum
 from typing import Any, Optional
@@ -34,6 +34,10 @@ from sqlalchemy.orm import Session, selectinload
 from app.db import get_db
 from app.paging import parse_page_params, sort_mapped_rows
 from app.models import (
+    Brand,
+    ColorSwatchRecipe,
+    ColorWindowMaster,
+    CsiColorMaster,
     Customer,
     DeliveryDetail,
     DeliveryHeader,
@@ -47,6 +51,7 @@ from app.models import (
     PoHeader,
     ProductionDetail,
 )
+from app.services.po_master_line import _color_code_token, po_line_uses_color_window
 from app.routers.auth import get_current_user, require_roles
 from app.schemas import (
     MarketingDeliveryLineOut,
@@ -660,6 +665,168 @@ def _latest_production_status_by_pod(db: Session, pod_ids: set[int]) -> dict[int
     return out
 
 
+_GENERIC_COLOR_STANDARDS = {
+    "waiting c/s",
+    "waiting cs",
+    "wait c/s",
+    "wait cs",
+    "follow coloro",
+    "black nike",
+}
+
+
+def _created_at_text(value: datetime | date | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.replace(microsecond=0).strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value).strip()
+
+
+def _std_key(value: str | None) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def color_standard_created_at_for_line(
+    header: PoHeader,
+    detail: PoDetail,
+    *,
+    brand_code: str,
+    recipes_by_id: dict[int, datetime | date | None],
+    windows_by_key: dict[tuple[str, str], datetime | date | None],
+    csi_by_key: dict[tuple[str, str], datetime | date | None],
+    recipes_by_key: dict[tuple[str, str, str, str], datetime | date | None],
+) -> str:
+    """Tanggal buat Color STD: resep tertaut, Color Window, atau CSI."""
+    recipe_id = getattr(detail, "color_swatch_recipe_id", None)
+    if recipe_id is not None and int(recipe_id) in recipes_by_id:
+        text = _created_at_text(recipes_by_id[int(recipe_id)])
+        if text:
+            return text
+    standard = str(getattr(detail, "color_standard", None) or "").strip()
+    if not standard:
+        return ""
+    code = _color_code_token(getattr(detail, "color_reference", None)) or _color_code_token(
+        getattr(detail, "color", None)
+    )
+    code = code.upper()
+    buyer = str(getattr(header, "buyer", None) or "").strip().upper()
+    if po_line_uses_color_window(standard):
+        brand = (brand_code or buyer).strip().upper()
+        if brand and code:
+            return _created_at_text(windows_by_key.get((brand, code)))
+        return ""
+    if standard.casefold() == "csi":
+        if buyer and code:
+            return _created_at_text(csi_by_key.get((buyer, code)))
+        return ""
+    if standard.casefold() in _GENERIC_COLOR_STANDARDS:
+        return ""
+    key = (
+        buyer,
+        _std_key(getattr(detail, "material_name", None)),
+        _std_key(getattr(detail, "emboss", None)),
+        standard.casefold(),
+    )
+    return _created_at_text(recipes_by_key.get(key))
+
+
+def _attach_color_standard_created_at(
+    db: Session,
+    pending: list[tuple[PoHeader, PoDetail, Decimal, Decimal]],
+    rows: list[dict[str, Any]],
+) -> None:
+    recipe_ids = {
+        int(ln.color_swatch_recipe_id)
+        for _, ln, _, _ in pending
+        if getattr(ln, "color_swatch_recipe_id", None)
+    }
+    recipes_by_id: dict[int, datetime | date | None] = {}
+    if recipe_ids:
+        for recipe in db.scalars(select(ColorSwatchRecipe).where(ColorSwatchRecipe.id.in_(recipe_ids))).all():
+            recipes_by_id[int(recipe.id)] = recipe.created_at
+
+    brand_ids = {int(h.brand_id) for h, _, _, _ in pending if getattr(h, "brand_id", None)}
+    brand_codes: dict[int, str] = {}
+    if brand_ids:
+        for brand in db.scalars(select(Brand).where(Brand.id.in_(brand_ids))).all():
+            brand_codes[int(brand.id)] = str(brand.code or "").strip().upper()
+
+    window_pairs: set[tuple[str, str]] = set()
+    csi_pairs: set[tuple[str, str]] = set()
+    standard_texts: set[str] = set()
+    for header, detail, _, _ in pending:
+        standard = str(detail.color_standard or "").strip()
+        if not standard or standard.casefold() in _GENERIC_COLOR_STANDARDS:
+            continue
+        code = (
+            _color_code_token(detail.color_reference) or _color_code_token(detail.color)
+        ).upper()
+        buyer = str(header.buyer or "").strip().upper()
+        brand = brand_codes.get(int(header.brand_id), "") if header.brand_id else ""
+        if po_line_uses_color_window(standard) and (brand or buyer) and code:
+            window_pairs.add(((brand or buyer), code))
+        elif standard.casefold() == "csi" and buyer and code:
+            csi_pairs.add((buyer, code))
+        elif not getattr(detail, "color_swatch_recipe_id", None):
+            standard_texts.add(standard)
+
+    windows_by_key: dict[tuple[str, str], datetime | date | None] = {}
+    if window_pairs:
+        codes = {code for _, code in window_pairs}
+        for window in db.scalars(
+            select(ColorWindowMaster).where(func.upper(ColorWindowMaster.color_code).in_(codes))
+        ).all():
+            key = (str(window.brand_code or "").strip().upper(), str(window.color_code or "").strip().upper())
+            if key in window_pairs and window.created_at is not None:
+                windows_by_key[key] = window.created_at
+
+    csi_by_key: dict[tuple[str, str], datetime | date | None] = {}
+    if csi_pairs:
+        codes = {code for _, code in csi_pairs}
+        buyers = {buyer for buyer, _ in csi_pairs}
+        for row in db.scalars(
+            select(CsiColorMaster).where(
+                func.upper(CsiColorMaster.buyer_code).in_(buyers),
+                func.upper(CsiColorMaster.color_code).in_(codes),
+            )
+        ).all():
+            key = (str(row.buyer_code or "").strip().upper(), str(row.color_code or "").strip().upper())
+            if key in csi_pairs and row.created_at is not None:
+                csi_by_key[key] = row.created_at
+
+    recipes_by_key: dict[tuple[str, str, str, str], datetime | date | None] = {}
+    if standard_texts:
+        for recipe in db.scalars(
+            select(ColorSwatchRecipe).where(ColorSwatchRecipe.color_standard.in_(standard_texts))
+        ).all():
+            if recipe.created_at is None:
+                continue
+            key = (
+                str(recipe.buyer_code or "").strip().upper(),
+                _std_key(recipe.material_name),
+                _std_key(recipe.emboss),
+                str(recipe.color_standard or "").strip().casefold(),
+            )
+            current = recipes_by_key.get(key)
+            if current is None or recipe.created_at > current:
+                recipes_by_key[key] = recipe.created_at
+
+    for (header, detail, _, _), row in zip(pending, rows):
+        brand = brand_codes.get(int(header.brand_id), "") if getattr(header, "brand_id", None) else ""
+        row["color_standard_created_at"] = color_standard_created_at_for_line(
+            header,
+            detail,
+            brand_code=brand,
+            recipes_by_id=recipes_by_id,
+            windows_by_key=windows_by_key,
+            csi_by_key=csi_by_key,
+            recipes_by_key=recipes_by_key,
+        )
+
+
 def _line_to_row(
     h: PoHeader,
     ln: PoDetail,
@@ -866,6 +1033,7 @@ def _query_outstanding_rows(
             row["latest_delivery_number"] = ""
             row["latest_delivery_status"] = ""
         out.append(row)
+    _attach_color_standard_created_at(db, pending, out)
     return out
 
 
@@ -1256,6 +1424,7 @@ def _delivery_detail_to_row(
         "delivery_id": dh.id,
         "delivery_detail_id": dd.id,
         "delivery_status": dh.status or "",
+        "is_deleted": bool(getattr(dh, "is_deleted", False)),
         "returned_qty": _dec_str(dd.returned_qty) if dd.returned_qty is not None else "",
         "packing_id": dh.packing_id,
         "packing_status": (pkh.status or "").strip() if pkh else "",
@@ -1278,6 +1447,8 @@ def _query_delivery_lines_rows(
     customer: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """Baris delivery + join ke produksi & PO (format lembar DELIVERY LIST)."""
+    from app.services.delivery_active import delivery_header_is_active_clause
+
     stmt = (
         select(
             DeliveryDetail,
@@ -1294,6 +1465,7 @@ def _query_delivery_lines_rows(
         .outerjoin(PoHeader, PoDetail.po_id == PoHeader.id)
         .outerjoin(Customer, DeliveryHeader.customer_id == Customer.id)
         .outerjoin(PackingHeader, DeliveryHeader.packing_id == PackingHeader.id)
+        .where(delivery_header_is_active_clause())
         .order_by(DeliveryHeader.id.desc(), DeliveryDetail.id.asc())
     )
     if delivery_date_from is not None:

@@ -1,4 +1,4 @@
-"""Cancel delivery: status, invoice void, qty, dan tahap marketing."""
+"""Soft-delete delivery: flag is_deleted, invoice void, qty, dan tahap marketing."""
 
 from __future__ import annotations
 
@@ -32,6 +32,10 @@ def _header(**kwargs):
         cancel_reason=None,
         cancelled_at=None,
         cancelled_by=None,
+        is_deleted=False,
+        deleted_at=None,
+        deleted_by=None,
+        delete_reason=None,
     )
     data.update(kwargs)
     return SimpleNamespace(**data)
@@ -65,9 +69,9 @@ def _db(header, invoice=None):
     return db
 
 
-def _cancel(db, header, *, role="admin", reason="salah buat"):
+def _soft_delete(db, header, *, role="admin", reason="salah buat"):
     with patch("app.services.delivery_cancel.po_ids_from_delivery", return_value=set()):
-        return cancel_mod.cancel_delivery(
+        return cancel_mod.soft_delete_delivery(
             db,
             header.id,
             reason=reason,
@@ -76,112 +80,143 @@ def _cancel(db, header, *, role="admin", reason="salah buat"):
         )
 
 
-def test_cancel_draft_sets_status_and_second_call_rejected():
+def test_soft_delete_draft_sets_flag_keeps_status_and_second_call_rejected():
     header = _header()
     db = _db(header)
-    _cancel(db, header)
-    assert header.status == "cancelled"
+    _soft_delete(db, header)
+    assert header.is_deleted is True
+    assert header.status == "draft"
+    assert header.delete_reason == "salah buat"
+    assert header.deleted_by == "tester"
+    assert header.deleted_at is not None
     assert header.cancel_reason == "salah buat"
-    assert header.cancelled_by == "tester"
-    assert header.cancelled_at is not None
     db.commit.assert_called()
 
     with pytest.raises(HTTPException) as exc:
-        _cancel(db, header)
+        _soft_delete(db, header)
     assert exc.value.status_code == 400
-    assert "sudah dibatalkan" in exc.value.detail.lower()
+    assert "sudah dihapus" in exc.value.detail.lower()
 
 
-def test_cancel_sent_is_rejected():
+def test_cancel_alias_calls_soft_delete():
+    header = _header()
+    db = _db(header)
+    with patch("app.services.delivery_cancel.po_ids_from_delivery", return_value=set()):
+        cancel_mod.cancel_delivery(
+            db, header.id, reason="alias", actor="tester", role="admin"
+        )
+    assert header.is_deleted is True
+    assert header.status == "draft"
+
+
+def test_soft_delete_sent_is_rejected():
     header = _header(status="sent")
     db = _db(header, invoice=None)
     with pytest.raises(HTTPException) as exc:
-        _cancel(db, header, role="warehouse")
+        _soft_delete(db, header, role="warehouse")
     assert exc.value.status_code == 400
     assert "terkirim" in exc.value.detail.lower()
+    assert header.is_deleted is False
     assert header.status == "sent"
 
 
-def test_cancel_draft_unpaid_invoice_voids_for_admin():
+def test_soft_delete_draft_unpaid_invoice_voids_for_admin():
     header = _header(status="draft")
     inv = _invoice()
     db = _db(header, inv)
-    _cancel(db, header, role="admin")
-    assert header.status == "cancelled"
+    _soft_delete(db, header, role="admin")
+    assert header.is_deleted is True
+    assert header.status == "draft"
     assert inv.voided_at is not None
     assert inv.void_reason == "salah buat"
 
 
-def test_warehouse_cannot_cancel_when_invoice_exists():
+def test_warehouse_cannot_delete_when_invoice_exists():
     header = _header(status="draft")
     inv = _invoice()
     db = _db(header, inv)
     with pytest.raises(HTTPException) as exc:
-        _cancel(db, header, role="warehouse")
+        _soft_delete(db, header, role="warehouse")
     assert exc.value.status_code == 403
+    assert header.is_deleted is False
     assert header.status == "draft"
     assert inv.voided_at is None
 
 
-def test_cancel_rejects_paid_invoice():
+def test_soft_delete_rejects_paid_invoice():
     header = _header(status="draft")
     db = _db(header, _invoice(payment_status="paid"))
     with pytest.raises(HTTPException) as exc:
-        _cancel(db, header, role="admin")
+        _soft_delete(db, header, role="admin")
     assert exc.value.status_code == 400
     assert "retur" in exc.value.detail.lower()
+    assert header.is_deleted is False
     assert header.status == "draft"
 
 
-def test_cancel_rejects_payment_amount():
+def test_soft_delete_rejects_payment_amount():
     header = _header(status="draft")
     db = _db(header, _invoice(payment_amount=Decimal("10")))
     with pytest.raises(HTTPException) as exc:
-        _cancel(db, header, role="finance")
+        _soft_delete(db, header, role="finance")
     assert exc.value.status_code == 400
+    assert header.is_deleted is False
     assert header.status == "draft"
 
 
-def test_cancel_rejects_bc_number():
+def test_soft_delete_rejects_bc_number():
     header = _header(status="draft", bc_number="BC-9")
     db = _db(header)
     with pytest.raises(HTTPException) as exc:
-        _cancel(db, header)
+        _soft_delete(db, header)
     assert exc.value.status_code == 400
     assert "bc" in exc.value.detail.lower()
+    assert header.is_deleted is False
     assert header.status == "draft"
 
 
-def test_cancel_rejects_credit_note():
+def test_soft_delete_rejects_credit_note():
     header = _header(status="draft")
     db = _db(header, _invoice(credit_note_no="CN-1", credit_note_amount=Decimal("5")))
     with pytest.raises(HTTPException) as exc:
-        _cancel(db, header, role="admin")
+        _soft_delete(db, header, role="admin")
     assert exc.value.status_code == 400
+    assert header.is_deleted is False
     assert header.status == "draft"
 
 
-def test_scan_out_skips_cancelled():
-    header = SimpleNamespace(id=1, status="cancelled", delivery_number="SJ-1")
+def test_scan_out_skips_deleted():
+    header = SimpleNamespace(id=1, status="draft", delivery_number="SJ-1", is_deleted=True)
     db = MagicMock()
     db.get.return_value = header
     out = _mark_deliveries_sent(db, [1], actor="tester", action="scan_out")
-    assert out["skipped"] == [{"delivery_id": 1, "reason": "cancelled"}]
+    assert out["skipped"] == [{"delivery_id": 1, "reason": "deleted"}]
+    assert out["marked_sent"] == []
+    assert header.status == "draft"
+
+
+def test_scan_out_skips_legacy_cancelled():
+    header = SimpleNamespace(id=1, status="cancelled", delivery_number="SJ-1", is_deleted=False)
+    db = MagicMock()
+    db.get.return_value = header
+    out = _mark_deliveries_sent(db, [1], actor="tester", action="scan_out")
+    assert out["skipped"] == [{"delivery_id": 1, "reason": "deleted"}]
     assert out["marked_sent"] == []
     assert header.status == "cancelled"
 
 
-def test_sum_delivered_qty_excludes_cancelled_header():
+def test_sum_delivered_qty_excludes_deleted_header():
     captured = []
     db = MagicMock()
     db.scalar.side_effect = lambda stmt: captured.append(stmt) or Decimal(0)
     assert sum_delivered_qty(db, 9) == Decimal(0)
     sql = str(captured[0].compile(compile_kwargs={"literal_binds": True})).lower()
+    assert "is_deleted" in sql
     assert "cancelled" in sql
     assert "canceled" in sql
 
 
-def test_po_balance_excludes_cancelled_header():
+def test_po_balance_excludes_deleted_header():
     captured = []
     db = MagicMock()
 
@@ -196,6 +231,7 @@ def test_po_balance_excludes_cancelled_header():
     assert len(captured) == 2
     for stmt in captured:
         sql = str(stmt.compile(compile_kwargs={"literal_binds": True})).lower()
+        assert "is_deleted" in sql
         assert "cancelled" in sql
 
 
@@ -212,6 +248,7 @@ def test_put_status_cancelled_is_rejected():
         update_delivery(header.id, DeliveryHeaderUpdate(status="cancelled"), db, user)
     assert exc.value.status_code == 400
     assert header.status == "draft"
+    assert header.is_deleted is False
 
 
 def test_reconcile_lowers_stage_when_no_other_sent():

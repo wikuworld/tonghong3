@@ -1,4 +1,4 @@
-"""Batalkan delivery tanpa menghapus dokumen. Qty kembali tersedia lewat status header."""
+"""Soft-delete delivery (flag is_deleted). Qty kembali tersedia; dokumen tetap di DB."""
 
 from __future__ import annotations
 
@@ -11,11 +11,11 @@ from sqlalchemy.orm import Session
 from app.models import DeliveryHeader, Invoice, PoHeader
 from app.services.audit import log_change
 from app.services.business_rules import po_ids_from_delivery
+from app.services.delivery_active import delivery_header_is_deleted
 from app.services.mkt_workflow import reconcile_po_stage_after_delivery_cancel
 from app.services.notifications import create_notification_for_roles
 from app.timeutil import app_now
 
-_CANCELLED = frozenset({"cancelled", "canceled"})
 _SENT = frozenset({"sent", "delivered", "completed"})
 _VOID_ROLES = frozenset({"admin", "finance"})
 
@@ -24,10 +24,6 @@ def _dec(value) -> Decimal:
     if value is None:
         return Decimal(0)
     return Decimal(str(value))
-
-
-def _is_cancelled(status: str | None) -> bool:
-    return (status or "").strip().lower() in _CANCELLED
 
 
 def _is_sent(status: str | None) -> bool:
@@ -64,7 +60,7 @@ def _delivery_has_bc(row: DeliveryHeader) -> bool:
     return bool(row.customs_declaration_id)
 
 
-def cancel_delivery(
+def soft_delete_delivery(
     db: Session,
     delivery_id: int,
     *,
@@ -74,22 +70,22 @@ def cancel_delivery(
 ) -> DeliveryHeader:
     text = (reason or "").strip()
     if not text:
-        raise HTTPException(status_code=400, detail="Alasan pembatalan wajib diisi")
+        raise HTTPException(status_code=400, detail="Alasan hapus wajib diisi")
 
     row = db.get(DeliveryHeader, int(delivery_id))
     if not row:
         raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
-    if _is_cancelled(row.status):
-        raise HTTPException(status_code=400, detail="Delivery sudah dibatalkan")
+    if delivery_header_is_deleted(row):
+        raise HTTPException(status_code=400, detail="Delivery sudah dihapus")
     if _is_sent(row.status):
         raise HTTPException(
             status_code=400,
-            detail="Surat jalan sudah terkirim. Gunakan retur, jangan batalkan.",
+            detail="Surat jalan sudah terkirim. Gunakan retur, jangan hapus.",
         )
     if _delivery_has_bc(row):
         raise HTTPException(
             status_code=400,
-            detail="Delivery sudah punya dokumen BC. Gunakan retur, jangan batalkan surat jalan.",
+            detail="Delivery sudah punya dokumen BC. Gunakan retur, jangan hapus surat jalan.",
         )
 
     inv = _invoice_for_delivery(db, int(row.id))
@@ -103,7 +99,7 @@ def cancel_delivery(
         if (role or "").strip().lower() not in _VOID_ROLES:
             raise HTTPException(
                 status_code=403,
-                detail="Invoice belum dibayar hanya boleh dibatalkan oleh admin atau finance",
+                detail="Invoice belum dibayar hanya boleh dihapus oleh admin atau finance",
             )
         open_invoice.voided_at = app_now()
         open_invoice.void_reason = text
@@ -118,20 +114,26 @@ def cancel_delivery(
         )
 
     prev_status = row.status
-    row.status = "cancelled"
+    now = app_now()
+    row.is_deleted = True
+    row.deleted_at = now
+    row.deleted_by = actor
+    row.delete_reason = text
+    # Mirror legacy cancel columns for older readers; status tetap draft.
     row.cancel_reason = text
-    row.cancelled_at = app_now()
+    row.cancelled_at = now
     row.cancelled_by = actor
     log_change(
         db,
         entity_type="delivery",
         entity_id=int(row.id),
-        action="cancel",
-        before={"status": prev_status},
+        action="delete",
+        before={"status": prev_status, "is_deleted": False},
         after={
-            "status": "cancelled",
-            "cancel_reason": text,
-            "cancelled_by": actor,
+            "status": prev_status,
+            "is_deleted": True,
+            "delete_reason": text,
+            "deleted_by": actor,
             "invoice_id": int(open_invoice.id) if open_invoice is not None else None,
         },
         actor=actor,
@@ -139,8 +141,8 @@ def cancel_delivery(
     create_notification_for_roles(
         db,
         ("admin", "marketing", "warehouse", "finance"),
-        title=f"Delivery {row.delivery_number or row.id} dibatalkan",
-        message=f"Status delivery menjadi cancelled. Alasan: {text}",
+        title=f"Delivery {row.delivery_number or row.id} dihapus",
+        message=f"Surat jalan dihapus (soft-delete). Alasan: {text}",
         category="delivery",
         entity_type="delivery",
         entity_id=row.id,
@@ -163,3 +165,21 @@ def cancel_delivery(
     db.commit()
     db.refresh(row)
     return row
+
+
+def cancel_delivery(
+    db: Session,
+    delivery_id: int,
+    *,
+    reason: str,
+    actor: str,
+    role: str | None,
+) -> DeliveryHeader:
+    """Alias lama → soft-delete (kompatibilitas client/route cancel)."""
+    return soft_delete_delivery(
+        db,
+        delivery_id,
+        reason=reason,
+        actor=actor,
+        role=role,
+    )

@@ -948,6 +948,16 @@
                     <el-radio-button value="nominal">USD</el-radio-button>
                   </el-radio-group>
                 </div>
+                <p v-if="w.previewResolvedUnitPrice == null && w.previewPriceDetail" class="po-price-miss">
+                  {{ w.previewPriceDetail }}
+                </p>
+                <div v-if="w.previewPriceBase != null" class="po-price-addon-labels">
+                  <p class="po-price-addon-note">{{ t('pages.po.priceAddonNote') }}</p>
+                  <span class="po-price-addon-label">COLOR WHITE {{ Number(w.previewPriceBase).toFixed(2) }}</span>
+                  <span v-for="addon in w.previewPriceAddons" :key="addon.key" class="po-price-addon-label">
+                    {{ addon.label }} {{ Number(addon.amount).toFixed(2) }}
+                  </span>
+                </div>
                 <div class="mt-1 flex items-center gap-2 flex-wrap">
                   <span v-if="w.previewResolvedUnitPrice != null" class="text-xs text-slate-500">
                     {{ t('pages.po.autoResolved') }}: {{ w.previewResolvedUnitPrice }}
@@ -1108,7 +1118,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="detail_remark" :label="t('pages.po.detailRemark')" min-width="140" show-overflow-tooltip />
-            <el-table-column :label="t('pages.po.unitPriceUsd')" width="120" align="right">
+            <el-table-column :label="t('pages.po.unitPriceUsd')" width="168" align="right">
               <template #default="{ row }">
                 <div class="flex flex-col items-end gap-1">
                   <span v-if="row.is_special_price" class="text-xs text-slate-400 line-through">
@@ -1117,6 +1127,12 @@
                   <span :class="row.is_special_price ? 'text-green-600 font-semibold' : ''">
                     {{ row.unit_price != null ? '$' + row.unit_price.toFixed(2) : '—' }}
                   </span>
+                  <div v-if="row.price_base != null" class="po-price-addon-labels po-price-addon-labels--end">
+                    <span class="po-price-addon-label">COLOR WHITE {{ Number(row.price_base).toFixed(2) }}</span>
+                    <span v-for="addon in row.price_addons || []" :key="addon.key" class="po-price-addon-label">
+                      {{ addon.label }} {{ Number(addon.amount).toFixed(2) }}
+                    </span>
+                  </div>
                   <el-tooltip v-if="row.manual_override" :content="t('pages.po.linePriceOverrideHint')" placement="top">
                     <el-tag size="small" type="danger" effect="plain">
                       {{ t('pages.po.linePriceOverride') }}
@@ -1792,6 +1808,44 @@ onMounted(() => {
   align-items: stretch;
   gap: 4px;
   width: 100%;
+}
+
+.po-price-miss {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #b45309;
+}
+
+.po-price-addon-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.po-price-addon-labels--end {
+  justify-content: flex-end;
+}
+
+.po-price-addon-note {
+  width: 100%;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #64748b;
+}
+
+.po-price-addon-label {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
 }
 
 .field-lock-row :deep(.el-input),

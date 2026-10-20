@@ -21,6 +21,21 @@ EXPORT_COLUMNS = [
     "thickness_range",
     "color",
     "emboss",
+    "flag_color_black",
+    "flag_color",
+    "flag_flourasent",
+    "flag_metalic",
+    "flag_emboss",
+    "flag_special_emboss",
+]
+
+FLAG_COLUMNS = [
+    "flag_color_black",
+    "flag_color",
+    "flag_flourasent",
+    "flag_metalic",
+    "flag_emboss",
+    "flag_special_emboss",
 ]
 
 CATEGORY_ALIAS = {
@@ -76,6 +91,18 @@ def _cell_str(val: Any) -> str:
     return str(val).strip()
 
 
+def parse_flag_cell(raw: Any) -> bool | None:
+    """None jika kosong (jangan ubah data lama). ValueError jika bukan ya/tidak."""
+    s = _cell_str(raw).lower()
+    if not s:
+        return None
+    if s in {"1", "true", "yes", "y", "ya"}:
+        return True
+    if s in {"0", "false", "no", "n", "tidak"}:
+        return False
+    raise ValueError("flag_invalid")
+
+
 def normalize_category(raw: str | None) -> str | None:
     """None jika kosong; ValueError jika tidak valid."""
     s = _cell_str(raw)
@@ -98,7 +125,10 @@ def export_master_items_xlsx(db: Session) -> bytes:
     for row_idx, item in enumerate(items, 2):
         for col_idx, col in enumerate(EXPORT_COLUMNS, 1):
             val = getattr(item, col, None)
-            ws.cell(row=row_idx, column=col_idx, value="" if val is None else str(val))
+            if col in FLAG_COLUMNS:
+                ws.cell(row=row_idx, column=col_idx, value="true" if bool(val) else "false")
+            else:
+                ws.cell(row=row_idx, column=col_idx, value="" if val is None else str(val))
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -222,6 +252,23 @@ def import_master_items_xlsx(db: Session, content: bytes) -> MasterItemsImportRe
             if val:
                 patch[f] = val
 
+        flag_patch: dict[str, bool] = {}
+        try:
+            for f in FLAG_COLUMNS:
+                parsed = parse_flag_cell(item.get(f, ""))
+                if parsed is not None:
+                    flag_patch[f] = parsed
+        except ValueError:
+            result.skipped += 1
+            result.errors.append(
+                ImportErrorRow(
+                    row=excel_row,
+                    item_code=code,
+                    reason="flag addon harus true/false (atau kosong)",
+                )
+            )
+            continue
+
         existing = by_code.get(code)
         if existing is None and code in seen_in_file:
             # Same new code appears again in file before flush — treat as update of session object
@@ -241,6 +288,8 @@ def import_master_items_xlsx(db: Session, content: bytes) -> MasterItemsImportRe
             row = MasterItem(item_code=code)
             for k, v in patch.items():
                 setattr(row, k, v)
+            for f in FLAG_COLUMNS:
+                setattr(row, f, flag_patch.get(f, False))
             if "color" in patch:
                 apply_item_color_extract(row)
             row.updated_at = app_now()
@@ -260,6 +309,10 @@ def import_master_items_xlsx(db: Session, content: bytes) -> MasterItemsImportRe
                 changed = True
                 if k == "color":
                     color_changed = True
+        for k, v in flag_patch.items():
+            if bool(getattr(existing, k, False)) != v:
+                setattr(existing, k, v)
+                changed = True
         if color_changed:
             apply_item_color_extract(existing)
         if changed:

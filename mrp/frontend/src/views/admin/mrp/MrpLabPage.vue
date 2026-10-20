@@ -89,8 +89,17 @@
         <el-table-column :label="t('common.date')" width="120">
           <template #default="{ row }">{{ formatDate(row.date_created || row.tanggal_rencana) }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.actions')" width="88" align="center" fixed="right">
+        <el-table-column :label="t('common.actions')" width="120" align="center" fixed="right">
           <template #default="{ row }">
+            <el-tooltip :content="t('pages.mrpLab.viewLotDetail')" placement="top">
+              <el-button
+                link
+                type="primary"
+                :icon="View"
+                :aria-label="t('pages.mrpLab.viewLotDetail')"
+                @click="openListLotDetail(row)"
+              />
+            </el-tooltip>
             <el-tooltip :content="t('pages.mrpLab.printQr')" placement="top">
               <el-button
                 link
@@ -294,6 +303,58 @@
     </el-dialog>
 
     <el-dialog
+      v-model="listLotDetailOpen"
+      :title="t('pages.mrpLab.listLotDetailTitle')"
+      width="760px"
+      destroy-on-close
+      append-to-body
+    >
+      <el-descriptions :column="2" border size="small" class="mb-3">
+        <el-descriptions-item :label="t('pages.mrpLab.kodeLot')">
+          {{ dash(listLotDetail.kode_lot_warna) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('pages.mrpLab.namaLot')">
+          {{ dash(listLotDetail.nama_lot_warna) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('pages.mrpLab.rpi')">
+          {{ dash(listLotDetail.kode_rencana_item) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="WIP">
+          {{ dash(listLotDetail.kode_lot_wip) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('common.customer')">
+          {{ dash(listLotDetail.nama_customer) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('common.status')">
+          {{ statusLabel(listLotDetail.status) }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('pages.mrpLab.kimiaCount')">
+          {{ listLotDetail.jml_kimia ?? listLotDetail.items?.length ?? 0 }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="t('pages.mrpLab.totalQty')">
+          {{ formatQty(listLotDetail.total_qty) }}
+        </el-descriptions-item>
+      </el-descriptions>
+      <p class="text-xs text-slate-500 mb-2">{{ t('pages.mrpLab.kimiaBahanList') }}</p>
+      <el-table :data="listLotDetail.items" border size="small" max-height="360" :empty-text="t('common.tableEmpty')">
+        <el-table-column type="index" width="48" :label="t('common.noLabel')" align="center" />
+        <el-table-column prop="kode_kimia" :label="t('pages.mrpLab.kimia')" min-width="110" show-overflow-tooltip />
+        <el-table-column prop="nama_kimia" :label="t('common.name')" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="resep" :label="t('pages.mrpLab.resep')" width="100" show-overflow-tooltip />
+        <el-table-column :label="t('pages.mrpLab.qty')" width="90" align="right">
+          <template #default="{ row: item }">{{ formatQty(item.qty) }}</template>
+        </el-table-column>
+        <el-table-column prop="satuan" :label="t('pages.mrpLab.satuan')" width="70" />
+        <el-table-column :label="t('pages.mrpLab.remarks')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row: item }">{{ dash(item.remarks) }}</template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button type="primary" @click="listLotDetailOpen = false">{{ t('common.close') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="colorLotViewOpen"
       :title="t('pages.mrpLab.colorLotDetailTitle')"
       width="720px"
@@ -392,11 +453,18 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Printer, Refresh } from '@element-plus/icons-vue'
+import { Plus, Printer, Refresh, View } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
 import { can } from '../../../security/permissions'
-import { mrpCreateLab, mrpCreateLabSisa, mrpLabOptions, mrpListLab, mrpMixedLabSisa } from '../../../api/client'
+import {
+  me,
+  mrpCreateLab,
+  mrpCreateLabSisa,
+  mrpLabOptions,
+  mrpListLab,
+  mrpMixedLabSisa,
+} from '../../../api/client'
 import { printLabLotQr } from '../../../utils/mrpLabQrPrint'
 import {
   buildFarmasiSheetsFromCreate,
@@ -412,6 +480,18 @@ const mixingId = ref(null)
 const createOpen = ref(false)
 const lotDraftOpen = ref(false)
 const lotDraftEditIndex = ref(null)
+const listLotDetailOpen = ref(false)
+const listLotDetail = reactive({
+  kode_lot_warna: '',
+  nama_lot_warna: '',
+  kode_rencana_item: '',
+  kode_lot_wip: '',
+  nama_customer: '',
+  status: '',
+  total_qty: null,
+  jml_kimia: 0,
+  items: [],
+})
 const colorLotViewOpen = ref(false)
 const colorLotView = reactive({
   lwCode: '',
@@ -711,6 +791,22 @@ async function openLotDraft() {
   if (!(await ensureCreateOptionsLoaded())) return
   resetLotDraftForm()
   lotDraftOpen.value = true
+}
+
+function openListLotDetail(row) {
+  if (!row) return
+  Object.assign(listLotDetail, {
+    kode_lot_warna: row.kode_lot_warna || '',
+    nama_lot_warna: row.nama_lot_warna || '',
+    kode_rencana_item: row.kode_rencana_item || '',
+    kode_lot_wip: row.kode_lot_wip || '',
+    nama_customer: row.nama_customer || '',
+    status: row.status || '',
+    total_qty: row.total_qty,
+    jml_kimia: row.jml_kimia ?? row.items?.length ?? 0,
+    items: (row.items || []).map((it) => ({ ...it })),
+  })
+  listLotDetailOpen.value = true
 }
 
 function viewColorLot(index) {
@@ -1068,7 +1164,14 @@ async function openCreate() {
 
 async function printQr(row) {
   try {
-    await printLabLotQr(row, t)
+    let dibuatOleh = ''
+    try {
+      const user = await me()
+      dibuatOleh = (user?.username || user?.name || '').trim()
+    } catch {
+      /* optional */
+    }
+    await printLabLotQr(row, t, { dibuatOleh })
   } catch (e) {
     ElMessage.error(e.message || String(e))
   }

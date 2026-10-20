@@ -74,7 +74,7 @@ def test_export_uses_snake_case_headers():
     db, _ = _make_db([row])
     data = export_master_items_xlsx(db)
     wb = load_workbook(BytesIO(data))
-    headers = [wb.active.cell(1, c).value for c in range(1, 7)]
+    headers = [wb.active.cell(1, c).value for c in range(1, len(EXPORT_COLUMNS) + 1)]
     assert headers == EXPORT_COLUMNS
 
 
@@ -82,7 +82,7 @@ def test_template_headers_only():
     data = export_master_items_template_xlsx()
     wb = load_workbook(BytesIO(data))
     assert wb.active.max_row == 1
-    assert [wb.active.cell(1, c).value for c in range(1, 7)] == EXPORT_COLUMNS
+    assert [wb.active.cell(1, c).value for c in range(1, len(EXPORT_COLUMNS) + 1)] == EXPORT_COLUMNS
 
 
 def test_import_create_then_reimport_skips_unchanged():
@@ -222,6 +222,55 @@ def test_import_accepts_legacy_title_headers():
     result = import_master_items_xlsx(db, content)
     assert result.created == 1
     assert items[0].category == "Suede"
+
+
+def test_import_flags_blank_keeps_existing_and_true_sets_new():
+    existing = MasterItem(
+        id=1,
+        item_code="FG700",
+        category="PU",
+        material_name="Virgin PU",
+        thickness_range="1.2-1.4",
+        flag_color_black=True,
+    )
+    db, items = _make_db([existing])
+    content = _xlsx_from_rows(
+        [
+            {
+                "category": "",
+                "item_code": "FG700",
+                "material_name": "",
+                "thickness_range": "",
+                "color": "",
+                "emboss": "",
+                "flag_color_black": "",
+                "flag_metalic": "true",
+            }
+        ]
+    )
+    result = import_master_items_xlsx(db, content)
+    assert result.updated == 1
+    assert items[0].flag_color_black is True
+    assert items[0].flag_metalic is True
+    assert not items[0].flag_emboss
+
+
+def test_import_invalid_flag_skipped():
+    db, items = _make_db([])
+    content = _xlsx_from_rows(
+        [
+            {
+                "category": "PU",
+                "item_code": "FG800",
+                "flag_color": "maybe",
+            }
+        ]
+    )
+    result = import_master_items_xlsx(db, content)
+    assert result.created == 0
+    assert result.skipped == 1
+    assert "flag addon" in result.errors[0].reason
+    assert items == []
 
 
 def test_import_new_requires_category():
