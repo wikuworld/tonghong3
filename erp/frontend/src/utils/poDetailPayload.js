@@ -76,11 +76,10 @@ export async function appendDetailUnitPrice(body, formModel, { resolveBuyerUnitP
     body.unit_price = Number(formModel.unit_price_input)
   }
 
-  if (formModel.is_special_price && formModel.unit_price_input != null) {
-    body.base_price = previewResolvedUnitPrice
-    body.is_special_price = true
-    body.discount_type = formModel.discount_type
-    body.discount_value = formModel.discount_value
+  body.is_special_price = Boolean(formModel.is_special_price)
+  if (body.is_special_price) {
+    body.discount_type = formModel.discount_type || 'percent'
+    body.discount_value = Number(formModel.discount_value || 0)
   }
 
   return body

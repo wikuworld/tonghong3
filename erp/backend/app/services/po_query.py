@@ -53,7 +53,7 @@ def apply_po_list_filters(
     if buyer:
         stmt = stmt.where(PoHeader.buyer == buyer)
     if status:
-        stmt = stmt.where(PoHeader.status == status)
+        stmt = stmt.where(PoHeader.status == str(status).strip().lower())
     if po_category:
         cat = str(po_category).strip().lower()
         if cat == "production":

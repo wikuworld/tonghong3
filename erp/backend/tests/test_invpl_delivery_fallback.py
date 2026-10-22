@@ -34,7 +34,9 @@ def test_invpl_from_delivery_details_when_packing_empty():
         thickness_min=None,
         thickness_max=None,
     )
-    poh = SimpleNamespace(id=4, po_number="THIPM26090101", po_category="prod")
+    poh = SimpleNamespace(
+        id=4, po_number="THIPM26090101", po_customer_ref="", po_category="prod"
+    )
 
     db = MagicMock()
 
@@ -68,6 +70,70 @@ def test_invpl_from_delivery_details_when_packing_empty():
     assert ctx["totals"]["qty"] == Decimal("12")
 
 
+def test_invpl_po_no_matches_sj_uses_customer_ref():
+    """INVPL PO NO sama aturan SJ: po_customer_ref, bukan No. SO."""
+    ph = PackingHeader(id=3, packing_number="MRP-FG-261021000014", source="mrp")
+    dh = DeliveryHeader(id=9, packing_id=3, delivery_date=date(2026, 10, 21), customer_id=None)
+    dd = SimpleNamespace(
+        id=1,
+        delivery_id=9,
+        po_detail_id=11,
+        production_detail_id=None,
+        qty=Decimal("120"),
+        qty_roll=3,
+        qty_pcs=4,
+        weight=None,
+    )
+    pod = SimpleNamespace(
+        id=11,
+        po_id=4,
+        unit_price=Decimal("10"),
+        color="ATOMIC VIOLET (55V)",
+        master_item_id=None,
+        material_name="VIRGIN HYDRO PU",
+        style_article=None,
+        thickness_text="1.2 - 1.4 mm",
+        thickness_min=None,
+        thickness_max=None,
+    )
+    poh = SimpleNamespace(
+        id=4,
+        po_number="THIPM26102104",
+        po_customer_ref="test po cust",
+        po_category="prod",
+    )
+
+    db = MagicMock()
+
+    def _get(model, pk):
+        if model is PackingHeader and pk == 3:
+            return ph
+        if model is DeliveryHeader and pk == 9:
+            return dh
+        if model is PoDetail and pk == 11:
+            return pod
+        if model is PoHeader and pk == 4:
+            return poh
+        return None
+
+    db.get.side_effect = _get
+    firsts = iter([None])
+
+    def _scalars(_stmt):
+        result = MagicMock()
+        result.all.return_value = [dd]
+        result.first.side_effect = lambda: next(firsts, None)
+        return result
+
+    db.scalars.side_effect = _scalars
+
+    ctx = gather_invpl_rows(db, 3, delivery_id=9)
+    assert ctx["lines"][0]["po_no"] == "test po cust"
+    assert ctx["lines"][0]["remark"] == "test po cust"
+    assert poh.po_number == "THIPM26102104"
+    assert poh.po_customer_ref == "test po cust"
+
+
 def test_invpl_from_delivery_ignores_packing_mismatch():
     ph = PackingHeader(id=3, packing_number="PK-A", source="mrp")
     dh = DeliveryHeader(id=9, packing_id=99, delivery_date=date(2026, 9, 1), customer_id=None)
@@ -93,7 +159,9 @@ def test_invpl_from_delivery_ignores_packing_mismatch():
         thickness_min=None,
         thickness_max=None,
     )
-    poh = SimpleNamespace(id=4, po_number="THIPM26090102", po_category="prod")
+    poh = SimpleNamespace(
+        id=4, po_number="THIPM26090102", po_customer_ref="", po_category="prod"
+    )
 
     db = MagicMock()
 

@@ -116,6 +116,9 @@ def test_resolve_uses_list_covering_as_of(monkeypatch):
     )
     assert result["matched"] is True
     assert result["unit_price"] == Decimal("2.22")
+    assert result["period_start"] == date(2026, 1, 1)
+    assert result["period_end"] == date(2026, 12, 31)
+    assert result["price_block"] == "COMMON"
 
 
 def test_resolve_falls_back_to_undated_list(monkeypatch):

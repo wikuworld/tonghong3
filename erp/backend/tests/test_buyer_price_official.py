@@ -2,12 +2,15 @@
 
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from app.services.buyer_price_aliases import (
     canonical_customer_code,
     emboss_is_special,
     infer_price_block,
+    customer_price_rules,
+    is_outside_banten_factory,
     normalize_material_alias,
 )
 from app.services.buyer_price_import import (
@@ -198,12 +201,14 @@ def test_resolve_special_emboss_and_outside(monkeypatch):
         db, "NIKE", material_name="GENERIC PU COATED", color_family="color", emboss="AR-140"
     )
     assert special["unit_price"] == Decimal("1.33")
+    assert special["price_block"] == "SPECIAL"
 
     monkeypatch.setattr("app.services.buyer_price_resolve.is_outside_banten_factory", lambda *_a, **_k: True)
     outside = resolve_unit_price_for_buyer(
         db, "NIKE", material_name="GENERIC PU COATED", color_family="color", factory_code="BI020"
     )
     assert outside["unit_price"] == Decimal("1.25")
+    assert outside["price_block"] == "OUTSIDE BANTEN"
 
 
 def test_resolve_laccato_alias(monkeypatch):
@@ -218,3 +223,87 @@ def test_resolve_laccato_alias(monkeypatch):
     )
     assert r["matched"] is True
     assert r["unit_price"] == Decimal("1.88")
+
+
+def test_outside_banten_follows_customer_flag_only():
+    customer = SimpleNamespace(
+        code="XX001",
+        outside_banten=False,
+        wilayah_province_code="32",
+        city="CIREBON",
+        address="JAWA TENGAH",
+        billing_address="",
+    )
+    db = MagicMock()
+    db.scalars.return_value.first.return_value = customer
+    assert is_outside_banten_factory(db, "XX001") is False
+    customer.outside_banten = True
+    assert is_outside_banten_factory(db, "BI020") is True
+    assert infer_price_block(emboss="", outside_banten=True) == "OUTSIDE BANTEN"
+    assert infer_price_block(emboss="", outside_banten=False) == "COMMON"
+
+
+def test_outside_adjust_applies_only_when_flag_is_on():
+    customer = SimpleNamespace(
+        code="BI020",
+        outside_banten=True,
+        outside_price_adjust=Decimal("0.20"),
+        outside_adjust_type="nominal",
+        discount_modifier_enabled=True,
+        discount_modifier=Decimal("0.05"),
+        discount_modifier_type="percent",
+    )
+    db = MagicMock()
+    db.scalars.return_value.first.return_value = customer
+    rules = customer_price_rules(db, "BI020")
+    assert rules["outside"] == {"type": "nominal", "value": Decimal("0.20")}
+    assert rules["discount"] == {"type": "percent", "value": Decimal("0.05")}
+    customer.outside_banten = False
+    rules = customer_price_rules(db, "BI020")
+    assert rules["outside"] is None
+    assert rules["discount"]["value"] == Decimal("0.05")
+    customer.discount_modifier_enabled = False
+    rules = customer_price_rules(db, "BI020")
+    assert rules["discount"] is None
+
+
+def test_resolve_applies_outside_then_discount(monkeypatch):
+    rows = [
+        build_price_cells(
+            item="GENERIC PU COATED",
+            block="COMMON",
+            white=1.13,
+            black=1.18,
+            color=1.23,
+            fluo=1.40,
+            metallic=1.40,
+        ),
+    ]
+    db, fake = _mock_db_with_list(rows)
+    monkeypatch.setattr("app.services.buyer_price_resolve.list_to_api_dict", fake)
+    monkeypatch.setattr("app.services.buyer_price_resolve.is_outside_banten_factory", lambda *_a, **_k: False)
+
+    def rules_for(outside, discount):
+        return lambda *_a, **_k: {"outside": outside, "discount": discount}
+
+    monkeypatch.setattr(
+        "app.services.buyer_price_resolve.customer_price_rules",
+        rules_for(None, None),
+    )
+    base = resolve_unit_price_for_buyer(db, "NIKE", material_name="GENERIC PU COATED", color_family="color")
+    unit = base["unit_price"]
+    monkeypatch.setattr(
+        "app.services.buyer_price_resolve.customer_price_rules",
+        rules_for({"type": "nominal", "value": Decimal("0.20")}, None),
+    )
+    bumped = resolve_unit_price_for_buyer(db, "NIKE", material_name="GENERIC PU COATED", color_family="color")
+    assert bumped["unit_price"] == unit + Decimal("0.20")
+    monkeypatch.setattr(
+        "app.services.buyer_price_resolve.customer_price_rules",
+        rules_for({"type": "percent", "value": Decimal("10")}, {"type": "nominal", "value": Decimal("0.05")}),
+    )
+    mixed = resolve_unit_price_for_buyer(db, "NIKE", material_name="GENERIC PU COATED", color_family="color")
+    after_outside = (unit + (unit * Decimal("10") / Decimal(100)).quantize(Decimal("0.0001"))).quantize(Decimal("0.0001"))
+    assert mixed["unit_price"] == (after_outside - Decimal("0.05")).quantize(Decimal("0.0001"))
+    assert any(addon["key"] == "OUTSIDE ADJUST" for addon in mixed["addons"])
+    assert any(addon["key"] == "DISCOUNT MODIFIER" and addon["amount"] < 0 for addon in mixed["addons"])

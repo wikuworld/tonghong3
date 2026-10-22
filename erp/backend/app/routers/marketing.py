@@ -953,9 +953,9 @@ def _query_outstanding_rows(
         if (h.status or "").strip().lower() == "draft":
             continue
         ms = material_status or MaterialStatusFilter.all
-        if ms == MaterialStatusFilter.cancelled and (h.status or "").strip().lower() not in {"cancelled", "canceled"}:
+        if ms == MaterialStatusFilter.cancelled and (h.status or "").strip().lower() != "cancelled":
             continue
-        if ms != MaterialStatusFilter.cancelled and (h.status or "").strip().lower() in {"cancelled", "canceled"}:
+        if ms != MaterialStatusFilter.cancelled and (h.status or "").strip().lower() == "cancelled":
             # default: cancel tidak ikut outstanding kecuali diminta
             continue
         if factory_needles:
@@ -1318,6 +1318,8 @@ _DELIVERY_LIST_XLS_COLUMNS: list[tuple[str, str]] = [
     ("packing_status", "STATUS PACKING"),
     ("invpl_printed", "INVPL SUDAH CETAK"),
     ("delivery_zone", "ZONA KIRIM"),
+    ("charge_type", "FOC/BERBAYAR"),
+    ("po_category_label", "KATEGORI"),
 ]
 
 
@@ -1430,6 +1432,9 @@ def _delivery_detail_to_row(
         "packing_status": (pkh.status or "").strip() if pkh else "",
         "invpl_printed": bool(pkh and pkh.invpl_printed_at is not None),
         "delivery_zone": (dh.delivery_zone or "").strip() if dh.delivery_zone else "",
+        "is_foc": bool(getattr(dh, "is_foc", False)),
+        "charge_type": "FOC" if bool(getattr(dh, "is_foc", False)) else "BERBAYAR",
+        "po_category_label": _order_type_marketing(ph) if ph else "",
         "source_mrp": bool(getattr(dh, "mrp_fg_id", None) or (pkh and (pkh.source or "") == "mrp")),
     }
 
@@ -2093,7 +2098,7 @@ def _query_delivery_planning_slots(
     out: list[dict[str, Any]] = []
     for pdd, pod, ph in raw:
         st = (ph.status or "").lower()
-        if st in ("completed", "cancelled", "canceled"):
+        if st in ("completed", "cancelled"):
             continue
         if pdd.qty is not None and pdd.qty <= 0:
             continue
@@ -2192,7 +2197,7 @@ def _query_line_etd_on_date(db: Session, on_date: date, factory_code: Optional[s
     out: list[dict[str, Any]] = []
     for pod, ph in db.execute(stmt).all():
         st = (ph.status or "").lower()
-        if st in ("completed", "cancelled", "canceled"):
+        if st in ("completed", "cancelled"):
             continue
         if fc and fc not in ((ph.factory_code or "").strip().lower()):
             continue

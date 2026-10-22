@@ -1,6 +1,7 @@
 import logging
 import re
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -15,6 +16,7 @@ from app.models import (
     Brand,
     CustomerBrandMapping,
     FluorescentColorMaster,
+    MasterItem,
     PoDetail,
     PoDetailDelivery,
     PoHeader,
@@ -39,6 +41,7 @@ from app.schemas import (
     PoDetailDeliveryOut,
     PoDetailOut,
     PoDetailUpdate,
+    PoCancelIn,
     PoHeaderCreate,
     PoHeaderOut,
     PoHeaderPageOut,
@@ -61,6 +64,7 @@ from app.services.mkt_workflow import (
     validate_mkt_rollback,
 )
 from app.services.mrp_po_sync import sync_po_details_to_mrp, try_sync_po_details_to_mrp
+from app.services.po_cancel import cancel_sales_order
 from app.services.po_delete_guards import validate_po_deletable
 from app.paging import apply_sort, page_dict, parse_page_params
 from app.services.po_query import po_list_count, po_list_select, po_list_stage_counts
@@ -183,6 +187,12 @@ def _mrp_line_snapshot(db: Session, d: PoDetail, ph: PoHeader | None) -> dict[st
     no_po = ""
     if ph:
         no_po = (ph.po_customer_ref or ph.po_number or "").strip()
+    item_code = ""
+    mid = getattr(d, "master_item_id", None)
+    if mid:
+        mi = db.get(MasterItem, int(mid))
+        if mi is not None:
+            item_code = (mi.item_code or "").strip()
     return {
         "source_detail_id": str(d.id),
         "material_name": material,
@@ -190,6 +200,7 @@ def _mrp_line_snapshot(db: Session, d: PoDetail, ph: PoHeader | None) -> dict[st
         "no_so": no_so,
         "no_po": no_po,
         "detail_remark": (d.detail_remark or "").strip(),
+        "item_code": item_code,
     }
 
 
@@ -313,8 +324,141 @@ _PRICING_FIELD_KEYS = frozenset(
 )
 
 
+_SPECIAL_DISCOUNT_TYPES = frozenset({"percent", "nominal"})
+
+
+def _line_attr(row, name: str, default=None):
+    if row is None:
+        return default
+    return getattr(row, name, default)
+
+
+def _price_text(value) -> str:
+    return str(value or "").strip()
+
+
+def _price_money(value) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def _merged_line_value(data: dict, row, key: str, default=None):
+    if key in data:
+        return data.get(key)
+    return _line_attr(row, key, default)
+
+
+def _special_price_on(data: dict, row) -> bool:
+    if "is_special_price" in data:
+        return bool(data.get("is_special_price"))
+    return bool(_line_attr(row, "is_special_price", False))
+
+
+def _spec_changed(data: dict, row) -> bool:
+    if row is None:
+        return True
+    for key in _PRICING_FIELD_KEYS:
+        if key not in data:
+            continue
+        if _price_text(data.get(key)).lower() != _price_text(_line_attr(row, key)).lower():
+            return True
+    return False
+
+
+def _modifier_changed(data: dict, row) -> bool:
+    if row is None:
+        return True
+    if "is_special_price" in data and bool(data.get("is_special_price")) != bool(
+        _line_attr(row, "is_special_price", False)
+    ):
+        return True
+    if "discount_type" in data and _price_text(data.get("discount_type")) != _price_text(
+        _line_attr(row, "discount_type")
+    ):
+        return True
+    if "discount_value" in data and _price_money(data.get("discount_value")) != _price_money(
+        _line_attr(row, "discount_value")
+    ):
+        return True
+    return False
+
+
+def _clear_special_price(data: dict) -> None:
+    data["is_special_price"] = False
+    data["discount_type"] = None
+    data["discount_value"] = None
+    data["list_unit_price"] = None
+
+
+def _resolve_list_unit_price(db: Session, po, row, data: dict) -> Decimal:
+    buyer = _price_text(getattr(po, "buyer", None))
+    if not buyer:
+        raise HTTPException(status_code=400, detail="Buyer wajib untuk special price")
+    resolved = resolve_unit_price_for_buyer(
+        db,
+        buyer,
+        material_name=_merged_line_value(data, row, "material_name"),
+        color=_merged_line_value(data, row, "color"),
+        style_article=_merged_line_value(data, row, "style_article"),
+        thickness_text=_merged_line_value(data, row, "thickness_text"),
+        color_family=_merged_line_value(data, row, "color_family"),
+        emboss=_merged_line_value(data, row, "emboss"),
+        factory_code=getattr(po, "factory_code", None),
+        as_of=getattr(po, "order_date", None),
+    )
+    raw = resolved.get("unit_price")
+    if raw is None:
+        raise HTTPException(status_code=400, detail="Harga list tidak ditemukan untuk special price")
+    return Decimal(str(raw)).quantize(Decimal("0.0001"))
+
+
+def _apply_special_price(db: Session, po, row, data: dict) -> None:
+    """Harga list + modifier. unit_price ketikan tidak dipakai."""
+    if not _price_text(_merged_line_value(data, row, "detail_remark")):
+        raise HTTPException(status_code=400, detail="Catatan wajib untuk special price")
+    discount_type = _price_text(_merged_line_value(data, row, "discount_type") or "percent").lower()
+    if discount_type not in _SPECIAL_DISCOUNT_TYPES:
+        raise HTTPException(status_code=400, detail="Jenis modifier harus percent atau nominal")
+    discount_value = _price_money(_merged_line_value(data, row, "discount_value"))
+    if discount_value is None:
+        discount_value = Decimal("0")
+    if discount_type == "percent" and (discount_value < -100 or discount_value > 100):
+        raise HTTPException(status_code=400, detail="Modifier persen harus di antara -100 dan 100")
+    list_price = _resolve_list_unit_price(db, po, row, data)
+    if discount_type == "percent":
+        unit = list_price * (Decimal(1) + (discount_value / Decimal(100)))
+    else:
+        unit = list_price + discount_value
+    unit = unit.quantize(Decimal("0.0001"))
+    if unit < 0:
+        raise HTTPException(status_code=400, detail="Harga setelah modifier tidak boleh negatif")
+    data["is_special_price"] = True
+    data["discount_type"] = discount_type
+    data["discount_value"] = discount_value
+    data["list_unit_price"] = list_price
+    data["unit_price"] = unit
+
+
 def _apply_unit_price_on_update(db: Session, po, row, data: dict, user) -> None:
-    """Admin/finance boleh set harga. Marketing: resolve ulang jika spek berubah."""
+    """Special price dihitung dari list. Selain itu admin/finance boleh set harga."""
+    special = _special_price_on(data, row)
+    if special:
+        if row is not None and not _spec_changed(data, row) and not _modifier_changed(data, row):
+            data.pop("unit_price", None)
+            return
+        _apply_special_price(db, po, row, data)
+        return
+
+    turning_off = "is_special_price" in data and bool(_line_attr(row, "is_special_price", False))
+    if turning_off:
+        _clear_special_price(data)
+    if row is None:
+        return
+
     cat = (getattr(po, "po_category", None) or "").strip().lower() if po else ""
     if cat in {"subcont", "return"}:
         return
@@ -322,7 +466,7 @@ def _apply_unit_price_on_update(db: Session, po, row, data: dict, user) -> None:
     if can_override:
         return
     data.pop("unit_price", None)
-    if not po or not any(k in data for k in _PRICING_FIELD_KEYS):
+    if not po or not (turning_off or any(k in data for k in _PRICING_FIELD_KEYS)):
         return
     buyer = (po.buyer or "").strip()
     if not buyer:
@@ -330,12 +474,12 @@ def _apply_unit_price_on_update(db: Session, po, row, data: dict, user) -> None:
     resolved = resolve_unit_price_for_buyer(
         db,
         buyer,
-        material_name=data.get("material_name", row.material_name),
-        color=data.get("color", row.color),
-        style_article=data.get("style_article", row.style_article),
-        thickness_text=data.get("thickness_text", row.thickness_text),
-        color_family=data.get("color_family", row.color_family),
-        emboss=data.get("emboss", row.emboss),
+        material_name=_merged_line_value(data, row, "material_name"),
+        color=_merged_line_value(data, row, "color"),
+        style_article=_merged_line_value(data, row, "style_article"),
+        thickness_text=_merged_line_value(data, row, "thickness_text"),
+        color_family=_merged_line_value(data, row, "color_family"),
+        emboss=_merged_line_value(data, row, "emboss"),
         factory_code=po.factory_code,
         as_of=getattr(po, "order_date", None),
     )
@@ -441,6 +585,10 @@ _PO_DETAIL_DUPLICATE_FIELDS = (
     "system_reference",
     "detail_remark",
     "unit_price",
+    "is_special_price",
+    "discount_type",
+    "discount_value",
+    "list_unit_price",
 )
 
 
@@ -1260,6 +1408,11 @@ def update_po(
     for snap_key in ("brand_name_snapshot", "customer_name_snapshot", "customer_code"):
         if merged.get(snap_key) is not None:
             data[snap_key] = merged[snap_key]
+    if "status" in data and str(data.get("status") or "").strip().lower() == "cancelled":
+        raise HTTPException(
+            status_code=400,
+            detail="Status cancelled tidak dipakai lewat ubah status. Gunakan aksi Batal.",
+        )
     if "status" in data:
         validate_po_status_transition(row.status, data["status"])
         _validate_po_has_details_for_confirm(db, po_id, data["status"])
@@ -1443,6 +1596,16 @@ def marketing_revise_po(
     return row
 
 
+@router.post("/po/{po_id}/cancel", response_model=PoHeaderOut)
+def cancel_po(
+    po_id: int,
+    body: PoCancelIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "marketing")),
+) -> PoHeader:
+    return cancel_sales_order(db, po_id, reason=body.reason, actor=user.username)
+
+
 @router.delete("/po/{po_id}", response_model=StatusDeletedOut)
 def delete_po(
     po_id: int,
@@ -1512,6 +1675,7 @@ def add_po_detail(
         color=payload.get("color"),
         emboss=payload.get("emboss"),
     )
+    _apply_unit_price_on_update(db, po, None, payload, user)
     row = PoDetail(po_id=po_id, **payload)
     db.add(row)
     db.flush()

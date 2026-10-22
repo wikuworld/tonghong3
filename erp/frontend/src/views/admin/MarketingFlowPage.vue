@@ -132,7 +132,7 @@
                 <el-option :label="t('status.confirmed')" value="confirmed" />
                 <el-option :label="t('status.production')" value="production" />
                 <el-option :label="t('status.completed')" value="completed" />
-                <el-option :label="t('status.cancelled')" value="canceled" />
+                <el-option :label="t('status.cancelled')" value="cancelled" />
               </el-select>
             </label>
           </div>
@@ -2632,12 +2632,26 @@ onMounted(async () => {
   }
   if (section.value === 'outstanding') {
     poSearch.value = String(route.query.po_q || '').trim()
+    materialStatus.value = String(route.query.material_status || '').trim()
     await loadOutstanding()
     return
   }
   planningPoSearch.value = String(route.query.po_q || '').trim()
   await loadPlanning()
 })
+
+watch(
+  () => [section.value, route.query.material_status, route.query.po_q],
+  () => {
+    if (section.value !== 'outstanding') return
+    const nextStatus = String(route.query.material_status || '').trim()
+    const nextPo = String(route.query.po_q || '').trim()
+    if (materialStatus.value === nextStatus && poSearch.value === nextPo) return
+    materialStatus.value = nextStatus
+    poSearch.value = nextPo
+    loadOutstanding()
+  },
+)
 
 onUnmounted(() => {
   if (flowKeywordTimer) clearTimeout(flowKeywordTimer)
@@ -2891,7 +2905,6 @@ function goPo(id) {
 function soStatusLabel(st) {
   const key = String(st || '').trim().toLowerCase()
   if (!key) return t('common.emptyValue')
-  if (key === 'canceled' && te('status.cancelled')) return t('status.cancelled')
   if (te(`status.${key}`)) return t(`status.${key}`)
   return st
 }

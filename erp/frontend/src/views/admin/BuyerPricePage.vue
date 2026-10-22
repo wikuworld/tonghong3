@@ -63,6 +63,11 @@
           <el-table-column prop="currency" :label="t('pages.buyerPrices.currency')" width="90" align="center" sortable="custom" />
           <el-table-column prop="title" :label="t('pages.buyerPrices.listTitle')" min-width="160" show-overflow-tooltip sortable="custom" />
           <el-table-column prop="period_label" :label="t('pages.buyerPrices.period')" min-width="180" show-overflow-tooltip sortable="custom" />
+          <el-table-column prop="period_start" :label="t('pages.buyerPrices.periodRange')" min-width="200" align="center" sortable="custom">
+            <template #default="{ row }">
+              {{ row.period_start && row.period_end ? `${row.period_start} – ${row.period_end}` : '—' }}
+            </template>
+          </el-table-column>
           <el-table-column :label="t('pages.buyerPrices.itemList')" min-width="240">
             <template #default="{ row }">
               <div v-if="!(row.item_codes || []).length" class="buyer-cell-empty">—</div>

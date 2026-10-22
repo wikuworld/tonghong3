@@ -1051,7 +1051,7 @@ def _assign_stock_wh_from_finished_packings(
 
 
 def _stock_wh_by_source_detail_ids(cur, source_ids: list[int]) -> dict[int, float]:
-    """Stock WH = qty packing status finished per baris SO ERP (lot / RPI)."""
+    """Stock WH = qty packing finished/in_progress (sudah diukur) per baris SO ERP."""
     if not source_ids:
         return {}
     from app import _col_names
@@ -1061,7 +1061,8 @@ def _stock_wh_by_source_detail_ids(cur, source_ids: list[int]) -> dict[int, floa
     if "rencana_item_id" in packing_cols:
         packing_fields.insert(1, "rencana_item_id")
     cur.execute(
-        f"SELECT {', '.join(packing_fields)} FROM tbl_packing WHERE status='finished'"
+        f"SELECT {', '.join(packing_fields)} FROM tbl_packing "
+        "WHERE status IN ('finished','in_progress') AND COALESCE(total_ukuran,0) > 0"
     )
     packings = list(cur.fetchall() or [])
     if not packings:
@@ -7087,6 +7088,127 @@ def stock_sisa_sync_ppic_all():
 
 
 # ---- gudang FG ----
+def _enrich_gudang_fg_rows(cur, rows: list) -> list:
+    """Isi lot/SO/spek/kode barang/roll_count pada baris Gudang FG (enrich saat baca)."""
+    if not rows:
+        return rows
+    packing_ids: list[int] = []
+    seen_pid: set[int] = set()
+    for row in rows:
+        try:
+            pid = int(row.get("packing_id"))
+        except (TypeError, ValueError):
+            continue
+        if pid and pid not in seen_pid:
+            seen_pid.add(pid)
+            packing_ids.append(pid)
+
+    packing_by_id: dict[int, dict] = {}
+    roll_count_by_pid: dict[int, int] = {}
+    if packing_ids:
+        ph = ",".join(["%s"] * len(packing_ids))
+        cur.execute(f"SELECT * FROM tbl_packing WHERE id IN ({ph})", packing_ids)
+        for pkg in cur.fetchall() or []:
+            try:
+                packing_by_id[int(pkg["id"])] = pkg
+            except (TypeError, ValueError, KeyError):
+                continue
+        cur.execute(
+            f"SELECT packing_id, COUNT(*) AS n FROM tbl_packing_roll "
+            f"WHERE packing_id IN ({ph}) GROUP BY packing_id",
+            packing_ids,
+        )
+        for rr in cur.fetchall() or []:
+            try:
+                roll_count_by_pid[int(rr["packing_id"])] = int(rr.get("n") or 0)
+            except (TypeError, ValueError, KeyError):
+                continue
+
+    source_ids: list[int] = []
+    specs_by_pid: dict[int, dict] = {}
+    for pid, pkg in packing_by_id.items():
+        rencana_id = pkg.get("rencana_item_id")
+        try:
+            rencana_id = int(rencana_id) if rencana_id is not None else None
+        except (TypeError, ValueError):
+            rencana_id = None
+        spec = _packing_spec_for_wip(
+            cur,
+            pkg.get("kode_wip") or "",
+            pkg.get("no_po"),
+            rencana_id,
+        )
+        specs_by_pid[pid] = spec
+        sid = spec.get("source_detail_id")
+        try:
+            sid_i = int(sid) if sid is not None else None
+        except (TypeError, ValueError):
+            sid_i = None
+        if sid_i and sid_i not in source_ids:
+            source_ids.append(sid_i)
+
+    item_code_by_sid: dict[int, str] = {}
+    if source_ids:
+        try:
+            from mrp_api import erp_client
+
+            lines = erp_client.po_detail_mrp_lines(source_ids) or {}
+            for sid, snap in lines.items():
+                try:
+                    sid_i = int(sid)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(snap, dict):
+                    code = (snap.get("item_code") or "").strip()
+                    if code:
+                        item_code_by_sid[sid_i] = code
+        except Exception:
+            pass
+
+    for row in rows:
+        try:
+            pid = int(row.get("packing_id"))
+        except (TypeError, ValueError):
+            pid = None
+        spec = specs_by_pid.get(pid) if pid is not None else None
+        row["roll_count"] = roll_count_by_pid.get(pid, 0) if pid is not None else 0
+        if not spec:
+            row.setdefault("lot_no", "")
+            row.setdefault("no_so", "")
+            row.setdefault("thickness", "")
+            row.setdefault("material_name", "")
+            row.setdefault("emboss", "")
+            row.setdefault("color", "")
+            row.setdefault("kode_barang", "")
+            continue
+        lot = (spec.get("lot_no") or "").strip()
+        if lot in ("-",):
+            lot = ""
+        row["lot_no"] = lot
+        row["no_so"] = (spec.get("no_so") or "").strip()
+        thick = (spec.get("thickness") or "").strip()
+        row["thickness"] = "" if thick in ("", "-") else thick
+        row["material_name"] = (spec.get("material_name") or "").strip()
+        row["emboss"] = (spec.get("emboss") or "").strip()
+        color = (spec.get("color") or "").strip()
+        row["color"] = "" if color in ("", "-") else color
+        if not (row.get("customer") or "").strip():
+            cust = (spec.get("customer_from_rencana") or "").strip()
+            if cust:
+                row["customer"] = cust
+        kode_barang = ""
+        sid = spec.get("source_detail_id")
+        try:
+            sid_i = int(sid) if sid is not None else None
+        except (TypeError, ValueError):
+            sid_i = None
+        if sid_i is not None:
+            kode_barang = item_code_by_sid.get(sid_i, "")
+        row["kode_barang"] = kode_barang
+        row["source_detail_id"] = sid_i
+    return rows
+
+
 @api.get("/gudang-fg")
 def gudang_fg_list():
     from app import ensure_extended_tables
@@ -7124,9 +7246,9 @@ def gudang_fg_list():
         like = f"%{q}%"
         where += (
             " AND (gf.kode_packing LIKE %s OR gf.kode_wip LIKE %s OR gf.customer LIKE %s "
-            "OR IFNULL(gf.erp_delivery_number,'') LIKE %s)"
+            "OR IFNULL(gf.erp_delivery_number,'') LIKE %s OR IFNULL(gf.notes,'') LIKE %s)"
         )
-        params.extend([like, like, like, like])
+        params.extend([like, like, like, like, like])
     cur.execute(f"SELECT COUNT(*) AS c{from_sql}{where}", params)
     total = int((cur.fetchone() or {}).get("c") or 0)
     cur.execute(
@@ -7134,7 +7256,32 @@ def gudang_fg_list():
         f"ORDER BY {order} LIMIT %s OFFSET %s",
         params + [pg["page_size"], pg["offset"]],
     )
-    data = _rows(cur.fetchall())
+    data = _enrich_gudang_fg_rows(cur, _rows(cur.fetchall()))
+    if q:
+        qq = q.lower()
+
+        def _match_enrich(row: dict) -> bool:
+            blob = " ".join(
+                str(row.get(k) or "")
+                for k in (
+                    "kode_packing",
+                    "kode_wip",
+                    "customer",
+                    "erp_delivery_number",
+                    "notes",
+                    "lot_no",
+                    "no_so",
+                    "material_name",
+                    "emboss",
+                    "color",
+                    "thickness",
+                    "kode_barang",
+                )
+            ).lower()
+            return qq in blob
+
+        # Page sudah difilter SQL; filter tambahan untuk field enrich di halaman ini.
+        data = [r for r in data if _match_enrich(r)]
     cur.close()
     conn.close()
     return jsonify(
@@ -7668,6 +7815,10 @@ def gudang_fg_detail(fg_id: int):
         return _err("Data tidak ditemukan", 404)
     cur.execute("SELECT * FROM tbl_packing WHERE id=%s", (fg["packing_id"],))
     packing = cur.fetchone()
+    if packing:
+        fg["packing_status"] = packing.get("status")
+    enriched = _enrich_gudang_fg_rows(cur, [_row(fg)])
+    fg_out = enriched[0] if enriched else _row(fg)
     cur.execute(
         "SELECT * FROM tbl_packing_roll WHERE packing_id=%s ORDER BY roll_no",
         (fg["packing_id"],),
@@ -7704,13 +7855,42 @@ def gudang_fg_detail(fg_id: int):
     conn.close()
     return jsonify(
         {
-            "fg": _row(fg),
+            "fg": fg_out,
             "packing": _row(packing),
             "rolls": rolls,
             "packing_pos": packing_pos,
             "bridge_lines": bridge_lines,
         }
     )
+
+
+@api.post("/gudang-fg/<int:fg_id>/notes")
+def gudang_fg_notes(fg_id: int):
+    """Simpan notes manual pada baris stok FG."""
+    from app import ensure_extended_tables
+
+    body = request.get_json(silent=True) or {}
+    notes_raw = body.get("notes")
+    notes = (notes_raw if notes_raw is not None else "").strip() or None
+
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.execute("SELECT id FROM tbl_gudang_fg WHERE id=%s", (fg_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return _err("Data tidak ditemukan", 404)
+    cur.execute("UPDATE tbl_gudang_fg SET notes=%s WHERE id=%s", (notes, fg_id))
+    conn.commit()
+    cur.execute("SELECT * FROM tbl_gudang_fg WHERE id=%s", (fg_id,))
+    fg = cur.fetchone()
+    enriched = _enrich_gudang_fg_rows(cur, [_row(fg)])
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "fg": enriched[0] if enriched else _row(fg)})
 
 
 def _fg_packing_not_finished(cur, fg) -> str | None:

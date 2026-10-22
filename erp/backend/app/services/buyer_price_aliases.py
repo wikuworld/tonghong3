@@ -40,16 +40,6 @@ CUSTOMER_CODE_ALIASES = {
     "HI001": "HA001",
 }
 
-# Kode pabrik/customer di luar Banten (harga Nike Outside).
-OUTSIDE_BANTEN_FACTORY_CODES = frozenset(
-    {
-        "BI020",  # Bintang Indokarya — Tegal
-        "AF001",  # Aroma — Cirebon
-    }
-)
-
-BANTEN_PROVINCE_CODE = "36"
-
 SPECIAL_EMBOSS_TOKENS = frozenset(
     {
         "AR-140",
@@ -147,26 +137,70 @@ def is_outside_banten_factory(
     db: Session | None,
     factory_code: str | None,
 ) -> bool:
-    code = canonical_customer_code(factory_code)
-    if not code:
-        return False
-    if code in OUTSIDE_BANTEN_FACTORY_CODES:
-        return True
-    if db is None:
-        return False
-    row = db.scalars(select(Customer).where(Customer.code == code)).first()
+    """Outside hanya dari flag customer. Provinsi dan alamat tidak dipakai."""
+    row = _customer_by_factory_code(db, factory_code)
     if not row:
         return False
-    prov = str(row.wilayah_province_code or "").strip()
-    if prov and prov != BANTEN_PROVINCE_CODE:
-        return True
-    blob = " ".join(
-        str(x or "")
-        for x in (row.city, row.address, row.billing_address)
-    ).upper()
-    if "BANTEN" in blob or "CIKANDE" in blob or "SERANG" in blob:
-        return False
-    return any(k in blob for k in ("CIREBON", "TEGAL", "JAWA TENGAH", "JAWA TIMUR"))
+    return getattr(row, "outside_banten", False) is True
+
+
+def customer_price_rules(
+    db: Session | None,
+    factory_code: str | None,
+) -> dict:
+    """Outside (hanya jika flag nyala) dan diskon modifier customer.
+
+    Nilai 0 atau kosong tidak dipakai. Tipe selain percent dianggap amount.
+    """
+    row = _customer_by_factory_code(db, factory_code)
+    outside = None
+    discount = None
+    if row is not None and getattr(row, "outside_banten", False) is True:
+        value = _modifier_value(getattr(row, "outside_price_adjust", None))
+        if value is not None and value != 0:
+            outside = {
+                "type": _modifier_type(getattr(row, "outside_adjust_type", None)),
+                "value": value,
+            }
+    if row is not None and getattr(row, "discount_modifier_enabled", False) is True:
+        value = _modifier_value(getattr(row, "discount_modifier", None))
+        if value is not None and value != 0:
+            discount = {
+                "type": _modifier_type(getattr(row, "discount_modifier_type", None)),
+                "value": value,
+            }
+    return {"outside": outside, "discount": discount}
+
+
+def _modifier_value(raw):
+    from decimal import Decimal, InvalidOperation
+
+    if raw is None or isinstance(raw, bool) or not isinstance(raw, (int, float, Decimal, str)):
+        return None
+    try:
+        value = Decimal(str(raw))
+    except (InvalidOperation, ValueError):
+        return None
+    if not value.is_finite():
+        return None
+    return value
+
+
+def _modifier_type(raw) -> str:
+    if isinstance(raw, str):
+        text = raw.strip().lower()
+        if text in {"percent", "percentage", "persen"}:
+            return "percent"
+        if text in {"nominal", "amount", "usd"}:
+            return "nominal"
+    return "nominal"
+
+
+def _customer_by_factory_code(db: Session | None, factory_code: str | None):
+    code = canonical_customer_code(factory_code)
+    if not code or db is None:
+        return None
+    return db.scalars(select(Customer).where(Customer.code == code)).first()
 
 
 def infer_price_block(*, emboss: str | None, outside_banten: bool) -> str:

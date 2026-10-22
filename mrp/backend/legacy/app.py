@@ -267,7 +267,8 @@ def ensure_extended_tables(cur):
         "customer VARCHAR(150) DEFAULT NULL, total_lembar INT DEFAULT 0, "
         "total_ukuran DECIMAL(12,2) DEFAULT 0, status ENUM('in_stock','out','repacked') DEFAULT 'in_stock', "
         "date_in DATETIME DEFAULT CURRENT_TIMESTAMP, date_out DATETIME DEFAULT NULL, "
-        "keterangan_out VARCHAR(255) DEFAULT NULL, repacked_from_id INT DEFAULT NULL)"
+        "keterangan_out VARCHAR(255) DEFAULT NULL, repacked_from_id INT DEFAULT NULL, "
+        "notes TEXT DEFAULT NULL)"
     )
     cur.execute(
         "CREATE TABLE IF NOT EXISTS tbl_persiapan_ky ("
@@ -595,6 +596,8 @@ def ensure_extended_tables(cur):
             cur.execute(
                 "ALTER TABLE tbl_gudang_fg ADD COLUMN repacked_from_id INT DEFAULT NULL"
             )
+        if "notes" not in fg_cols:
+            cur.execute("ALTER TABLE tbl_gudang_fg ADD COLUMN notes TEXT DEFAULT NULL")
         cur.execute("SHOW COLUMNS FROM tbl_gudang_fg LIKE 'status'")
         status_col = cur.fetchone() or {}
         status_type = ""

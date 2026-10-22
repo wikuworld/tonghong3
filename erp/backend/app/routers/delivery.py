@@ -30,6 +30,7 @@ from app.schemas import (
     DeliveryDetailReturnIn,
     DeliveryDetailReturnOut,
     DeliveryDetailUpdate,
+    DeliveryFocIn,
     DeliveryFromPackingLinesIn,
     DeliveryHeaderCreate,
     DeliveryHeaderOut,
@@ -502,6 +503,34 @@ def list_delivery(
     )
     rows = list(db.scalars(stmt.limit(params.limit).offset(params.offset)).all())
     return page_dict(items=rows, total=total, params=params)
+
+
+@router.put("/delivery/{delivery_id}/foc", response_model=DeliveryHeaderOut)
+def set_delivery_foc(
+    delivery_id: int,
+    body: DeliveryFocIn,
+    db: Session = Depends(get_db),
+    user=Depends(require_roles("admin", "warehouse", "marketing")),
+) -> DeliveryHeader:
+    row = db.get(DeliveryHeader, delivery_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Delivery tidak ditemukan")
+    if delivery_header_is_deleted(row):
+        raise HTTPException(status_code=400, detail="Delivery sudah dihapus")
+    before = bool(getattr(row, "is_foc", False))
+    row.is_foc = bool(body.is_foc)
+    log_change(
+        db,
+        entity_type="delivery",
+        entity_id=int(row.id),
+        action="update",
+        before={"is_foc": before},
+        after={"is_foc": row.is_foc},
+        actor=user.username,
+    )
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 @router.put("/delivery/{delivery_id}", response_model=DeliveryHeaderOut)

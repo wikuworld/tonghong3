@@ -208,6 +208,7 @@ def _packing_line_row(
         "qty_roll": pkd.qty_roll if pkd and pkd.qty_roll is not None else None,
         "qty_pcs": pkd.qty_pcs if pkd and pkd.qty_pcs is not None else None,
         "weight_net": float(pkd.weight_net) if pkd and pkd.weight_net is not None else None,
+        "po_category": (ph.po_category or "").strip() if ph else "",
     }
 
 

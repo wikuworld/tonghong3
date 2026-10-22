@@ -1,4 +1,4 @@
-"""Stock WH outstanding = packing finished per lot/RPI, bukan packing_po.po_id + SJ."""
+"""Stock WH outstanding = packing finished/in_progress (qty>0) per lot/RPI."""
 
 from __future__ import annotations
 
@@ -10,6 +10,22 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from api_routes import _assign_stock_wh_from_finished_packings  # noqa: E402
+
+
+def _eligible_for_stock_wh(packings: list) -> list:
+    """Mirror SQL filter: finished|in_progress dengan total_ukuran > 0."""
+    out = []
+    for p in packings or []:
+        status = (p.get("status") or "").strip().lower()
+        if status not in ("finished", "in_progress"):
+            continue
+        try:
+            qty = float(p.get("total_ukuran") or 0)
+        except (TypeError, ValueError):
+            qty = 0.0
+        if qty > 0:
+            out.append(p)
+    return out
 
 
 def test_stock_wh_uses_rencana_item_not_wrong_packing_po():
@@ -43,11 +59,33 @@ def test_stock_wh_uses_rencana_item_not_wrong_packing_po():
     assert 70 not in out
 
 
-def test_stock_wh_ignores_in_progress_by_not_receiving_them():
-    packings = [{"id": 1, "rencana_item_id": 8, "total_ukuran": 120}]
+def test_stock_wh_includes_in_progress_with_qty():
+    packings = [
+        {
+            "id": 1,
+            "rencana_item_id": 8,
+            "total_ukuran": 120,
+            "status": "in_progress",
+        }
+    ]
+    eligible = _eligible_for_stock_wh(packings)
     alloc_rows = [{"item_id": 8, "po_id": 3, "source_detail_id": 11, "kode_lot_wip": "WIP-1"}]
-    out = _assign_stock_wh_from_finished_packings(packings, [], alloc_rows, [11])
+    out = _assign_stock_wh_from_finished_packings(eligible, [], alloc_rows, [11])
     assert out[11] == 120
+
+
+def test_stock_wh_skips_zero_qty_and_unknown_status():
+    packings = [
+        {"id": 1, "rencana_item_id": 8, "total_ukuran": 0, "status": "in_progress"},
+        {"id": 2, "rencana_item_id": 8, "total_ukuran": 50, "status": "draft"},
+        {"id": 3, "rencana_item_id": 8, "total_ukuran": 80, "status": "finished"},
+    ]
+    eligible = _eligible_for_stock_wh(packings)
+    assert len(eligible) == 1
+    assert eligible[0]["id"] == 3
+    alloc_rows = [{"item_id": 8, "po_id": 3, "source_detail_id": 11, "kode_lot_wip": "WIP-1"}]
+    out = _assign_stock_wh_from_finished_packings(eligible, [], alloc_rows, [11])
+    assert out[11] == 80
 
 
 def test_qty_wip_mutual_exclusive_with_stock_wh():

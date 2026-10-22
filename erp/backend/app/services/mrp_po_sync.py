@@ -15,7 +15,7 @@ from app.models import PoDetail, PoHeader
 
 log = logging.getLogger(__name__)
 
-_CANCELLED_STATUSES = frozenset({"cancelled", "canceled", "void"})
+_CANCELLED_STATUSES = frozenset({"cancelled", "void"})
 _SYNCABLE_STATUSES = frozenset({"confirmed", "production", "completed"})
 _PUSH_MAX_ATTEMPTS = 3
 _PUSH_RETRY_BACKOFF_SEC = 0.5

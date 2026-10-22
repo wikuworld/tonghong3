@@ -89,6 +89,11 @@ def _invpl_ctx():
 def test_sj_html_layout_keys():
     html = render_sj_html(_sj_ctx())
     assert "SURAT JALAN (DELIVERY SHEET)" in html
+    assert "(FOC)" not in html
+    foc = dict(_sj_ctx())
+    foc["is_foc"] = True
+    foc_html = render_sj_html(foc)
+    assert "SURAT JALAN (DELIVERY SHEET) (FOC)" in foc_html
     assert "DELIVERY TO:" in html
     assert "QTY (S/F)" in html
     assert "P.O. NO." in html
@@ -101,6 +106,9 @@ def test_sj_dotmatrix_and_pdf():
     ctx = _sj_ctx()
     dm = render_sj_dotmatrix_html(ctx)
     assert "SURAT JALAN (DELIVERY SHEET)" in dm
+    foc = dict(ctx)
+    foc["is_foc"] = True
+    assert "SURAT JALAN (DELIVERY SHEET) (FOC)" in render_sj_dotmatrix_html(foc)
     assert "ITEM" in dm
     assert "window.print()" in dm
     pdf = render_sj_pdf(ctx)

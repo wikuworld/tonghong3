@@ -75,6 +75,49 @@ def parse_mrp_alloc_row(item: dict[str, Any] | None) -> dict[str, str]:
     }
 
 
+class MrpAllocUnreachable(Exception):
+    """MRP tidak menjawab. Bukan bukti bahwa alokasi kosong."""
+
+
+def require_mrp_alloc_snapshot(
+    detail_ids: list[int],
+    *,
+    timeout: float = 4.0,
+) -> dict[int, dict[str, str]]:
+    """Alokasi per source_detail_id. Raise jika MRP tidak terjangkau atau balasan bukan list."""
+    ids = sorted({int(x) for x in detail_ids if x is not None})
+    if not ids:
+        return {}
+    csv = ",".join(str(i) for i in ids)
+    target = f"{_upstream_url()}/api/mrp/masters/po?source_detail_ids={csv}"
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            upstream = client.get(target)
+    except Exception as exc:
+        log.warning("mrp_po_alloc snapshot failed: %s", exc)
+        raise MrpAllocUnreachable("MRP tidak terjangkau") from exc
+    if upstream.status_code >= 400:
+        log.warning("mrp_po_alloc snapshot HTTP %s: %s", upstream.status_code, upstream.text[:200])
+        raise MrpAllocUnreachable(f"MRP menolak permintaan ({upstream.status_code})")
+    try:
+        data = upstream.json() if upstream.content else []
+    except Exception as exc:
+        raise MrpAllocUnreachable("Balasan MRP tidak dapat dibaca") from exc
+    if not isinstance(data, list):
+        raise MrpAllocUnreachable("Balasan MRP bukan daftar alokasi")
+    out: dict[int, dict[str, str]] = {}
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        sid = item.get("source_detail_id")
+        try:
+            sid_i = int(sid)
+        except (TypeError, ValueError):
+            continue
+        out[sid_i] = parse_mrp_alloc_row(item)
+    return out
+
+
 def fetch_mrp_alloc_by_detail_ids(
     detail_ids: list[int],
     *,

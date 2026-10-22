@@ -222,6 +222,18 @@
           <el-descriptions-item :label="t('pages.customers.fieldExportCustomer')" :span="1">
             {{ detailRow.is_export_customer ? t('common.yes') : t('common.no') }}
           </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.customers.fieldOutsideBanten')" :span="1">
+            {{ detailRow.outside_banten ? t('common.yes') : t('common.no') }}
+            <span v-if="detailRow.outside_banten && detailRow.outside_price_adjust != null">
+              ({{ modifierText(detailRow.outside_adjust_type, detailRow.outside_price_adjust) }})
+            </span>
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('pages.customers.fieldDiscountModifier')" :span="1">
+            {{ detailRow.discount_modifier_enabled ? t('common.yes') : t('common.no') }}
+            <span v-if="detailRow.discount_modifier_enabled && detailRow.discount_modifier != null">
+              ({{ modifierText(detailRow.discount_modifier_type, detailRow.discount_modifier) }})
+            </span>
+          </el-descriptions-item>
           <el-descriptions-item :label="t('pages.customers.fieldReferenceQuotation')" :span="1">
             {{ detailRow.reference_quotation || t('common.emptyValue') }}
           </el-descriptions-item>
@@ -517,6 +529,52 @@
           <el-col :xs="24">
             <el-form-item :label="t('pages.customers.fieldExportCustomer')">
               <el-switch v-model="formModel.is_export_customer" />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24">
+            <el-form-item :label="t('pages.customers.fieldOutsideBanten')">
+              <div class="customer-outside-row">
+                <el-switch v-model="formModel.outside_banten" />
+                <template v-if="formModel.outside_banten">
+                  <el-select v-model="formModel.outside_adjust_type" class="customer-modifier-type">
+                    <el-option value="nominal" :label="t('pages.customers.adjustAmount')" />
+                    <el-option value="percent" :label="t('pages.customers.adjustPercent')" />
+                  </el-select>
+                  <el-input-number
+                    v-model="formModel.outside_price_adjust"
+                    :step="0.01"
+                    :precision="4"
+                    :min="formModel.outside_adjust_type === 'percent' ? -100 : -999999"
+                    :max="formModel.outside_adjust_type === 'percent' ? 100 : 999999"
+                    :controls="false"
+                    :placeholder="t('pages.customers.outsidePriceAdjust')"
+                    class="customer-outside-adjust"
+                  />
+                </template>
+              </div>
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24">
+            <el-form-item :label="t('pages.customers.fieldDiscountModifier')">
+              <div class="customer-outside-row">
+                <el-switch v-model="formModel.discount_modifier_enabled" />
+                <template v-if="formModel.discount_modifier_enabled">
+                  <el-select v-model="formModel.discount_modifier_type" class="customer-modifier-type">
+                    <el-option value="nominal" :label="t('pages.customers.adjustAmount')" />
+                    <el-option value="percent" :label="t('pages.customers.adjustPercent')" />
+                  </el-select>
+                  <el-input-number
+                    v-model="formModel.discount_modifier"
+                    :step="0.01"
+                    :precision="4"
+                    :min="formModel.discount_modifier_type === 'percent' ? -100 : -999999"
+                    :max="formModel.discount_modifier_type === 'percent' ? 100 : 999999"
+                    :controls="false"
+                    :placeholder="t('pages.customers.fieldDiscountModifier')"
+                    class="customer-outside-adjust"
+                  />
+                </template>
+              </div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -827,6 +885,12 @@ const formModel = reactive({
   address: '',
   remark: '',
   is_export_customer: false,
+  outside_banten: false,
+  outside_price_adjust: null,
+  outside_adjust_type: 'nominal',
+  discount_modifier_enabled: false,
+  discount_modifier: null,
+  discount_modifier_type: 'nominal',
   is_active: true,
   wilayah_province_code: '',
   wilayah_regency_code: '',
@@ -844,6 +908,14 @@ const formRules = computed(() => ({
   name: [{ required: true, message: t('pages.customers.ruleName'), trigger: 'blur' }],
 }))
 
+function modifierText(type, value) {
+  if (value == null || value === '') return ''
+  const number = Number(value)
+  if (!Number.isFinite(number)) return ''
+  if (type === 'percent') return `${number}%`
+  return number.toFixed(4)
+}
+
 function resetFormModel() {
   formModel.id = null
   formModel.code = ''
@@ -856,6 +928,12 @@ function resetFormModel() {
   formModel.address = ''
   formModel.remark = ''
   formModel.is_export_customer = false
+  formModel.outside_banten = false
+  formModel.outside_price_adjust = null
+  formModel.outside_adjust_type = 'nominal'
+  formModel.discount_modifier_enabled = false
+  formModel.discount_modifier = null
+  formModel.discount_modifier_type = 'nominal'
   formModel.is_active = true
   formModel.wilayah_province_code = ''
   formModel.wilayah_regency_code = ''
@@ -1008,6 +1086,12 @@ async function openEdit(row) {
   formModel.address = row.address || ''
   formModel.remark = row.remark || ''
   formModel.is_export_customer = Boolean(row.is_export_customer)
+  formModel.outside_banten = Boolean(row.outside_banten)
+  formModel.outside_price_adjust = row.outside_price_adjust != null ? Number(row.outside_price_adjust) : null
+  formModel.outside_adjust_type = row.outside_adjust_type === 'percent' ? 'percent' : 'nominal'
+  formModel.discount_modifier_enabled = Boolean(row.discount_modifier_enabled)
+  formModel.discount_modifier = row.discount_modifier != null ? Number(row.discount_modifier) : null
+  formModel.discount_modifier_type = row.discount_modifier_type === 'percent' ? 'percent' : 'nominal'
   formModel.is_active = row.is_active !== false
   formModel.wilayah_province_code = row.wilayah_province_code || ''
   formModel.wilayah_regency_code = row.wilayah_regency_code || ''
@@ -1042,6 +1126,12 @@ async function submitForm() {
       address: formModel.address.trim() || undefined,
       remark: formModel.remark.trim() || undefined,
       is_export_customer: formModel.is_export_customer,
+      outside_banten: formModel.outside_banten,
+      outside_price_adjust: formModel.outside_price_adjust,
+      outside_adjust_type: formModel.outside_adjust_type,
+      discount_modifier_enabled: formModel.discount_modifier_enabled,
+      discount_modifier: formModel.discount_modifier,
+      discount_modifier_type: formModel.discount_modifier_type,
       is_active: formModel.is_active,
       wilayah_province_code: formModel.wilayah_province_code || undefined,
       wilayah_regency_code: formModel.wilayah_regency_code || undefined,
@@ -1103,6 +1193,21 @@ function confirmDelete(row) {
 </script>
 
 <style scoped>
+.customer-outside-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.customer-outside-adjust {
+  width: 160px;
+}
+
+.customer-modifier-type {
+  width: 120px;
+}
+
 .customer-inner-head {
   display: flex;
   align-items: flex-start;

@@ -934,6 +934,9 @@
                     {{ t('pages.po.specialPrice') }}
                   </el-checkbox>
                 </div>
+                <p v-if="w.formModel.is_special_price && w.formModel.list_unit_price != null" class="po-price-source">
+                  {{ t('pages.po.listPriceBasis', { price: Number(w.formModel.list_unit_price).toFixed(4) }) }}
+                </p>
                 <div v-if="w.formModel.is_special_price" class="mt-2 flex items-center gap-2">
                   <el-input-number
                     v-model="w.formModel.discount_value"
@@ -958,6 +961,16 @@
                     {{ addon.label }} {{ Number(addon.amount).toFixed(2) }}
                   </span>
                 </div>
+                <p v-if="w.previewPriceListTitle || w.previewPricePeriodStart" class="po-price-source">
+                  {{ t('pages.po.priceListSource', {
+                    title: w.previewPriceListTitle || '—',
+                    start: w.previewPricePeriodStart || '—',
+                    end: w.previewPricePeriodEnd || '—',
+                  }) }}
+                </p>
+                <p v-if="w.previewPriceBlock" class="po-price-source">
+                  {{ t('pages.po.priceBlockLabel', { block: w.previewPriceBlock }) }}
+                </p>
                 <div class="mt-1 flex items-center gap-2 flex-wrap">
                   <span v-if="w.previewResolvedUnitPrice != null" class="text-xs text-slate-500">
                     {{ t('pages.po.autoResolved') }}: {{ w.previewResolvedUnitPrice }}
@@ -1828,7 +1841,8 @@ onMounted(() => {
   justify-content: flex-end;
 }
 
-.po-price-addon-note {
+.po-price-addon-note,
+.po-price-source {
   width: 100%;
   margin: 0;
   font-size: 11px;

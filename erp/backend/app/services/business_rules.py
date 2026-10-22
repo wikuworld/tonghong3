@@ -16,6 +16,8 @@ _ALLOWED_PO: dict[str, set[str]] = {
     "confirmed": {"confirmed", "production", "completed"},
     "production": {"production", "completed", "confirmed"},
     "completed": {"completed"},
+    # Batal hanya lewat POST /po/{id}/cancel. PUT tidak boleh masuk atau keluar dari status ini.
+    "cancelled": {"cancelled"},
 }
 
 

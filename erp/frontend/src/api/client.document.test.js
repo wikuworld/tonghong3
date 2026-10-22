@@ -80,4 +80,28 @@ describe('fetchAuthenticatedDocument', () => {
     expect(init.body).toBeUndefined()
     expect(init.headers['Content-Type']).toBeUndefined()
   })
+
+  it('membuka tab sebelum fetch selesai', async () => {
+    let fetchStarted = false
+    const popup = { closed: false, location: { href: '' } }
+    const open = vi.fn(() => {
+      if (fetchStarted) throw new Error('tab dibuka setelah fetch')
+      return popup
+    })
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      fetchStarted = true
+      return {
+        ok: true,
+        blob: async () => new Blob(['<html></html>'], { type: 'text/html' }),
+        headers: { get: () => '' },
+      }
+    })
+    stubDownloadEnv(fetchMock)
+    vi.stubGlobal('window', { open })
+
+    await fetchAuthenticatedDocument('/documents/surat-jalan/13', { mode: 'open' })
+
+    expect(open).toHaveBeenCalledWith('about:blank', '_blank')
+    expect(popup.location.href).toBe('blob:pi')
+  })
 })

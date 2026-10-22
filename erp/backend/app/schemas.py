@@ -7,11 +7,38 @@ from decimal import Decimal
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 
 class ORMBase(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+
+def _normalize_customer_modifier_type(value):
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if text in {"", "none"}:
+        return None
+    if text in {"nominal", "amount", "usd"}:
+        return "nominal"
+    if text in {"percent", "percentage", "persen", "%"}:
+        return "percent"
+    raise ValueError("Jenis harus amount atau persen")
+
+
+def _check_customer_modifier_percent(model):
+    pairs = (
+        ("outside_adjust_type", "outside_price_adjust"),
+        ("discount_modifier_type", "discount_modifier"),
+    )
+    for type_name, value_name in pairs:
+        if getattr(model, type_name, None) != "percent":
+            continue
+        raw = getattr(model, value_name, None)
+        if raw is not None and (raw < -100 or raw > 100):
+            raise ValueError("Persen harus di antara -100 dan 100")
+    return model
 
 
 # --- Customers ---
@@ -48,6 +75,12 @@ class CustomerCreate(BaseModel):
     remark: Optional[str] = None
     is_active: bool = True
     is_export_customer: bool = False
+    outside_banten: bool = False
+    outside_price_adjust: Optional[Decimal] = None
+    outside_adjust_type: Optional[str] = None
+    discount_modifier_enabled: bool = False
+    discount_modifier: Optional[Decimal] = None
+    discount_modifier_type: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
@@ -57,6 +90,15 @@ class CustomerCreate(BaseModel):
     tax_mode: Optional[str] = None
     reference_quotation: Optional[str] = None
     contacts: list[CustomerContactIn] = Field(default_factory=list)
+
+    @field_validator("outside_adjust_type", "discount_modifier_type", mode="before")
+    @classmethod
+    def _normalize_create_modifier_type(cls, value):
+        return _normalize_customer_modifier_type(value)
+
+    @model_validator(mode="after")
+    def _create_modifier_percent_range(self):
+        return _check_customer_modifier_percent(self)
 
 
 class CustomerUpdate(BaseModel):
@@ -76,6 +118,12 @@ class CustomerUpdate(BaseModel):
     remark: Optional[str] = None
     is_active: Optional[bool] = None
     is_export_customer: Optional[bool] = None
+    outside_banten: Optional[bool] = None
+    outside_price_adjust: Optional[Decimal] = None
+    outside_adjust_type: Optional[str] = None
+    discount_modifier_enabled: Optional[bool] = None
+    discount_modifier: Optional[Decimal] = None
+    discount_modifier_type: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
@@ -85,6 +133,15 @@ class CustomerUpdate(BaseModel):
     tax_mode: Optional[str] = None
     reference_quotation: Optional[str] = None
     contacts: Optional[list[CustomerContactIn]] = None
+
+    @field_validator("outside_adjust_type", "discount_modifier_type", mode="before")
+    @classmethod
+    def _normalize_update_modifier_type(cls, value):
+        return _normalize_customer_modifier_type(value)
+
+    @model_validator(mode="after")
+    def _update_modifier_percent_range(self):
+        return _check_customer_modifier_percent(self)
 
 
 class CustomerOut(ORMBase):
@@ -105,6 +162,12 @@ class CustomerOut(ORMBase):
     remark: Optional[str] = None
     is_active: bool = True
     is_export_customer: bool = False
+    outside_banten: bool = False
+    outside_price_adjust: Optional[Decimal] = None
+    outside_adjust_type: Optional[str] = None
+    discount_modifier_enabled: bool = False
+    discount_modifier: Optional[Decimal] = None
+    discount_modifier_type: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
@@ -194,6 +257,10 @@ class BuyerPriceResolveOut(BaseModel):
     price_column: Optional[str] = None
     score: int = 0
     detail: str = ""
+    list_title: Optional[str] = None
+    period_start: Optional[date] = None
+    period_end: Optional[date] = None
+    price_block: Optional[str] = None
 
 
 # --- Customs (AJU) ---
@@ -318,6 +385,18 @@ class PoHeaderUpdate(BaseModel):
         return out
 
 
+class PoCancelIn(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_required(cls, value: str) -> str:
+        text = (value or "").strip()
+        if not text:
+            raise ValueError("Alasan batal wajib diisi")
+        return text
+
+
 class PoDetailCreate(BaseModel):
     master_item_id: Optional[int] = None
     thi_line_ref: Optional[str] = None
@@ -345,6 +424,10 @@ class PoDetailCreate(BaseModel):
     detail_remark: Optional[str] = None
     marketing_outstanding_remark: Optional[str] = None
     unit_price: Optional[Decimal] = None
+    is_special_price: bool = False
+    discount_type: Optional[str] = None
+    discount_value: Optional[Decimal] = None
+    list_unit_price: Optional[Decimal] = None
     copied_from_detail_id: Optional[int] = None
     color_swatch_recipe_id: Optional[int] = None
     delivery_schedules: Optional[list["DeliveryScheduleItem"]] = None
@@ -401,6 +484,10 @@ class PoDetailUpdate(BaseModel):
     detail_remark: Optional[str] = None
     marketing_outstanding_remark: Optional[str] = None
     unit_price: Optional[Decimal] = None
+    is_special_price: Optional[bool] = None
+    discount_type: Optional[str] = None
+    discount_value: Optional[Decimal] = None
+    list_unit_price: Optional[Decimal] = None
     copied_from_detail_id: Optional[int] = None
     color_swatch_recipe_id: Optional[int] = None
 
@@ -434,6 +521,9 @@ class PoHeaderOut(ORMBase):
     order_date: Optional[date] = None
     etd: Optional[date] = None
     status: Optional[str] = None
+    cancel_reason: Optional[str] = None
+    cancelled_at: Optional[datetime] = None
+    cancelled_by: Optional[str] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     billing_address: Optional[str] = None
@@ -724,6 +814,7 @@ class MarketingDeliveryLineOut(BaseModel):
     packing_status: Optional[str] = None
     invpl_printed: Optional[bool] = None
     delivery_zone: Optional[str] = None
+    is_foc: bool = False
     source_mrp: Optional[bool] = None
 
 
@@ -825,6 +916,10 @@ class PoDetailOut(ORMBase):
     detail_remark: Optional[str] = None
     marketing_outstanding_remark: Optional[str] = None
     unit_price: Optional[Decimal] = None
+    is_special_price: bool = False
+    discount_type: Optional[str] = None
+    discount_value: Optional[Decimal] = None
+    list_unit_price: Optional[Decimal] = None
     copied_from_detail_id: Optional[int] = None
     color_swatch_recipe_id: Optional[int] = None
     delivery_schedules: list[PoDetailDeliveryOut] = Field(default_factory=list)
@@ -1012,6 +1107,7 @@ class DeliveryHeaderCreate(BaseModel):
     status: str = "draft"
     delivery_zone: Optional[str] = None
     delivery_type: Optional[str] = None
+    is_foc: bool = False
 
 
 class DeliveryCancelIn(BaseModel):
@@ -1043,6 +1139,11 @@ class DeliveryHeaderUpdate(BaseModel):
     packing_id: Optional[int] = None
     delivery_zone: Optional[str] = None
     delivery_type: Optional[str] = None
+    is_foc: Optional[bool] = None
+
+
+class DeliveryFocIn(BaseModel):
+    is_foc: bool
 
 
 class DeliveryScanOutIn(BaseModel):
@@ -1094,6 +1195,7 @@ class DeliveryHeaderOut(ORMBase):
     surat_jalan_printed_at: Optional[datetime] = None
     delivery_zone: Optional[str] = None
     delivery_type: Optional[str] = None
+    is_foc: bool = False
     customs_declaration_id: Optional[int] = None
     mrp_fg_id: Optional[int] = None
     cancel_reason: Optional[str] = None
@@ -1248,6 +1350,7 @@ class ReadyToShipLineOut(BaseModel):
     qty_roll: Optional[int] = None
     qty_pcs: Optional[int] = None
     weight_net: Optional[float] = None
+    po_category: Optional[str] = None
 
 
 class DeliveryFromPackingLineIn(BaseModel):

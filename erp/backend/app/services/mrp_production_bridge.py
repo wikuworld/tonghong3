@@ -65,7 +65,7 @@ def upsert_production_mirror(
     ph = db.get(PoHeader, pod.po_id) if pod.po_id else None
     if not ph:
         raise HTTPException(status_code=400, detail="PO header tidak ditemukan")
-    if (ph.status or "").lower() in {"cancelled", "canceled", "void"}:
+    if (ph.status or "").lower() in {"cancelled", "void"}:
         raise HTTPException(status_code=400, detail=f"PO {ph.po_number} berstatus {ph.status}")
 
     existing_pd = db.scalars(

@@ -48,10 +48,17 @@ COMPANY_BLOCK = (
 INVPL_DESC_DEFAULT = "DESCRIPTION: SHOE MAKING MATERIAL (COW LEATHER)"
 INVPL_TITLE = "INVOICE PACKING LIST"
 INVPL_TITLE_FOC = "INVOICE PACKING LIST (FOC)"
+SJ_TITLE = "SURAT JALAN (DELIVERY SHEET)"
+SJ_TITLE_FOC = "SURAT JALAN (DELIVERY SHEET) (FOC)"
 
 
 def invpl_document_title(*, foc: bool = False) -> str:
     return INVPL_TITLE_FOC if foc else INVPL_TITLE
+
+
+def sj_document_title(ctx: dict[str, Any] | None = None, *, foc: bool = False) -> str:
+    on = foc or bool((ctx or {}).get("is_foc"))
+    return SJ_TITLE_FOC if on else SJ_TITLE
 
 
 def apply_invpl_foc_title(ctx: dict[str, Any], foc: bool = False) -> dict[str, Any]:
@@ -230,8 +237,9 @@ def _pod_chain_from_delivery_detail(db: Session, dd: DeliveryDetail):
 
 
 def sj_po_no_from_header(poh: PoHeader | None) -> str:
-    """P.O. NO. di Surat Jalan = No. PO Customer yang diketik saat input SO.
+    """P.O. NO. di Surat Jalan / INVPL = No. PO Customer (bukan No. SO).
 
+    Hanya mapping cetak; tidak mengubah po_customer_ref / po_number di DB.
     Fallback ke nomor SO internal hanya jika PO Customer kosong (data lama).
     """
     if not poh:
@@ -260,7 +268,8 @@ def _invpl_line_dict(
     amount: Decimal | None = None
     if unit_price is not None:
         amount = (qty * unit_price).quantize(Decimal("0.01"))
-    po_no = (poh.po_number or "").strip() if poh else ""
+    # Sama seperti Surat Jalan: kolom PO NO ← po_customer_ref.
+    po_no = sj_po_no_from_header(poh)
     exim = ""
     if is_export and master and (master.exim_material_code or "").strip():
         exim = master.exim_material_code.strip()
@@ -359,7 +368,7 @@ def gather_invpl_rows(
             pcs = dd.qty_pcs
             nw = dd.weight
             gw = nw
-            po_no = (poh.po_number or "").strip() if poh else ""
+            po_no = sj_po_no_from_header(poh)
             remark_line = po_no
             if i - 1 < len(inv_details):
                 idet = inv_details[i - 1]
@@ -424,7 +433,7 @@ def gather_invpl_rows(
             pcs = dd.qty_pcs if dd else None
             nw = dd.weight if dd and dd.weight is not None else None
             gw = nw
-            po_no = (poh.po_number or "").strip() if poh else ""
+            po_no = sj_po_no_from_header(poh)
             remark_line = po_no
             if i - 1 < len(inv_details):
                 idet = inv_details[i - 1]
@@ -1021,6 +1030,7 @@ def gather_sj_rows(db: Session, delivery_id: int) -> dict[str, Any]:
         "lines": lines_out,
         "totals": {"qty": t_qty, "rolls": t_roll, "pcs": t_pcs},
         "is_export": bool(cust and cust.is_export_customer),
+        "is_foc": bool(getattr(dh, "is_foc", False)),
     }
 
 
@@ -1125,7 +1135,7 @@ def render_sj_html(ctx: dict[str, Any]) -> str:
     body = f"""
 <div class="doc">
   <div class="company"><b>{company}</b></div>
-  <h2 class="title">SURAT JALAN (DELIVERY SHEET)</h2>
+  <h2 class="title">{escape(sj_document_title(ctx))}</h2>
   {export_note}
   {_sj_meta_html(ctx)}
   <table class="grid">{_SJ_TABLE_HEAD}<tbody>{_sj_body_rows(ctx)}</tbody></table>
@@ -1160,7 +1170,7 @@ def render_sj_html(ctx: dict[str, Any]) -> str:
     @media print { body { margin: 8px; } .doc { border: none; padding: 0; } }
     """
     return f"""<!DOCTYPE html>
-<html lang="id"><head><meta charset="utf-8"/><title>Surat Jalan</title>
+<html lang="id"><head><meta charset="utf-8"/><title>{escape(sj_document_title(ctx))}</title>
 <style>{style}</style></head><body>{body}</body></html>"""
 
 
@@ -1181,7 +1191,7 @@ def render_sj_pdf(ctx: dict[str, Any]) -> bytes:
     story: list[Any] = []
     for line in COMPANY_BLOCK:
         story.append(Paragraph(f"<b>{escape(line)}</b>", center))
-    story.append(Paragraph("SURAT JALAN (DELIVERY SHEET)", title))
+    story.append(Paragraph(escape(sj_document_title(ctx)), title))
 
     left = (
         f"<b>DELIVERY TO:</b> {escape(ctx['customer_name'])}<br/>"
@@ -1312,7 +1322,7 @@ def render_sj_dotmatrix_html(ctx: dict[str, Any]) -> str:
     body = f"""
 <div class="doc">
   <div class="company"><b>{company}</b></div>
-  <h2 class="title">SURAT JALAN (DELIVERY SHEET)</h2>
+  <h2 class="title">{escape(sj_document_title(ctx))}</h2>
   {_sj_meta_html(ctx)}
   <table class="grid">{_SJ_TABLE_HEAD}<tbody>{_sj_body_rows(ctx, min_rows=10)}</tbody></table>
   {_sign4_html(compact=True)}

@@ -47,6 +47,20 @@ class Customer(Base):
     remark: Mapped[Optional[str]] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_export_customer: Mapped[bool] = mapped_column(Boolean, default=False)
+    outside_banten: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    outside_price_adjust: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(14, 4), nullable=True
+    )
+    outside_adjust_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    discount_modifier_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    discount_modifier: Mapped[Optional[Decimal]] = mapped_column(
+        Numeric(14, 4), nullable=True
+    )
+    discount_modifier_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     payment_terms: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     default_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
     tax_mode: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
@@ -533,6 +547,9 @@ class PoHeader(Base):
     order_date: Mapped[Optional[date]] = mapped_column(Date)
     etd: Mapped[Optional[date]] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(32), default="draft")
+    cancel_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    cancelled_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(
         TIMESTAMP, server_default=func.current_timestamp()
     )
@@ -611,6 +628,12 @@ class PoDetail(Base):
     detail_remark: Mapped[Optional[str]] = mapped_column(Text)
     marketing_outstanding_remark: Mapped[Optional[str]] = mapped_column(Text)
     unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    is_special_price: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    discount_type: Mapped[Optional[str]] = mapped_column(String(20))
+    discount_value: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    list_unit_price: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
     copied_from_detail_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     color_swatch_recipe_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("color_swatch_recipes.id", ondelete="SET NULL")
@@ -802,6 +825,7 @@ class DeliveryHeader(Base):
     delivery_zone: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     # production / sample / return / subcont / claim — terpisah dari teks destination/remark
     delivery_type: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    is_foc: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     cancel_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     cancelled_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

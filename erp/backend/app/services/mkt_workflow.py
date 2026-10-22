@@ -747,6 +747,8 @@ def validate_mkt_advance(
     row = db.get(PoHeader, po_id)
     if not row:
         raise HTTPException(status_code=404, detail="PO tidak ditemukan")
+    if (row.status or "").strip().lower() == "cancelled":
+        raise HTTPException(status_code=400, detail="SO dibatalkan tidak dapat naik tahap marketing")
 
     cur = normalize_mkt_stage(row.mkt_workflow_stage)
     nxt = next_mkt_stage(cur)

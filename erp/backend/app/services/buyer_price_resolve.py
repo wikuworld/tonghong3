@@ -14,6 +14,7 @@ from app.services.buyer_price_aliases import (
     emboss_is_special,
     extract_emboss_tokens,
     infer_price_block,
+    customer_price_rules,
     is_outside_banten_factory,
     normalize_material_alias,
     split_material_and_thickness,
@@ -227,6 +228,45 @@ def _score_row(
     return s
 
 
+def _optional_text(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
+
+
+def _price_source(lst: Any | None, price_block: str | None) -> dict[str, Any]:
+    """Keterangan list dan blok. Bukan bagian harga yang disimpan di baris SO."""
+    start = getattr(lst, "period_start", None) if lst is not None else None
+    end = getattr(lst, "period_end", None) if lst is not None else None
+    title = None
+    if lst is not None:
+        title = _optional_text(getattr(lst, "title", None)) or _optional_text(
+            getattr(lst, "period_label", None)
+        )
+    return {
+        "list_title": title,
+        "period_start": start if isinstance(start, date) else None,
+        "period_end": end if isinstance(end, date) else None,
+        "price_block": price_block,
+    }
+
+
+def _apply_customer_modifier(unit: Decimal, rule: dict, *, subtract: bool) -> tuple[Decimal, Decimal]:
+    """Amount ditambah atau dikurangi. Persen dihitung dari harga saat ini."""
+    kind = rule.get("type")
+    value = Decimal(str(rule.get("value")))
+    if kind == "percent":
+        if value < -100 or value > 100:
+            return unit, Decimal(0)
+        delta = (unit * value / Decimal(100)).quantize(Decimal("0.0001"))
+    else:
+        delta = value.quantize(Decimal("0.0001"))
+    if subtract:
+        delta = -delta
+    return (unit + delta).quantize(Decimal("0.0001")), delta
+
+
 def resolve_unit_price_for_buyer(
     db: Session,
     buyer_code: str,
@@ -268,6 +308,10 @@ def resolve_unit_price_for_buyer(
     if not keys and rows:
         keys = list(rows[0].keys())
 
+    outside = is_outside_banten_factory(db, factory_code)
+    wanted_block = infer_price_block(emboss=emboss, outside_banten=outside)
+    source = _price_source(lst, wanted_block)
+
     price_keys = _collect_price_keys(keys)
     pk_set = set(price_keys)
     if not price_keys:
@@ -277,11 +321,10 @@ def resolve_unit_price_for_buyer(
             "price_column": None,
             "score": 0,
             "detail": "Kolom harga tidak ditemukan di list buyer - import data gagal atau kolom tidak terdefinisi",
+            **source,
         }
 
     price_col = _pick_price_column(price_keys, color_family)
-    outside = is_outside_banten_factory(db, factory_code)
-    wanted_block = infer_price_block(emboss=emboss, outside_banten=outside)
     best_row: dict[str, Any] | None = None
     best_score = 0
     for row in rows:
@@ -309,6 +352,7 @@ def resolve_unit_price_for_buyer(
             "price_column": price_col,
             "score": 0,
             "detail": f"Tidak ada baris yang cocok untuk material '{material_name or '-'}' dengan kriteria yang diberikan - cek nama material atau thickness",
+            **source,
         }
 
     normalized_keys = {str(k).strip().upper(): str(k).strip() for k in keys}
@@ -372,7 +416,20 @@ def resolve_unit_price_for_buyer(
             "price_column": chosen_col,
             "score": best_score,
             "detail": "Baris ditemukan tapi sel harga kosong - harga belum diinput untuk item ini",
+            **source,
         }
+
+    rules = customer_price_rules(db, factory_code)
+    outside = rules.get("outside")
+    if outside:
+        unit, delta = _apply_customer_modifier(unit, outside, subtract=False)
+        if delta:
+            addons.append({"key": "OUTSIDE ADJUST", "label": "+ OUTSIDE", "amount": delta})
+    discount = rules.get("discount")
+    if discount:
+        unit, delta = _apply_customer_modifier(unit, discount, subtract=True)
+        if delta:
+            addons.append({"key": "DISCOUNT MODIFIER", "label": "- DISKON", "amount": delta})
 
     return {
         "unit_price": unit,
@@ -382,4 +439,5 @@ def resolve_unit_price_for_buyer(
         "price_column": chosen_col,
         "score": best_score,
         "detail": "ok",
+        **source,
     }

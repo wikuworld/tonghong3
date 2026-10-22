@@ -67,6 +67,7 @@
         </div>
       </div>
 
+      <p class="text-xs text-slate-500 mb-2">{{ t('pages.mrpGudangFg.scrollHint') }}</p>
       <el-table
         :data="rows"
         v-loading="loading"
@@ -77,23 +78,64 @@
         class="admin-table"
         :empty-text="t('common.tableEmpty')"
       >
-        <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" />
+        <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" fixed />
         <el-table-column
           prop="kode_packing" sortable="custom"
           :label="t('pages.mrpPacking.kodePacking')"
-          min-width="140"
+          min-width="130"
           show-overflow-tooltip
+          fixed
         />
-        <el-table-column prop="kode_wip" label="WIP" min-width="120" show-overflow-tooltip />
+        <el-table-column :label="t('common.lotNo')" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.lot_no) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpRencana.soRef')" min-width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.no_so) }}</template>
+        </el-table-column>
         <el-table-column :label="t('common.customer')" min-width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ dash(row.customer) }}</template>
         </el-table-column>
-        <el-table-column :label="t('pages.mrpPacking.pieces')" width="90" align="right">
-          <template #default="{ row }">{{ formatQty(row.total_lembar) }}</template>
+        <el-table-column :label="t('pages.mrpGudangFg.colThickness')" min-width="90" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.thickness) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpGudangFg.colMaterial')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.material_name) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpGudangFg.colEmboss')" min-width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.emboss) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpGudangFg.colColor')" min-width="100" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.color) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpGudangFg.colItemCode')" min-width="110" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.kode_barang) }}</template>
         </el-table-column>
         <el-table-column :label="t('pages.mrpPacking.quantity')" width="100" align="right">
           <template #default="{ row }">{{ formatQty(row.total_ukuran) }}</template>
         </el-table-column>
+        <el-table-column :label="t('pages.mrpGudangFg.colRoll')" width="72" align="right">
+          <template #default="{ row }">{{ formatQty(row.roll_count) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpPacking.pieces')" width="80" align="right">
+          <template #default="{ row }">{{ formatQty(row.total_lembar) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpGudangFg.dateIn')" width="110">
+          <template #default="{ row }">{{ formatDate(row.date_in) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('common.notes')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-button
+              v-if="canUpdate"
+              link
+              type="primary"
+              @click="openNotes(row)"
+            >
+              {{ dash(row.notes) }}
+            </el-button>
+            <span v-else>{{ dash(row.notes) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="kode_wip" label="WIP" min-width="120" show-overflow-tooltip />
         <el-table-column :label="t('common.status')" width="150" align="center">
           <template #default="{ row }">
             <div class="flex flex-col items-center gap-1">
@@ -106,7 +148,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column :label="t('pages.mrpGudangFg.erpDelivery')" min-width="170">
+        <el-table-column :label="t('pages.mrpGudangFg.erpDelivery')" min-width="150">
           <template #default="{ row }">
             <el-button
               v-if="row.erp_delivery_id"
@@ -128,10 +170,7 @@
             <span v-else class="text-gray-400">—</span>
           </template>
         </el-table-column>
-        <el-table-column :label="t('pages.mrpGudangFg.dateIn')" width="120">
-          <template #default="{ row }">{{ formatDate(row.date_in) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpGudangFg.dateOut')" width="120">
+        <el-table-column :label="t('pages.mrpGudangFg.dateOut')" width="110">
           <template #default="{ row }">{{ formatDate(row.date_out) }}</template>
         </el-table-column>
         <el-table-column :label="t('common.actions')" width="140" align="center" fixed="right">
@@ -330,8 +369,36 @@
             <span>{{ dash(detail.fg.kode_wip) }}</span>
           </div>
           <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('common.lotNo') }}</span>
+            <span>{{ dash(detail.fg.lot_no) }}</span>
+          </div>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpRencana.soRef') }}</span>
+            <span>{{ dash(detail.fg.no_so) }}</span>
+          </div>
+          <div class="mrp-fg-meta__item">
             <span class="mrp-fg-meta__label">{{ t('common.customer') }}</span>
             <span>{{ dash(detail.fg.customer) }}</span>
+          </div>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.colThickness') }}</span>
+            <span>{{ dash(detail.fg.thickness) }}</span>
+          </div>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.colMaterial') }}</span>
+            <span>{{ dash(detail.fg.material_name) }}</span>
+          </div>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.colEmboss') }}</span>
+            <span>{{ dash(detail.fg.emboss) }}</span>
+          </div>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.colColor') }}</span>
+            <span>{{ dash(detail.fg.color) }}</span>
+          </div>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.colItemCode') }}</span>
+            <span>{{ dash(detail.fg.kode_barang) }}</span>
           </div>
           <div class="mrp-fg-meta__item">
             <span class="mrp-fg-meta__label">{{ t('common.status') }}</span>
@@ -342,6 +409,10 @@
           <div class="mrp-fg-meta__item">
             <span class="mrp-fg-meta__label">{{ t('pages.mrpPacking.pieces') }} / {{ t('pages.mrpGudangFg.qtyActual') }}</span>
             <span>{{ formatQty(detail.fg.total_lembar) }} / {{ formatQty(detail.fg.total_ukuran) }}</span>
+          </div>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.colRoll') }}</span>
+            <span>{{ formatQty(detail.fg.roll_count) }}</span>
           </div>
           <div class="mrp-fg-meta__item">
             <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.qtyAlloc') }}</span>
@@ -357,6 +428,10 @@
             <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.dateIn') }}</span>
             <span>{{ formatDateTime(detail.fg.date_in) }}</span>
           </div>
+          <div class="mrp-fg-meta__item">
+            <span class="mrp-fg-meta__label">{{ t('common.notes') }}</span>
+            <span>{{ dash(detail.fg.notes) }}</span>
+          </div>
           <div v-if="detail.fg.date_out" class="mrp-fg-meta__item">
             <span class="mrp-fg-meta__label">{{ t('pages.mrpGudangFg.dateOut') }}</span>
             <span>{{ formatDateTime(detail.fg.date_out) }} — {{ dash(detail.fg.keterangan_out) }}</span>
@@ -369,25 +444,30 @@
           </div>
         </div>
 
-        <div v-if="canUpdate && detail.fg.status === 'in_stock'" class="mb-4 flex gap-2 flex-wrap">
-          <el-button
-            v-if="detail.fg.packing_id"
-            type="warning"
-            size="small"
-            @click="goEdit(detail.fg)"
-          >
-            {{ t('common.edit') }}
+        <div v-if="canUpdate" class="mb-4 flex gap-2 flex-wrap">
+          <el-button size="small" @click="openNotes(detail.fg)">
+            {{ t('pages.mrpGudangFg.editNotes') }}
           </el-button>
-          <el-button type="danger" size="small" :loading="outing" @click="outFromDetail">
-            {{ t('pages.mrpGudangFg.outBtn') }}
-          </el-button>
-          <el-button
-            v-if="canRepackFg(detail.fg, detail.packing?.status)"
-            size="small"
-            @click="openRepack(detail.fg, detail.packing?.status)"
-          >
-            {{ t('pages.mrpGudangFg.repack') }}
-          </el-button>
+          <template v-if="detail.fg.status === 'in_stock'">
+            <el-button
+              v-if="detail.fg.packing_id"
+              type="warning"
+              size="small"
+              @click="goEdit(detail.fg)"
+            >
+              {{ t('common.edit') }}
+            </el-button>
+            <el-button type="danger" size="small" :loading="outing" @click="outFromDetail">
+              {{ t('pages.mrpGudangFg.outBtn') }}
+            </el-button>
+            <el-button
+              v-if="canRepackFg(detail.fg, detail.packing?.status)"
+              size="small"
+              @click="openRepack(detail.fg, detail.packing?.status)"
+            >
+              {{ t('pages.mrpGudangFg.repack') }}
+            </el-button>
+          </template>
         </div>
 
         <h4 class="mb-2 font-semibold">{{ t('pages.mrpPacking.rolls') }}</h4>
@@ -438,6 +518,28 @@
     </el-drawer>
 
     <el-dialog
+      v-model="notesOpen"
+      :title="t('pages.mrpGudangFg.notesDialogTitle', { kode: notesKode })"
+      width="480px"
+      destroy-on-close
+      append-to-body
+    >
+      <p class="text-sm text-slate-500 mt-0 mb-3">{{ t('pages.mrpGudangFg.notesHint') }}</p>
+      <el-input
+        v-model="notesDraft"
+        type="textarea"
+        :rows="4"
+        maxlength="2000"
+        show-word-limit
+        :placeholder="t('common.notes')"
+      />
+      <template #footer>
+        <el-button @click="notesOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="notesSaving" @click="saveNotes">{{ t('common.save') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
       v-model="repackOpen"
       :title="t('pages.mrpGudangFg.repackTitle', { kode: repackKode })"
       width="520px"
@@ -478,6 +580,7 @@ import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
 import { can } from '../../../security/permissions'
 import {
   mrpGetGudangFg,
+  mrpGudangFgNotes,
   mrpGudangFgOut,
   mrpGudangFgRepack,
   mrpGudangFgSuratJalan,
@@ -496,6 +599,11 @@ const repackSaving = ref(false)
 const repackId = ref(null)
 const repackKode = ref('')
 const repackLines = ref([{ lembar: '', ukuran: '' }])
+const notesOpen = ref(false)
+const notesSaving = ref(false)
+const notesId = ref(null)
+const notesKode = ref('')
+const notesDraft = ref('')
 const rows = ref([])
 const page = ref(1)
 const pageSize = ref(20)
@@ -557,6 +665,14 @@ const filteredRows = computed(() => {
       r.erp_delivery_number,
       r.bridge_status,
       r.bridge_error,
+      r.lot_no,
+      r.no_so,
+      r.material_name,
+      r.emboss,
+      r.color,
+      r.thickness,
+      r.kode_barang,
+      r.notes,
     ]
       .filter(Boolean)
       .join(' ')
@@ -706,6 +822,40 @@ function fillOut(row) {
   outForm.kode_packing = row?.kode_packing || ''
   if (row?.bridge_error) {
     ElMessage.warning(row.bridge_error)
+  }
+}
+
+function openNotes(row) {
+  if (!row?.id) return
+  notesId.value = row.id
+  notesKode.value = row.kode_packing || String(row.id)
+  notesDraft.value = row.notes || ''
+  notesOpen.value = true
+}
+
+async function saveNotes() {
+  if (notesId.value == null) return
+  notesSaving.value = true
+  try {
+    const res = await mrpGudangFgNotes(notesId.value, notesDraft.value)
+    const fg = res?.fg || {}
+    const idx = (rows.value || []).findIndex((r) => Number(r.id) === Number(notesId.value))
+    const savedNotes = fg.notes != null ? fg.notes : (notesDraft.value.trim() || null)
+    if (idx >= 0) {
+      rows.value[idx] = { ...rows.value[idx], ...fg, notes: savedNotes }
+    }
+    if (detail.value?.fg?.id === notesId.value) {
+      detail.value = {
+        ...detail.value,
+        fg: { ...detail.value.fg, ...fg, notes: savedNotes },
+      }
+    }
+    ElMessage.success(t('pages.mrpGudangFg.notesSaved'))
+    notesOpen.value = false
+  } catch (e) {
+    ElMessage.error(errMsg(e))
+  } finally {
+    notesSaving.value = false
   }
 }
 

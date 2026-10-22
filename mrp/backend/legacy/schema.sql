@@ -435,7 +435,8 @@ CREATE TABLE IF NOT EXISTS tbl_gudang_fg (
     date_in DATETIME DEFAULT CURRENT_TIMESTAMP,
     date_out DATETIME DEFAULT NULL,
     keterangan_out VARCHAR(255) DEFAULT NULL,
-    repacked_from_id INT DEFAULT NULL
+    repacked_from_id INT DEFAULT NULL,
+    notes TEXT DEFAULT NULL
 );
 
 CREATE TABLE IF NOT EXISTS tbl_persiapan_ky (

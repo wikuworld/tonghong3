@@ -147,7 +147,9 @@ def list_buyer_prices(
     page_size: Optional[int] = Query(None, ge=1, le=200),
     limit: Optional[int] = Query(None, ge=1, le=1000),
     offset: Optional[int] = Query(None, ge=0),
-    sort_by: Optional[str] = Query(None, description="id|buyer_code|title|period_label|currency"),
+    sort_by: Optional[str] = Query(
+        None, description="id|buyer_code|title|period_label|period_start|period_end|currency"
+    ),
     sort_dir: Optional[str] = Query(None),
     q: Optional[str] = Query(None, description="Cari buyer_code/title/period"),
     db: Session = Depends(get_db),
@@ -184,6 +186,8 @@ def list_buyer_prices(
             "brand_name": Brand.name,
             "title": BuyerPriceList.title,
             "period_label": BuyerPriceList.period_label,
+            "period_start": BuyerPriceList.period_start,
+            "period_end": BuyerPriceList.period_end,
             "currency": BuyerPriceList.currency,
         },
         sort_by=params.sort_by,

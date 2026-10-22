@@ -336,6 +336,7 @@ const formModel = reactive({
   is_special_price: false,
   discount_type: 'percent',
   discount_value: 0,
+  list_unit_price: null,
 })
 
 const {
@@ -353,6 +354,24 @@ const previewResolvedUnitPrice = ref(null)
 const previewPriceBase = ref(null)
 const previewPriceDetail = ref('')
 const previewPriceAddons = ref([])
+const previewPriceListTitle = ref('')
+const previewPricePeriodStart = ref('')
+const previewPricePeriodEnd = ref('')
+const previewPriceBlock = ref('')
+
+function clearPriceSource() {
+  previewPriceListTitle.value = ''
+  previewPricePeriodStart.value = ''
+  previewPricePeriodEnd.value = ''
+  previewPriceBlock.value = ''
+}
+
+function applyPriceSource(payload) {
+  previewPriceListTitle.value = payload?.list_title ? String(payload.list_title) : ''
+  previewPricePeriodStart.value = payload?.period_start ? String(payload.period_start).slice(0, 10) : ''
+  previewPricePeriodEnd.value = payload?.period_end ? String(payload.period_end).slice(0, 10) : ''
+  previewPriceBlock.value = payload?.price_block ? String(payload.price_block) : ''
+}
 const fluorescentColorOptions = ref([])
 const colorSwatchOptions = ref([])
 const colorSwatchLoading = ref(false)
@@ -432,6 +451,13 @@ async function applyLineToForm(line) {
   formModel.detail_remark = line.detail_remark || ''
   formModel.thi_line_ref = line.thi_line_ref || ''
   formModel.unit_price_input = line.unit_price != null ? Number(line.unit_price) : null
+  formModel.is_special_price = Boolean(line.is_special_price)
+  formModel.discount_type = line.discount_type || 'percent'
+  formModel.discount_value = Number(line.discount_value || 0)
+  formModel.list_unit_price = line.list_unit_price != null ? Number(line.list_unit_price) : null
+  if (formModel.is_special_price && formModel.list_unit_price != null) {
+    previewResolvedUnitPrice.value = formModel.list_unit_price
+  }
   selectedColorWindowId.value = null
   selectedSwatchId.value = line.color_swatch_recipe_id ?? null
   clearBackingForSuede()
@@ -531,6 +557,10 @@ function resetCurrentLineForm() {
   formModel.detail_remark = ''
   formModel.thi_line_ref = ''
   formModel.unit_price_input = null
+  formModel.is_special_price = false
+  formModel.discount_type = 'percent'
+  formModel.discount_value = 0
+  formModel.list_unit_price = null
   selectedSwatchId.value = null
   clearEtdScheduleRows()
   resetMaterialFieldOverride()
@@ -591,6 +621,7 @@ async function fetchResolvedUnitPricePreview() {
     previewPriceBase.value = null
     previewPriceAddons.value = []
     previewPriceDetail.value = ''
+    clearPriceSource()
     return
   }
   const prevPreview = previewResolvedUnitPrice.value
@@ -613,6 +644,10 @@ async function fetchResolvedUnitPricePreview() {
     previewPriceBase.value = r.base_price != null ? Number(r.base_price) : null
     previewPriceAddons.value = Array.isArray(r.addons) ? r.addons : []
     previewPriceDetail.value = nextPreview == null ? String(r.detail || '') : ''
+    applyPriceSource(r)
+    if (formModel.is_special_price && nextPreview != null) {
+      formModel.list_unit_price = nextPreview
+    }
     const currentTyped = typedUnitPrice(formModel.unit_price_input)
     const userHasManualValue =
       currentTyped != null &&
@@ -628,6 +663,7 @@ async function fetchResolvedUnitPricePreview() {
     previewPriceBase.value = null
     previewPriceAddons.value = []
     previewPriceDetail.value = ''
+    clearPriceSource()
   } finally {
     if (seq === pricePreviewSeq) pricePreviewLoading.value = false
   }
@@ -662,9 +698,13 @@ const hasSpecialPriceInLines = computed(() => {
 function onSpecialPriceChange(val) {
   if (val) {
     formModel.discount_value = 0
+    if (previewResolvedUnitPrice.value != null) {
+      formModel.list_unit_price = Number(previewResolvedUnitPrice.value)
+    }
     calculateSpecialPrice()
   } else {
     formModel.discount_value = 0
+    formModel.list_unit_price = null
   }
 }
 
@@ -1631,6 +1671,7 @@ watch(
     previewPriceBase.value = null
     previewPriceAddons.value = []
     previewPriceDetail.value = ''
+    clearPriceSource()
     schedulePricePreview()
     applyVirSoftDefault()
   },
@@ -1813,6 +1854,7 @@ function resetForm() {
   formModel.is_special_price = false
   formModel.discount_type = 'percent'
   formModel.discount_value = 0
+  formModel.list_unit_price = null
   autoFieldMeta.buyer = false
   autoFieldMeta.factory_code = false
   autoFieldMeta.vir_softness_type = false
@@ -1831,6 +1873,7 @@ function resetForm() {
   previewPriceBase.value = null
   previewPriceAddons.value = []
   previewPriceDetail.value = ''
+  clearPriceSource()
   fluorescentColorOptions.value = []
   ambiguousMasterVisible.value = false
   ambiguousMasterCandidates.value = []
@@ -2568,6 +2611,10 @@ const openEditDialog = async (row) => {
       thi_line_ref: d.thi_line_ref || undefined,
       color_swatch_recipe_id: d.color_swatch_recipe_id || undefined,
       unit_price: d.unit_price != null ? Number(d.unit_price) : undefined,
+      is_special_price: Boolean(d.is_special_price),
+      discount_type: d.discount_type || 'percent',
+      discount_value: d.discount_value != null ? Number(d.discount_value) : 0,
+      list_unit_price: d.list_unit_price != null ? Number(d.list_unit_price) : null,
       line_etd: d.line_etd ? String(d.line_etd).slice(0, 10) : undefined,
       delivery_schedules: [],
       line_locked: Boolean(d.line_locked),
@@ -2992,6 +3039,10 @@ function addCopiedItems() {
     previewPriceBase,
     previewPriceAddons,
     previewPriceDetail,
+    previewPriceListTitle,
+    previewPricePeriodStart,
+    previewPricePeriodEnd,
+    previewPriceBlock,
     onSpecialPriceChange,
     calculateSpecialPrice,
     lotGenerateLoading,

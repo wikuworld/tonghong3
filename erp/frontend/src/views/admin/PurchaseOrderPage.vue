@@ -72,6 +72,7 @@
                 <el-option :label="t('status.confirmed')" value="confirmed" />
                 <el-option :label="t('status.production')" value="production" />
                 <el-option :label="t('status.completed')" value="completed" />
+                <el-option :label="t('status.cancelled')" value="cancelled" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -251,11 +252,7 @@
         <template #default="{ row }">
           <el-tooltip
             v-if="canUpdate"
-            :content="
-              row.status === 'draft'
-                ? t('pages.po.statusConfirmViaWizard')
-                : t('pages.po.statusEditViaForm')
-            "
+            :content="statusTooltip(row)"
             placement="top"
           >
             <el-tag :type="statusType(row.status)" size="small">
@@ -280,7 +277,7 @@
             :show-view="true"
             :show-edit="canUpdate"
             :show-delete="canDelete"
-            :more-items="poMoreItems"
+            :more-items="poMoreItemsFor(row)"
             :more-aria-label="t('pages.po.moreActions')"
             @view="openDetailDialog(row)"
             @edit="openEditDialog(row)"
@@ -360,6 +357,7 @@ import {
   Refresh,
   RefreshLeft,
   CopyDocument,
+  CircleClose,
   InfoFilled,
   Tickets,
   Memo,
@@ -390,6 +388,7 @@ import {
   shouldOpenPoRouteEdit,
 } from '../../utils/poList.js'
 import {
+  cancelPo,
   deletePo,
   duplicatePo,
   fetchAuthenticatedDocument,
@@ -594,8 +593,15 @@ const removeRow = async (row) => {
 }
 
 function poStatusLabel(st) {
-  if (st && te(`status.${st}`)) return t(`status.${st}`)
+  const key = String(st || '').toLowerCase()
+  if (key && te(`status.${key}`)) return t(`status.${key}`)
   return st || t('common.emptyValue')
+}
+
+function statusTooltip(row) {
+  if (row?.cancel_reason) return String(row.cancel_reason)
+  if (row?.status === 'draft') return t('pages.po.statusConfirmViaWizard')
+  return t('pages.po.statusEditViaForm')
 }
 
 function categoryLabel(cat) {
@@ -626,8 +632,11 @@ async function downloadProformaInvoiceDocx(row) {
   }
 }
 
-const poMoreItems = computed(() => {
+function poMoreItemsFor(row) {
   const items = []
+  if (canUpdate.value && String(row?.status || '').toLowerCase() !== 'cancelled') {
+    items.push({ command: 'cancel', label: t('pages.po.cancelPo'), icon: CircleClose })
+  }
   if (canCreate.value) {
     items.push({ command: 'duplicate', label: t('pages.po.duplicatePo'), icon: CopyDocument })
   }
@@ -636,10 +645,30 @@ const poMoreItems = computed(() => {
     { command: 'proformaInvoiceDocx', label: t('pages.po.proformaInvoiceDocx'), icon: Memo },
   )
   return items
-})
+}
+
+async function cancelRow(row) {
+  try {
+    const { value } = await ElMessageBox.prompt(t('pages.po.cancelReasonPrompt'), t('pages.po.cancelPo'), {
+      confirmButtonText: t('common.confirm'),
+      cancelButtonText: t('common.cancel'),
+      inputPattern: /\S+/,
+      inputErrorMessage: t('pages.po.cancelReasonRequired'),
+    })
+    await cancelPo(row.id, { reason: String(value || '').trim() })
+    ElMessage.success(t('pages.po.cancelDone'))
+    await load()
+  } catch (e) {
+    if (e === 'cancel' || e === 'close') return
+    ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
+  }
+}
 
 function handlePoMoreAction(row, command) {
   switch (command) {
+    case 'cancel':
+      cancelRow(row)
+      break
     case 'duplicate':
       onDuplicatePo(row)
       break

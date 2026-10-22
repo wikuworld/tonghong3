@@ -321,6 +321,11 @@
               </el-table-column>
               <el-table-column prop="factory_code" :label="t('pages.delivery.columns.factoryCode')" width="100" show-overflow-tooltip />
               <el-table-column prop="order_type" :label="t('pages.delivery.columns.orderType')" width="90" show-overflow-tooltip />
+              <el-table-column :label="t('pages.delivery.columns.foc')" width="110" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ row.is_foc ? t('pages.delivery.invplFoc') : t('pages.delivery.chargePaid') }}
+                </template>
+              </el-table-column>
               <el-table-column prop="pi_no" :label="t('pages.delivery.columns.piNo')" width="100" show-overflow-tooltip />
               <el-table-column prop="delivery_zone" :label="t('pages.delivery.deliveryZone')" width="100" show-overflow-tooltip />
               <el-table-column prop="packing_status" :label="t('pages.delivery.filterPackingStatus')" width="90" show-overflow-tooltip />
@@ -432,7 +437,7 @@
             </el-col>
             <el-col :xs="24" :sm="12">
               <el-form-item :label="t('pages.delivery.deliveryType')" required>
-                <el-select v-model="form.delivery_type" class="w-full">
+                <el-select v-model="form.delivery_type" class="w-full" @change="createTypeTouched = true">
                   <el-option :label="t('status.production')" value="production" />
                   <el-option :label="t('status.sample')" value="sample" />
                   <el-option :label="t('status.return')" value="return" />
@@ -743,10 +748,11 @@
           </header>
           <div class="delivery-detail-toolbar">
             <el-checkbox
-              v-if="canPrint"
+              v-if="canPrint || canUpdate"
               v-model="invplFoc"
               class="delivery-detail-foc"
               :title="t('pages.delivery.invplFocHint')"
+              @change="saveInvplFoc"
             >
               {{ t('pages.delivery.invplFoc') }}
             </el-checkbox>
@@ -895,6 +901,17 @@
               </el-form-item>
             </el-col>
             <el-col :xs="24" :sm="8">
+              <el-form-item :label="t('pages.delivery.deliveryType')">
+                <el-select v-model="arrangeForm.delivery_type" class="w-full" @change="arrangeTypeTouched = true">
+                  <el-option :label="t('status.production')" value="production" />
+                  <el-option :label="t('status.sample')" value="sample" />
+                  <el-option :label="t('status.return')" value="return" />
+                  <el-option :label="t('status.subcont')" value="subcont" />
+                  <el-option :label="t('status.claim')" value="claim" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="8">
               <el-form-item :label="t('common.vehicle')">
                 <el-input v-model="arrangeForm.vehicle_number" clearable />
               </el-form-item>
@@ -1017,7 +1034,9 @@ import {
   addDeliveryDetail,
   createDelivery,
   createDeliveryFromPackingLines,
+  closeDocumentWindows,
   fetchAuthenticatedDocument,
+  reserveDocumentWindows,
   getDelivery,
   getPacking,
   getPo,
@@ -1035,6 +1054,7 @@ import {
   scanDeliveryPackingOut,
   deleteDelivery,
   toIsoDate,
+  setDeliveryFoc,
   updateDelivery,
   updateDeliveryDetail,
   deleteDeliveryDetail,
@@ -1105,13 +1125,20 @@ async function printSelectedSj() {
     ElMessage.warning(t('pages.delivery.selectRowsToPrint'))
     return
   }
+  let popups = []
   batchPrinting.value = true
   try {
-    for (const id of ids) {
-      await fetchAuthenticatedDocument(`/documents/surat-jalan/${id}`, { mode: 'open' })
+    popups = reserveDocumentWindows(ids.length)
+    for (let i = 0; i < ids.length; i += 1) {
+      await fetchAuthenticatedDocument(`/documents/surat-jalan/${ids[i]}`, {
+        mode: 'open',
+        targetWindow: popups[i],
+      })
+      popups[i] = null
     }
     ElMessage.success(t('pages.delivery.batchPrintSjOk', { n: ids.length }))
   } catch (e) {
+    closeDocumentWindows(popups)
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     batchPrinting.value = false
@@ -1124,14 +1151,26 @@ async function printSelectedSjAndInvpl() {
     ElMessage.warning(t('pages.delivery.selectRowsToPrint'))
     return
   }
+  let popups = []
   batchPrinting.value = true
   try {
-    for (const id of ids) {
-      await fetchAuthenticatedDocument(`/documents/surat-jalan/${id}`, { mode: 'open' })
-      await fetchAuthenticatedDocument(invplByDeliveryPath(id), { mode: 'open' })
+    popups = reserveDocumentWindows(ids.length * 2)
+    for (let i = 0; i < ids.length; i += 1) {
+      const foc = lineRows.value.some((row) => Number(row.delivery_id) === Number(ids[i]) && row.is_foc)
+      await fetchAuthenticatedDocument(`/documents/surat-jalan/${ids[i]}`, {
+        mode: 'open',
+        targetWindow: popups[i * 2],
+      })
+      popups[i * 2] = null
+      await fetchAuthenticatedDocument(invplByDeliveryPath(ids[i], foc), {
+        mode: 'open',
+        targetWindow: popups[i * 2 + 1],
+      })
+      popups[i * 2 + 1] = null
     }
     ElMessage.success(t('pages.delivery.batchPrintSjInvplOk', { n: ids.length }))
   } catch (e) {
+    closeDocumentWindows(popups)
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     batchPrinting.value = false
@@ -1399,7 +1438,21 @@ const createCandidateProdDetails = ref([])
 const createSelectedLines = ref([])
 const createLineQty = reactive({})
 const createCustomerFromPacking = ref(false)
+const createTypeTouched = ref(false)
+const arrangeTypeTouched = ref(false)
 const arrangeTableRef = ref(null)
+const DELIVERY_TYPE_VALUES = new Set(['production', 'sample', 'return', 'subcont', 'claim'])
+
+function sharedDeliveryType(rows) {
+  const cats = [
+    ...new Set(
+      (rows || [])
+        .map((row) => String(row?.po_category || '').trim().toLowerCase())
+        .filter((cat) => DELIVERY_TYPE_VALUES.has(cat)),
+    ),
+  ]
+  return cats.length === 1 ? cats[0] : ''
+}
 
 function resetCreateForm() {
   createCandidateProdDetails.value = []
@@ -1411,6 +1464,7 @@ function resetCreateForm() {
 function openCreate() {
   form.customer_id = null
   form.packing_id = null
+  createTypeTouched.value = false
   form.delivery_type = 'production'
   form.delivery_date = new Date().toISOString().slice(0, 10)
   form.delivery_zone = 'outtown'
@@ -1442,6 +1496,10 @@ async function onCreatePackingChange(packingId) {
       if (po?.customer_id) {
         form.customer_id = po.customer_id
         createCustomerFromPacking.value = true
+      }
+      const cat = String(po?.po_category || '').trim().toLowerCase()
+      if (!createTypeTouched.value && DELIVERY_TYPE_VALUES.has(cat)) {
+        form.delivery_type = cat
       }
     }
     const pds = await listProductionDetails(pk.production_id)
@@ -1524,8 +1582,8 @@ const scanSjCode = ref('')
 const scanningOut = ref(false)
 const invplFoc = ref(false)
 
-function invplByDeliveryPath(deliveryId) {
-  const q = invplFoc.value ? '?foc=1' : ''
+function invplByDeliveryPath(deliveryId, foc = invplFoc.value) {
+  const q = foc ? '?foc=1' : ''
   return `/documents/invpl-by-delivery/${deliveryId}${q}`
 }
 
@@ -1555,6 +1613,23 @@ function resetDetail() {
   bcForm.bc_date = ''
   sjNumberEdit.value = ''
   invplFoc.value = false
+}
+
+async function saveInvplFoc(value) {
+  if (!detailRow.value?.id) return
+  const next = !!value
+  try {
+    const full = await setDeliveryFoc(detailRow.value.id, { is_foc: next })
+    detailRow.value = { ...detailRow.value, ...full, customer_name: detailRow.value.customer_name }
+    invplFoc.value = !!full.is_foc
+    const deliveryId = detailRow.value.id
+    lineRows.value = lineRows.value.map((row) =>
+      Number(row.delivery_id) === Number(deliveryId) ? { ...row, is_foc: !!full.is_foc } : row,
+    )
+  } catch (e) {
+    invplFoc.value = !next
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
 }
 
 async function refreshDetailInvoice(deliveryId) {
@@ -1971,6 +2046,7 @@ async function openDetailById(deliveryId) {
     bcForm.bc_number = full.bc_number || ''
     bcForm.bc_date = full.bc_date ? String(full.bc_date).slice(0, 10) : ''
     sjNumberEdit.value = full.delivery_number || ''
+    invplFoc.value = !!full.is_foc
     const lines = await listDeliveryDetails(deliveryId)
     detailLines.value = lines
     await refreshDetailInvoice(deliveryId)
@@ -1993,10 +2069,21 @@ async function openSjPrint() {
 
 async function openSjAndInvpl() {
   if (!detailRow.value?.id) return
+  let popups = []
   try {
-    await fetchAuthenticatedDocument(`/documents/surat-jalan/${detailRow.value.id}`, { mode: 'open' })
-    await fetchAuthenticatedDocument(invplByDeliveryPath(detailRow.value.id), { mode: 'open' })
+    popups = reserveDocumentWindows(2)
+    await fetchAuthenticatedDocument(`/documents/surat-jalan/${detailRow.value.id}`, {
+      mode: 'open',
+      targetWindow: popups[0],
+    })
+    popups[0] = null
+    await fetchAuthenticatedDocument(invplByDeliveryPath(detailRow.value.id), {
+      mode: 'open',
+      targetWindow: popups[1],
+    })
+    popups[1] = null
   } catch (e) {
+    closeDocumentWindows(popups)
     ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
@@ -2121,6 +2208,7 @@ const arrangeSelected = ref([])
 const arrangeQty = reactive({})
 const arrangeForm = reactive({
   delivery_date: '',
+  delivery_type: 'production',
   vehicle_number: '',
   driver_name: '',
   destination: '',
@@ -2151,6 +2239,8 @@ const arrangeOverall = computed(() => {
 
 function openArrange() {
   arrangeForm.delivery_date = new Date().toISOString().slice(0, 10)
+  arrangeTypeTouched.value = false
+  arrangeForm.delivery_type = 'production'
   arrangeForm.vehicle_number = ''
   arrangeForm.driver_name = ''
   arrangeForm.destination = ''
@@ -2185,6 +2275,9 @@ async function loadReadyToShip() {
 
 function onArrangeSelectionChange(selection) {
   arrangeSelected.value = selection || []
+  if (arrangeTypeTouched.value) return
+  const shared = sharedDeliveryType(arrangeSelected.value)
+  if (shared) arrangeForm.delivery_type = shared
 }
 
 function arrangeRowSelectable(row) {
@@ -2223,7 +2316,7 @@ async function submitArrange() {
       packing_id: packingId,
       customer_id: arrangeSelected.value[0].customer_id,
       delivery_date: toIsoDate(arrangeForm.delivery_date) || undefined,
-      delivery_type: 'production',
+      delivery_type: arrangeForm.delivery_type || 'production',
       delivery_zone: 'outtown',
       vehicle_number: arrangeForm.vehicle_number || undefined,
       driver_name: arrangeForm.driver_name || undefined,

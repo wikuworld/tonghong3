@@ -1872,6 +1872,13 @@ export function mrpGetGudangFg(id) {
   return apiFetch(`/mrp/gudang-fg/${id}`)
 }
 
+export function mrpGudangFgNotes(id, notes) {
+  return apiFetch(`/mrp/gudang-fg/${id}/notes`, {
+    method: 'POST',
+    body: JSON.stringify({ notes }),
+  })
+}
+
 export function mrpGudangFgOut(body) {
   return apiFetch('/mrp/gudang-fg/out', { method: 'POST', body: JSON.stringify(body) })
 }

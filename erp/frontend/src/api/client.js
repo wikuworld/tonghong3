@@ -55,57 +55,98 @@ function appendPageParams(q, params = {}) {
   return q
 }
 
+const DOCUMENT_POPUP_BLOCKED =
+  'Pop-up diblokir browser — izinkan pop-up untuk situs ini agar dokumen terbuka di tab baru.'
+
+/** Buka tab kosong selagi klik masih berlaku. Isi URL-nya setelah dokumen selesai diunduh. */
+export function reserveDocumentWindows(count = 1) {
+  const n = Math.max(0, Number(count) || 0)
+  const windows = []
+  for (let i = 0; i < n; i += 1) {
+    const opened = window.open('about:blank', '_blank')
+    if (!opened) {
+      closeDocumentWindows(windows)
+      throw new Error(DOCUMENT_POPUP_BLOCKED)
+    }
+    windows.push(opened)
+  }
+  return windows
+}
+
+export function closeDocumentWindows(windows) {
+  for (const opened of windows || []) {
+    try {
+      if (opened && !opened.closed) opened.close()
+    } catch {
+      /* tab sudah tertutup */
+    }
+  }
+}
+
+function revealDocument(targetWindow, blobUrl) {
+  if (!targetWindow || targetWindow.closed) {
+    URL.revokeObjectURL(blobUrl)
+    throw new Error(DOCUMENT_POPUP_BLOCKED)
+  }
+  targetWindow.location.href = blobUrl
+  setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000)
+}
+
 /**
  * Unduh/buka file dokumen dengan Bearer. Tab baru lewat window.open tidak mengirim token.
  * @param {string} apiPath path setelah /api/v1, mis. `/documents/surat-jalan/12` atau `.../12/pdf`
- * @param {{ mode?: 'open'|'download', downloadFallbackName?: string, method?: string, body?: object }} opts
+ * @param {{ mode?: 'open'|'download', downloadFallbackName?: string, method?: string, body?: object, targetWindow?: Window|null }} opts
  */
 export async function fetchAuthenticatedDocument(apiPath, opts = {}) {
-  const { mode = 'open', downloadFallbackName = 'download', method = 'GET', body } = opts
-  const path = apiPath.startsWith('/') ? apiPath : `/${apiPath}`
-  const url = `/api/v1${path}`
-  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
-  const headers = token ? { Authorization: `Bearer ${token}` } : {}
-  const init = { method, headers }
-  if (body != null && method !== 'GET' && method !== 'HEAD') {
-    headers['Content-Type'] = 'application/json'
-    init.body = typeof body === 'string' ? body : JSON.stringify(body)
+  const { mode = 'open', downloadFallbackName = 'download', method = 'GET', body, targetWindow = null } = opts
+  let popup = targetWindow
+  let ownedPopup = false
+  if (mode === 'open' && !popup) {
+    ;[popup] = reserveDocumentWindows(1)
+    ownedPopup = true
   }
-  const r = await fetch(url, init)
-  if (!r.ok) {
-    const text = await r.text()
-    let msg = text || r.statusText
-    try {
-      const j = JSON.parse(text)
-      if (j?.detail != null) {
-        msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)
+  try {
+    const path = apiPath.startsWith('/') ? apiPath : `/${apiPath}`
+    const url = `/api/v1${path}`
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('auth_token') : null
+    const headers = token ? { Authorization: `Bearer ${token}` } : {}
+    const init = { method, headers }
+    if (body != null && method !== 'GET' && method !== 'HEAD') {
+      headers['Content-Type'] = 'application/json'
+      init.body = typeof body === 'string' ? body : JSON.stringify(body)
+    }
+    const r = await fetch(url, init)
+    if (!r.ok) {
+      const text = await r.text()
+      let msg = text || r.statusText
+      try {
+        const j = JSON.parse(text)
+        if (j?.detail != null) {
+          msg = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)
+        }
+      } catch {
+        /* gunakan text mentah */
       }
-    } catch {
-      /* gunakan text mentah */
+      throw new Error(msg)
     }
-    throw new Error(msg)
-  }
-  const blob = await r.blob()
-  const blobUrl = URL.createObjectURL(blob)
-  if (mode === 'open') {
-    const w = window.open(blobUrl, '_blank', 'noopener,noreferrer')
-    if (!w) {
-      URL.revokeObjectURL(blobUrl)
-      throw new Error(
-        'Pop-up diblokir browser — izinkan pop-up untuk situs ini agar dokumen terbuka di tab baru.',
-      )
+    const blob = await r.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    if (mode === 'open') {
+      revealDocument(popup, blobUrl)
+      return
     }
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 120_000)
-    return
+    const dispo = r.headers.get('content-disposition') || ''
+    const m = dispo.match(/filename="?([^";]+)"?/i)
+    const name = m ? m[1] : downloadFallbackName
+    const a = document.createElement('a')
+    a.href = blobUrl
+    a.download = name
+    a.click()
+    URL.revokeObjectURL(blobUrl)
+  } catch (err) {
+    if (ownedPopup) closeDocumentWindows([popup])
+    throw err
   }
-  const dispo = r.headers.get('content-disposition') || ''
-  const m = dispo.match(/filename="?([^";]+)"?/i)
-  const name = m ? m[1] : downloadFallbackName
-  const a = document.createElement('a')
-  a.href = blobUrl
-  a.download = name
-  a.click()
-  URL.revokeObjectURL(blobUrl)
 }
 
 // --- Auth ---
@@ -667,6 +708,10 @@ export function deletePo(id) {
   return apiFetch(`/po/${id}`, { method: 'DELETE' })
 }
 
+export function cancelPo(id, body) {
+  return apiFetch(`/po/${id}/cancel`, { method: 'POST', body: JSON.stringify(body) })
+}
+
 export function addPoDetail(poId, body) {
   return apiFetch(`/po/${poId}/details`, { method: 'POST', body: JSON.stringify(body) })
 }
@@ -1195,6 +1240,10 @@ export function createDeliveryFromPackingLines(body) {
 
 export function updateDelivery(id, body) {
   return apiFetch(`/delivery/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function setDeliveryFoc(id, body) {
+  return apiFetch(`/delivery/${id}/foc`, { method: 'PUT', body: JSON.stringify(body) })
 }
 
 export function deleteDelivery(id, reason) {
