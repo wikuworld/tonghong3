@@ -20,6 +20,20 @@
       />
     </div>
 
+    <el-alert
+      v-if="pendingLabel"
+      class="mb-3"
+      type="success"
+      show-icon
+      :closable="true"
+      :title="t('pages.mrpInbound.printReady')"
+      @close="pendingLabel = null"
+    >
+      <el-button type="primary" size="small" class="mt-2" @click="printPendingLabel">
+        {{ t('pages.mrpInbound.printLabel') }}
+      </el-button>
+    </el-alert>
+
     <div v-if="canCreate && gudangTab === 'utama'" class="admin-inner-card mb-4">
       <div class="admin-inner-card__body">
         <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpStokKimia.inTitle') }}</h3>
@@ -65,6 +79,12 @@
                 :placeholder="t('pages.mrpStokKimia.qty')"
                 @keyup.enter="doIn"
               />
+            </el-form-item>
+            <el-form-item :label="t('pages.mrpInbound.supplier')">
+              <el-input v-model="inForm.supplier_name" clearable />
+            </el-form-item>
+            <el-form-item :label="t('pages.mrpInbound.unitPrice')">
+              <el-input v-model="inForm.unit_price" type="number" />
             </el-form-item>
             <el-form-item :label="t('common.date')">
               <el-date-picker
@@ -358,6 +378,12 @@
             </span>
           </template>
         </el-table-column>
+        <el-table-column :label="t('pages.mrpInbound.supplier')" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.supplier_name) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpInbound.unitPrice')" width="100" align="right">
+          <template #default="{ row }">{{ formatPrice(row.unit_price) }}</template>
+        </el-table-column>
         <el-table-column :label="t('common.date')" width="120">
           <template #default="{ row }">{{ formatDate(row.tanggal_in) }}</template>
         </el-table-column>
@@ -366,10 +392,10 @@
             <AdminTableActions
               :show-edit="true"
               :show-delete="true"
-              :more-items="Number(row.qty_sisa) > 0 ? [{ command: 'out', label: gudangTab === 'lapangan' ? t('pages.mrpStokKimia.outLapanganBtn') : 'OUT', icon: Upload }] : []"
+              :more-items="lotMoreItems(row)"
               @edit="openEditLot(row)"
               @delete="deleteLot(row)"
-              @more="(cmd) => cmd === 'out' && outFromRow(row)"
+              @more="(cmd) => onLotMore(cmd, row)"
             />
           </template>
         </el-table-column>
@@ -465,7 +491,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Upload } from '@element-plus/icons-vue'
+import { Printer, Refresh, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
 import { can } from '../../../security/permissions'
@@ -476,6 +502,7 @@ import {
   mrpStokKimiaAction,
 } from '../../../api/client'
 import { buildPageParams, fromElSortChange, normalizePageResult } from '../../../utils/tableQuery'
+import { optionalUnitPrice, printInboundLabels } from '../../../utils/mrpInboundLabelPrint.js'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -504,8 +531,11 @@ const inForm = reactive({
   qty: null,
   lot_number: '',
   kemasan: '',
+  supplier_name: '',
+  unit_price: '',
   tanggal: new Date().toISOString().slice(0, 10),
 })
+const pendingLabel = ref(null)
 const editOpen = ref(false)
 const editSaving = ref(false)
 const editIssued = ref(0)
@@ -660,6 +690,56 @@ function formatQty(v) {
   const n = Number(v)
   if (!Number.isFinite(n)) return '—'
   return Number.isInteger(n) ? String(n) : n.toLocaleString(undefined, { maximumFractionDigits: 3 })
+}
+
+function formatPrice(v) {
+  if (v == null || v === '') return '—'
+  return formatQty(v)
+}
+
+function lotMoreItems(row) {
+  const items = [{ command: 'print', label: t('pages.mrpInbound.printLabel'), icon: Printer }]
+  if (Number(row.qty_sisa) > 0) {
+    items.push({
+      command: 'out',
+      label: gudangTab.value === 'lapangan' ? t('pages.mrpStokKimia.outLapanganBtn') : 'OUT',
+      icon: Upload,
+    })
+  }
+  return items
+}
+
+function labelFromLot(row) {
+  return {
+    code: row.kode_internal,
+    itemCode: row.kode_barang || row.kode_material,
+    name: row.nama_barang || row.nama_material,
+    qty: row.qty,
+    lot_number: row.lot_number,
+    tanggal: row.tanggal || row.tanggal_in,
+    supplier_name: row.supplier_name,
+  }
+}
+
+function printPendingLabel() {
+  if (!pendingLabel.value) return
+  try {
+    printInboundLabels([pendingLabel.value])
+  } catch (e) {
+    ElMessage.error(errMsg(e))
+  }
+}
+
+function onLotMore(cmd, row) {
+  if (cmd === 'print') {
+    try {
+      printInboundLabels([labelFromLot(row)])
+    } catch (e) {
+      ElMessage.error(errMsg(e))
+    }
+    return
+  }
+  if (cmd === 'out') outFromRow(row)
 }
 
 function formatDate(v) {
@@ -938,8 +1018,14 @@ async function doIn() {
     ElMessage.warning(t('pages.mrpStokKimia.qtyInvalid'))
     return
   }
+  const price = optionalUnitPrice(inForm.unit_price)
+  if (price === undefined) {
+    ElMessage.warning(t('pages.mrpInbound.priceInvalid'))
+    return
+  }
   saving.value = true
   try {
+    const picked = kimiaList.value.find((k) => k.id === inForm.kimia_id)
     const res = await mrpStokKimiaAction({
       action: 'in',
       kimia_id: inForm.kimia_id,
@@ -947,6 +1033,17 @@ async function doIn() {
       gudang: 'utama',
       lot_number: (inForm.lot_number || '').trim() || null,
       tanggal: inForm.tanggal,
+      supplier_name: (inForm.supplier_name || '').trim() || null,
+      unit_price: price,
+    })
+    pendingLabel.value = labelFromLot({
+      kode_internal: res?.kode_internal,
+      kode_barang: res?.kode_material || picked?.kode_barang,
+      nama_barang: res?.nama_material || picked?.nama_barang,
+      qty,
+      lot_number: inForm.lot_number,
+      tanggal: inForm.tanggal,
+      supplier_name: inForm.supplier_name,
     })
     ElMessage.success(
       t('pages.mrpStokKimia.inOk', { kode: res?.kode_internal || '' }),
@@ -955,6 +1052,8 @@ async function doIn() {
     inForm.qty = null
     inForm.lot_number = ''
     inForm.kemasan = ''
+    inForm.supplier_name = ''
+    inForm.unit_price = ''
     await reload()
   } catch (e) {
     ElMessage.error(errMsg(e))

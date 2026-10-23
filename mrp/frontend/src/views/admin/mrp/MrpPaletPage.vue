@@ -54,6 +54,9 @@
         <el-table-column prop="tanggal" :label="t('common.date')" width="120" sortable="custom">
           <template #default="{ row }">{{ formatDate(row.tanggal) }}</template>
         </el-table-column>
+        <el-table-column :label="t('pages.mrpInbound.supplier')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.supplier_name) }}</template>
+        </el-table-column>
         <el-table-column :label="t('pages.mrpPalet.ylCount')" width="80" align="right">
           <template #default="{ row }">{{ formatQty(row.jml_yl) }}</template>
         </el-table-column>
@@ -113,6 +116,18 @@
         <el-table-column :label="t('common.color')" width="120" show-overflow-tooltip>
           <template #default="{ row }">{{ dash(row.warna) }}</template>
         </el-table-column>
+        <el-table-column :label="t('pages.mrpInbound.bentukKulit')" min-width="110" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.bentuk_kulit) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpInbound.skala')" width="90" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.skala) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpInbound.unitPrice')" width="100" align="right">
+          <template #default="{ row }">{{ formatPrice(row.unit_price) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpInbound.supplier')" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.supplier_name) }}</template>
+        </el-table-column>
         <el-table-column :label="t('pages.mrpPalet.qty')" width="90" align="right">
           <template #default="{ row }">{{ formatQty(row.qty) }}</template>
         </el-table-column>
@@ -121,17 +136,31 @@
             <AdminTableActions
               :show-edit="true"
               :show-delete="true"
-              :more-items="[{ command: 'out', label: 'OUT', icon: Upload }]"
+              :more-items="ylMoreItems"
               @edit="openYlEdit(row)"
               @delete="deleteYl(row)"
-              @more="(cmd) => cmd === 'out' && ylOutFromRow(row)"
+              @more="(cmd) => onYlMore(cmd, row)"
             />
           </template>
         </el-table-column>
       </el-table>
     </div>
 
-    <el-dialog v-model="inOpen" :title="t('pages.mrpPalet.paletIn')" width="720px" destroy-on-close append-to-body>
+    <el-alert
+      v-if="pendingLabels.length"
+      class="mb-3"
+      type="success"
+      show-icon
+      :closable="true"
+      :title="t('pages.mrpInbound.printReady')"
+      @close="pendingLabels = []"
+    >
+      <el-button type="primary" size="small" class="mt-2" @click="printPendingLabels">
+        {{ t('pages.mrpInbound.printLabel') }}
+      </el-button>
+    </el-alert>
+
+    <el-dialog v-model="inOpen" :title="t('pages.mrpPalet.paletIn')" width="920px" destroy-on-close append-to-body>
       <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpPalet.paletInHint') }}</p>
       <el-form label-position="top">
         <el-form-item :label="t('pages.mrpPalet.kodePalet')" required>
@@ -143,13 +172,31 @@
         <el-form-item :label="t('common.notes')">
           <el-input v-model="form.keterangan" />
         </el-form-item>
+        <el-form-item :label="t('pages.mrpInbound.supplier')">
+          <el-select
+            v-model="form.supplier_name"
+            filterable
+            clearable
+            class="w-full"
+            :loading="loadingInboundMasters"
+            :placeholder="t('pages.mrpInbound.supplier')"
+          >
+            <el-option
+              v-for="s in supplierOptionsFor(form.supplier_name)"
+              :key="s.id || s.nama"
+              :label="s.nama"
+              :value="s.nama"
+            />
+          </el-select>
+        </el-form-item>
         <div class="mb-2 flex justify-between items-center">
           <strong>{{ t('pages.mrpPalet.ylItems') }}</strong>
           <el-button size="small" @click="form.items.push(emptyYlItem())">
             {{ t('common.add') }}
           </el-button>
         </div>
-        <div v-for="(item, idx) in form.items" :key="idx" class="mb-2 grid gap-2" style="grid-template-columns: 0.72fr 1.15fr 1fr 1fr 0.75fr auto;">
+        <div v-for="(item, idx) in form.items" :key="idx" class="mb-3 rounded border border-slate-200 p-2">
+        <div class="grid gap-2" style="grid-template-columns: 0.72fr 1.15fr 1fr 1fr 0.75fr auto;">
           <el-select
             v-model="item.type"
             class="w-full"
@@ -203,6 +250,40 @@
           >
             {{ t('common.delete') }}
           </el-button>
+        </div>
+        <div class="mt-2 grid gap-2" style="grid-template-columns: 1fr 1fr 1fr;">
+          <el-select
+            v-model="item.bentuk_kulit"
+            filterable
+            clearable
+            class="w-full"
+            :loading="loadingInboundMasters"
+            :placeholder="t('pages.mrpInbound.bentukKulit')"
+          >
+            <el-option
+              v-for="b in bentukOptionsFor(item.bentuk_kulit)"
+              :key="b.id || b.nama"
+              :label="b.nama"
+              :value="b.nama"
+            />
+          </el-select>
+          <el-select
+            v-model="item.skala"
+            filterable
+            clearable
+            class="w-full"
+            :loading="loadingInboundMasters"
+            :placeholder="t('pages.mrpInbound.skala')"
+          >
+            <el-option
+              v-for="s in skalaOptionsFor(item.skala)"
+              :key="s.id || s.nama"
+              :label="s.nama"
+              :value="s.nama"
+            />
+          </el-select>
+          <el-input v-model="item.unit_price" type="number" :placeholder="t('pages.mrpInbound.unitPrice')" />
+        </div>
         </div>
       </el-form>
       <template #footer>
@@ -301,6 +382,57 @@
         <el-form-item :label="t('common.color')">
           <el-input v-model="ylEditForm.warna" :disabled="ylEditForm.spek_locked" />
         </el-form-item>
+        <el-form-item :label="t('pages.mrpInbound.bentukKulit')">
+          <el-select
+            v-model="ylEditForm.bentuk_kulit"
+            filterable
+            clearable
+            class="w-full"
+            :loading="loadingInboundMasters"
+          >
+            <el-option
+              v-for="b in bentukOptionsFor(ylEditForm.bentuk_kulit)"
+              :key="b.id || b.nama"
+              :label="b.nama"
+              :value="b.nama"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpInbound.skala')">
+          <el-select
+            v-model="ylEditForm.skala"
+            filterable
+            clearable
+            class="w-full"
+            :loading="loadingInboundMasters"
+          >
+            <el-option
+              v-for="s in skalaOptionsFor(ylEditForm.skala)"
+              :key="s.id || s.nama"
+              :label="s.nama"
+              :value="s.nama"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpInbound.unitPrice')">
+          <el-input v-model="ylEditForm.unit_price" type="number" />
+        </el-form-item>
+        <el-form-item :label="t('pages.mrpInbound.supplier')">
+          <el-select
+            v-model="ylEditForm.supplier_name"
+            filterable
+            clearable
+            class="w-full"
+            :loading="loadingInboundMasters"
+          >
+            <el-option
+              v-for="s in supplierOptionsFor(ylEditForm.supplier_name)"
+              :key="s.id || s.nama"
+              :label="s.nama"
+              :value="s.nama"
+            />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="ylEditOpen = false">{{ t('common.cancel') }}</el-button>
@@ -314,13 +446,17 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Upload } from '@element-plus/icons-vue'
+import { Plus, Printer, Refresh, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
+import { printInboundLabels } from '../../../utils/mrpInboundLabelPrint.js'
 import { can } from '../../../security/permissions'
 import {
+  mrpListBentukKulit,
   mrpListMasterKulit,
   mrpListPaletMovements,
+  mrpListSkala,
+  mrpListSupplier,
   mrpListYl,
   mrpPaletIn,
   mrpPaletOut,
@@ -359,16 +495,47 @@ const ylEditForm = reactive({
   qty: '',
   thickness: '',
   warna: '',
+  bentuk_kulit: '',
+  skala: '',
+  unit_price: '',
+  supplier_name: '',
   spek_locked: false,
 })
+const pendingLabels = ref([])
+const ylMoreItems = computed(() => [
+  { command: 'print', label: t('pages.mrpInbound.printLabel'), icon: Printer },
+  { command: 'out', label: 'OUT', icon: Upload },
+])
 const ylPalet = ref('')
 const ylDetail = ref([])
 const ylOutKey = ref('')
 const kulitRows = ref([])
 const loadingMaster = ref(false)
+const loadingInboundMasters = ref(false)
+const supplierOptions = ref([])
+const bentukKulitOptions = ref([])
+const skalaOptions = ref([])
 
 function emptyYlItem() {
-  return { type: 'PU', kode_yl: '', thickness: '', warna: '', qty: null }
+  return {
+    type: 'PU',
+    kode_yl: '',
+    thickness: '',
+    warna: '',
+    qty: null,
+    bentuk_kulit: '',
+    skala: '',
+    unit_price: '',
+    erp_material_id: null,
+  }
+}
+
+function priceOrNull(value) {
+  const raw = String(value ?? '').trim()
+  if (!raw) return null
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0) return undefined
+  return n
 }
 
 function normalizeKulitType(raw) {
@@ -396,6 +563,7 @@ function onItemTypeChange(item) {
     item.kode_yl = 'SUEDE'
     item.thickness = ''
     item.warna = ''
+    item.erp_material_id = null
     return
   }
   if (tpe === 'PU') {
@@ -416,6 +584,7 @@ const form = reactive({
   kode_palet: '',
   tanggal: new Date().toISOString().slice(0, 10),
   keterangan: '',
+  supplier_name: '',
   items: [emptyYlItem()],
 })
 const paletOutForm = reactive({
@@ -483,6 +652,7 @@ function applyKulitMasterFields(item) {
   }
   item.thickness = String(k.thickness || '').trim()
   item.warna = kulitColor(k)
+  item.erp_material_id = k.erp_material_id || k.id || null
 }
 
 function onKulitPick(item) {
@@ -515,6 +685,65 @@ async function loadKulitMaster() {
   }
 }
 
+async function loadPagedMaster(listFn, extra = {}) {
+  const all = []
+  let pageNum = 1
+  const pageSizeLoad = 200
+  for (;;) {
+    const data = await listFn({
+      page: pageNum,
+      page_size: pageSizeLoad,
+      sort_by: 'nama',
+      sort_dir: 'asc',
+      ...extra,
+    })
+    const pageData = normalizePageResult(data, { page: pageNum, pageSize: pageSizeLoad })
+    all.push(...pageData.items)
+    if (!pageData.items.length || all.length >= pageData.total) break
+    pageNum += 1
+  }
+  return all
+}
+
+async function loadInboundMasters() {
+  loadingInboundMasters.value = true
+  try {
+    const [suppliers, bentuk, skala] = await Promise.all([
+      loadPagedMaster(mrpListSupplier, { material: 'KULIT' }),
+      loadPagedMaster(mrpListBentukKulit),
+      loadPagedMaster(mrpListSkala),
+    ])
+    supplierOptions.value = suppliers
+    bentukKulitOptions.value = bentuk
+    skalaOptions.value = skala
+  } catch {
+    supplierOptions.value = []
+    bentukKulitOptions.value = []
+    skalaOptions.value = []
+  } finally {
+    loadingInboundMasters.value = false
+  }
+}
+
+function withOrphanNama(options, value) {
+  const nama = String(value || '').trim()
+  if (!nama) return options
+  if (options.some((o) => String(o.nama || '').trim() === nama)) return options
+  return [...options, { id: `orphan-${nama}`, nama }]
+}
+
+function supplierOptionsFor(value) {
+  return withOrphanNama(supplierOptions.value, value)
+}
+
+function bentukOptionsFor(value) {
+  return withOrphanNama(bentukKulitOptions.value, value)
+}
+
+function skalaOptionsFor(value) {
+  return withOrphanNama(skalaOptions.value, value)
+}
+
 function dash(v) {
   const s = (v == null ? '' : String(v)).trim()
   return s || '—'
@@ -524,6 +753,11 @@ function formatQty(v) {
   const n = Number(v)
   if (!Number.isFinite(n)) return '—'
   return Number.isInteger(n) ? String(n) : n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
+
+function formatPrice(v) {
+  if (v == null || v === '') return '—'
+  return formatQty(v)
 }
 
 function formatDate(v) {
@@ -584,9 +818,45 @@ function openIn() {
   form.kode_palet = ''
   form.tanggal = new Date().toISOString().slice(0, 10)
   form.keterangan = ''
+  form.supplier_name = ''
   form.items = [emptyYlItem()]
   loadKulitMaster()
+  loadInboundMasters()
   inOpen.value = true
+}
+
+function ylLabel(item, header) {
+  return {
+    code: header.kode_palet,
+    itemCode: item.kode_yl,
+    qty: item.qty,
+    thickness: item.thickness,
+    color: item.warna,
+    bentuk_kulit: item.bentuk_kulit,
+    skala: item.skala,
+    tanggal: header.tanggal,
+    supplier_name: header.supplier_name || item.supplier_name,
+  }
+}
+
+function printPendingLabels() {
+  try {
+    printInboundLabels(pendingLabels.value)
+  } catch (e) {
+    ElMessage.error(errMsg(e))
+  }
+}
+
+function onYlMore(cmd, row) {
+  if (cmd === 'print') {
+    try {
+      printInboundLabels([ylLabel(row, row)])
+    } catch (e) {
+      ElMessage.error(errMsg(e))
+    }
+    return
+  }
+  if (cmd === 'out') ylOutFromRow(row)
 }
 
 async function submitIn() {
@@ -599,16 +869,26 @@ async function submitIn() {
       const tpe = normalizeKulitType(it.type)
       let kodeYl = (it.kode_yl || '').trim()
       if (tpe === 'SUEDE') kodeYl = 'SUEDE'
+      const price = priceOrNull(it.unit_price)
       return {
         kode_yl: kodeYl,
         thickness: (it.thickness || '').trim(),
         warna: (it.warna || '').trim(),
         qty: Number(it.qty),
+        bentuk_kulit: (it.bentuk_kulit || '').trim(),
+        skala: (it.skala || '').trim(),
+        unit_price: price,
+        erp_material_id: it.erp_material_id || null,
+        _priceInvalid: price === undefined,
       }
     })
     .filter((it) => it.kode_yl)
   if (!items.length || items.some((it) => !Number.isFinite(it.qty) || it.qty <= 0)) {
     ElMessage.warning(t('pages.mrpPalet.ylItemsInvalid'))
+    return
+  }
+  if (items.some((it) => it._priceInvalid)) {
+    ElMessage.warning(t('pages.mrpInbound.priceInvalid'))
     return
   }
   const puMissingKode = form.items.some(
@@ -620,12 +900,21 @@ async function submitIn() {
   }
   saving.value = true
   try {
+    const payloadItems = items.map(({ _priceInvalid, ...rest }) => rest)
     const res = await mrpPaletIn({
       kode_palet: form.kode_palet.trim(),
       tanggal: form.tanggal,
       keterangan: form.keterangan.trim() || null,
-      items,
+      supplier_name: form.supplier_name.trim() || null,
+      items: payloadItems,
     })
+    pendingLabels.value = (res?.items || payloadItems).map((item) =>
+      ylLabel(item, {
+        kode_palet: form.kode_palet.trim(),
+        tanggal: form.tanggal,
+        supplier_name: form.supplier_name.trim(),
+      }),
+    )
     ElMessage.success(t('pages.mrpPalet.paletInOk', { n: res?.yl_count || items.length }))
     inOpen.value = false
     await reload()
@@ -708,11 +997,21 @@ function openYlEdit(row) {
   ylEditForm.qty = row.qty ?? ''
   ylEditForm.thickness = row.thickness || ''
   ylEditForm.warna = row.warna || ''
+  ylEditForm.bentuk_kulit = row.bentuk_kulit || ''
+  ylEditForm.skala = row.skala || ''
+  ylEditForm.unit_price = row.unit_price ?? ''
+  ylEditForm.supplier_name = row.supplier_name || ''
   ylEditForm.spek_locked = Boolean(row.spek_locked)
+  loadInboundMasters()
   ylEditOpen.value = true
 }
 
 async function saveYlEdit() {
+  const price = priceOrNull(ylEditForm.unit_price)
+  if (price === undefined) {
+    ElMessage.warning(t('pages.mrpInbound.priceInvalid'))
+    return
+  }
   saving.value = true
   try {
     await mrpPaletYlUpdate({
@@ -721,6 +1020,10 @@ async function saveYlEdit() {
       qty: ylEditForm.qty,
       thickness: ylEditForm.thickness,
       warna: ylEditForm.warna,
+      bentuk_kulit: ylEditForm.bentuk_kulit,
+      skala: ylEditForm.skala,
+      unit_price: price,
+      supplier_name: ylEditForm.supplier_name,
     })
     ElMessage.success(t('pages.mrpPalet.ylEditOk', { kode: ylEditForm.kode_yl }))
     ylEditOpen.value = false

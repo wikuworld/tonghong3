@@ -11,6 +11,20 @@
       </el-radio-group>
     </div>
 
+    <el-alert
+      v-if="pendingLabel"
+      class="mb-3"
+      type="success"
+      show-icon
+      :closable="true"
+      :title="t('pages.mrpInbound.printReady')"
+      @close="pendingLabel = null"
+    >
+      <el-button type="primary" size="small" class="mt-2" @click="printPendingLabel">
+        {{ t('pages.mrpInbound.printLabel') }}
+      </el-button>
+    </el-alert>
+
     <div v-if="canCreate && gudangTab === 'utama'" class="admin-inner-card mb-4">
       <div class="admin-inner-card__body">
         <h3 class="admin-inner-card__title mb-1">{{ t('pages.mrpStokRp.inTitle') }}</h3>
@@ -43,6 +57,8 @@
           class="max-w-xs"
           clearable
         />
+        <el-input v-model="inForm.supplier_name" :placeholder="t('pages.mrpInbound.supplier')" class="max-w-xs" clearable />
+        <el-input v-model="inForm.unit_price" type="number" :placeholder="t('pages.mrpInbound.unitPrice')" class="w-28" />
         <el-date-picker v-model="inForm.tanggal" type="date" value-format="YYYY-MM-DD" />
         <el-button type="primary" :loading="saving" @click="doIn">{{ t('pages.mrpStokRp.inBtn') }}</el-button>
       </div>
@@ -76,12 +92,11 @@
           class="w-28"
           @keyup.enter="doOut"
         />
-        <el-select v-model="outForm.tujuan" class="w-40">
-          <el-option :label="t('pages.mrpStokRp.tujuanLapangan')" value="lapangan" />
-          <el-option :label="t('pages.mrpStokRp.tujuanProduksi')" value="produksi" />
-        </el-select>
         <el-button type="danger" :loading="saving" @click="doOut">{{ t('pages.mrpStokRp.outBtn') }}</el-button>
       </div>
+      <p class="text-xs text-slate-500 mt-2 mb-0">
+        {{ t('pages.mrpStokRp.tujuanLapanganDetail') }}
+      </p>
       <p v-if="outForm.stok != null" class="text-xs text-slate-500 mt-2 mb-0">
         {{ t('pages.mrpStokRp.sisaHint', { qty: formatQty(outForm.stok), unit: outForm.satuan || 'm' }) }}
       </p>
@@ -286,6 +301,12 @@
         <el-table-column :label="t('pages.mrpStokRp.meterIn')" width="100" align="right">
           <template #default="{ row }">{{ formatQty(row.meter_roll) }}</template>
         </el-table-column>
+        <el-table-column :label="t('pages.mrpInbound.supplier')" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ dash(row.supplier_name) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpInbound.unitPrice')" width="100" align="right">
+          <template #default="{ row }">{{ formatPrice(row.unit_price) }}</template>
+        </el-table-column>
         <el-table-column :label="t('common.date')" width="120">
           <template #default="{ row }">{{ formatDate(row.tanggal_in) }}</template>
         </el-table-column>
@@ -294,10 +315,10 @@
             <AdminTableActions
               :show-edit="true"
               :show-delete="true"
-              :more-items="Number(row.qty_sisa) > 0 ? [{ command: 'out', label: gudangTab === 'lapangan' ? t('pages.mrpStokRp.outLapanganBtn') : 'OUT', icon: Upload }] : []"
+              :more-items="lotMoreItems(row)"
               @edit="openEditLot(row)"
               @delete="deleteLot(row)"
-              @more="(cmd) => cmd === 'out' && outFromRow(row)"
+              @more="(cmd) => onLotMore(cmd, row)"
             />
           </template>
         </el-table-column>
@@ -387,12 +408,13 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Upload } from '@element-plus/icons-vue'
+import { Printer, Refresh, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
 import { can } from '../../../security/permissions'
 import { mrpStokRp, mrpStokRpAction } from '../../../api/client'
 import { buildPageParams, fromElSortChange, normalizePageResult } from '../../../utils/tableQuery'
+import { optionalUnitPrice, printInboundLabels } from '../../../utils/mrpInboundLabelPrint.js'
 
 const { t } = useI18n()
 const loading = ref(false)
@@ -420,8 +442,11 @@ const inForm = reactive({
   rp_id: null,
   meter_roll: null,
   lot_number: '',
+  supplier_name: '',
+  unit_price: '',
   tanggal: new Date().toISOString().slice(0, 10),
 })
+const pendingLabel = ref(null)
 const editOpen = ref(false)
 const editSaving = ref(false)
 const editIssued = ref(0)
@@ -438,7 +463,7 @@ const outForm = reactive({
   meter_roll: null,
   stok: null,
   satuan: '',
-  tujuan: 'produksi',
+  tujuan: 'lapangan',
   tanggal: new Date().toISOString().slice(0, 10),
 })
 const lapanganForm = reactive({
@@ -499,6 +524,56 @@ function formatQty(v) {
   const n = Number(v)
   if (!Number.isFinite(n)) return '—'
   return Number.isInteger(n) ? String(n) : n.toLocaleString(undefined, { maximumFractionDigits: 3 })
+}
+
+function formatPrice(v) {
+  if (v == null || v === '') return '—'
+  return formatQty(v)
+}
+
+function lotMoreItems(row) {
+  const items = [{ command: 'print', label: t('pages.mrpInbound.printLabel'), icon: Printer }]
+  if (Number(row.qty_sisa) > 0) {
+    items.push({
+      command: 'out',
+      label: gudangTab.value === 'lapangan' ? t('pages.mrpStokRp.outLapanganBtn') : 'OUT',
+      icon: Upload,
+    })
+  }
+  return items
+}
+
+function labelFromLot(row) {
+  return {
+    code: row.kode_internal,
+    itemCode: row.kode_rp || row.kode_material,
+    name: row.nama_jenis || row.nama_material,
+    qty: row.meter_roll ?? row.qty,
+    lot_number: row.lot_number,
+    tanggal: row.tanggal || row.tanggal_in,
+    supplier_name: row.supplier_name,
+  }
+}
+
+function printPendingLabel() {
+  if (!pendingLabel.value) return
+  try {
+    printInboundLabels([pendingLabel.value])
+  } catch (e) {
+    ElMessage.error(errMsg(e))
+  }
+}
+
+function onLotMore(cmd, row) {
+  if (cmd === 'print') {
+    try {
+      printInboundLabels([labelFromLot(row)])
+    } catch (e) {
+      ElMessage.error(errMsg(e))
+    }
+    return
+  }
+  if (cmd === 'out') outFromRow(row)
 }
 
 function formatDate(v) {
@@ -749,8 +824,14 @@ async function doIn() {
     ElMessage.warning(t('pages.mrpStokRp.meterInvalid'))
     return
   }
+  const price = optionalUnitPrice(inForm.unit_price)
+  if (price === undefined) {
+    ElMessage.warning(t('pages.mrpInbound.priceInvalid'))
+    return
+  }
   saving.value = true
   try {
+    const picked = rpList.value.find((r) => r.id === inForm.rp_id)
     const res = await mrpStokRpAction({
       action: 'in',
       rp_id: inForm.rp_id,
@@ -758,11 +839,24 @@ async function doIn() {
       gudang: 'utama',
       lot_number: (inForm.lot_number || '').trim() || null,
       tanggal: inForm.tanggal,
+      supplier_name: (inForm.supplier_name || '').trim() || null,
+      unit_price: price,
+    })
+    pendingLabel.value = labelFromLot({
+      kode_internal: res?.kode_internal,
+      kode_rp: res?.kode_material || picked?.kode_rp,
+      nama_jenis: res?.nama_material || picked?.nama_rp,
+      meter_roll: meter,
+      lot_number: inForm.lot_number,
+      tanggal: inForm.tanggal,
+      supplier_name: inForm.supplier_name,
     })
     ElMessage.success(t('pages.mrpStokRp.inOk', { kode: res?.kode_internal || '' }))
     inForm.rp_id = null
     inForm.meter_roll = null
     inForm.lot_number = ''
+    inForm.supplier_name = ''
+    inForm.unit_price = ''
     await reload()
   } catch (e) {
     ElMessage.error(errMsg(e))

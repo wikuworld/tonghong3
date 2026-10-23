@@ -407,6 +407,9 @@ const mrpMasterMenus = [
   { path: '/admin/mrp/masters/kimia', labelKey: 'menu.mrpMasterKimia', icon: Files, viewOnly: true },
   { path: '/admin/mrp/masters/rp', labelKey: 'menu.mrpMasterRp', icon: Files, viewOnly: true },
   { path: '/admin/mrp/masters/treatment', labelKey: 'menu.mrpMasterTreatment', icon: Files },
+  { path: '/admin/mrp/masters/supplier', labelKey: 'menu.mrpMasterSupplier', icon: Files },
+  { path: '/admin/mrp/masters/bentuk-kulit', labelKey: 'menu.mrpMasterBentukKulit', icon: Files },
+  { path: '/admin/mrp/masters/skala', labelKey: 'menu.mrpMasterSkala', icon: Files },
   { path: '/admin/mrp/masters/material-lain', labelKey: 'menu.mrpMasterMaterialLain', icon: Files, viewOnly: true },
 ]
 

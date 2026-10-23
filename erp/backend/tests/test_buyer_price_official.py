@@ -9,8 +9,8 @@ from app.services.buyer_price_aliases import (
     canonical_customer_code,
     emboss_is_special,
     infer_price_block,
-    customer_price_rules,
     is_outside_banten_factory,
+    list_price_rules,
     normalize_material_alias,
 )
 from app.services.buyer_price_import import (
@@ -204,11 +204,19 @@ def test_resolve_special_emboss_and_outside(monkeypatch):
     assert special["price_block"] == "SPECIAL"
 
     monkeypatch.setattr("app.services.buyer_price_resolve.is_outside_banten_factory", lambda *_a, **_k: True)
+    lst = db.scalars.return_value.all.return_value[0]
+    lst.outside_price_adjust = Decimal("0.20")
+    lst.outside_adjust_type = "nominal"
+    lst.discount_modifier_enabled = True
+    lst.discount_modifier = Decimal("0.05")
+    lst.discount_modifier_type = "nominal"
     outside = resolve_unit_price_for_buyer(
         db, "NIKE", material_name="GENERIC PU COATED", color_family="color", factory_code="BI020"
     )
-    assert outside["unit_price"] == Decimal("1.25")
+    assert outside["unit_price"] == Decimal("1.20")
     assert outside["price_block"] == "OUTSIDE BANTEN"
+    assert not any(addon["key"] == "OUTSIDE ADJUST" for addon in outside["addons"])
+    assert any(addon["key"] == "DISCOUNT MODIFIER" for addon in outside["addons"])
 
 
 def test_resolve_laccato_alias(monkeypatch):
@@ -243,31 +251,25 @@ def test_outside_banten_follows_customer_flag_only():
     assert infer_price_block(emboss="", outside_banten=False) == "COMMON"
 
 
-def test_outside_adjust_applies_only_when_flag_is_on():
-    customer = SimpleNamespace(
-        code="BI020",
-        outside_banten=True,
+def test_list_price_rules_skip_zero_and_disabled_discount():
+    price_list = SimpleNamespace(
         outside_price_adjust=Decimal("0.20"),
         outside_adjust_type="nominal",
-        discount_modifier_enabled=True,
+        discount_modifier_enabled=False,
         discount_modifier=Decimal("0.05"),
         discount_modifier_type="percent",
     )
-    db = MagicMock()
-    db.scalars.return_value.first.return_value = customer
-    rules = customer_price_rules(db, "BI020")
+    rules = list_price_rules(price_list)
     assert rules["outside"] == {"type": "nominal", "value": Decimal("0.20")}
-    assert rules["discount"] == {"type": "percent", "value": Decimal("0.05")}
-    customer.outside_banten = False
-    rules = customer_price_rules(db, "BI020")
-    assert rules["outside"] is None
-    assert rules["discount"]["value"] == Decimal("0.05")
-    customer.discount_modifier_enabled = False
-    rules = customer_price_rules(db, "BI020")
     assert rules["discount"] is None
+    price_list.discount_modifier_enabled = True
+    rules = list_price_rules(price_list)
+    assert rules["discount"] == {"type": "percent", "value": Decimal("0.05")}
+    price_list.outside_price_adjust = Decimal("0")
+    assert list_price_rules(price_list)["outside"] is None
 
 
-def test_resolve_applies_outside_then_discount(monkeypatch):
+def test_resolve_header_adjust_only_without_outside_block(monkeypatch):
     rows = [
         build_price_cells(
             item="GENERIC PU COATED",
@@ -280,30 +282,32 @@ def test_resolve_applies_outside_then_discount(monkeypatch):
         ),
     ]
     db, fake = _mock_db_with_list(rows)
+    lst = db.scalars.return_value.all.return_value[0]
+    lst.outside_price_adjust = Decimal("0.20")
+    lst.outside_adjust_type = "nominal"
+    lst.discount_modifier_enabled = False
+    lst.discount_modifier = Decimal("0.05")
+    lst.discount_modifier_type = "nominal"
     monkeypatch.setattr("app.services.buyer_price_resolve.list_to_api_dict", fake)
     monkeypatch.setattr("app.services.buyer_price_resolve.is_outside_banten_factory", lambda *_a, **_k: False)
+    inside = resolve_unit_price_for_buyer(db, "ADIDAS", material_name="GENERIC PU COATED", color_family="color")
+    unit = inside["unit_price"]
+    assert not any(addon["key"] == "OUTSIDE ADJUST" for addon in inside["addons"])
 
-    def rules_for(outside, discount):
-        return lambda *_a, **_k: {"outside": outside, "discount": discount}
-
-    monkeypatch.setattr(
-        "app.services.buyer_price_resolve.customer_price_rules",
-        rules_for(None, None),
-    )
-    base = resolve_unit_price_for_buyer(db, "NIKE", material_name="GENERIC PU COATED", color_family="color")
-    unit = base["unit_price"]
-    monkeypatch.setattr(
-        "app.services.buyer_price_resolve.customer_price_rules",
-        rules_for({"type": "nominal", "value": Decimal("0.20")}, None),
-    )
-    bumped = resolve_unit_price_for_buyer(db, "NIKE", material_name="GENERIC PU COATED", color_family="color")
+    monkeypatch.setattr("app.services.buyer_price_resolve.is_outside_banten_factory", lambda *_a, **_k: True)
+    bumped = resolve_unit_price_for_buyer(db, "ADIDAS", material_name="GENERIC PU COATED", color_family="color")
     assert bumped["unit_price"] == unit + Decimal("0.20")
-    monkeypatch.setattr(
-        "app.services.buyer_price_resolve.customer_price_rules",
-        rules_for({"type": "percent", "value": Decimal("10")}, {"type": "nominal", "value": Decimal("0.05")}),
-    )
-    mixed = resolve_unit_price_for_buyer(db, "NIKE", material_name="GENERIC PU COATED", color_family="color")
+
+    lst.outside_adjust_type = "percent"
+    lst.outside_price_adjust = Decimal("10")
+    lst.discount_modifier_enabled = True
+    mixed = resolve_unit_price_for_buyer(db, "ADIDAS", material_name="GENERIC PU COATED", color_family="color")
     after_outside = (unit + (unit * Decimal("10") / Decimal(100)).quantize(Decimal("0.0001"))).quantize(Decimal("0.0001"))
     assert mixed["unit_price"] == (after_outside - Decimal("0.05")).quantize(Decimal("0.0001"))
     assert any(addon["key"] == "OUTSIDE ADJUST" for addon in mixed["addons"])
     assert any(addon["key"] == "DISCOUNT MODIFIER" and addon["amount"] < 0 for addon in mixed["addons"])
+
+    lst.outside_price_adjust = None
+    lst.discount_modifier_enabled = False
+    plain = resolve_unit_price_for_buyer(db, "ADIDAS", material_name="GENERIC PU COATED", color_family="color")
+    assert plain["unit_price"] == unit

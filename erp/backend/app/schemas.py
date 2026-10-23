@@ -76,11 +76,6 @@ class CustomerCreate(BaseModel):
     is_active: bool = True
     is_export_customer: bool = False
     outside_banten: bool = False
-    outside_price_adjust: Optional[Decimal] = None
-    outside_adjust_type: Optional[str] = None
-    discount_modifier_enabled: bool = False
-    discount_modifier: Optional[Decimal] = None
-    discount_modifier_type: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
@@ -90,15 +85,6 @@ class CustomerCreate(BaseModel):
     tax_mode: Optional[str] = None
     reference_quotation: Optional[str] = None
     contacts: list[CustomerContactIn] = Field(default_factory=list)
-
-    @field_validator("outside_adjust_type", "discount_modifier_type", mode="before")
-    @classmethod
-    def _normalize_create_modifier_type(cls, value):
-        return _normalize_customer_modifier_type(value)
-
-    @model_validator(mode="after")
-    def _create_modifier_percent_range(self):
-        return _check_customer_modifier_percent(self)
 
 
 class CustomerUpdate(BaseModel):
@@ -119,11 +105,6 @@ class CustomerUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_export_customer: Optional[bool] = None
     outside_banten: Optional[bool] = None
-    outside_price_adjust: Optional[Decimal] = None
-    outside_adjust_type: Optional[str] = None
-    discount_modifier_enabled: Optional[bool] = None
-    discount_modifier: Optional[Decimal] = None
-    discount_modifier_type: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
@@ -133,15 +114,6 @@ class CustomerUpdate(BaseModel):
     tax_mode: Optional[str] = None
     reference_quotation: Optional[str] = None
     contacts: Optional[list[CustomerContactIn]] = None
-
-    @field_validator("outside_adjust_type", "discount_modifier_type", mode="before")
-    @classmethod
-    def _normalize_update_modifier_type(cls, value):
-        return _normalize_customer_modifier_type(value)
-
-    @model_validator(mode="after")
-    def _update_modifier_percent_range(self):
-        return _check_customer_modifier_percent(self)
 
 
 class CustomerOut(ORMBase):
@@ -163,11 +135,6 @@ class CustomerOut(ORMBase):
     is_active: bool = True
     is_export_customer: bool = False
     outside_banten: bool = False
-    outside_price_adjust: Optional[Decimal] = None
-    outside_adjust_type: Optional[str] = None
-    discount_modifier_enabled: bool = False
-    discount_modifier: Optional[Decimal] = None
-    discount_modifier_type: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
@@ -200,6 +167,20 @@ class BuyerPriceListCreate(BaseModel):
     period_start: date
     period_end: date
     currency: str = "USD"
+    outside_price_adjust: Optional[Decimal] = None
+    outside_adjust_type: Optional[str] = None
+    discount_modifier_enabled: bool = False
+    discount_modifier: Optional[Decimal] = None
+    discount_modifier_type: Optional[str] = None
+
+    @field_validator("outside_adjust_type", "discount_modifier_type", mode="before")
+    @classmethod
+    def _normalize_create_modifier_type(cls, value):
+        return _normalize_customer_modifier_type(value)
+
+    @model_validator(mode="after")
+    def _create_modifier_percent_range(self):
+        return _check_customer_modifier_percent(self)
 
 
 class BuyerPriceListUpdate(BaseModel):
@@ -208,6 +189,20 @@ class BuyerPriceListUpdate(BaseModel):
     period_start: Optional[date] = None
     period_end: Optional[date] = None
     currency: Optional[str] = None
+    outside_price_adjust: Optional[Decimal] = None
+    outside_adjust_type: Optional[str] = None
+    discount_modifier_enabled: Optional[bool] = None
+    discount_modifier: Optional[Decimal] = None
+    discount_modifier_type: Optional[str] = None
+
+    @field_validator("outside_adjust_type", "discount_modifier_type", mode="before")
+    @classmethod
+    def _normalize_update_modifier_type(cls, value):
+        return _normalize_customer_modifier_type(value)
+
+    @model_validator(mode="after")
+    def _update_modifier_percent_range(self):
+        return _check_customer_modifier_percent(self)
 
 
 class BuyerPriceSheetSave(BaseModel):

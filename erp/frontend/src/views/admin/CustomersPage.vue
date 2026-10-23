@@ -142,30 +142,19 @@
                 />
               </div>
             </div>
+            <div class="customer-detail-panel__flags">
+              <el-tag size="small" :type="panelRow.is_active ? 'success' : 'info'" effect="light">
+                {{ panelRow.is_active ? t('status.active') : t('status.inactive') }}
+              </el-tag>
+              <el-tag size="small" :type="panelRow.is_export_customer ? 'warning' : 'info'" effect="plain">
+                {{ t('pages.customers.fieldExportCustomer') }}: {{ yesNo(panelRow.is_export_customer) }}
+              </el-tag>
+              <el-tag size="small" :type="panelRow.outside_banten ? 'warning' : 'info'" effect="plain">
+                {{ t('pages.customers.fieldOutsideBanten') }}: {{ yesNo(panelRow.outside_banten) }}
+              </el-tag>
+            </div>
             <div class="customer-detail-panel__body">
-              <el-descriptions :column="2" border size="small">
-                <el-descriptions-item :label="t('common.code')">{{ panelRow.code || '—' }}</el-descriptions-item>
-                <el-descriptions-item :label="t('pages.customers.fieldReferenceQuotation')">
-                  {{ panelRow.reference_quotation || '—' }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('pages.customers.fieldPaymentTerms')">
-                  {{ panelRow.payment_terms || '—' }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('pages.customers.fieldDefaultCurrency')">
-                  {{ panelRow.default_currency || '—' }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('pages.customers.fieldTaxMode')">
-                  {{ taxModeLabel(panelRow.tax_mode) }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('pages.customers.fieldContactSummary')">
-                  {{ contactSummary(panelRow) }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('common.address')" :span="2">{{ panelRow.address || '—' }}</el-descriptions-item>
-                <el-descriptions-item :label="t('pages.customers.fieldBillingAddress')" :span="2">
-                  {{ panelRow.billing_address || '—' }}
-                </el-descriptions-item>
-                <el-descriptions-item :label="t('pages.customers.fieldRemark')" :span="2">{{ panelRow.remark || '—' }}</el-descriptions-item>
-              </el-descriptions>
+              <CustomerInfo :row="panelRow" :wilayah-text="panelWilayah" />
             </div>
           </div>
           <div v-else class="customer-detail-panel customer-detail-panel--empty">
@@ -178,75 +167,14 @@
     <el-dialog
       v-model="detailVisible"
       :title="t('pages.customers.dialogDetail')"
-      width="640px"
+      width="1040px"
       destroy-on-close
-      class="customer-dialog"
+      class="customer-dialog customer-detail-dialog"
       align-center
       @closed="detailRow = null"
     >
       <template v-if="detailRow">
-        <el-descriptions :column="2" border size="small" class="customer-descriptions">
-          <el-descriptions-item :label="t('common.code')" :span="1">
-            {{ detailRow.code || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('common.name')" :span="1">
-            {{ detailRow.name || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldContactSummary')" :span="2">
-            {{ contactSummary(detailRow) }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldTaxId')" :span="1">
-            {{ detailRow.tax_id || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldSkepKb')" :span="1">
-            {{ detailRow.skep_kb_number || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldCustomsOfficeCode')" :span="1">
-            {{ detailRow.customs_office_code || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldCountry')" :span="1">
-            {{ detailRow.country || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.wilayahDetail')" :span="2">
-            {{ wilayahDetailText || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('common.address')" :span="2">
-            {{ detailRow.address || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldBillingAddress')" :span="2">
-            {{ detailRow.billing_address || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldRemark')" :span="2">
-            {{ detailRow.remark || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldExportCustomer')" :span="1">
-            {{ detailRow.is_export_customer ? t('common.yes') : t('common.no') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldOutsideBanten')" :span="1">
-            {{ detailRow.outside_banten ? t('common.yes') : t('common.no') }}
-            <span v-if="detailRow.outside_banten && detailRow.outside_price_adjust != null">
-              ({{ modifierText(detailRow.outside_adjust_type, detailRow.outside_price_adjust) }})
-            </span>
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldDiscountModifier')" :span="1">
-            {{ detailRow.discount_modifier_enabled ? t('common.yes') : t('common.no') }}
-            <span v-if="detailRow.discount_modifier_enabled && detailRow.discount_modifier != null">
-              ({{ modifierText(detailRow.discount_modifier_type, detailRow.discount_modifier) }})
-            </span>
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldReferenceQuotation')" :span="1">
-            {{ detailRow.reference_quotation || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldPaymentTerms')" :span="1">
-            {{ detailRow.payment_terms || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldDefaultCurrency')" :span="1">
-            {{ detailRow.default_currency || t('common.emptyValue') }}
-          </el-descriptions-item>
-          <el-descriptions-item :label="t('pages.customers.fieldTaxMode')" :span="1">
-            {{ taxModeLabel(detailRow.tax_mode) }}
-          </el-descriptions-item>
-        </el-descriptions>
+        <CustomerInfo :row="detailRow" :wilayah-text="wilayahDetailText" />
       </template>
       <template #footer>
         <el-button type="primary" @click="detailVisible = false">{{ t('pages.customers.closeDetail') }}</el-button>
@@ -256,9 +184,9 @@
     <el-dialog
       v-model="formVisible"
       :title="formIsEdit ? t('pages.customers.dialogEdit') : t('pages.customers.dialogAdd')"
-      width="900px"
+      width="1180px"
       destroy-on-close
-      class="customer-dialog"
+      class="customer-dialog customer-form-dialog"
       align-center
       @closed="resetFormModel"
     >
@@ -279,305 +207,281 @@
         class="customer-form"
         @submit.prevent
       >
-        <el-row :gutter="16" class="customer-form-grid">
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('common.code')" prop="code">
-              <el-input
-                v-model="formModel.code"
-                :placeholder="t('pages.customers.placeholderCode')"
-                maxlength="50"
-                show-word-limit
-                clearable
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('common.name')" prop="name">
-              <el-input
-                v-model="formModel.name"
-                :placeholder="t('pages.customers.placeholderNameLegal')"
-                maxlength="255"
-                show-word-limit
-                clearable
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="24">
-            <el-divider content-position="left">{{ t('pages.customers.quotationSection') }}</el-divider>
-          </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.fieldReferenceQuotation')" prop="reference_quotation">
-              <el-input v-model="formModel.reference_quotation" maxlength="100" clearable />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.fieldPaymentTerms')" prop="payment_terms">
-              <el-select
-                v-model="formModel.payment_terms"
-                filterable
-                allow-create
-                default-first-option
-                clearable
-                class="w-full"
-              >
-                <el-option
-                  v-for="term in PAYMENT_TERMS_OPTIONS"
-                  :key="term.value"
-                  :label="term.label"
-                  :value="term.value"
+        <section class="customer-group">
+          <h4 class="customer-group__title">{{ t('pages.customers.identitySection') }}</h4>
+          <el-row :gutter="16">
+            <el-col :xs="24" :md="8">
+              <el-form-item :label="t('common.code')" prop="code">
+                <el-input
+                  v-model="formModel.code"
+                  :placeholder="t('pages.customers.placeholderCode')"
+                  maxlength="50"
+                  show-word-limit
+                  clearable
                 />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="8">
-            <el-form-item :label="t('pages.customers.fieldDefaultCurrency')" prop="default_currency">
-              <el-select v-model="formModel.default_currency" filterable allow-create clearable class="w-full" default-first-option>
-                <el-option label="USD" value="USD" />
-                <el-option label="IDR" value="IDR" />
-                <el-option label="EUR" value="EUR" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="8">
-            <el-form-item :label="t('pages.customers.fieldTaxMode')" prop="tax_mode">
-              <el-select v-model="formModel.tax_mode" clearable class="w-full" :placeholder="t('pages.customers.fieldTaxMode')">
-                <el-option :label="t('pages.customers.taxMode_pkp')" value="pkp" />
-                <el-option :label="t('pages.customers.taxMode_non_pkp')" value="non_pkp" />
-                <el-option :label="t('pages.customers.taxMode_exempt')" value="exempt" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :span="24">
-            <el-divider content-position="left">{{ t('pages.customers.contactsSection') }}</el-divider>
-            <div class="mb-2 flex justify-end">
-              <el-button type="primary" plain size="small" :icon="Plus" @click="addContactRow">
-                {{ t('pages.customers.addContact') }}
-              </el-button>
-            </div>
-            <div v-for="(contact, idx) in formModel.contacts" :key="`contact-${idx}`" class="customer-contact-card">
-              <el-row :gutter="12" class="customer-contact-row">
-                <el-col :xs="24" :sm="7" :md="7">
-                  <el-form-item :label="t('common.name')">
-                    <el-input v-model="contact.name" maxlength="255" clearable />
-                  </el-form-item>
-                </el-col>
-                <el-col :xs="24" :sm="7" :md="6">
-                  <el-form-item :label="t('pages.customers.fieldPosition')">
-                    <el-select
-                      v-model="contact.title"
-                      filterable
-                      allow-create
-                      default-first-option
-                      clearable
-                      class="w-full"
-                    >
-                      <el-option v-for="role in POSITION_OPTIONS" :key="role" :label="role" :value="role" />
-                    </el-select>
-                  </el-form-item>
-                </el-col>
-                <el-col :xs="24" :sm="5" :md="5">
-                  <el-form-item :label="t('common.phone')">
-                    <el-input v-model="contact.phone" maxlength="50" clearable />
-                  </el-form-item>
-                </el-col>
-                <el-col :xs="24" :sm="5" :md="5">
-                  <el-form-item :label="t('pages.customers.fieldEmail')">
-                    <el-input v-model="contact.email" type="email" maxlength="255" clearable />
-                  </el-form-item>
-                </el-col>
-                <el-col :xs="24" :sm="24" :md="1" class="customer-contact-remove">
-                  <AdminTableActions
-                    :show-delete="true"
-                    @delete="removeContactRow(idx)"
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="16">
+              <el-form-item :label="t('common.name')" prop="name">
+                <el-input
+                  v-model="formModel.name"
+                  :placeholder="t('pages.customers.placeholderNameLegal')"
+                  maxlength="255"
+                  show-word-limit
+                  clearable
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </section>
+
+        <section class="customer-group">
+          <h4 class="customer-group__title">{{ t('pages.customers.quotationSection') }}</h4>
+          <el-row :gutter="16">
+            <el-col :xs="24" :md="12">
+              <el-form-item :label="t('pages.customers.fieldReferenceQuotation')" prop="reference_quotation">
+                <el-input v-model="formModel.reference_quotation" maxlength="100" clearable />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="12">
+              <el-form-item :label="t('pages.customers.fieldPaymentTerms')" prop="payment_terms">
+                <el-select
+                  v-model="formModel.payment_terms"
+                  filterable
+                  allow-create
+                  default-first-option
+                  clearable
+                  class="w-full"
+                >
+                  <el-option
+                    v-for="term in PAYMENT_TERMS_OPTIONS"
+                    :key="term.value"
+                    :label="term.label"
+                    :value="term.value"
                   />
-                </el-col>
-              </el-row>
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="12">
+              <el-form-item :label="t('pages.customers.fieldDefaultCurrency')" prop="default_currency">
+                <el-select v-model="formModel.default_currency" filterable allow-create clearable class="w-full" default-first-option>
+                  <el-option label="USD" value="USD" />
+                  <el-option label="IDR" value="IDR" />
+                  <el-option label="EUR" value="EUR" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="12">
+              <el-form-item :label="t('pages.customers.fieldTaxMode')" prop="tax_mode">
+                <el-select v-model="formModel.tax_mode" clearable class="w-full" :placeholder="t('pages.customers.fieldTaxMode')">
+                  <el-option :label="t('pages.customers.taxMode_pkp')" value="pkp" />
+                  <el-option :label="t('pages.customers.taxMode_non_pkp')" value="non_pkp" />
+                  <el-option :label="t('pages.customers.taxMode_exempt')" value="exempt" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </section>
+
+        <section class="customer-group">
+          <div class="customer-group__head">
+            <h4 class="customer-group__title">{{ t('pages.customers.contactsSection') }}</h4>
+            <el-button type="primary" plain size="small" :icon="Plus" @click="addContactRow">
+              {{ t('pages.customers.addContact') }}
+            </el-button>
+          </div>
+          <div v-for="(contact, idx) in formModel.contacts" :key="`contact-${idx}`" class="customer-contact-card">
+            <div class="customer-contact-grid">
+              <el-form-item :label="t('common.name')">
+                <el-input v-model="contact.name" maxlength="255" clearable />
+              </el-form-item>
+              <el-form-item :label="t('pages.customers.fieldPosition')">
+                <el-select
+                  v-model="contact.title"
+                  filterable
+                  allow-create
+                  default-first-option
+                  clearable
+                  class="w-full"
+                >
+                  <el-option v-for="role in POSITION_OPTIONS" :key="role" :label="role" :value="role" />
+                </el-select>
+              </el-form-item>
+              <el-form-item :label="t('common.phone')">
+                <el-input v-model="contact.phone" maxlength="50" clearable />
+              </el-form-item>
+              <el-form-item :label="t('pages.customers.fieldEmail')">
+                <el-input v-model="contact.email" type="email" maxlength="255" clearable />
+              </el-form-item>
+              <div class="customer-contact-remove">
+                <AdminTableActions :show-delete="true" @delete="removeContactRow(idx)" />
+              </div>
             </div>
-          </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.fieldTaxId')" prop="tax_id">
-              <el-input v-model="formModel.tax_id" maxlength="32" clearable />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.fieldSkepKb')" prop="skep_kb_number">
-              <el-input v-model="formModel.skep_kb_number" maxlength="80" clearable />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.fieldCustomsOfficeCode')" prop="customs_office_code">
-              <el-input v-model="formModel.customs_office_code" maxlength="32" clearable />
-            </el-form-item>
-          </el-col>
-          <el-col :span="24">
-            <div class="customer-section-head">
-              <el-divider content-position="left">{{ t('pages.customers.wilayahSection') }}</el-divider>
-              <el-tooltip placement="top" :show-after="200">
-                <template #content>{{ t('pages.customers.wilayahHint') }}</template>
-                <el-icon class="customer-layout-hint" :size="14" tabindex="0" :aria-label="t('pages.customers.wilayahHint')">
-                  <InfoFilled />
-                </el-icon>
-              </el-tooltip>
-            </div>
-          </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.wilayahProvince')">
-              <el-select
-                v-model="formModel.wilayah_province_code"
-                filterable
-                clearable
-                class="w-full"
-                :loading="wilayahLoading.province"
-                :placeholder="t('pages.customers.wilayahPickProvince')"
-                @change="onProvincePicked"
-              >
-                <el-option v-for="p in provinceOptions" :key="p.code" :label="p.name" :value="p.code" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.wilayahRegency')">
-              <el-select
-                v-model="formModel.wilayah_regency_code"
-                filterable
-                clearable
-                class="w-full"
-                :disabled="!formModel.wilayah_province_code"
-                :loading="wilayahLoading.regency"
-                :placeholder="t('pages.customers.wilayahPickRegency')"
-                @change="onRegencyPicked"
-              >
-                <el-option v-for="p in regencyOptions" :key="p.code" :label="p.name" :value="p.code" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.wilayahDistrict')">
-              <el-select
-                v-model="formModel.wilayah_district_code"
-                filterable
-                clearable
-                class="w-full"
-                :disabled="!formModel.wilayah_regency_code"
-                :loading="wilayahLoading.district"
-                :placeholder="t('pages.customers.wilayahPickDistrict')"
-                @change="onDistrictPicked"
-              >
-                <el-option v-for="p in districtOptions" :key="p.code" :label="p.name" :value="p.code" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.wilayahVillage')">
-              <el-select
-                v-model="formModel.wilayah_village_code"
-                filterable
-                clearable
-                class="w-full"
-                :disabled="!formModel.wilayah_district_code"
-                :loading="wilayahLoading.village"
-                :placeholder="t('pages.customers.wilayahPickVillage')"
-                @change="onVillagePicked"
-              >
-                <el-option v-for="p in villageOptions" :key="p.code" :label="p.name" :value="p.code" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24" :sm="12">
-            <el-form-item :label="t('pages.customers.fieldCountry')" prop="country">
-              <el-input v-model="formModel.country" maxlength="100" clearable />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24">
-            <el-form-item :label="t('common.address')" prop="address">
-              <el-input
-                v-model="formModel.address"
-                type="textarea"
-                :rows="2"
-                :placeholder="t('pages.customers.placeholderAddress')"
-                maxlength="2000"
-                show-word-limit
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24">
-            <el-form-item :label="t('pages.customers.fieldBillingAddress')" prop="billing_address">
-              <el-input
-                v-model="formModel.billing_address"
-                type="textarea"
-                :rows="2"
-                :placeholder="t('pages.customers.placeholderBillingAddress')"
-                maxlength="2000"
-                show-word-limit
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24">
-            <el-form-item :label="t('pages.customers.fieldRemark')" prop="remark">
-              <el-input v-model="formModel.remark" type="textarea" :rows="2" maxlength="2000" show-word-limit />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24">
-            <el-form-item :label="t('status.status')">
-              <el-switch
-                v-model="formModel.is_active"
-                :active-text="t('status.active')"
-                :inactive-text="t('status.inactive')"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24">
-            <el-form-item :label="t('pages.customers.fieldExportCustomer')">
-              <el-switch v-model="formModel.is_export_customer" />
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24">
-            <el-form-item :label="t('pages.customers.fieldOutsideBanten')">
-              <div class="customer-outside-row">
+          </div>
+        </section>
+
+        <section class="customer-group">
+          <h4 class="customer-group__title">{{ t('pages.customers.taxSection') }}</h4>
+          <el-row :gutter="16">
+            <el-col :xs="24" :md="8">
+              <el-form-item :label="t('pages.customers.fieldTaxId')" prop="tax_id">
+                <el-input v-model="formModel.tax_id" maxlength="32" clearable />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="8">
+              <el-form-item :label="t('pages.customers.fieldSkepKb')" prop="skep_kb_number">
+                <el-input v-model="formModel.skep_kb_number" maxlength="80" clearable />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="8">
+              <el-form-item :label="t('pages.customers.fieldCustomsOfficeCode')" prop="customs_office_code">
+                <el-input v-model="formModel.customs_office_code" maxlength="32" clearable />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </section>
+
+        <section class="customer-group">
+          <div class="customer-group__head">
+            <h4 class="customer-group__title">{{ t('pages.customers.wilayahSection') }}</h4>
+            <el-tooltip placement="top" :show-after="200">
+              <template #content>{{ t('pages.customers.wilayahHint') }}</template>
+              <el-icon class="customer-layout-hint" :size="14" tabindex="0" :aria-label="t('pages.customers.wilayahHint')">
+                <InfoFilled />
+              </el-icon>
+            </el-tooltip>
+          </div>
+          <el-row :gutter="16">
+            <el-col :xs="24" :md="12" :lg="6">
+              <el-form-item :label="t('pages.customers.wilayahProvince')">
+                <el-select
+                  v-model="formModel.wilayah_province_code"
+                  filterable
+                  clearable
+                  class="w-full"
+                  :loading="wilayahLoading.province"
+                  :placeholder="t('pages.customers.wilayahPickProvince')"
+                  @change="onProvincePicked"
+                >
+                  <el-option v-for="p in provinceOptions" :key="p.code" :label="p.name" :value="p.code" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="12" :lg="6">
+              <el-form-item :label="t('pages.customers.wilayahRegency')">
+                <el-select
+                  v-model="formModel.wilayah_regency_code"
+                  filterable
+                  clearable
+                  class="w-full"
+                  :disabled="!formModel.wilayah_province_code"
+                  :loading="wilayahLoading.regency"
+                  :placeholder="t('pages.customers.wilayahPickRegency')"
+                  @change="onRegencyPicked"
+                >
+                  <el-option v-for="p in regencyOptions" :key="p.code" :label="p.name" :value="p.code" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="12" :lg="6">
+              <el-form-item :label="t('pages.customers.wilayahDistrict')">
+                <el-select
+                  v-model="formModel.wilayah_district_code"
+                  filterable
+                  clearable
+                  class="w-full"
+                  :disabled="!formModel.wilayah_regency_code"
+                  :loading="wilayahLoading.district"
+                  :placeholder="t('pages.customers.wilayahPickDistrict')"
+                  @change="onDistrictPicked"
+                >
+                  <el-option v-for="p in districtOptions" :key="p.code" :label="p.name" :value="p.code" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="12" :lg="6">
+              <el-form-item :label="t('pages.customers.wilayahVillage')">
+                <el-select
+                  v-model="formModel.wilayah_village_code"
+                  filterable
+                  clearable
+                  class="w-full"
+                  :disabled="!formModel.wilayah_district_code"
+                  :loading="wilayahLoading.village"
+                  :placeholder="t('pages.customers.wilayahPickVillage')"
+                  @change="onVillagePicked"
+                >
+                  <el-option v-for="p in villageOptions" :key="p.code" :label="p.name" :value="p.code" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </section>
+
+        <section class="customer-group">
+          <h4 class="customer-group__title">{{ t('pages.customers.addressSection') }}</h4>
+          <el-row :gutter="16">
+            <el-col :xs="24" :md="8">
+              <el-form-item :label="t('pages.customers.fieldCountry')" prop="country">
+                <el-input v-model="formModel.country" maxlength="100" clearable />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="16">
+              <el-form-item :label="t('common.address')" prop="address">
+                <el-input
+                  v-model="formModel.address"
+                  type="textarea"
+                  :rows="2"
+                  :placeholder="t('pages.customers.placeholderAddress')"
+                  maxlength="2000"
+                  show-word-limit
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="12">
+              <el-form-item :label="t('pages.customers.fieldBillingAddress')" prop="billing_address">
+                <el-input
+                  v-model="formModel.billing_address"
+                  type="textarea"
+                  :rows="2"
+                  :placeholder="t('pages.customers.placeholderBillingAddress')"
+                  maxlength="2000"
+                  show-word-limit
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="12">
+              <el-form-item :label="t('pages.customers.fieldRemark')" prop="remark">
+                <el-input v-model="formModel.remark" type="textarea" :rows="2" maxlength="2000" show-word-limit />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </section>
+
+        <section class="customer-group">
+          <h4 class="customer-group__title">{{ t('pages.customers.statusSection') }}</h4>
+          <el-row :gutter="16">
+            <el-col :xs="24" :md="8">
+              <el-form-item :label="t('status.status')">
+                <el-switch
+                  v-model="formModel.is_active"
+                  :active-text="t('status.active')"
+                  :inactive-text="t('status.inactive')"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="8">
+              <el-form-item :label="t('pages.customers.fieldExportCustomer')">
+                <el-switch v-model="formModel.is_export_customer" />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :md="8">
+              <el-form-item :label="t('pages.customers.fieldOutsideBanten')">
                 <el-switch v-model="formModel.outside_banten" />
-                <template v-if="formModel.outside_banten">
-                  <el-select v-model="formModel.outside_adjust_type" class="customer-modifier-type">
-                    <el-option value="nominal" :label="t('pages.customers.adjustAmount')" />
-                    <el-option value="percent" :label="t('pages.customers.adjustPercent')" />
-                  </el-select>
-                  <el-input-number
-                    v-model="formModel.outside_price_adjust"
-                    :step="0.01"
-                    :precision="4"
-                    :min="formModel.outside_adjust_type === 'percent' ? -100 : -999999"
-                    :max="formModel.outside_adjust_type === 'percent' ? 100 : 999999"
-                    :controls="false"
-                    :placeholder="t('pages.customers.outsidePriceAdjust')"
-                    class="customer-outside-adjust"
-                  />
-                </template>
-              </div>
-            </el-form-item>
-          </el-col>
-          <el-col :xs="24">
-            <el-form-item :label="t('pages.customers.fieldDiscountModifier')">
-              <div class="customer-outside-row">
-                <el-switch v-model="formModel.discount_modifier_enabled" />
-                <template v-if="formModel.discount_modifier_enabled">
-                  <el-select v-model="formModel.discount_modifier_type" class="customer-modifier-type">
-                    <el-option value="nominal" :label="t('pages.customers.adjustAmount')" />
-                    <el-option value="percent" :label="t('pages.customers.adjustPercent')" />
-                  </el-select>
-                  <el-input-number
-                    v-model="formModel.discount_modifier"
-                    :step="0.01"
-                    :precision="4"
-                    :min="formModel.discount_modifier_type === 'percent' ? -100 : -999999"
-                    :max="formModel.discount_modifier_type === 'percent' ? 100 : 999999"
-                    :controls="false"
-                    :placeholder="t('pages.customers.fieldDiscountModifier')"
-                    class="customer-outside-adjust"
-                  />
-                </template>
-              </div>
-            </el-form-item>
-          </el-col>
-        </el-row>
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </section>
       </el-form>
       <template #footer>
         <div class="customer-dialog-footer">
@@ -598,6 +502,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, InfoFilled } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import AdminTableActions from '../../components/admin/AdminTableActions.vue'
+import CustomerInfo from './CustomerInfo.vue'
 import { can } from '../../security/permissions'
 import {
   createCustomer,
@@ -650,7 +555,12 @@ const sortBy = ref('id')
 const sortDir = ref('desc')
 const showExportCustomers = ref(false)
 const panelRow = ref(null)
+const panelWilayah = ref('')
 const panelLoading = ref(false)
+
+function yesNo(value) {
+  return value ? t('common.yes') : t('common.no')
+}
 
 function taxModeLabel(mode) {
   const v = (mode || '').toLowerCase()
@@ -709,11 +619,14 @@ function searchableText(row) {
 async function selectCustomer(id) {
   if (id == null) return
   panelLoading.value = true
+  panelWilayah.value = ''
   try {
     panelRow.value = await getCustomer(id)
+    panelWilayah.value = await buildWilayahReadable(panelRow.value)
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
     panelRow.value = null
+    panelWilayah.value = ''
   } finally {
     panelLoading.value = false
   }
@@ -886,11 +799,6 @@ const formModel = reactive({
   remark: '',
   is_export_customer: false,
   outside_banten: false,
-  outside_price_adjust: null,
-  outside_adjust_type: 'nominal',
-  discount_modifier_enabled: false,
-  discount_modifier: null,
-  discount_modifier_type: 'nominal',
   is_active: true,
   wilayah_province_code: '',
   wilayah_regency_code: '',
@@ -908,14 +816,6 @@ const formRules = computed(() => ({
   name: [{ required: true, message: t('pages.customers.ruleName'), trigger: 'blur' }],
 }))
 
-function modifierText(type, value) {
-  if (value == null || value === '') return ''
-  const number = Number(value)
-  if (!Number.isFinite(number)) return ''
-  if (type === 'percent') return `${number}%`
-  return number.toFixed(4)
-}
-
 function resetFormModel() {
   formModel.id = null
   formModel.code = ''
@@ -929,11 +829,6 @@ function resetFormModel() {
   formModel.remark = ''
   formModel.is_export_customer = false
   formModel.outside_banten = false
-  formModel.outside_price_adjust = null
-  formModel.outside_adjust_type = 'nominal'
-  formModel.discount_modifier_enabled = false
-  formModel.discount_modifier = null
-  formModel.discount_modifier_type = 'nominal'
   formModel.is_active = true
   formModel.wilayah_province_code = ''
   formModel.wilayah_regency_code = ''
@@ -1087,11 +982,6 @@ async function openEdit(row) {
   formModel.remark = row.remark || ''
   formModel.is_export_customer = Boolean(row.is_export_customer)
   formModel.outside_banten = Boolean(row.outside_banten)
-  formModel.outside_price_adjust = row.outside_price_adjust != null ? Number(row.outside_price_adjust) : null
-  formModel.outside_adjust_type = row.outside_adjust_type === 'percent' ? 'percent' : 'nominal'
-  formModel.discount_modifier_enabled = Boolean(row.discount_modifier_enabled)
-  formModel.discount_modifier = row.discount_modifier != null ? Number(row.discount_modifier) : null
-  formModel.discount_modifier_type = row.discount_modifier_type === 'percent' ? 'percent' : 'nominal'
   formModel.is_active = row.is_active !== false
   formModel.wilayah_province_code = row.wilayah_province_code || ''
   formModel.wilayah_regency_code = row.wilayah_regency_code || ''
@@ -1127,11 +1017,6 @@ async function submitForm() {
       remark: formModel.remark.trim() || undefined,
       is_export_customer: formModel.is_export_customer,
       outside_banten: formModel.outside_banten,
-      outside_price_adjust: formModel.outside_price_adjust,
-      outside_adjust_type: formModel.outside_adjust_type,
-      discount_modifier_enabled: formModel.discount_modifier_enabled,
-      discount_modifier: formModel.discount_modifier,
-      discount_modifier_type: formModel.discount_modifier_type,
       is_active: formModel.is_active,
       wilayah_province_code: formModel.wilayah_province_code || undefined,
       wilayah_regency_code: formModel.wilayah_regency_code || undefined,
@@ -1329,8 +1214,49 @@ function confirmDelete(row) {
   gap: 8px;
 }
 
+.customer-detail-panel__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+
 .customer-detail-panel__body {
   padding: 16px;
+}
+
+.customer-group {
+  margin-bottom: 8px;
+  padding: 12px 12px 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.customer-group__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.customer-group__title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.customer-group__head .customer-group__title {
+  margin-bottom: 0;
+}
+
+.customer-contact-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1.3fr) auto;
+  gap: 12px;
+  align-items: end;
 }
 
 .customer-dialog-head {
@@ -1454,9 +1380,15 @@ function confirmDelete(row) {
 
 .customer-contact-remove {
   display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-  padding-bottom: 16px;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 14px;
+}
+
+@media (max-width: 900px) {
+  .customer-contact-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 @media (max-width: 639px) {
@@ -1470,5 +1402,17 @@ function confirmDelete(row) {
     justify-content: flex-start;
     padding-bottom: 10px;
   }
+}
+</style>
+
+<style>
+.customer-form-dialog.el-dialog {
+  width: min(1180px, 94vw) !important;
+  max-width: 94vw;
+}
+
+.customer-detail-dialog.el-dialog {
+  width: min(1040px, 94vw) !important;
+  max-width: 94vw;
 }
 </style>

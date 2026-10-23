@@ -148,28 +148,43 @@ def customer_price_rules(
     db: Session | None,
     factory_code: str | None,
 ) -> dict:
-    """Outside (hanya jika flag nyala) dan diskon modifier customer.
+    """Angka tambahan dan diskon ada di list harga buyer, bukan di customer."""
+    del db, factory_code
+    return {"outside": None, "discount": None}
 
-    Nilai 0 atau kosong tidak dipakai. Tipe selain percent dianggap amount.
+
+def list_price_rules(price_list) -> dict:
+    """Tambahan outside dan diskon dari header list. Nilai 0 tidak dipakai.
+
+    Diskon hanya ikut bila sakelarnya nyala. Tipe selain percent dianggap amount.
     """
-    row = _customer_by_factory_code(db, factory_code)
     outside = None
     discount = None
-    if row is not None and getattr(row, "outside_banten", False) is True:
-        value = _modifier_value(getattr(row, "outside_price_adjust", None))
+    if price_list is not None:
+        value = _modifier_value(getattr(price_list, "outside_price_adjust", None))
         if value is not None and value != 0:
             outside = {
-                "type": _modifier_type(getattr(row, "outside_adjust_type", None)),
+                "type": _modifier_type(getattr(price_list, "outside_adjust_type", None)),
                 "value": value,
             }
-    if row is not None and getattr(row, "discount_modifier_enabled", False) is True:
-        value = _modifier_value(getattr(row, "discount_modifier", None))
-        if value is not None and value != 0:
-            discount = {
-                "type": _modifier_type(getattr(row, "discount_modifier_type", None)),
-                "value": value,
-            }
+        if getattr(price_list, "discount_modifier_enabled", False) is True:
+            value = _modifier_value(getattr(price_list, "discount_modifier", None))
+            if value is not None and value != 0:
+                discount = {
+                    "type": _modifier_type(getattr(price_list, "discount_modifier_type", None)),
+                    "value": value,
+                }
     return {"outside": outside, "discount": discount}
+
+
+def sheet_has_outside_block(rows) -> bool:
+    """Sheet sudah memuat harga outside sebagai blok sendiri."""
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        if canonical_price_block(row.get("COLOR")) in {"OUTSIDE BANTEN", "OUTSIDE SPECIAL"}:
+            return True
+    return False
 
 
 def _modifier_value(raw):

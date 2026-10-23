@@ -50,6 +50,11 @@ class BuyerPriceSummaryOut(BaseModel):
     period_label: Optional[str] = None
     period_start: Optional[str] = None
     period_end: Optional[str] = None
+    outside_price_adjust: Optional[float] = None
+    outside_adjust_type: Optional[str] = None
+    discount_modifier_enabled: bool = False
+    discount_modifier: Optional[float] = None
+    discount_modifier_type: Optional[str] = None
     item_codes: list[str] = Field(default_factory=list)
     filled_price_components: list[str] = Field(default_factory=list)
     missing_price_addons: list[str] = Field(default_factory=list)
@@ -111,6 +116,11 @@ def _row_to_summary(r: BuyerPriceList, brand: Optional[Brand] = None) -> BuyerPr
         period_label=r.period_label,
         period_start=r.period_start.isoformat() if r.period_start else None,
         period_end=r.period_end.isoformat() if r.period_end else None,
+        outside_price_adjust=float(r.outside_price_adjust) if r.outside_price_adjust is not None else None,
+        outside_adjust_type=r.outside_adjust_type,
+        discount_modifier_enabled=bool(r.discount_modifier_enabled),
+        discount_modifier=float(r.discount_modifier) if r.discount_modifier is not None else None,
+        discount_modifier_type=r.discount_modifier_type,
     )
 
 
@@ -249,6 +259,11 @@ def create_buyer_price_list(
         period_start=body.period_start,
         period_end=body.period_end,
         currency=body.currency or "USD",
+        outside_price_adjust=body.outside_price_adjust,
+        outside_adjust_type=body.outside_adjust_type,
+        discount_modifier_enabled=body.discount_modifier_enabled,
+        discount_modifier=body.discount_modifier,
+        discount_modifier_type=body.discount_modifier_type,
     )
     db.add(row)
     db.commit()

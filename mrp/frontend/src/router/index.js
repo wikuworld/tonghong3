@@ -11,6 +11,8 @@ import MrpProsesPage from '../views/admin/mrp/MrpProsesPage.vue'
 import MrpProsesDetailPage from '../views/admin/mrp/MrpProsesDetailPage.vue'
 import MrpLabPage from '../views/admin/mrp/MrpLabPage.vue'
 import MrpMasterTreatmentPage from '../views/admin/mrp/MrpMasterTreatmentPage.vue'
+import MrpMasterSupplierPage from '../views/admin/mrp/MrpMasterSupplierPage.vue'
+import MrpMasterLookupPage from '../views/admin/mrp/MrpMasterLookupPage.vue'
 import MrpPackingPage from '../views/admin/mrp/MrpPackingPage.vue'
 import MrpPackingDetailPage from '../views/admin/mrp/MrpPackingDetailPage.vue'
 import MrpGudangFgPage from '../views/admin/mrp/MrpGudangFgPage.vue'
@@ -87,6 +89,25 @@ const router = createRouter({
           path: 'mrp/masters/treatment',
           component: MrpMasterTreatmentPage,
           meta: { titleKey: 'menu.mrpMasterTreatment', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/masters/supplier',
+          component: MrpMasterSupplierPage,
+          meta: { titleKey: 'menu.mrpMasterSupplier', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/masters/bentuk-kulit',
+          component: MrpMasterLookupPage,
+          meta: {
+            titleKey: 'menu.mrpMasterBentukKulit',
+            module: 'mrpShopfloor',
+            mrpLookup: 'bentuk-kulit',
+          },
+        },
+        {
+          path: 'mrp/masters/skala',
+          component: MrpMasterLookupPage,
+          meta: { titleKey: 'menu.mrpMasterSkala', module: 'mrpShopfloor', mrpLookup: 'skala' },
         },
         {
           path: 'mrp/proses',

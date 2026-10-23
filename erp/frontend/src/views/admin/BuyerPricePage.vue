@@ -258,6 +258,47 @@
                     <el-input v-model="createForm.title" maxlength="255" clearable />
                   </el-form-item>
                 </el-col>
+                <el-col :xs="24" :sm="12">
+                  <el-form-item :label="t('pages.buyerPrices.outsideAdjust')">
+                    <div class="flex gap-2 w-full">
+                      <el-select v-model="createForm.outside_adjust_type" class="w-28">
+                        <el-option value="nominal" :label="t('pages.buyerPrices.adjustAmount')" />
+                        <el-option value="percent" :label="t('pages.buyerPrices.adjustPercent')" />
+                      </el-select>
+                      <el-input-number
+                        v-model="createForm.outside_price_adjust"
+                        :step="0.01"
+                        :precision="4"
+                        :min="createForm.outside_adjust_type === 'percent' ? -100 : -999999"
+                        :max="createForm.outside_adjust_type === 'percent' ? 100 : 999999"
+                        :controls="false"
+                        class="flex-1"
+                      />
+                    </div>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12">
+                  <el-form-item :label="t('pages.buyerPrices.discountModifier')">
+                    <div class="flex gap-2 w-full items-center">
+                      <el-switch v-model="createForm.discount_modifier_enabled" />
+                      <template v-if="createForm.discount_modifier_enabled">
+                        <el-select v-model="createForm.discount_modifier_type" class="w-28">
+                          <el-option value="nominal" :label="t('pages.buyerPrices.adjustAmount')" />
+                          <el-option value="percent" :label="t('pages.buyerPrices.adjustPercent')" />
+                        </el-select>
+                        <el-input-number
+                          v-model="createForm.discount_modifier"
+                          :step="0.01"
+                          :precision="4"
+                          :min="createForm.discount_modifier_type === 'percent' ? -100 : -999999"
+                          :max="createForm.discount_modifier_type === 'percent' ? 100 : 999999"
+                          :controls="false"
+                          class="flex-1"
+                        />
+                      </template>
+                    </div>
+                  </el-form-item>
+                </el-col>
               </el-row>
             </el-form>
           </div>
@@ -494,6 +535,47 @@
                       class="w-full"
                       clearable
                     />
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12">
+                  <el-form-item :label="t('pages.buyerPrices.outsideAdjust')">
+                    <div class="flex gap-2 w-full">
+                      <el-select v-model="headerForm.outside_adjust_type" class="w-28">
+                        <el-option value="nominal" :label="t('pages.buyerPrices.adjustAmount')" />
+                        <el-option value="percent" :label="t('pages.buyerPrices.adjustPercent')" />
+                      </el-select>
+                      <el-input-number
+                        v-model="headerForm.outside_price_adjust"
+                        :step="0.01"
+                        :precision="4"
+                        :min="headerForm.outside_adjust_type === 'percent' ? -100 : -999999"
+                        :max="headerForm.outside_adjust_type === 'percent' ? 100 : 999999"
+                        :controls="false"
+                        class="flex-1"
+                      />
+                    </div>
+                  </el-form-item>
+                </el-col>
+                <el-col :xs="24" :sm="12">
+                  <el-form-item :label="t('pages.buyerPrices.discountModifier')">
+                    <div class="flex gap-2 w-full items-center">
+                      <el-switch v-model="headerForm.discount_modifier_enabled" />
+                      <template v-if="headerForm.discount_modifier_enabled">
+                        <el-select v-model="headerForm.discount_modifier_type" class="w-28">
+                          <el-option value="nominal" :label="t('pages.buyerPrices.adjustAmount')" />
+                          <el-option value="percent" :label="t('pages.buyerPrices.adjustPercent')" />
+                        </el-select>
+                        <el-input-number
+                          v-model="headerForm.discount_modifier"
+                          :step="0.01"
+                          :precision="4"
+                          :min="headerForm.discount_modifier_type === 'percent' ? -100 : -999999"
+                          :max="headerForm.discount_modifier_type === 'percent' ? 100 : 999999"
+                          :controls="false"
+                          class="flex-1"
+                        />
+                      </template>
+                    </div>
                   </el-form-item>
                 </el-col>
               </el-row>
@@ -791,6 +873,11 @@ const createForm = reactive({
   period_label: '',
   period_start: '',
   period_end: '',
+  outside_price_adjust: null,
+  outside_adjust_type: 'nominal',
+  discount_modifier_enabled: false,
+  discount_modifier: null,
+  discount_modifier_type: 'nominal',
 })
 const brandBuyerCodes = computed(() => {
   const brand = brands.value.find((row) => row.id === createForm.brand_id)
@@ -828,6 +915,11 @@ const headerForm = reactive({
   period_label: '',
   period_start: '',
   period_end: '',
+  outside_price_adjust: null,
+  outside_adjust_type: 'nominal',
+  discount_modifier_enabled: false,
+  discount_modifier: null,
+  discount_modifier_type: 'nominal',
 })
 
 const sheetRows = ref([])
@@ -1015,6 +1107,11 @@ function resetCreateForm() {
   createForm.period_label = ''
   createForm.period_start = ''
   createForm.period_end = ''
+  createForm.outside_price_adjust = null
+  createForm.outside_adjust_type = 'nominal'
+  createForm.discount_modifier_enabled = false
+  createForm.discount_modifier = null
+  createForm.discount_modifier_type = 'nominal'
   headerForm.currency = 'USD'
 }
 
@@ -1046,6 +1143,30 @@ function emptyToNull(s) {
   return v === '' || v == null ? null : v
 }
 
+function modifierNumber(value) {
+  if (value == null || value === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
+}
+
+function modifierPayload(form) {
+  return {
+    outside_price_adjust: modifierNumber(form.outside_price_adjust),
+    outside_adjust_type: form.outside_adjust_type === 'percent' ? 'percent' : 'nominal',
+    discount_modifier_enabled: Boolean(form.discount_modifier_enabled),
+    discount_modifier: modifierNumber(form.discount_modifier),
+    discount_modifier_type: form.discount_modifier_type === 'percent' ? 'percent' : 'nominal',
+  }
+}
+
+function applyModifierForm(form, source) {
+  form.outside_price_adjust = modifierNumber(source?.outside_price_adjust)
+  form.outside_adjust_type = source?.outside_adjust_type === 'percent' ? 'percent' : 'nominal'
+  form.discount_modifier_enabled = Boolean(source?.discount_modifier_enabled)
+  form.discount_modifier = modifierNumber(source?.discount_modifier)
+  form.discount_modifier_type = source?.discount_modifier_type === 'percent' ? 'percent' : 'nominal'
+}
+
 async function submitCreate() {
   if (!createFormRef.value) return
   if (createForm.brand_id && !brandBuyerCodes.value.length) {
@@ -1067,6 +1188,7 @@ async function submitCreate() {
       period_label: emptyToNull(createForm.period_label),
       period_start: toIsoDate(createForm.period_start),
       period_end: toIsoDate(createForm.period_end),
+      ...modifierPayload(createForm),
     })
     ElMessage.success(t('pages.buyerPrices.saved'))
     createVisible.value = false
@@ -1106,6 +1228,7 @@ async function openMaster(id) {
     headerForm.period_label = d.period_label || ''
     headerForm.period_start = d.period_start || ''
     headerForm.period_end = d.period_end || ''
+    applyModifierForm(headerForm, d)
     sheetRows.value = normalizeRows(d.rows)
   } catch (e) {
     ElMessage.error(parseApiErrorMessage(e, t('common.errorGeneric')))
@@ -1175,6 +1298,7 @@ async function saveMaster() {
       period_label: emptyToNull(headerForm.period_label),
       period_start: toIsoDate(headerForm.period_start),
       period_end: toIsoDate(headerForm.period_end),
+      ...modifierPayload(headerForm),
     })
     const rowsPayload = sheetRows.value.map((r) => {
       const o = {}

@@ -135,6 +135,19 @@
       append-to-body
     >
       <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpProses.rejectHint') }}</p>
+      <div v-if="openWips.length" class="mb-3">
+        <p class="text-xs text-slate-500 mb-1">{{ t('pages.mrpProses.openWips') }}</p>
+        <div class="flex flex-wrap gap-2">
+          <el-button
+            v-for="w in openWips"
+            :key="`reject-${w.kode_wip}`"
+            size="small"
+            @click="pickWip('reject', w.kode_wip)"
+          >
+            {{ w.kode_wip }} · {{ formatQty(w.remaining_qty) }}
+          </el-button>
+        </div>
+      </div>
       <el-form label-position="top" @submit.prevent="lookupRejectWip">
         <el-form-item :label="t('pages.mrpProses.rejectWipInput')" required>
           <div class="flex gap-2 w-full">
@@ -172,16 +185,28 @@
         <el-table-column :label="t('pages.mrpProses.rejectSf')" width="100" align="right">
           <template #default="{ row }">{{ formatQty(row.reject_sf) }}</template>
         </el-table-column>
+        <el-table-column :label="t('pages.mrpProses.returnedQty')" width="110" align="right">
+          <template #default="{ row }">{{ formatQty(row.returned_qty) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpProses.rejectedQty')" width="110" align="right">
+          <template #default="{ row }">{{ formatQty(row.rejected_qty) }}</template>
+        </el-table-column>
         <el-table-column :label="t('pages.mrpProses.rejectLembar')" width="100" align="right">
           <template #default="{ row }">{{ formatQty(row.lembar_qty) }}</template>
         </el-table-column>
+        <el-table-column :label="t('pages.mrpProses.blockedReason')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.blocked_reason || '—' }}</template>
+        </el-table-column>
       </el-table>
+      <p v-if="rejectLines.length && !rejectCanSave" class="text-sm text-amber-700 mb-0">
+        {{ t('pages.mrpProses.rejectBlocked') }}
+      </p>
       <template #footer>
         <el-button @click="rejectOpen = false">{{ t('common.cancel') }}</el-button>
         <el-button
           type="primary"
           :loading="rejectSaving"
-          :disabled="!rejectLines.length"
+          :disabled="!rejectCanSave"
           @click="submitReject"
         >{{ t('common.save') }}</el-button>
       </template>
@@ -195,6 +220,19 @@
       append-to-body
     >
       <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpProses.returnHint') }}</p>
+      <div v-if="openWips.length" class="mb-3">
+        <p class="text-xs text-slate-500 mb-1">{{ t('pages.mrpProses.openWips') }}</p>
+        <div class="flex flex-wrap gap-2">
+          <el-button
+            v-for="w in openWips"
+            :key="`return-${w.kode_wip}`"
+            size="small"
+            @click="pickWip('return', w.kode_wip)"
+          >
+            {{ w.kode_wip }} · {{ formatQty(w.remaining_qty) }}
+          </el-button>
+        </div>
+      </div>
       <el-form label-position="top" @submit.prevent="lookupReturnWip">
         <el-form-item :label="t('pages.mrpProses.returnWipInput')" required>
           <div class="flex gap-2 w-full">
@@ -232,9 +270,16 @@
         <el-table-column :label="t('pages.mrpProses.returnMeasuredQty')" width="110" align="right">
           <template #default="{ row }">{{ formatQty(row.measured_qty) }}</template>
         </el-table-column>
+        <el-table-column :label="t('pages.mrpProses.returnedQty')" width="110" align="right">
+          <template #default="{ row }">{{ formatQty(row.returned_qty) }}</template>
+        </el-table-column>
+        <el-table-column :label="t('pages.mrpProses.rejectedQty')" width="110" align="right">
+          <template #default="{ row }">{{ formatQty(row.rejected_qty) }}</template>
+        </el-table-column>
         <el-table-column :label="t('pages.mrpProses.returnQty')" width="140" align="right">
           <template #default="{ row }">
             <el-input-number
+              v-if="!row.blocked_reason"
               v-model="row.return_qty"
               :min="0.01"
               :max="row.max_return_qty"
@@ -244,16 +289,23 @@
               size="small"
               class="w-full"
             />
+            <span v-else>{{ formatQty(0) }}</span>
           </template>
         </el-table-column>
         <el-table-column prop="kode_yl_baru" :label="t('pages.mrpProses.returnYlBaru')" min-width="120" />
+        <el-table-column :label="t('pages.mrpProses.blockedReason')" min-width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.blocked_reason || '—' }}</template>
+        </el-table-column>
       </el-table>
+      <p v-if="returnLines.length && !returnCanSave" class="text-sm text-amber-700 mb-0">
+        {{ t('pages.mrpProses.returnBlocked') }}
+      </p>
       <template #footer>
         <el-button @click="returnOpen = false">{{ t('common.cancel') }}</el-button>
         <el-button
           type="primary"
           :loading="returnSaving"
-          :disabled="!returnLines.length"
+          :disabled="!returnCanSave"
           @click="submitReturn"
         >{{ t('common.save') }}</el-button>
       </template>
@@ -702,6 +754,7 @@ import {
   mrpProsesAction,
   mrpProsesNextWip,
   mrpProsesReturnLabel,
+  mrpListMeasurableWips,
   mrpProsesRejectLookup,
   mrpProsesReturnLookup,
   mrpProsesRencanaSearch,
@@ -733,6 +786,13 @@ const returnSortDir = ref('desc')
 const returnForm = reactive({ kode_wip: '' })
 const returnLookupInfo = ref(null)
 const returnLines = ref([])
+const openWips = ref([])
+const rejectCanSave = computed(() =>
+  rejectLines.value.some((row) => !row.blocked_reason && Number(row.reject_sf) > 0),
+)
+const returnCanSave = computed(() =>
+  returnLines.value.some((row) => !row.blocked_reason && Number(row.return_qty) > 0),
+)
 const returnLabelOpen = ref(false)
 const returnLabelLoading = ref(false)
 const returnLabelPrinting = ref(false)
@@ -1291,6 +1351,7 @@ function resetReturnForm() {
 function openReturn() {
   resetReturnForm()
   returnOpen.value = true
+  loadOpenWips()
 }
 
 function resetRejectForm() {
@@ -1302,6 +1363,26 @@ function resetRejectForm() {
 function openReject() {
   resetRejectForm()
   rejectOpen.value = true
+  loadOpenWips()
+}
+
+async function loadOpenWips() {
+  try {
+    const data = await mrpListMeasurableWips()
+    openWips.value = data.items || []
+  } catch {
+    openWips.value = []
+  }
+}
+
+function pickWip(kind, kode) {
+  if (kind === 'reject') {
+    rejectForm.kode_wip = kode
+    lookupRejectWip()
+    return
+  }
+  returnForm.kode_wip = kode
+  lookupReturnWip()
 }
 
 async function lookupRejectWip() {
@@ -1313,8 +1394,11 @@ async function lookupRejectWip() {
     rejectLookupInfo.value = data.persiapan || null
     rejectLines.value = (data.lines || []).map((row) => ({
       ...row,
-      reject_sf: Number(row.reject_sf ?? row.reject_qty) || 0,
+      reject_sf: Number(row.reject_sf ?? row.remaining_qty) || 0,
       lembar_qty: Number(row.lembar_qty) || 0,
+      returned_qty: Number(row.returned_qty) || 0,
+      rejected_qty: Number(row.rejected_qty) || 0,
+      blocked_reason: row.blocked_reason || '',
     }))
     if (!rejectLines.value.length) {
       ElMessage.warning(t('pages.mrpProses.rejectNoLines'))
@@ -1332,7 +1416,7 @@ async function submitReject() {
   const wip = rejectForm.kode_wip.trim()
   if (!wip || !rejectLines.value.length) return
   const lines = rejectLines.value
-    .filter((row) => Number(row.reject_sf) > 0)
+    .filter((row) => !row.blocked_reason && Number(row.reject_sf) > 0)
     .map((row) => ({ ky_id: row.ky_id }))
   if (!lines.length) {
     ElMessage.warning(t('pages.mrpProses.rejectNoLines'))
@@ -1358,11 +1442,17 @@ async function lookupReturnWip() {
   try {
     const data = await mrpProsesReturnLookup(wip)
     returnLookupInfo.value = data.persiapan || null
-    returnLines.value = (data.lines || []).map((row) => ({
-      ...row,
-      max_return_qty: Number(row.return_qty) || Number(row.measured_qty) || 0,
-      return_qty: Number(row.return_qty) || Number(row.measured_qty) || 0,
-    }))
+    returnLines.value = (data.lines || []).map((row) => {
+      const remaining = Number(row.remaining_qty ?? row.return_qty) || 0
+      return {
+        ...row,
+        max_return_qty: remaining,
+        return_qty: remaining,
+        returned_qty: Number(row.returned_qty) || 0,
+        rejected_qty: Number(row.rejected_qty) || 0,
+        blocked_reason: row.blocked_reason || '',
+      }
+    })
     if (!returnLines.value.length) {
       ElMessage.warning(t('pages.mrpProses.returnNoLines'))
     }
@@ -1379,7 +1469,7 @@ async function submitReturn() {
   const wip = returnForm.kode_wip.trim()
   if (!wip || !returnLines.value.length) return
   const lines = returnLines.value
-    .filter((row) => Number(row.return_qty) > 0)
+    .filter((row) => !row.blocked_reason && Number(row.return_qty) > 0)
     .map((row) => ({ ky_id: row.ky_id, return_qty: Number(row.return_qty) }))
   if (!lines.length) {
     ElMessage.warning(t('pages.mrpProses.returnQtyInvalid'))

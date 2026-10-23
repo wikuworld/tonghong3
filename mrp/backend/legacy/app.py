@@ -98,6 +98,29 @@ def allocate_wip_persiapan_code(cur=None) -> str:
     return f"WIP-{today}-{seq:05d}"
 
 
+def _add_column(cur, table, column, ddl):
+    cols = _col_names(cur, table)
+    if cols and column not in cols:
+        cur.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
+def _ensure_inbound_commercial_columns(cur):
+    """Harga dan supplier di penerimaan. Bentuk, skala, dan id ERP di baris YL."""
+    for table in (
+        "tbl_palet_movement",
+        "tbl_yl",
+        "tbl_stok_kimia_in",
+        "tbl_stok_rp_in",
+        "tbl_stok_material_lain_in",
+    ):
+        _add_column(cur, table, "supplier_name", "VARCHAR(255) DEFAULT NULL")
+        if table != "tbl_palet_movement":
+            _add_column(cur, table, "unit_price", "DECIMAL(14,4) DEFAULT NULL")
+    _add_column(cur, "tbl_yl", "bentuk_kulit", "VARCHAR(120) DEFAULT NULL")
+    _add_column(cur, "tbl_yl", "skala", "VARCHAR(120) DEFAULT NULL")
+    _add_column(cur, "tbl_yl", "erp_material_id", "INT DEFAULT NULL")
+
+
 def _col_names(cur, table):
     try:
         cur.execute(f"SHOW COLUMNS FROM {table}")
@@ -345,6 +368,7 @@ def ensure_extended_tables(cur):
         cur.execute(
             "ALTER TABLE tbl_stok_rp_in ADD COLUMN lot_number VARCHAR(100) DEFAULT NULL"
         )
+    _ensure_inbound_commercial_columns(cur)
     kimia_out_cols = _col_names(cur, "tbl_stok_kimia_out")
     if "jumlah_kemasan" not in kimia_out_cols:
         cur.execute("ALTER TABLE tbl_stok_kimia_out ADD COLUMN jumlah_kemasan INT DEFAULT NULL")
@@ -687,6 +711,154 @@ def ensure_master_treatment(cur=None):
         conn.close()
 
 
+# Seed dari dokumentasi/Master Supplier, Bentuk Kulit, Skala.xlsx
+_MASTER_SUPPLIER_SEEDS = (
+    ("RED SILVER STONE CO., LTD.", "KULIT"),
+    ("FUJIAN GUANXING LEATHER CO., LTD.", "KULIT"),
+    ("HONG KONG FENGYU INTERNATIONAL TRADING CO., LIMITED", "KULIT"),
+    ("XUZHOU XINGHUA LEATHER CO., LTD.", "KULIT"),
+    ("HESHAN PLATO INNOVATION TECHNOLOGY CO., LTD.", "KULIT"),
+    ("FUJIAN YIHONG NEW MATERIAL TECHNOLOGY CO., LTD.", "KULIT"),
+    ("AJINOMOTO TRADING, INC.", "RP"),
+    ("DRAGON PRANCE LIMITED", "RP"),
+    ("GODFREY ENTERPRISE CORP.", "RP"),
+    ("SUNGIANT CHEMICALS CORPORATION", "RP"),
+    ("RED SILVER STONE CO., LTD.", "RP"),
+    ("FAVINI S.R.L.", "RP"),
+    ("SAPPI PAPIER HOLDING GMBH", "RP"),
+    ("SULIKY NEW MATERIAL TECHNOLOGY (CHINA) CO., LIMITED", "RP"),
+    ("JIUH YI CHEMICAL INDUSTRIAL CO., LTD.", "KIMIA"),
+    ("KEI TAT (GLOBAL) CHEMICALS LIMITED", "KIMIA"),
+    ("MORE ENDURANCE ENTERPRISE CO., LTD.", "KIMIA"),
+    ("PT INDOCHEMICAL CITRA KIMIA", "KIMIA"),
+    ("ZHEJIANG SEEKLEATHER E-COMMERCE CO., LTD", "KIMIA"),
+    ("PT INDO NAN PAO RESINS CHEMICAL", "KIMIA"),
+    ("C.H.SAM INTERNATIONAL TRADING CO. LTD.", "KIMIA"),
+    ("RED SILVER STONE CO., LTD.", "KIMIA"),
+    ("HONG KONG YANBAO INDUSTRIAL CO., LIMITED", "KIMIA"),
+    ("PT CHEMINDO MULTI MANDIRI", "KIMIA"),
+    ("CODYECO S.P.A", "KIMIA"),
+    ("DOWELL WATER-BASED (SHANGHAI) NEW MATERIALS TECHNOLOGY CO., LTD", "KIMIA"),
+    ("CHING KIN FINE CHEMICAL (HONG KONG) LIMITED", "KIMIA"),
+    ("RED SILVER STONE CO., LTD.", "MATERIAL LAIN"),
+    ("JINJIANG MINGDE SHUNJIE", "MATERIAL LAIN"),
+    ("PT RONGHUA INDONESIA", "MATERIAL LAIN"),
+)
+
+_MASTER_BENTUK_KULIT_SEEDS = (
+    "YUANCAI 圓材",
+    "BANCAI半材",
+    "SHANGBANSHEN 上半身",
+    "XIABANSHEN下半身",
+    "YUANSANCENG圓三層",
+    "YUTO半無",
+)
+
+_MASTER_SKALA_SEEDS = (
+    "5-8",
+    "8-10",
+    "10-12",
+    "10.5↑",
+    "12.0↑",
+)
+
+_MASTER_SUPPLIER_MATERIALS = ("KULIT", "RP", "KIMIA", "MATERIAL LAIN")
+
+
+def _ensure_master_supplier_body(cur):
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_master_supplier ("
+        "id INT AUTO_INCREMENT PRIMARY KEY, "
+        "nama VARCHAR(255) NOT NULL, "
+        "material VARCHAR(32) NOT NULL, "
+        "is_active TINYINT(1) NOT NULL DEFAULT 1, "
+        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "UNIQUE KEY uk_supplier_nama_material (nama, material))"
+    )
+    for nama, material in _MASTER_SUPPLIER_SEEDS:
+        cur.execute(
+            "SELECT id FROM tbl_master_supplier WHERE nama=%s AND material=%s LIMIT 1",
+            (nama, material),
+        )
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO tbl_master_supplier (nama, material, is_active) VALUES (%s, %s, 1)",
+                (nama, material),
+            )
+
+
+def ensure_master_supplier(cur=None):
+    del cur
+    conn = get_db_connection()
+    bcur = conn.cursor(dictionary=True, buffered=True)
+    try:
+        _ensure_master_supplier_body(bcur)
+        conn.commit()
+    finally:
+        bcur.close()
+        conn.close()
+
+
+def _ensure_master_bentuk_kulit_body(cur):
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_master_bentuk_kulit ("
+        "id INT AUTO_INCREMENT PRIMARY KEY, "
+        "nama VARCHAR(120) NOT NULL, "
+        "is_active TINYINT(1) NOT NULL DEFAULT 1, "
+        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "UNIQUE KEY uk_bentuk_kulit_nama (nama))"
+    )
+    for nama in _MASTER_BENTUK_KULIT_SEEDS:
+        cur.execute("SELECT id FROM tbl_master_bentuk_kulit WHERE nama=%s LIMIT 1", (nama,))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO tbl_master_bentuk_kulit (nama, is_active) VALUES (%s, 1)",
+                (nama,),
+            )
+
+
+def ensure_master_bentuk_kulit(cur=None):
+    del cur
+    conn = get_db_connection()
+    bcur = conn.cursor(dictionary=True, buffered=True)
+    try:
+        _ensure_master_bentuk_kulit_body(bcur)
+        conn.commit()
+    finally:
+        bcur.close()
+        conn.close()
+
+
+def _ensure_master_skala_body(cur):
+    cur.execute(
+        "CREATE TABLE IF NOT EXISTS tbl_master_skala ("
+        "id INT AUTO_INCREMENT PRIMARY KEY, "
+        "nama VARCHAR(120) NOT NULL, "
+        "is_active TINYINT(1) NOT NULL DEFAULT 1, "
+        "created_at DATETIME DEFAULT CURRENT_TIMESTAMP, "
+        "UNIQUE KEY uk_skala_nama (nama))"
+    )
+    for nama in _MASTER_SKALA_SEEDS:
+        cur.execute("SELECT id FROM tbl_master_skala WHERE nama=%s LIMIT 1", (nama,))
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO tbl_master_skala (nama, is_active) VALUES (%s, 1)",
+                (nama,),
+            )
+
+
+def ensure_master_skala(cur=None):
+    del cur
+    conn = get_db_connection()
+    bcur = conn.cursor(dictionary=True, buffered=True)
+    try:
+        _ensure_master_skala_body(bcur)
+        conn.commit()
+    finally:
+        bcur.close()
+        conn.close()
+
+
 def ensure_lab_tables(cur):
     cur.execute(
         "CREATE TABLE IF NOT EXISTS tbl_lab_lot ("
@@ -750,6 +922,9 @@ def init_db_tables():
         ensure_lab_tables(cur)
         ensure_rencana_tables(cur)
         ensure_master_treatment(cur)
+        ensure_master_supplier(cur)
+        ensure_master_bentuk_kulit(cur)
+        ensure_master_skala(cur)
         ensure_extended_tables(cur)
         conn.commit()
         cur.close()

@@ -1728,6 +1728,10 @@ export function mrpProsesLabel(id) {
   return apiFetch(`/mrp/proses/${id}/label`)
 }
 
+export function mrpListMeasurableWips() {
+  return apiFetch('/mrp/proses/measurable-wips')
+}
+
 export function mrpProsesReturnLookup(wip) {
   const q = encodeURIComponent(String(wip || '').trim())
   return apiFetch(`/mrp/proses/return/lookup?wip=${q}`)
@@ -1782,6 +1786,61 @@ export function mrpUpdateTreatment(id, body) {
 
 export function mrpDeleteTreatment(id) {
   return apiFetch(`/mrp/masters/treatment/${id}`, { method: 'DELETE' })
+}
+
+export function mrpListSupplier(params = {}) {
+  const q = appendPageParams(new URLSearchParams(), params)
+  if (params.material) q.set('material', String(params.material))
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/mrp/masters/supplier${suffix}`)
+}
+
+export function mrpCreateSupplier(body) {
+  return apiFetch('/mrp/masters/supplier', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpUpdateSupplier(id, body) {
+  return apiFetch(`/mrp/masters/supplier/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function mrpDeleteSupplier(id) {
+  return apiFetch(`/mrp/masters/supplier/${id}`, { method: 'DELETE' })
+}
+
+export function mrpListBentukKulit(params = {}) {
+  const q = appendPageParams(new URLSearchParams(), params)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/mrp/masters/bentuk-kulit${suffix}`)
+}
+
+export function mrpCreateBentukKulit(body) {
+  return apiFetch('/mrp/masters/bentuk-kulit', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpUpdateBentukKulit(id, body) {
+  return apiFetch(`/mrp/masters/bentuk-kulit/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function mrpDeleteBentukKulit(id) {
+  return apiFetch(`/mrp/masters/bentuk-kulit/${id}`, { method: 'DELETE' })
+}
+
+export function mrpListSkala(params = {}) {
+  const q = appendPageParams(new URLSearchParams(), params)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/mrp/masters/skala${suffix}`)
+}
+
+export function mrpCreateSkala(body) {
+  return apiFetch('/mrp/masters/skala', { method: 'POST', body: JSON.stringify(body) })
+}
+
+export function mrpUpdateSkala(id, body) {
+  return apiFetch(`/mrp/masters/skala/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+}
+
+export function mrpDeleteSkala(id) {
+  return apiFetch(`/mrp/masters/skala/${id}`, { method: 'DELETE' })
 }
 
 export async function mrpListLab(params = {}) {

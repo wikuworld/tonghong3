@@ -14,8 +14,9 @@ from app.services.buyer_price_aliases import (
     emboss_is_special,
     extract_emboss_tokens,
     infer_price_block,
-    customer_price_rules,
     is_outside_banten_factory,
+    list_price_rules,
+    sheet_has_outside_block,
     normalize_material_alias,
     split_material_and_thickness,
 )
@@ -419,10 +420,10 @@ def resolve_unit_price_for_buyer(
             **source,
         }
 
-    rules = customer_price_rules(db, factory_code)
-    outside = rules.get("outside")
-    if outside:
-        unit, delta = _apply_customer_modifier(unit, outside, subtract=False)
+    rules = list_price_rules(lst)
+    outside_rule = rules.get("outside")
+    if outside and not sheet_has_outside_block(rows) and outside_rule:
+        unit, delta = _apply_customer_modifier(unit, outside_rule, subtract=False)
         if delta:
             addons.append({"key": "OUTSIDE ADJUST", "label": "+ OUTSIDE", "amount": delta})
     discount = rules.get("discount")
