@@ -2519,6 +2519,42 @@ def _yl_stock_qty(cur, kode_palet: str, kode_yl: str) -> float:
     return float((row or {}).get("qty") or 0)
 
 
+def _record_lebih_ukur(
+    cur,
+    *,
+    rencana_item_id,
+    persiapan_id: int,
+    ky_id: int,
+    kode_palet,
+    kode_yl,
+    cap_qty: float,
+    raw_total: float,
+    overflow: float,
+    keterangan: str = "Lebih ukur",
+) -> None:
+    """Catat selisih ukur di atas kapasitas stok/MOD (bukan selisih actual vs target)."""
+    overflow = round(float(overflow or 0), 3)
+    if overflow <= 1e-9:
+        return
+    cur.execute(
+        "INSERT INTO tbl_kulit_lebih "
+        "(rencana_item_id, persiapan_id, ky_id, kode_palet, kode_yl, "
+        "target_qty, actual_qty, selisih, keterangan) "
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+        (
+            int(rencana_item_id or 0),
+            persiapan_id,
+            ky_id,
+            kode_palet,
+            kode_yl,
+            round(float(cap_qty or 0), 3),
+            round(float(raw_total or 0), 3),
+            overflow,
+            keterangan,
+        ),
+    )
+
+
 def _yl_reserved_qty(cur, kode_palet: str, kode_yl: str, *, exclude_ky_id=None) -> float:
     """Jumlah target KY planned/active yang belum consume (reservasi soft)."""
     sql = (
@@ -3850,9 +3886,27 @@ def _yl_spek_error(cur, persiapan, kode_palet: str, kode_yl: str) -> str | None:
     )
 
 
+def _persiapan_packing_block(cur, kode_wip: str):
+    """Return error response if WIP already has packing; else None."""
+    wip = (kode_wip or "").strip()
+    if not wip:
+        return None
+    cur.execute(
+        "SELECT id, kode_packing, status FROM tbl_packing WHERE kode_wip=%s ORDER BY id DESC LIMIT 1",
+        (wip,),
+    )
+    pack = cur.fetchone()
+    if not pack:
+        return None
+    return _err(
+        f"Tidak dapat buka ulang: WIP sudah punya packing "
+        f"{pack.get('kode_packing') or pack.get('id')} ({pack.get('status') or '-'})."
+    )
+
+
 @api.post("/proses/<int:persiapan_id>/actions")
 def proses_actions(persiapan_id: int):
-    from app import _consume_yl_for_ky_session, ensure_extended_tables
+    from app import _consume_yl_for_ky_session, _return_yl_to_palet, ensure_extended_tables
 
     body = request.get_json(silent=True) or {}
     action = (body.get("action") or "").strip()
@@ -3879,6 +3933,7 @@ def proses_actions(persiapan_id: int):
         return None
 
     msg = "ok"
+    action_extra: dict = {}
     try:
         if action == "start":
             if status == "voided":
@@ -3985,37 +4040,68 @@ def proses_actions(persiapan_id: int):
                 cur.close()
                 conn.close()
                 return _err("KY aktif tidak ditemukan")
-            new_actual = float(ky_row.get("actual_qty") or 0) + size_val
-            if int(ky_row.get("gudang_mod_id") or 0):
-                mod_cap = float(ky_row.get("target_qty") or 0)
-                if new_actual > mod_cap + 1e-9:
-                    cur.close()
-                    conn.close()
-                    return _err(
-                        f"Total ukur {new_actual} melebihi SF MOD ({mod_cap})."
-                    )
+            prev_actual = float(ky_row.get("actual_qty") or 0)
+            raw_total = prev_actual + size_val
+            from_mod = int(ky_row.get("gudang_mod_id") or 0)
+            if from_mod:
+                cap = float(ky_row.get("target_qty") or 0)
+                cap_label = "SF MOD"
             else:
-                stock = _yl_stock_qty(cur, ky_row["kode_palet"], ky_row["kode_yl"])
-                # Ukur tidak boleh melebihi stok fisik yang masih ada di palet.
-                if new_actual > stock + 1e-9:
-                    cur.close()
-                    conn.close()
-                    return _err(
-                        f"Total ukur {new_actual} melebihi stok YL ({stock}) di palet {ky_row['kode_palet']}."
-                    )
-            cur.execute(
-                "INSERT INTO tbl_persiapan_ukur (persiapan_id, ky_id, size_val) VALUES (%s,%s,%s)",
-                (persiapan_id, ky_id, size_val),
-            )
-            cur.execute(
-                "UPDATE tbl_persiapan_kulit SET total_size = total_size + %s WHERE id=%s",
-                (size_val, persiapan_id),
-            )
-            cur.execute(
-                "UPDATE tbl_persiapan_ky SET actual_qty = actual_qty + %s WHERE id=%s",
-                (size_val, ky_id),
-            )
-            msg = "Ukur ditambahkan"
+                cap = _yl_stock_qty(cur, ky_row["kode_palet"], ky_row["kode_yl"])
+                cap_label = "stok YL"
+            # Paksa clamp ke kapasitas: simpan sampai cap, catat overflow sebagai Lebih ukur.
+            room = max(0.0, round(cap - prev_actual, 3))
+            applied = round(min(size_val, room), 3) if room > 1e-9 else 0.0
+            overflow = round(max(0.0, size_val - applied), 3)
+            if applied <= 1e-9 and overflow <= 1e-9:
+                cur.close()
+                conn.close()
+                return _err(f"Size ukur tidak valid (kapasitas {cap_label}={cap}).")
+            if applied > 1e-9:
+                cur.execute(
+                    "INSERT INTO tbl_persiapan_ukur (persiapan_id, ky_id, size_val) VALUES (%s,%s,%s)",
+                    (persiapan_id, ky_id, applied),
+                )
+                cur.execute(
+                    "UPDATE tbl_persiapan_kulit SET total_size = total_size + %s WHERE id=%s",
+                    (applied, persiapan_id),
+                )
+                cur.execute(
+                    "UPDATE tbl_persiapan_ky SET actual_qty = actual_qty + %s WHERE id=%s",
+                    (applied, ky_id),
+                )
+            if overflow > 1e-9:
+                _record_lebih_ukur(
+                    cur,
+                    rencana_item_id=persiapan.get("rencana_item_id"),
+                    persiapan_id=persiapan_id,
+                    ky_id=int(ky_id),
+                    kode_palet=ky_row.get("kode_palet"),
+                    kode_yl=ky_row.get("kode_yl"),
+                    cap_qty=cap,
+                    raw_total=raw_total,
+                    overflow=overflow,
+                    keterangan="Lebih ukur",
+                )
+            action_extra = {
+                "applied": applied,
+                "overflow": overflow,
+                "clamped": overflow > 1e-9,
+                "cap": cap,
+                "raw_total": raw_total,
+            }
+            if overflow > 1e-9 and applied > 1e-9:
+                msg = (
+                    f"Ukur di-clamp ke {cap_label} {cap}: disimpan {applied}, "
+                    f"lebih ukur {overflow} dicatat."
+                )
+            elif overflow > 1e-9:
+                msg = (
+                    f"Kapasitas {cap_label} sudah penuh ({cap}); "
+                    f"lebih ukur {overflow} dicatat, ukur tidak ditambah."
+                )
+            else:
+                msg = "Ukur ditambahkan"
 
         elif action == "activate_ky":
             err = _need_started()
@@ -4245,6 +4331,100 @@ def proses_actions(persiapan_id: int):
             )
             msg = f"Reprint ke-{reprint_ke} dicatat."
 
+        elif action == "reopen":
+            if status not in ("saved", "completed"):
+                cur.close()
+                conn.close()
+                return _err(
+                    f"Buka ulang hanya dari status saved/completed (saat ini: {status or '-'})"
+                )
+            pack_err = _persiapan_packing_block(cur, persiapan.get("kode_wip") or "")
+            if pack_err:
+                cur.close()
+                conn.close()
+                return pack_err
+            cur.execute(
+                "UPDATE tbl_persiapan_kulit SET status='started', date_saved=NULL WHERE id=%s",
+                (persiapan_id,),
+            )
+            msg = (
+                "Persiapan dibuka ulang (started). "
+                "Edit KY/ukur lalu Selesai & Simpan lagi. "
+                "Untuk ubah ukur YL yang sudah selesai, pakai Buka ulang YL."
+            )
+
+        elif action == "reopen_ky":
+            err = _need_started()
+            if err:
+                cur.close()
+                conn.close()
+                return err
+            pack_err = _persiapan_packing_block(cur, persiapan.get("kode_wip") or "")
+            if pack_err:
+                cur.close()
+                conn.close()
+                return pack_err
+            ky_id = body.get("ky_id")
+            if not ky_id:
+                cur.close()
+                conn.close()
+                return _err("ky_id wajib")
+            cur.execute(
+                "SELECT * FROM tbl_persiapan_ky WHERE id=%s AND persiapan_id=%s",
+                (ky_id, persiapan_id),
+            )
+            ky = cur.fetchone()
+            if not ky:
+                cur.close()
+                conn.close()
+                return _err("KY tidak ditemukan", 404)
+            if (ky.get("status") or "").strip() != "selesai":
+                cur.close()
+                conn.close()
+                return _err("Buka ulang YL hanya untuk KY yang sudah selesai")
+            cur.execute(
+                "SELECT id FROM tbl_persiapan_ky WHERE persiapan_id=%s AND status='active' LIMIT 1",
+                (persiapan_id,),
+            )
+            if cur.fetchone():
+                cur.close()
+                conn.close()
+                return _err("Selesaikan atau nonaktifkan KY aktif dulu sebelum buka ulang YL lain.")
+
+            from_mod = int(ky.get("gudang_mod_id") or 0)
+            restored = 0.0
+            if int(ky.get("yl_consumed") or 0) == 1 and not from_mod:
+                restore_qty = float(ky.get("qty_consumed") or 0) or float(ky.get("actual_qty") or 0)
+                if restore_qty > 1e-9:
+                    kode_wip = (persiapan.get("kode_wip") or "").strip()
+                    wip_ref = f" — WIP {kode_wip}" if kode_wip else ""
+                    restored = _return_yl_to_palet(
+                        cur,
+                        ky.get("kode_palet"),
+                        ky.get("kode_yl"),
+                        restore_qty,
+                        keterangan=f"Buka ulang KY (kembalikan stok){wip_ref}",
+                    )
+            # Hapus jejak selisih/sisa yang dibuat saat selesai KY (akan dihitung ulang).
+            cur.execute("DELETE FROM tbl_kulit_lebih WHERE ky_id=%s", (ky_id,))
+            cur.execute(
+                "DELETE FROM tbl_stock_sisa WHERE sumber='kulit' AND barcode=%s AND lot=%s "
+                "AND status='open' AND notes LIKE %s",
+                (
+                    ky.get("kode_yl"),
+                    ky.get("kode_palet"),
+                    f"%Sisa KY #{ky_id}%",
+                ),
+            )
+            cur.execute(
+                "UPDATE tbl_persiapan_ky SET status='active', yl_consumed=0, qty_consumed=0 WHERE id=%s",
+                (ky_id,),
+            )
+            msg = (
+                f"YL dibuka ulang (aktif). Stok dikembalikan: {restored}. "
+                "Ubah ukur lalu Selesai YL lagi."
+            )
+
         else:
             cur.close()
             conn.close()
@@ -4258,7 +4438,10 @@ def proses_actions(persiapan_id: int):
     conn.commit()
     cur.close()
     conn.close()
-    return jsonify({"ok": True, "message": msg})
+    payload = {"ok": True, "message": msg}
+    if action_extra:
+        payload.update(action_extra)
+    return jsonify(payload)
 
 
 # ---- lab ----

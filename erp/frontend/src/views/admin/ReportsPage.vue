@@ -219,46 +219,34 @@
             table-layout="auto"
             :empty-text="t('pages.reports.tableEmpty')"
           >
-            <el-table-column type="index" :label="t('common.noLabel')" width="48" align="center" fixed />
-            <el-table-column :label="t('pages.reports.colOrderDate')" min-width="112" show-overflow-tooltip>
+            <el-table-column type="index" :label="t('pages.reports.colNo')" width="48" align="center" fixed />
+            <el-table-column :label="t('pages.reports.colDate')" min-width="112" show-overflow-tooltip>
               <template #default="{ row }">{{ formatDateIso(row.order_date) }}</template>
             </el-table-column>
-            <el-table-column prop="thi_line_ref" :label="t('pages.reports.colThiLine')" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="customer" :label="t('common.customer')" min-width="150" show-overflow-tooltip />
+            <el-table-column prop="poNo" :label="t('pages.reports.colOrderNo')" min-width="130" show-overflow-tooltip />
+            <el-table-column :label="t('pages.reports.colSystemNo')" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.system_no || row.thi_line_ref || '—' }}</template>
+            </el-table-column>
+            <el-table-column prop="customer" :label="t('pages.reports.colCustomerName')" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="po_customer_ref" :label="t('pages.reports.colCustomerPoNo')" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="material" :label="t('pages.reports.colMaterialName')" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="thickness" :label="t('pages.reports.colThicknessMm')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="emboss" :label="t('pages.reports.colEmboss')" min-width="100" show-overflow-tooltip />
+            <el-table-column prop="color" :label="t('pages.reports.colColor')" min-width="110" show-overflow-tooltip />
             <el-table-column prop="brand" :label="t('pages.reports.colBrand')" min-width="100" show-overflow-tooltip />
-            <el-table-column prop="order_type" :label="t('pages.reports.colOrderType')" min-width="100" show-overflow-tooltip />
-            <el-table-column prop="poNo" :label="t('common.poNo')" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="po_customer_ref" :label="t('pages.reports.colPoCustomerRef')" min-width="130" show-overflow-tooltip />
-            <el-table-column prop="material" :label="t('common.material')" min-width="130" show-overflow-tooltip />
-            <el-table-column prop="thickness" :label="t('common.thickness')" min-width="100" show-overflow-tooltip />
-            <el-table-column prop="emboss" :label="t('pages.po.emboss')" min-width="100" show-overflow-tooltip />
-            <el-table-column prop="softness_type" :label="t('pages.reports.colSoftnessType')" min-width="110" show-overflow-tooltip />
-            <el-table-column prop="pu_production" :label="t('pages.reports.colPuProduction')" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="color" :label="t('common.color')" min-width="110" show-overflow-tooltip />
-            <el-table-column prop="softness" :label="t('common.softness')" min-width="90" show-overflow-tooltip />
-            <el-table-column prop="qty" :label="t('common.quantity')" min-width="88" align="right">
+            <el-table-column prop="qty" :label="t('pages.reports.colQtySf')" min-width="100" align="right">
               <template #default="{ row }">{{ formatQty(row.qty) }}</template>
             </el-table-column>
-            <el-table-column prop="unit_price" :label="t('pages.reports.colUnitPrice')" min-width="90" align="right" show-overflow-tooltip />
-            <el-table-column prop="color_reference" :label="t('common.colorReference')" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="backing" :label="t('common.backing')" min-width="100" show-overflow-tooltip />
-            <el-table-column prop="model" :label="t('common.model')" min-width="100" show-overflow-tooltip />
-            <el-table-column prop="style_article" :label="t('common.styleArticle')" min-width="110" show-overflow-tooltip />
-            <el-table-column :label="t('pages.po.lineEtd')" min-width="110" show-overflow-tooltip>
+            <el-table-column prop="unit_price" :label="t('pages.reports.colPrice')" min-width="90" align="right" show-overflow-tooltip />
+            <el-table-column prop="rtd_text" :label="t('pages.reports.colRta')" min-width="90" show-overflow-tooltip />
+            <el-table-column prop="color_reference" :label="t('pages.reports.colColorSwatch')" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="backing" :label="t('pages.reports.colBacking')" min-width="100" show-overflow-tooltip />
+            <el-table-column prop="model" :label="t('pages.reports.colShoesModel')" min-width="110" show-overflow-tooltip />
+            <el-table-column prop="style_article" :label="t('pages.reports.colArticle')" min-width="110" show-overflow-tooltip />
+            <el-table-column :label="t('pages.reports.colReplyEtd')" min-width="110" show-overflow-tooltip>
               <template #default="{ row }">{{ formatDateIso(row.line_etd) }}</template>
             </el-table-column>
-            <el-table-column prop="buyer" :label="t('common.buyer')" min-width="90" show-overflow-tooltip />
-            <el-table-column prop="po_category" :label="t('common.poCategory')" min-width="100" align="center">
-              <template #default="{ row }">
-                <el-tag v-if="row.po_category" size="small" type="info" effect="plain">{{ categoryLabel(row.po_category) }}</el-tag>
-                <span v-else>—</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="status" :label="t('common.status')" min-width="110" align="center">
-              <template #default="{ row }">
-                <el-tag :type="poStatusTagType(row.status)" size="small">{{ poStatusLabel(row.status) }}</el-tag>
-              </template>
-            </el-table-column>
+            <el-table-column prop="detail_remark" :label="t('pages.reports.colRemark')" min-width="140" show-overflow-tooltip />
           </el-table>
         </div>
         <div v-if="showOrderSection('production')" class="report-total-line">

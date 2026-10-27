@@ -72,6 +72,9 @@ def _detail(**kwargs):
         "backing": "",
         "model": "",
         "style_article": "",
+        "rtd_text": "",
+        "detail_remark": "",
+        "system_reference": "",
         "line_etd": None,
         "quantity_order": Decimal("100"),
     }

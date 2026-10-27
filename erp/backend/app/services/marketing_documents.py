@@ -7,10 +7,11 @@ import io
 from datetime import date, timedelta
 from decimal import Decimal
 from html import escape
+from pathlib import Path
 from typing import Any
 
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
@@ -45,6 +46,128 @@ COMPANY_BLOCK = (
     "Telp. 0254-8480870, Fax. 0254-8480743",
 )
 
+# Logo letterhead (sama Sales Contract)
+_LOGO_PATH = Path(__file__).resolve().parents[3] / "frontend" / "public" / "logo-tonghong.png"
+_LOGO_ASPECT = 127 / 258
+_LOGO_WIDTH_MM = 22
+# Sama packing list FG: NW = qty(SF)×0,11 ; GW = NW + rolls×0,3
+_NW_PER_SF = Decimal("0.11")
+_GW_PER_ROLL = Decimal("0.3")
+
+
+def _logo_bytes() -> bytes | None:
+    try:
+        data = _LOGO_PATH.read_bytes()
+    except OSError:
+        return None
+    return data or None
+
+
+def _logo_data_uri() -> str:
+    raw = _logo_bytes()
+    if not raw:
+        return ""
+    return "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
+
+
+def packing_derived_weights(
+    *,
+    qty: Decimal | float | int | None = None,
+    rolls: int | None = None,
+    weight_net: Decimal | float | int | None = None,
+    weight_gross: Decimal | float | int | None = None,
+) -> tuple[Decimal | None, Decimal | None]:
+    """N.W / G.W dari packing. Fallback: NW=qty×0.11, GW=NW+rolls×0.3."""
+    nw = Decimal(str(weight_net)) if weight_net is not None else None
+    gw = Decimal(str(weight_gross)) if weight_gross is not None else None
+    q = Decimal(str(qty)) if qty is not None else Decimal(0)
+    r = int(rolls or 0)
+    if nw is None:
+        nw = (q * _NW_PER_SF).quantize(Decimal("0.01"))
+    if gw is None:
+        gw = (nw + Decimal(r) * _GW_PER_ROLL).quantize(Decimal("0.01"))
+    return nw, gw
+
+
+def _packing_detail_for_delivery_line(
+    db: Session, dd: DeliveryDetail, ph: PackingHeader | None
+) -> PackingDetail | None:
+    if getattr(dd, "packing_detail_id", None):
+        pkd = db.get(PackingDetail, int(dd.packing_detail_id))
+        if pkd:
+            return pkd
+    if ph and getattr(dd, "production_detail_id", None):
+        return db.scalars(
+            select(PackingDetail)
+            .where(
+                PackingDetail.packing_id == ph.id,
+                PackingDetail.production_detail_id == int(dd.production_detail_id),
+            )
+            .limit(1)
+        ).first()
+    return None
+
+
+def _fetch_mrp_packing_nw_gw(ph: PackingHeader | None) -> tuple[Decimal | None, Decimal | None]:
+    """Return (net_weight, gross_weight) dari header packing MRP bila ada."""
+    mid = getattr(ph, "mrp_packing_id", None) if ph else None
+    if not mid:
+        return None, None
+    try:
+        from app.services.delivery_customs_bc27_xlsx import fetch_mrp_packing_weights
+
+        gw, nw = fetch_mrp_packing_weights(int(mid))
+        return nw, gw
+    except Exception:  # noqa: BLE001 — jangan gagalkan cetak INVPL
+        return None, None
+
+
+def _distribute_header_weights(
+    lines: list[dict[str, Any]],
+    header_nw: Decimal | None,
+    header_gw: Decimal | None,
+) -> None:
+    """Sebar N.W/G.W header packing ke baris menurut proporsi qty (jika belum ada berat packing per baris)."""
+    if header_nw is None and header_gw is None:
+        return
+    if not lines:
+        return
+    has_packing_line = any(bool(ln.get("_from_packing")) for ln in lines)
+    for ln in lines:
+        ln.pop("_from_packing", None)
+    if has_packing_line:
+        return
+    total_qty = sum((_dec(ln.get("qty")) for ln in lines), Decimal(0))
+    if total_qty <= 0:
+        n = len(lines)
+        share_nw = (header_nw / n).quantize(Decimal("0.01")) if header_nw is not None else None
+        share_gw = (header_gw / n).quantize(Decimal("0.01")) if header_gw is not None else None
+        for ln in lines:
+            if header_nw is not None:
+                ln["nw"] = share_nw
+            if header_gw is not None:
+                ln["gw"] = share_gw
+        return
+    allocated_nw = Decimal(0)
+    allocated_gw = Decimal(0)
+    for i, ln in enumerate(lines):
+        last = i == len(lines) - 1
+        ratio = _dec(ln.get("qty")) / total_qty
+        if header_nw is not None:
+            if last:
+                ln["nw"] = (header_nw - allocated_nw).quantize(Decimal("0.01"))
+            else:
+                part = (header_nw * ratio).quantize(Decimal("0.01"))
+                ln["nw"] = part
+                allocated_nw += part
+        if header_gw is not None:
+            if last:
+                ln["gw"] = (header_gw - allocated_gw).quantize(Decimal("0.01"))
+            else:
+                part = (header_gw * ratio).quantize(Decimal("0.01"))
+                ln["gw"] = part
+                allocated_gw += part
+
 INVPL_DESC_DEFAULT = "DESCRIPTION: SHOE MAKING MATERIAL (COW LEATHER)"
 INVPL_TITLE = "INVOICE PACKING LIST"
 INVPL_TITLE_FOC = "INVOICE PACKING LIST (FOC)"
@@ -72,10 +195,15 @@ def apply_invpl_foc_title(ctx: dict[str, Any], foc: bool = False) -> dict[str, A
 # Fallback bank INVPL (sama teks ringkas Proforma) bila invoice belum diisi.
 INVPL_BANK_DEFAULT = {
     "bank_name": "BANK CTBC INDONESIA",
-    "account_number": "2020357701 (USD)",
-    "bank_address": "TAMARA CENTER 16th FLOOR, JL. JENDRAL SUDIRMAN KAV.24 JAKARTA",
-    "bank_phone": "62-21-5237788/7245, Fax : 021-2500622",
+    "account_number": "(USD) 2020357701",
+    "bank_address": "TAMARA CENTER 16TH FLOOR, JL. JENDERAL SUDIRMAN KAV. 24 JAKARTA",
+    "bank_phone": "021-5237788/7245",
+    "bank_fax": "021-2500622",
 }
+
+# Margin cetak A4 (aman printer; selaras HTML @page & PDF SimpleDocTemplate)
+INVPL_MARGIN_LR_MM = 12
+INVPL_MARGIN_TB_MM = 10
 
 SJ_SIGN_LABELS = ("RECEIVED BY", "APPROVED BY", "SECURITY", "DELIVERED BY")
 
@@ -99,14 +227,14 @@ def _item_description(pod: PoDetail) -> str:
 
 
 def _sj_item_text(pod: PoDetail | None) -> str:
-    """ITEM SJ: thickness + material + emboss + color (satu sel)."""
+    """ITEM SJ/INVPL: thickness + material + emboss + color (satu sel)."""
     if not pod:
         return "—"
     parts: list[str] = []
     th = _thickness_mm(pod)
-    mat = (pod.material_name or "").strip()
-    emb = (pod.emboss or "").strip()
-    color = (pod.color or "").strip()
+    mat = (getattr(pod, "material_name", None) or "").strip()
+    emb = (getattr(pod, "emboss", None) or "").strip()
+    color = (getattr(pod, "color", None) or "").strip()
     if th and mat:
         parts.append(f"{th} {mat}")
     elif th or mat:
@@ -204,6 +332,80 @@ def _customer_tel_fax(c: Customer | None) -> tuple[str, str]:
     return (c.phone or "").strip(), ""
 
 
+def _invpl_bank_tel_fax(ctx: dict[str, Any]) -> tuple[str, str]:
+    """TELP / FAX bank untuk footer INVPL (template Excel)."""
+    tel = (ctx.get("bank_phone") or "").strip()
+    fax = (ctx.get("bank_fax") or "").strip()
+    if fax:
+        return tel, fax
+    # Legacy: "… / …, Fax : …" atau "… Fax : …"
+    low = tel.lower()
+    if "fax" in low:
+        parts = tel.split(",", 1) if "," in tel else None
+        if parts and "fax" in parts[1].lower():
+            left, right = parts[0].strip(), parts[1]
+            idx = right.lower().find("fax")
+            fax_part = right[idx:].split(":", 1)[-1].strip() if idx >= 0 else ""
+            return left, fax_part
+        idx = low.find("fax")
+        return tel[:idx].rstrip(" ,;"), tel[idx:].split(":", 1)[-1].strip()
+    return tel, fax or INVPL_BANK_DEFAULT.get("bank_fax", "")
+
+
+def _invpl_account_display(account: str | None) -> str:
+    """Normalisasi tampilan ACCOUNT NO. → '(USD) 2020357701'."""
+    raw = (account or "").strip()
+    if not raw:
+        return "—"
+    if raw.upper().startswith("(USD)"):
+        return raw
+    if raw.upper().endswith("(USD)"):
+        num = raw[: -len("(USD)")].strip()
+        return f"(USD) {num}" if num else raw
+    return raw
+
+
+def _invpl_item_text(ln: dict[str, Any]) -> str:
+    """ITEM cetak: deskripsi lengkap; EXIM digabung bila ada (export)."""
+    base = (ln.get("item") or "").strip()
+    color = (ln.get("color") or "").strip()
+    # Data lama: item tanpa warna → append COLOR bila belum tercakup
+    if color and color.upper() not in base.upper():
+        base = f"{base} {color}".strip() if base else color
+    exim = (ln.get("exim_code") or "").strip()
+    if exim:
+        base = f"{base} [{exim}]".strip() if base else exim
+    return base or "—"
+
+
+def _fmt_invpl_qty(v: Decimal | float | int | None) -> str:
+    if v is None:
+        return ""
+    d = Decimal(str(v)).quantize(Decimal("0.01"))
+    return f"{d:,.2f}"
+
+
+def _fmt_invpl_money(v: Decimal | float | int | None, *, places: int = 2) -> str:
+    if v is None:
+        return ""
+    q = Decimal(1).scaleb(-places)
+    d = Decimal(str(v)).quantize(q)
+    return f"{d:,.{places}f}"
+
+
+def _fmt_invpl_int(v: int | None) -> str:
+    if v is None:
+        return ""
+    return f"{int(v):,}"
+
+
+def _fmt_invpl_weight(v: Decimal | float | int | None) -> str:
+    if v is None:
+        return ""
+    d = Decimal(str(v)).quantize(Decimal("0.1"))
+    return f"{d:,.1f}"
+
+
 def _resolve_customer_delivery_packing(
     db: Session, ph: PackingHeader
 ) -> tuple[Customer | None, DeliveryHeader | None]:
@@ -276,7 +478,8 @@ def _invpl_line_dict(
     return {
         "no": no,
         "po_no": po_no,
-        "item": _item_description(pod) if pod else "—",
+        # Template Excel: ITEM = thickness + material + emboss + color (satu sel)
+        "item": _sj_item_text(pod) if pod else "—",
         "exim_code": exim,
         "color": (pod.color or "").strip() if pod else "",
         "qty": qty,
@@ -349,6 +552,7 @@ def gather_invpl_rows(
     total_nw = Decimal(0)
     total_gw = Decimal(0)
     is_claim_order = False
+    mrp_nw, mrp_gw = _fetch_mrp_packing_nw_gw(ph)
 
     delivery_details: list[DeliveryDetail] = []
     if dh:
@@ -360,26 +564,55 @@ def gather_invpl_rows(
             ).all()
         )
 
+    def _resolve_line_weights(
+        *,
+        qty: Decimal,
+        rolls,
+        pkd: PackingDetail | None,
+        dd: DeliveryDetail | None,
+        inv_idx: int,
+    ) -> tuple[Decimal | None, Decimal | None, bool]:
+        """Priority: packing weight_net → delivery.weight → formula; GW dari packing/formula."""
+        from_packing = bool(pkd and pkd.weight_net is not None)
+        weight_net = pkd.weight_net if from_packing else None
+        if weight_net is None and dd is not None and dd.weight is not None:
+            weight_net = dd.weight
+        weight_gross = None
+        inv_nw = inv_gw = None
+        if 0 <= inv_idx < len(inv_details):
+            idet = inv_details[inv_idx]
+            if idet.net_weight is not None:
+                inv_nw = idet.net_weight
+            if idet.gross_weight is not None:
+                inv_gw = idet.gross_weight
+        # Invoice override hanya jika sudah terisi; packing tetap sumber utama bila invoice kosong
+        seed_nw = inv_nw if inv_nw is not None else weight_net
+        seed_gw = inv_gw if inv_gw is not None else weight_gross
+        nw, gw = packing_derived_weights(
+            qty=qty, rolls=rolls, weight_net=seed_nw, weight_gross=seed_gw
+        )
+        return nw, gw, from_packing
+
     if delivery_details:
         for i, dd in enumerate(delivery_details, 1):
             pod, poh, master = _pod_chain_from_delivery_detail(db, dd)
             qty = _dec(dd.qty)
             rolls = dd.qty_roll
             pcs = dd.qty_pcs
-            nw = dd.weight
-            gw = nw
+            pkd = _packing_detail_for_delivery_line(db, dd, ph)
+            if rolls is None and pkd is not None and pkd.qty_roll is not None:
+                rolls = pkd.qty_roll
+            if pcs is None and pkd is not None and pkd.qty_pcs is not None:
+                pcs = pkd.qty_pcs
+            nw, gw, from_packing = _resolve_line_weights(
+                qty=qty, rolls=rolls, pkd=pkd, dd=dd, inv_idx=i - 1
+            )
             po_no = sj_po_no_from_header(poh)
             remark_line = po_no
             if i - 1 < len(inv_details):
                 idet = inv_details[i - 1]
-                if idet.net_weight is not None:
-                    nw = idet.net_weight
-                if idet.gross_weight is not None:
-                    gw = idet.gross_weight
                 if (idet.remark or "").strip():
                     remark_line = (idet.remark or "").strip()
-            if gw is None:
-                gw = nw
             line = _invpl_line_dict(
                 no=i,
                 pod=pod,
@@ -395,16 +628,13 @@ def gather_invpl_rows(
             )
             if line.pop("is_claim"):
                 is_claim_order = True
+            line["_from_packing"] = from_packing
             lines_out.append(line)
             total_qty += qty
             if line["amount"] is not None:
                 total_amt += line["amount"]
             total_roll += int(rolls or 0)
             total_pcs += int(pcs or 0)
-            if nw is not None:
-                total_nw += nw
-            if gw is not None:
-                total_gw += gw
     elif ph:
         pkd_list = db.scalars(
             select(PackingDetail)
@@ -429,24 +659,19 @@ def gather_invpl_rows(
                         master = db.get(MasterItem, pod.master_item_id)
             dd = dd_by_pd.get(int(pkd.production_detail_id or 0), None)
             qty = _dec(dd.qty if dd and dd.qty is not None else pkd.qty_packed)
-            rolls = dd.qty_roll if dd else None
-            pcs = dd.qty_pcs if dd else None
-            nw = dd.weight if dd and dd.weight is not None else None
-            gw = nw
+            rolls = dd.qty_roll if dd and dd.qty_roll is not None else pkd.qty_roll
+            pcs = dd.qty_pcs if dd and dd.qty_pcs is not None else pkd.qty_pcs
+            nw, gw, from_packing = _resolve_line_weights(
+                qty=qty, rolls=rolls, pkd=pkd, dd=dd, inv_idx=i - 1
+            )
             po_no = sj_po_no_from_header(poh)
             remark_line = po_no
             if i - 1 < len(inv_details):
                 idet = inv_details[i - 1]
-                if idet.net_weight is not None:
-                    nw = idet.net_weight
-                if idet.gross_weight is not None:
-                    gw = idet.gross_weight
                 if (idet.remark or "").strip():
                     remark_line = (idet.remark or "").strip()
                 elif not remark_line:
                     remark_line = po_no
-            if gw is None:
-                gw = nw
             line = _invpl_line_dict(
                 no=i,
                 pod=pod,
@@ -462,16 +687,20 @@ def gather_invpl_rows(
             )
             if line.pop("is_claim"):
                 is_claim_order = True
+            line["_from_packing"] = from_packing
             lines_out.append(line)
             total_qty += qty
             if line["amount"] is not None:
                 total_amt += line["amount"]
             total_roll += int(rolls or 0)
             total_pcs += int(pcs or 0)
-            if nw is not None:
-                total_nw += nw
-            if gw is not None:
-                total_gw += gw
+
+    _distribute_header_weights(lines_out, mrp_nw, mrp_gw)
+    for ln in lines_out:
+        if ln.get("nw") is not None:
+            total_nw += _dec(ln["nw"])
+        if ln.get("gw") is not None:
+            total_gw += _dec(ln["gw"])
 
     if inv and inv.total_amount is not None:
         total_amt = inv.total_amount
@@ -499,11 +728,15 @@ def gather_invpl_rows(
     account_number = (inv.account_number or "").strip() if inv else ""
     bank_address = (inv.bank_address or "").strip() if inv else ""
     bank_phone = (inv.bank_phone or "").strip() if inv else ""
+    bank_fax = ""
     if not bank_name:
         bank_name = INVPL_BANK_DEFAULT["bank_name"]
         account_number = account_number or INVPL_BANK_DEFAULT["account_number"]
         bank_address = bank_address or INVPL_BANK_DEFAULT["bank_address"]
         bank_phone = bank_phone or INVPL_BANK_DEFAULT["bank_phone"]
+        bank_fax = INVPL_BANK_DEFAULT.get("bank_fax", "")
+    if not account_number:
+        account_number = INVPL_BANK_DEFAULT["account_number"]
 
     inv_raw = (inv.invoice_number or "").strip() if inv else ""
     ph_for_cat: PoHeader | None = None
@@ -511,6 +744,8 @@ def gather_invpl_rows(
         _pod, _poh, _ = _pod_chain_from_delivery_detail(db, delivery_details[0])
         ph_for_cat = _poh
     invoice_no = invoice_display_number(inv_raw, ph_for_cat, doc_date=doc_date) if inv_raw else ""
+
+    cust_tel, cust_fax = _customer_tel_fax(cust)
 
     return {
         "packing_number": packing_number,
@@ -520,6 +755,8 @@ def gather_invpl_rows(
         "customer_name": cust_name,
         "customer_address": cust_addr,
         "customer_phone_line": _customer_phone_fax(cust),
+        "customer_tel": cust_tel,
+        "customer_fax": cust_fax,
         "is_export": is_export,
         "bill_to_block": bill_to,
         "lines": lines_out,
@@ -538,6 +775,7 @@ def gather_invpl_rows(
         "account_number": account_number,
         "bank_address": bank_address,
         "bank_phone": bank_phone,
+        "bank_fax": bank_fax,
         "description_line": INVPL_DESC_DEFAULT,
         "claim_title_suffix": " (Non)" if is_claim_order else "",
         "document_title": INVPL_TITLE,
@@ -616,123 +854,196 @@ def render_commercial_invoice_pdf(ctx: dict[str, Any]) -> bytes:
 
 
 def render_invpl_html(ctx: dict[str, Any]) -> str:
-    is_export = ctx["is_export"]
+    """Cetak INVPL / Commercial Invoice — layout template Excel Tong Hong, A4."""
     bill_html = ""
-    if is_export and ctx.get("bill_to_block"):
+    if ctx.get("is_export") and ctx.get("bill_to_block"):
         bill_html = (
-            f'<div class="billto"><b>BILL TO:</b><br/>{escape(ctx["bill_to_block"]).replace(chr(10), "<br/>")}</div>'
+            f'<div class="billto"><b>BILL TO:</b><br/>'
+            f'{escape(ctx["bill_to_block"]).replace(chr(10), "<br/>")}</div>'
         )
 
-    cols = ["NO", "PO NO", "ITEM"]
-    if is_export:
-        cols.append("EXIM CODE")
-    cols.extend(["COLOR", "Q'TY", "UNIT", "UNIT PRICE (USD)", "AMOUNT (USD)", "ROLLS", "PCS", "N.W (KGS)", "G.W (KGS)", "REMARK"])
-
+    # Kolom sesuai template Excel (COLOR/REMARK digabung ke ITEM)
+    cols = [
+        "P.O. NO.",
+        "ITEM",
+        "QTY",
+        "UNIT",
+        "U. PRICE (USD)",
+        "AMOUNT (USD)",
+        "ROLLS",
+        "PIECES",
+        "N.W. (KGS)",
+        "G.W. (KGS)",
+    ]
     thead = "<tr>" + "".join(f"<th>{escape(c)}</th>" for c in cols) + "</tr>"
     rows_html = ""
     for ln in ctx["lines"]:
         cells = [
-            str(ln["no"]),
-            escape(ln["po_no"] or ""),
-            escape(ln["item"] or ""),
+            escape(ln.get("po_no") or ""),
+            escape(_invpl_item_text(ln)),
+            _fmt_invpl_qty(ln.get("qty")),
+            escape(ln.get("unit") or "S/F"),
+            _fmt_invpl_money(ln.get("unit_price"), places=2),
+            _fmt_invpl_money(ln.get("amount"), places=2),
+            _fmt_invpl_int(ln.get("rolls")),
+            _fmt_invpl_int(ln.get("pcs")),
+            _fmt_invpl_weight(ln.get("nw")),
+            _fmt_invpl_weight(ln.get("gw")),
         ]
-        if is_export:
-            cells.append(escape(ln.get("exim_code") or ""))
-        up = ln["unit_price"]
-        am = ln["amount"]
-        cells.extend(
-            [
-                escape(ln["color"] or ""),
-                f"{ln['qty']:.2f}" if ln["qty"] is not None else "",
-                escape(ln["unit"] or "S/F"),
-                f"{up:.4f}" if up is not None else "",
-                f"{am:.2f}" if am is not None else "",
-                str(ln["rolls"] or "") if ln["rolls"] is not None else "",
-                str(ln["pcs"] or "") if ln["pcs"] is not None else "",
-                f"{ln['nw']:.1f}" if ln.get("nw") is not None else "",
-                f"{ln['gw']:.1f}" if ln.get("gw") is not None else "",
-                escape(ln.get("remark") or ""),
-            ]
-        )
         rows_html += "<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>"
 
     t = ctx["totals"]
-    ncol = len(cols)
-    o = 1 if is_export else 0
-    foot = [""] * ncol
-    foot[0] = "TOTAL"
-    foot[4 + o] = f"{t['qty']:.2f}"
-    foot[7 + o] = f"{t['amount']:.2f}"
-    foot[8 + o] = str(t["rolls"])
-    foot[9 + o] = str(t["pcs"])
-    foot[10 + o] = f"{t['nw']:.1f}" if t["nw"] else ""
-    foot[11 + o] = f"{t['gw']:.1f}" if t["gw"] else ""
-    rows_html += "<tr class='total'>" + "".join(f"<td><b>{escape(str(x))}</b></td>" for x in foot) + "</tr>"
+    foot = [
+        "TOTAL",
+        "",
+        _fmt_invpl_qty(t.get("qty")),
+        "",
+        "",
+        _fmt_invpl_money(t.get("amount"), places=2),
+        _fmt_invpl_int(t.get("rolls")),
+        _fmt_invpl_int(t.get("pcs")),
+        _fmt_invpl_weight(t.get("nw")) if t.get("nw") else "",
+        _fmt_invpl_weight(t.get("gw")) if t.get("gw") else "",
+    ]
+    rows_html += (
+        "<tr class='total'>"
+        + "".join(f"<td><b>{escape(str(x))}</b></td>" for x in foot)
+        + "</tr>"
+    )
 
-    meta_right = f"""
+    cust_tel = (ctx.get("customer_tel") or "").strip()
+    cust_fax = (ctx.get("customer_fax") or "").strip()
+    if not cust_tel and ctx.get("customer_phone_line"):
+        # Fallback konteks lama: "TELP. NO. : …"
+        raw = str(ctx["customer_phone_line"])
+        cust_tel = raw.split(":", 1)[-1].strip() if ":" in raw else raw
+    tel_line = f"TELP. NO.: {escape(cust_tel)}" if cust_tel else "TELP. NO.:"
+    fax_line = f"FAX. NO.: {escape(cust_fax)}" if cust_fax else "FAX. NO.:"
+
+    bank_tel, bank_fax = _invpl_bank_tel_fax(ctx)
+    account_disp = _invpl_account_display(ctx.get("account_number"))
+
+    company_html = "<br/>".join(escape(x) for x in COMPANY_BLOCK)
+    logo_uri = _logo_data_uri()
+    logo_html = (
+        f'<div class="logo"><img src="{logo_uri}" alt="Tong Hong Tannery"/></div>'
+        if logo_uri
+        else '<div class="logo"></div>'
+    )
+    body = f"""
+<div class="doc">
+  <div class="letterhead">
+    {logo_html}
+    <div class="company"><b>{company_html}</b></div>
+  </div>
+  <div class="rule"></div>
+  <div class="to-meta">
+    <div class="to-block">
+      <div><b>TO:</b></div>
+      <div class="to-name">{escape(ctx['customer_name'])}</div>
+      <div class="addr">{escape(ctx.get('customer_address') or '').replace(chr(10), '<br/>')}</div>
+      <div>{tel_line}</div>
+      <div>{fax_line}</div>
+    </div>
     <div class="meta-right">
       <div><b>DATE:</b> {escape(ctx['doc_date_fmt'])}</div>
       <div><b>INV. NO:</b> {escape(ctx.get('invoice_no') or '—')}</div>
-      <div><b>PL. NO.:</b> {escape(ctx['packing_number'])}</div>
-    </div>
-    """
-
-    company_html = "<br/>".join(escape(x) for x in COMPANY_BLOCK)
-    body = f"""
-<div class="doc">
-  <div class="header-row">
-    <div class="company"><b>{company_html}</b></div>
-    {meta_right}
-  </div>
-  <div class="two-col">
-    <div>
-      <div><b>TO:</b></div>
-      <div>{escape(ctx['customer_name'])}</div>
-      <div class="addr">{escape(ctx['customer_address']).replace(chr(10), '<br/>')}</div>
-      <div>{escape(ctx['customer_phone_line'])}</div>
     </div>
   </div>
   {bill_html}
   <h2 class="title">{escape(ctx.get('document_title', INVPL_TITLE))}</h2>
-  <div class="stars">*******************</div>
-  <p class="desc">{escape(ctx['description_line'])}</p>
+  <div class="stars">****************************************</div>
+  <p class="desc">{escape(ctx.get('description_line') or INVPL_DESC_DEFAULT)}</p>
   <table class="grid"><thead>{thead}</thead><tbody>{rows_html}</tbody></table>
   <p class="words"><b>SAY TOTAL IN WORDS:</b> {escape(ctx['amount_in_words'])}</p>
   <div class="footer-bank">
-    <div><b>TERM OF PAYMENT:</b> {escape(ctx['term_of_payment'] or '—')}</div>
-    <div><b>OUR ADVISING BANK:</b> {escape(ctx['bank_name'] or '—')}</div>
-    <div><b>ACCOUNT NO.:</b> {escape(ctx['account_number'] or '—')}</div>
-    <div><b>BANK ADDRESS:</b> {escape(ctx['bank_address'] or '—')}</div>
-    <div><b>BANK CONTACT:</b> {escape(ctx['bank_phone'] or '—')}</div>
+    <div><b>TERM OF PAYMENT:</b> {escape(ctx.get('term_of_payment') or '—')}</div>
+    <div><b>BANK:</b> {escape(ctx.get('bank_name') or '—')}</div>
+    <div><b>ACCOUNT NO.:</b> {escape(account_disp)}</div>
+    <div><b>BANK ADDRESS:</b> {escape(ctx.get('bank_address') or '—')}</div>
+    <div><b>TELP. NO:</b> {escape(bank_tel or '—')}</div>
+    <div><b>FAX. NO:</b> {escape(bank_fax or '—')}</div>
   </div>
   <div class="sign">
-    <p>Authorized signature:</p>
-    <p><br/><br/></p>
+    <p><b>AUTHORIZED SIGNATURE</b></p>
+    <p class="sign-space">&nbsp;</p>
     <p><b>(CHIU PO HAO)</b></p>
     <p>Director</p>
   </div>
 </div>
 """
-    style = """
-    body { font-family: Arial, Helvetica, sans-serif; margin: 16px; color: #111; font-size: 11px; }
-    .doc { max-width: 1100px; margin: 0 auto; }
-    .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
-    .company { flex: 1; text-align: center; font-size: 12px; line-height: 1.35; }
-    .meta-right { text-align: right; min-width: 200px; font-size: 11px; }
-    .two-col { margin-top: 12px; }
-    .addr { margin: 4px 0; white-space: pre-wrap; }
-    .billto { margin: 10px 0; padding: 8px; border: 1px solid #333; background: #fafafa; }
-    .title { text-align: center; margin: 16px 0 4px; font-size: 14px; }
-    .stars { text-align: center; letter-spacing: 2px; margin-bottom: 8px; }
-    .desc { font-weight: bold; margin: 8px 0; }
-    table.grid { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 9px; }
-    table.grid th, table.grid td { border: 1px solid #333; padding: 4px 3px; vertical-align: top; }
-    table.grid th { background: #e8e8e8; }
-    tr.total td { background: #f0f0f0; }
-    .words { margin-top: 12px; font-size: 10px; }
-    .footer-bank { margin-top: 14px; line-height: 1.5; font-size: 10px; }
-    .sign { margin-top: 28px; text-align: right; font-size: 10px; }
-    @media print { body { margin: 8px; } }
+    lr = INVPL_MARGIN_LR_MM
+    tb = INVPL_MARGIN_TB_MM
+    style = f"""
+    @page {{ size: A4 portrait; margin: {tb}mm {lr}mm; }}
+    body {{
+      font-family: Arial, Helvetica, sans-serif;
+      margin: 0;
+      color: #111;
+      font-size: 10px;
+    }}
+    .doc {{ width: 100%; max-width: 186mm; margin: 0 auto; }}
+    .letterhead {{
+      display: grid;
+      grid-template-columns: 26mm 1fr;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+    }}
+    .logo img {{ width: 22mm; height: auto; display: block; }}
+    .company {{ text-align: center; font-size: 10.5px; line-height: 1.35; }}
+    .rule {{ border-top: 2.2px solid #000; margin: 4px 0 8px; }}
+    .to-meta {{
+      display: grid;
+      grid-template-columns: 1fr 48mm;
+      gap: 8px;
+      align-items: start;
+      margin-bottom: 6px;
+    }}
+    .to-name {{ font-weight: bold; margin-top: 2px; }}
+    .addr {{ margin: 3px 0; white-space: pre-wrap; }}
+    .meta-right {{ text-align: right; font-size: 10px; line-height: 1.5; }}
+    .billto {{ margin: 6px 0; padding: 5px; border: 1px solid #333; }}
+    .title {{
+      text-align: center;
+      margin: 10px 0 2px;
+      font-size: 14px;
+      font-weight: bold;
+      letter-spacing: 0.5px;
+    }}
+    .stars {{ text-align: center; letter-spacing: 1px; margin-bottom: 6px; font-size: 9px; }}
+    .desc {{ font-weight: bold; margin: 4px 0 6px; font-size: 10px; }}
+    table.grid {{
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 2px;
+      font-size: 7.5px;
+      table-layout: fixed;
+    }}
+    table.grid th, table.grid td {{
+      border: 1px solid #222;
+      padding: 3px 2px;
+      vertical-align: top;
+      word-wrap: break-word;
+    }}
+    table.grid th {{ background: #ececec; font-size: 7px; text-align: center; }}
+    table.grid td:nth-child(3),
+    table.grid td:nth-child(5),
+    table.grid td:nth-child(6),
+    table.grid td:nth-child(7),
+    table.grid td:nth-child(8),
+    table.grid td:nth-child(9),
+    table.grid td:nth-child(10) {{ text-align: right; }}
+    table.grid td:nth-child(4) {{ text-align: center; }}
+    tr.total td {{ background: #f3f3f3; }}
+    .words {{ margin-top: 8px; font-size: 9px; }}
+    .footer-bank {{ margin-top: 8px; line-height: 1.5; font-size: 9px; }}
+    .sign {{ margin-top: 18px; text-align: left; font-size: 9px; }}
+    .sign-space {{ height: 14mm; }}
+    @media print {{
+      body {{ margin: 0; }}
+      .doc {{ max-width: none; width: 100%; }}
+    }}
     """
     doc_title = str(ctx.get("document_title", "INVPL"))
     return f"""<!DOCTYPE html>
@@ -744,64 +1055,83 @@ def render_invpl_xlsx(ctx: dict[str, Any]) -> bytes:
     wb = Workbook()
     ws = wb.active
     ws.title = "INVPL"
-    for i, line in enumerate(COMPANY_BLOCK, 1):
+    for line in COMPANY_BLOCK:
         ws.append([line])
     ws.append([])
     ws.append(["TO", ctx["customer_name"]])
-    for part in (ctx["customer_address"] or "").split("\n"):
+    for part in (ctx.get("customer_address") or "").split("\n"):
         if part.strip():
             ws.append(["", part.strip()])
-    ws.append(["", ctx["customer_phone_line"]])
-    if ctx["is_export"] and ctx.get("bill_to_block"):
+    cust_tel = (ctx.get("customer_tel") or "").strip()
+    cust_fax = (ctx.get("customer_fax") or "").strip()
+    if not cust_tel and ctx.get("customer_phone_line"):
+        raw = str(ctx["customer_phone_line"])
+        cust_tel = raw.split(":", 1)[-1].strip() if ":" in raw else raw
+    ws.append(["", f"TELP. NO.: {cust_tel}"])
+    ws.append(["", f"FAX. NO.: {cust_fax}"])
+    if ctx.get("is_export") and ctx.get("bill_to_block"):
         ws.append(["BILL TO", ctx["bill_to_block"]])
     ws.append([])
     ws.append(["DATE", ctx["doc_date_fmt"]])
-    ws.append(["PL. NO.", ctx["packing_number"]])
+    ws.append(["INV. NO", ctx.get("invoice_no") or ""])
     ws.append([])
-    ws.append([ctx["description_line"]])
-    is_export = ctx["is_export"]
-    head = ["NO", "PO NO", "ITEM"]
-    if is_export:
-        head.append("EXIM CODE")
-    head.extend(
-        ["COLOR", "QTY", "UNIT", "UNIT PRICE USD", "AMOUNT USD", "ROLLS", "PCS", "NW", "GW", "REMARK"]
-    )
+    ws.append([ctx.get("document_title") or INVPL_TITLE])
+    ws.append([ctx.get("description_line") or INVPL_DESC_DEFAULT])
+    head = [
+        "P.O. NO.",
+        "ITEM",
+        "QTY",
+        "UNIT",
+        "U. PRICE (USD)",
+        "AMOUNT (USD)",
+        "ROLLS",
+        "PIECES",
+        "N.W. (KGS)",
+        "G.W. (KGS)",
+    ]
     ws.append(head)
     for ln in ctx["lines"]:
-        row = [ln["no"], ln["po_no"], ln["item"]]
-        if is_export:
-            row.append(ln.get("exim_code") or "")
-        row.extend(
+        ws.append(
             [
-                ln["color"],
-                float(ln["qty"]) if ln["qty"] is not None else None,
-                ln["unit"],
-                float(ln["unit_price"]) if ln["unit_price"] is not None else None,
-                float(ln["amount"]) if ln["amount"] is not None else None,
-                ln["rolls"],
-                ln["pcs"],
+                ln.get("po_no") or "",
+                _invpl_item_text(ln),
+                float(ln["qty"]) if ln.get("qty") is not None else None,
+                ln.get("unit") or "S/F",
+                float(ln["unit_price"]) if ln.get("unit_price") is not None else None,
+                float(ln["amount"]) if ln.get("amount") is not None else None,
+                ln.get("rolls"),
+                ln.get("pcs"),
                 float(ln["nw"]) if ln.get("nw") is not None else None,
                 float(ln["gw"]) if ln.get("gw") is not None else None,
-                ln.get("remark") or "",
             ]
         )
-        ws.append(row)
     t = ctx["totals"]
-    o = 1 if is_export else 0
-    total_row = [""] * len(head)
-    total_row[0] = "TOTAL"
-    total_row[4 + o] = float(t["qty"])
-    total_row[7 + o] = float(t["amount"])
-    total_row[8 + o] = t["rolls"]
-    total_row[9 + o] = t["pcs"]
-    total_row[10 + o] = float(t["nw"]) if t["nw"] else None
-    total_row[11 + o] = float(t["gw"]) if t["gw"] else None
+    total_row = [
+        "TOTAL",
+        "",
+        float(t["qty"]) if t.get("qty") is not None else None,
+        "",
+        "",
+        float(t["amount"]) if t.get("amount") is not None else None,
+        t.get("rolls"),
+        t.get("pcs"),
+        float(t["nw"]) if t.get("nw") else None,
+        float(t["gw"]) if t.get("gw") else None,
+    ]
     ws.append([])
     ws.append(total_row)
+    bank_tel, bank_fax = _invpl_bank_tel_fax(ctx)
     ws.append(["SAY TOTAL IN WORDS", ctx["amount_in_words"]])
-    ws.append(["TERM OF PAYMENT", ctx["term_of_payment"]])
-    ws.append(["BANK", ctx["bank_name"]])
-    ws.append(["ACCOUNT", ctx["account_number"]])
+    ws.append(["TERM OF PAYMENT", ctx.get("term_of_payment") or ""])
+    ws.append(["BANK", ctx.get("bank_name") or ""])
+    ws.append(["ACCOUNT NO.", _invpl_account_display(ctx.get("account_number"))])
+    ws.append(["BANK ADDRESS", ctx.get("bank_address") or ""])
+    ws.append(["TELP. NO", bank_tel])
+    ws.append(["FAX. NO", bank_fax])
+    ws.append([])
+    ws.append(["AUTHORIZED SIGNATURE"])
+    ws.append(["(CHIU PO HAO)"])
+    ws.append(["Director"])
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -810,135 +1140,209 @@ def render_invpl_xlsx(ctx: dict[str, Any]) -> bytes:
 
 def render_invpl_pdf(ctx: dict[str, Any]) -> bytes:
     buf = io.BytesIO()
+    page_w, _page_h = A4
+    margin_lr = INVPL_MARGIN_LR_MM * mm
+    margin_tb = INVPL_MARGIN_TB_MM * mm
     doc = SimpleDocTemplate(
         buf,
-        pagesize=landscape(A4),
-        leftMargin=12 * mm,
-        rightMargin=12 * mm,
-        topMargin=10 * mm,
-        bottomMargin=10 * mm,
+        pagesize=A4,
+        leftMargin=margin_lr,
+        rightMargin=margin_lr,
+        topMargin=margin_tb,
+        bottomMargin=margin_tb,
     )
     styles = getSampleStyleSheet()
     small = ParagraphStyle(name="invpl_s", parent=styles["Normal"], fontSize=7, leading=9)
+    tiny = ParagraphStyle(name="invpl_tiny", parent=styles["Normal"], fontSize=6, leading=7.5)
     center_small = ParagraphStyle(name="invpl_cs", parent=small, alignment=1)
     title_style = ParagraphStyle(
-        name="invpl_t", parent=styles["Heading2"], alignment=1, fontSize=12, spaceAfter=2
+        name="invpl_t",
+        parent=styles["Heading2"],
+        alignment=1,
+        fontSize=12,
+        spaceAfter=1,
+        spaceBefore=4,
     )
     story: list[Any] = []
-    for line in COMPANY_BLOCK:
-        story.append(Paragraph(f"<b>{escape(line)}</b>", center_small))
-    story.append(Spacer(1, 2 * mm))
-    meta = (
-        f"<b>DATE:</b> {escape(ctx['doc_date_fmt'])} &nbsp;&nbsp; "
-        f"<b>INV. NO:</b> {escape(ctx.get('invoice_no') or '—')}"
-    )
-    story.append(Paragraph(meta, ParagraphStyle("invpl_mr", parent=small, alignment=2)))
-    story.append(Spacer(1, 2 * mm))
-    story.append(Paragraph(f"<b>TO:</b> {escape(ctx['customer_name'])}", small))
-    story.append(Paragraph(escape(ctx["customer_address"] or ""), small))
-    story.append(Paragraph(escape(ctx["customer_phone_line"]), small))
-    if ctx["is_export"] and ctx.get("bill_to_block"):
-        story.append(Spacer(1, 2 * mm))
-        story.append(Paragraph(f"<b>BILL TO:</b> {escape(ctx['bill_to_block'])}", small))
-    story.append(Spacer(1, 3 * mm))
-    story.append(
-        Paragraph(escape(str(ctx.get("document_title", INVPL_TITLE))), title_style)
-    )
-    story.append(Paragraph("*******************", center_small))
-    story.append(Paragraph(escape(ctx["description_line"]), small))
-    story.append(Spacer(1, 2 * mm))
+    content_w = page_w - 2 * margin_lr
 
-    is_export = ctx["is_export"]
-    table_data: list[list[Any]] = []
-    head = ["P.O. NO.", "ITEM"]
-    if is_export:
-        head.append("EXIM")
-    head.extend(
-        [
-            "QTY",
-            "UNIT",
-            "U. PRICE (USD)",
-            "AMOUNT (USD)",
-            "ROLLS",
-            "PIECES",
-            "N.W. (KGS)",
-            "G.W. (KGS)",
-        ]
-    )
-    table_data.append(head)
-    for ln in ctx["lines"]:
-        item = (ln.get("item") or "")
-        if ln.get("color"):
-            item = f"{item} {ln['color']}".strip()
-        row: list[Any] = [
-            Paragraph(escape((ln["po_no"] or "")[:20]), small),
-            Paragraph(escape(item[:90]), small),
-        ]
-        if is_export:
-            row.append((ln.get("exim_code") or "")[:12])
-        up = ln["unit_price"]
-        am = ln["amount"]
-        row.extend(
+    company_paras = [Paragraph(f"<b>{escape(line)}</b>", center_small) for line in COMPANY_BLOCK]
+    logo_raw = _logo_bytes()
+    if logo_raw:
+        logo_h = _LOGO_WIDTH_MM * _LOGO_ASPECT * mm
+        logo_img = RLImage(io.BytesIO(logo_raw), width=_LOGO_WIDTH_MM * mm, height=logo_h)
+        logo_img.hAlign = "LEFT"
+        letterhead = Table(
+            [[logo_img, company_paras]],
+            colWidths=[(_LOGO_WIDTH_MM + 2) * mm, content_w - (_LOGO_WIDTH_MM + 2) * mm],
+        )
+        letterhead.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (0, 0), (0, 0), "LEFT"),
+                    ("ALIGN", (1, 0), (1, 0), "CENTER"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        story.append(letterhead)
+    else:
+        for line in COMPANY_BLOCK:
+            story.append(Paragraph(f"<b>{escape(line)}</b>", center_small))
+
+    # Garis tebal letterhead
+    rule = Table([[""]], colWidths=[content_w])
+    rule.setStyle(
+        TableStyle(
             [
-                f"{ln['qty']:.2f}" if ln["qty"] is not None else "",
-                ln["unit"] or "S/F",
-                f"{up:.4f}" if up is not None else "",
-                f"{am:.2f}" if am is not None else "",
-                str(ln["rolls"] or ""),
-                str(ln["pcs"] or ""),
-                f"{ln['nw']:.1f}" if ln.get("nw") is not None else "",
-                f"{ln['gw']:.1f}" if ln.get("gw") is not None else "",
+                ("LINEABOVE", (0, 0), (-1, 0), 1.6, colors.black),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ]
         )
-        table_data.append(row)
+    )
+    story.append(rule)
+
+    cust_tel = (ctx.get("customer_tel") or "").strip()
+    cust_fax = (ctx.get("customer_fax") or "").strip()
+    if not cust_tel and ctx.get("customer_phone_line"):
+        raw = str(ctx["customer_phone_line"])
+        cust_tel = raw.split(":", 1)[-1].strip() if ":" in raw else raw
+    to_paras = [
+        Paragraph("<b>TO:</b>", small),
+        Paragraph(f"<b>{escape(ctx['customer_name'])}</b>", small),
+        Paragraph(escape(ctx.get("customer_address") or "").replace("\n", "<br/>"), small),
+        Paragraph(f"TELP. NO.: {escape(cust_tel)}", small),
+        Paragraph(f"FAX. NO.: {escape(cust_fax)}", small),
+    ]
+    meta_paras = [
+        Paragraph(f"<b>DATE:</b> {escape(ctx['doc_date_fmt'])}", small),
+        Paragraph(f"<b>INV. NO:</b> {escape(ctx.get('invoice_no') or '—')}", small),
+    ]
+    to_meta = Table(
+        [[to_paras, meta_paras]],
+        colWidths=[content_w - 45 * mm, 45 * mm],
+    )
+    to_meta.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ]
+        )
+    )
+    story.append(to_meta)
+
+    if ctx.get("is_export") and ctx.get("bill_to_block"):
+        story.append(Spacer(1, 2 * mm))
+        story.append(Paragraph(f"<b>BILL TO:</b> {escape(ctx['bill_to_block'])}", small))
+
+    story.append(Paragraph(escape(str(ctx.get("document_title", INVPL_TITLE))), title_style))
+    story.append(Paragraph("****************************************", center_small))
+    story.append(
+        Paragraph(
+            f"<b>{escape(ctx.get('description_line') or INVPL_DESC_DEFAULT)}</b>",
+            small,
+        )
+    )
+    story.append(Spacer(1, 2 * mm))
+
+    head = [
+        "P.O. NO.",
+        "ITEM",
+        "QTY",
+        "UNIT",
+        "U. PRICE\n(USD)",
+        "AMOUNT\n(USD)",
+        "ROLLS",
+        "PIECES",
+        "N.W.\n(KGS)",
+        "G.W.\n(KGS)",
+    ]
+    table_data: list[list[Any]] = [head]
+    for ln in ctx["lines"]:
+        table_data.append(
+            [
+                Paragraph(escape((ln.get("po_no") or "")[:22]), tiny),
+                Paragraph(escape(_invpl_item_text(ln)[:120]), tiny),
+                _fmt_invpl_qty(ln.get("qty")),
+                ln.get("unit") or "S/F",
+                _fmt_invpl_money(ln.get("unit_price"), places=2),
+                _fmt_invpl_money(ln.get("amount"), places=2),
+                _fmt_invpl_int(ln.get("rolls")),
+                _fmt_invpl_int(ln.get("pcs")),
+                _fmt_invpl_weight(ln.get("nw")),
+                _fmt_invpl_weight(ln.get("gw")),
+            ]
+        )
 
     t = ctx["totals"]
-    total_row: list[Any] = ["TOTAL", ""]
-    if is_export:
-        total_row.append("")
-    total_row.extend(
+    table_data.append(
         [
-            f"{t['qty']:.2f}",
+            "TOTAL",
+            "",
+            _fmt_invpl_qty(t.get("qty")),
             "",
             "",
-            f"{t['amount']:.2f}",
-            str(t["rolls"]),
-            str(t["pcs"]),
-            f"{t['nw']:.1f}" if t["nw"] else "",
-            f"{t['gw']:.1f}" if t["gw"] else "",
+            _fmt_invpl_money(t.get("amount"), places=2),
+            _fmt_invpl_int(t.get("rolls")),
+            _fmt_invpl_int(t.get("pcs")),
+            _fmt_invpl_weight(t.get("nw")) if t.get("nw") else "",
+            _fmt_invpl_weight(t.get("gw")) if t.get("gw") else "",
         ]
     )
-    table_data.append(total_row)
 
-    col_count = len(table_data[0])
-    full_w = landscape(A4)[0] - 24 * mm
-    weights = [1.1, 3.2] + ([0.8] if is_export else []) + [0.8, 0.6, 1.1, 1.1, 0.7, 0.7, 0.8, 0.8]
-    s = sum(weights[:col_count])
-    cws = [full_w * (w / s) for w in weights[:col_count]]
+    weights = [1.15, 3.2, 0.85, 0.55, 0.9, 1.0, 0.7, 0.8, 0.75, 0.75]
+    s = sum(weights)
+    cws = [content_w * (w / s) for w in weights]
     tbl = Table(table_data, colWidths=cws, repeatRows=1)
     tbl.setStyle(
         TableStyle(
             [
                 ("GRID", (0, 0), (-1, -1), 0.4, colors.black),
                 ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.92, 0.92, 0.92)),
-                ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+                ("BACKGROUND", (0, -1), (-1, -1), colors.Color(0.95, 0.95, 0.95)),
+                ("FONTSIZE", (0, 0), (-1, 0), 5.5),
+                ("FONTSIZE", (0, 1), (-1, -1), 6),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                 ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                ("ALIGN", (2, 1), (2, -1), "RIGHT"),
+                ("ALIGN", (3, 1), (3, -1), "CENTER"),
+                ("ALIGN", (4, 1), (9, -1), "RIGHT"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
             ]
         )
     )
     story.append(tbl)
     story.append(Spacer(1, 3 * mm))
+
+    bank_tel, bank_fax = _invpl_bank_tel_fax(ctx)
+    account_disp = _invpl_account_display(ctx.get("account_number"))
     story.append(Paragraph(f"<b>SAY TOTAL IN WORDS:</b> {escape(ctx['amount_in_words'])}", small))
-    story.append(Paragraph(f"<b>TERM OF PAYMENT:</b> {escape(ctx['term_of_payment'] or '—')}", small))
-    story.append(Paragraph(f"<b>OUR ADVISING BANK:</b> {escape(ctx['bank_name'] or '—')}", small))
-    story.append(Paragraph(f"<b>ACCOUNT NO.:</b> {escape(ctx['account_number'] or '—')}", small))
-    story.append(Paragraph(f"<b>BANK ADDRESS:</b> {escape(ctx['bank_address'] or '—')}", small))
-    story.append(Paragraph(f"<b>BANK CONTACT:</b> {escape(ctx['bank_phone'] or '—')}", small))
+    story.append(
+        Paragraph(f"<b>TERM OF PAYMENT:</b> {escape(ctx.get('term_of_payment') or '—')}", small)
+    )
+    story.append(Paragraph(f"<b>BANK:</b> {escape(ctx.get('bank_name') or '—')}", small))
+    story.append(Paragraph(f"<b>ACCOUNT NO.:</b> {escape(account_disp)}", small))
+    story.append(
+        Paragraph(f"<b>BANK ADDRESS:</b> {escape(ctx.get('bank_address') or '—')}", small)
+    )
+    story.append(Paragraph(f"<b>TELP. NO:</b> {escape(bank_tel or '—')}", small))
+    story.append(Paragraph(f"<b>FAX. NO:</b> {escape(bank_fax or '—')}", small))
     story.append(Spacer(1, 8 * mm))
-    story.append(Paragraph("Authorized signature:", small))
-    story.append(Spacer(1, 10 * mm))
+    story.append(Paragraph("<b>AUTHORIZED SIGNATURE</b>", small))
+    story.append(Spacer(1, 12 * mm))
     story.append(Paragraph("<b>(CHIU PO HAO)</b>", small))
     story.append(Paragraph("Director", small))
     doc.build(story)
@@ -1123,8 +1527,22 @@ _SJ_TABLE_HEAD = (
 )
 
 
-def render_sj_html(ctx: dict[str, Any]) -> str:
+def _sj_letterhead_html() -> str:
+    """Logo kiri atas + blok perusahaan (sama aset INVPL)."""
     company = "<br/>".join(escape(x) for x in COMPANY_BLOCK)
+    logo_uri = _logo_data_uri()
+    logo_html = (
+        f'<div class="logo"><img src="{logo_uri}" alt="Tong Hong Tannery"/></div>'
+        if logo_uri
+        else '<div class="logo"></div>'
+    )
+    return f"""<div class="header-row">
+    {logo_html}
+    <div class="company"><b>{company}</b></div>
+  </div>"""
+
+
+def render_sj_html(ctx: dict[str, Any]) -> str:
     export_note = ""
     if ctx.get("is_export"):
         export_note = (
@@ -1134,7 +1552,7 @@ def render_sj_html(ctx: dict[str, Any]) -> str:
         )
     body = f"""
 <div class="doc">
-  <div class="company"><b>{company}</b></div>
+  {_sj_letterhead_html()}
   <h2 class="title">{escape(sj_document_title(ctx))}</h2>
   {export_note}
   {_sj_meta_html(ctx)}
@@ -1146,7 +1564,9 @@ def render_sj_html(ctx: dict[str, Any]) -> str:
     style = """
     body { font-family: Arial, Helvetica, sans-serif; margin: 14px; font-size: 11px; color: #111; }
     .doc { max-width: 820px; margin: 0 auto; border: 1px solid #333; padding: 12px; }
-    .company { text-align: center; margin-bottom: 8px; line-height: 1.35; }
+    .header-row { display: grid; grid-template-columns: 28mm 1fr; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .logo img { width: 24mm; height: auto; display: block; }
+    .company { text-align: center; line-height: 1.35; }
     .title { text-align: center; font-size: 15px; margin: 8px 0 12px; letter-spacing: 0.5px; }
     .note { font-size: 10px; color: #444; margin: 6px 0; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 0 0 10px; border: 1px solid #333; }
@@ -1189,8 +1609,34 @@ def render_sj_pdf(ctx: dict[str, Any]) -> bytes:
     center = ParagraphStyle(name="sj_c", parent=small, alignment=1)
     title = ParagraphStyle(name="sj_t", parent=styles["Heading2"], alignment=1, fontSize=12, spaceAfter=6)
     story: list[Any] = []
-    for line in COMPANY_BLOCK:
-        story.append(Paragraph(f"<b>{escape(line)}</b>", center))
+    page_w = A4[0] - 28 * mm
+    company_paras = [Paragraph(f"<b>{escape(line)}</b>", center) for line in COMPANY_BLOCK]
+    logo_raw = _logo_bytes()
+    if logo_raw:
+        logo_h = _LOGO_WIDTH_MM * _LOGO_ASPECT * mm
+        logo_img = RLImage(io.BytesIO(logo_raw), width=_LOGO_WIDTH_MM * mm, height=logo_h)
+        logo_img.hAlign = "LEFT"
+        letterhead = Table(
+            [[logo_img, company_paras]],
+            colWidths=[(_LOGO_WIDTH_MM + 2) * mm, page_w - (_LOGO_WIDTH_MM + 2) * mm],
+        )
+        letterhead.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (0, 0), (0, 0), "LEFT"),
+                    ("ALIGN", (1, 0), (1, 0), "CENTER"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        story.append(letterhead)
+    else:
+        for line in COMPANY_BLOCK:
+            story.append(Paragraph(f"<b>{escape(line)}</b>", center))
     story.append(Paragraph(escape(sj_document_title(ctx)), title))
 
     left = (
@@ -1267,7 +1713,6 @@ def render_sj_pdf(ctx: dict[str, Any]) -> bytes:
         data.append(["", "", "", "", "", ""])
     t = ctx["totals"]
     data.append(["", "TOTAL", f"{t['qty']:.2f}", str(t["rolls"]), str(t["pcs"]), ""])
-    page_w = A4[0] - 28 * mm
     cws = [page_w * x for x in (0.07, 0.42, 0.14, 0.11, 0.11, 0.15)]
     tbl = Table(data, colWidths=cws, repeatRows=1)
     tbl.setStyle(
@@ -1318,10 +1763,9 @@ def render_sj_pdf(ctx: dict[str, Any]) -> bytes:
 
 def render_sj_dotmatrix_html(ctx: dict[str, Any]) -> str:
     """Cetak fisik dot matrix — layout mengikuti form SURAT JALAN."""
-    company = "<br/>".join(escape(x) for x in COMPANY_BLOCK)
     body = f"""
 <div class="doc">
-  <div class="company"><b>{company}</b></div>
+  {_sj_letterhead_html()}
   <h2 class="title">{escape(sj_document_title(ctx))}</h2>
   {_sj_meta_html(ctx)}
   <table class="grid">{_SJ_TABLE_HEAD}<tbody>{_sj_body_rows(ctx, min_rows=10)}</tbody></table>
@@ -1333,7 +1777,9 @@ def render_sj_dotmatrix_html(ctx: dict[str, Any]) -> str:
     @page { size: A4 portrait; margin: 0.35in; }
     body { font-family: 'Courier New', Courier, monospace; margin: 0; font-size: 9px; color: #000; }
     .doc { width: 100%; max-width: 190mm; margin: 0 auto; }
-    .company { text-align: center; font-size: 9px; line-height: 1.25; margin-bottom: 4px; }
+    .header-row { display: grid; grid-template-columns: 22mm 1fr; align-items: center; gap: 4px; margin-bottom: 4px; }
+    .logo img { width: 20mm; height: auto; display: block; }
+    .company { text-align: center; font-size: 9px; line-height: 1.25; }
     .title { text-align: center; font-size: 12px; margin: 6px 0 8px; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 0 0 6px; border: 1px solid #000; }
     .meta-box { padding: 4px 6px; line-height: 1.35; border-right: 1px solid #000; font-size: 8px; }

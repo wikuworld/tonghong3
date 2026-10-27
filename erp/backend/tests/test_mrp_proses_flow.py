@@ -260,3 +260,176 @@ def test_proses_consume_yl_and_complete(auth_headers):
         wip = detail2.json()["persiapan"]["kode_wip"]
         scan = client.get("/mrp/packing/scan-wip", headers=auth_headers, params={"q": wip})
         assert scan.status_code == 200, scan.text
+
+
+def test_proses_reopen_after_save_then_edit(auth_headers):
+    """Persiapan completed bisa dibuka ulang (belum packing), edit ukur, lalu simpan lagi."""
+    with _client() as client:
+        item = _pick_rencana_item(client, auth_headers)
+        if not item:
+            pytest.skip("butuh item rencana ber-WIP")
+        treatment = _pick_pu_treatment(client, auth_headers)
+        if not treatment:
+            pytest.skip("tidak ada master treatment jenis PU")
+
+        suffix = str(int(time.time() * 1000))[-10:]
+        kode_palet = f"KY-R{suffix}"
+        kode_yl = f"YL-R{suffix}"
+        stock_qty = 40.0
+        _ensure_yl_stock(client, auth_headers, kode_palet, kode_yl, stock_qty)
+
+        created = _create_proses(
+            client,
+            auth_headers,
+            item=item,
+            treatment=treatment,
+            kode_palet=kode_palet,
+            kode_yl=kode_yl,
+            target_qty=10,
+        )
+        assert created.status_code in (200, 201), created.text
+        pid = created.json()["id"]
+
+        assert client.post(
+            f"/mrp/proses/{pid}/actions",
+            headers=auth_headers,
+            json={"action": "start"},
+        ).status_code == 200
+
+        detail = client.get(f"/mrp/proses/{pid}", headers=auth_headers)
+        ky_id = detail.json()["active_ky"]["id"]
+        ukur1 = 8.0
+        assert client.post(
+            f"/mrp/proses/{pid}/actions",
+            headers=auth_headers,
+            json={"action": "add_ukur", "ky_id": ky_id, "size_val": ukur1},
+        ).status_code == 200
+        assert client.post(
+            f"/mrp/proses/{pid}/actions",
+            headers=auth_headers,
+            json={"action": "selesai_ky", "ky_id": ky_id},
+        ).status_code == 200
+        assert client.post(
+            f"/mrp/proses/{pid}/actions",
+            headers=auth_headers,
+            json={"action": "save"},
+        ).status_code == 200
+
+        done = client.get(f"/mrp/proses/{pid}", headers=auth_headers)
+        assert done.json()["persiapan"]["status"] == "completed"
+
+        reopen = client.post(
+            f"/mrp/proses/{pid}/actions",
+            headers=auth_headers,
+            json={"action": "reopen"},
+        )
+        assert reopen.status_code == 200, reopen.text
+        reopened = client.get(f"/mrp/proses/{pid}", headers=auth_headers)
+        assert reopened.json()["persiapan"]["status"] == "started"
+
+        reopen_ky = client.post(
+            f"/mrp/proses/{pid}/actions",
+            headers=auth_headers,
+            json={"action": "reopen_ky", "ky_id": ky_id},
+        )
+        assert reopen_ky.status_code == 200, reopen_ky.text
+
+        # stok YL kembali setelah buka ulang KY
+        yl = client.get("/mrp/yl", headers=auth_headers, params={"kode_palet": kode_palet})
+        assert yl.status_code == 200, yl.text
+        rows = yl.json() if isinstance(yl.json(), list) else []
+        hit = next((r for r in rows if str(r.get("kode_yl")) == kode_yl), None)
+        assert hit is not None
+        assert abs(float(hit.get("qty") or 0) - stock_qty) < 1e-6
+
+        ukur2 = 9.5
+        assert client.post(
+            f"/mrp/proses/{pid}/actions",
+            headers=auth_headers,
+            json={"action": "add_ukur", "ky_id": ky_id, "size_val": ukur2 - ukur1},
+        ).status_code == 200
+        assert client.post(
+            f"/mrp/proses/{pid}/actions",
+            headers=auth_headers,
+            json={"action": "selesai_ky", "ky_id": ky_id},
+        ).status_code == 200
+        save2 = client.post(
+            f"/mrp/proses/{pid}/actions",
+            headers=auth_headers,
+            json={"action": "save"},
+        )
+        assert save2.status_code == 200, save2.text
+
+        final = client.get(f"/mrp/proses/{pid}", headers=auth_headers)
+        assert final.json()["persiapan"]["status"] == "completed"
+        assert abs(float(final.json()["persiapan"].get("total_size") or 0) - ukur2) < 1e-6
+
+
+def test_proses_ukur_clamps_to_yl_stock(auth_headers):
+    """Stok YL 60 vs ukur 60.9 → simpan 60, catat lebih ukur 0.9."""
+    with _client() as client:
+        item = _pick_rencana_item(client, auth_headers)
+        if not item:
+            pytest.skip("butuh item rencana ber-WIP")
+        treatment = _pick_pu_treatment(client, auth_headers)
+        if not treatment:
+            pytest.skip("tidak ada master treatment jenis PU")
+
+        suffix = str(int(time.time() * 1000))[-10:]
+        kode_palet = f"KY-C{suffix}"
+        kode_yl = f"YL-C{suffix}"
+        stock_qty = 60.0
+        _ensure_yl_stock(client, auth_headers, kode_palet, kode_yl, stock_qty)
+
+        created = _create_proses(
+            client,
+            auth_headers,
+            item=item,
+            treatment=treatment,
+            kode_palet=kode_palet,
+            kode_yl=kode_yl,
+            target_qty=60,
+        )
+        assert created.status_code in (200, 201), created.text
+        pid = created.json()["id"]
+
+        assert client.post(
+            f"/mrp/proses/{pid}/actions",
+            headers=auth_headers,
+            json={"action": "start"},
+        ).status_code == 200
+
+        detail = client.get(f"/mrp/proses/{pid}", headers=auth_headers)
+        ky_id = detail.json()["active_ky"]["id"]
+
+        ukur = client.post(
+            f"/mrp/proses/{pid}/actions",
+            headers=auth_headers,
+            json={"action": "add_ukur", "ky_id": ky_id, "size_val": 60.9},
+        )
+        assert ukur.status_code == 200, ukur.text
+        body = ukur.json()
+        assert body.get("clamped") is True
+        assert abs(float(body.get("applied") or 0) - 60.0) < 1e-6
+        assert abs(float(body.get("overflow") or 0) - 0.9) < 1e-6
+        assert "lebih ukur" in (body.get("message") or "").lower()
+
+        detail2 = client.get(f"/mrp/proses/{pid}", headers=auth_headers)
+        assert abs(float(detail2.json()["persiapan"].get("total_size") or 0) - 60.0) < 1e-6
+        active = detail2.json().get("active_ky") or {}
+        assert abs(float(active.get("actual_qty") or 0) - 60.0) < 1e-6
+
+        lebih = client.get(
+            f"/mrp/rencana-produksi/item/{item['id']}",
+            headers=auth_headers,
+        )
+        if lebih.status_code == 200:
+            rows = lebih.json().get("kulit_lebih") or []
+            hit = [
+                r
+                for r in rows
+                if str(r.get("keterangan") or "") == "Lebih ukur"
+                and int(r.get("ky_id") or 0) == int(ky_id)
+            ]
+            assert hit, f"lebih ukur tidak tercatat: {rows}"
+            assert abs(float(hit[0].get("selisih") or 0) - 0.9) < 1e-6

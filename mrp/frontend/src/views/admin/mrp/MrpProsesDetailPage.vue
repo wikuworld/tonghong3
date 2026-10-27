@@ -13,6 +13,13 @@
       >
         {{ t('pages.mrpProses.finishSave') }}
       </el-button>
+      <el-button
+        v-if="canUpdate && isDone"
+        type="warning"
+        @click="reopenPersiapan"
+      >
+        {{ t('pages.mrpProses.reopen') }}
+      </el-button>
       <el-button v-if="persiapan && isDone" @click="openLabelDialog">{{ t('pages.mrpProses.label') }}</el-button>
     </template>
 
@@ -115,6 +122,7 @@
               :closable="false"
               show-icon
               :title="t('pages.mrpProses.doneHint')"
+              :description="canUpdate ? t('pages.mrpProses.reopenHint') : undefined"
             />
           </div>
         </div>
@@ -260,7 +268,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column :label="t('common.actions')" width="200" align="center" fixed="right">
+            <el-table-column :label="t('common.actions')" width="240" align="center" fixed="right">
               <template #default="{ row }">
                 <div class="mrp-proses-ky-actions">
                   <AdminTableActions
@@ -294,6 +302,15 @@
                     @click="finishKy(row)"
                   >
                     {{ t('pages.mrpProses.finishKy') }}
+                  </el-button>
+                  <el-button
+                    v-if="canUpdate && persiapan?.status === 'started' && row.status === 'selesai'"
+                    size="small"
+                    link
+                    type="warning"
+                    @click="reopenKy(row)"
+                  >
+                    {{ t('pages.mrpProses.reopenKy') }}
                   </el-button>
                 </div>
               </template>
@@ -548,7 +565,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
@@ -766,7 +783,12 @@ async function reload() {
 async function act(action, extra = {}) {
   try {
     const res = await mrpProsesAction(route.params.id, { action, ...extra })
-    ElMessage.success(res.message || t('common.saved'))
+    const msg = res.message || t('common.saved')
+    if (res.clamped || (typeof msg === 'string' && /lebih ukur|clamp/i.test(msg))) {
+      ElMessage.warning(msg)
+    } else {
+      ElMessage.success(msg)
+    }
     await reload()
     return true
   } catch (e) {
@@ -958,6 +980,40 @@ function finishKy(row) {
   return act('selesai_ky', { ky_id: row.id }).then((ok) => {
     if (ok) scaleOnline.value = false
   })
+}
+
+async function reopenPersiapan() {
+  try {
+    await ElMessageBox.confirm(t('pages.mrpProses.reopenConfirm'), t('pages.mrpProses.reopen'), {
+      type: 'warning',
+      confirmButtonText: t('pages.mrpProses.reopen'),
+      cancelButtonText: t('common.cancel'),
+    })
+  } catch {
+    return
+  }
+  await act('reopen')
+}
+
+async function reopenKy(row) {
+  try {
+    await ElMessageBox.confirm(
+      t('pages.mrpProses.reopenKyConfirm', {
+        yl: row.kode_yl || row.id,
+        qty: formatQty(row.qty_consumed || row.actual_qty || 0),
+      }),
+      t('pages.mrpProses.reopenKy'),
+      {
+        type: 'warning',
+        confirmButtonText: t('pages.mrpProses.reopenKy'),
+        cancelButtonText: t('common.cancel'),
+      },
+    )
+  } catch {
+    return
+  }
+  const ok = await act('reopen_ky', { ky_id: row.id })
+  if (ok) scaleOnline.value = true
 }
 
 async function finishActiveKy() {

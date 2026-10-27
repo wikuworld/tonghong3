@@ -100,12 +100,15 @@ def test_sj_html_layout_keys():
     assert "RECEIVED BY" in html
     assert "APPROVED BY" in html
     assert "THI-M260911001" in html
+    assert 'class="logo"' in html
+    assert "data:image/png;base64," in html
 
 
 def test_sj_dotmatrix_and_pdf():
     ctx = _sj_ctx()
     dm = render_sj_dotmatrix_html(ctx)
     assert "SURAT JALAN (DELIVERY SHEET)" in dm
+    assert 'class="logo"' in dm
     foc = dict(ctx)
     foc["is_foc"] = True
     assert "SURAT JALAN (DELIVERY SHEET) (FOC)" in render_sj_dotmatrix_html(foc)
@@ -113,18 +116,41 @@ def test_sj_dotmatrix_and_pdf():
     assert "window.print()" in dm
     pdf = render_sj_pdf(ctx)
     assert pdf[:4] == b"%PDF"
+    assert len(pdf) > 500
 
 
 def test_invpl_pdf_has_signature_and_ctbc():
     html = render_invpl_html(_invpl_ctx())
     assert "INVOICE PACKING LIST" in html
-    assert "Authorized signature" in html
-    assert "ADVISING BANK" in html
+    assert "AUTHORIZED SIGNATURE" in html
+    assert "<b>BANK:</b>" in html
+    assert "OUR ADVISING BANK" not in html
+    assert "P.O. NO." in html
+    assert "U. PRICE (USD)" in html
+    assert "PIECES" in html
+    assert "N.W. (KGS)" in html
     assert "CTBC" in html
+    assert "A4 portrait" in html
+    assert f"margin: {10}mm {12}mm" in html or "margin: 10mm 12mm" in html
+    assert "logo-tonghong" in html or "data:image/png;base64," in html
+    assert 'class="logo"' in html
+    assert 'class="rule"' in html
     pdf = render_invpl_pdf(_invpl_ctx())
     assert pdf[:4] == b"%PDF"
-    # text extraction not required; size sanity
+    # text extraction not required; size sanity (logo makes PDF larger)
     assert len(pdf) > 500
+
+
+def test_commercial_invoice_reuses_invpl_layout():
+    from app.services.marketing_documents import render_commercial_invoice_html
+
+    ctx = dict(_invpl_ctx())
+    ctx["document_title"] = "COMMERCIAL INVOICE"
+    html = render_commercial_invoice_html(ctx)
+    assert "COMMERCIAL INVOICE" in html
+    assert "AUTHORIZED SIGNATURE" in html
+    assert "P.O. NO." in html
+    assert "<b>BANK:</b>" in html
 
 
 def test_invpl_foc_title():
@@ -138,3 +164,16 @@ def test_invpl_foc_title():
     assert "INVOICE PACKING LIST" in plain_html
     assert "INVOICE PACKING LIST (FOC)" not in plain_html
     assert "INVOICE PACKING LIST (FOC)" in foc_html
+
+
+def test_packing_derived_weights_formula():
+    from app.services.marketing_documents import packing_derived_weights
+
+    nw, gw = packing_derived_weights(qty=Decimal("122"), rolls=2)
+    assert nw == Decimal("13.42")  # 122 × 0.11
+    assert gw == Decimal("14.02")  # 13.42 + 2 × 0.3
+    nw2, gw2 = packing_derived_weights(
+        qty=Decimal("100"), rolls=1, weight_net=Decimal("50"), weight_gross=Decimal("55")
+    )
+    assert nw2 == Decimal("50")
+    assert gw2 == Decimal("55")

@@ -171,6 +171,8 @@ def _header_matches_filters(
 def _base_marketing_daily_row(h: PoHeader, ln: PoDetail) -> dict[str, Any]:
     cust = (h.customer_name_snapshot or h.customer_code or "").strip() or "—"
     po_no = h.po_number or f"SO-{h.id}"
+    thi_lot = (ln.thi_line_ref or "").strip()
+    system_ref = (ln.system_reference or "").strip()
     return {
         "poNo": po_no,
         "po_customer_ref": (h.po_customer_ref or "").strip(),
@@ -179,7 +181,10 @@ def _base_marketing_daily_row(h: PoHeader, ln: PoDetail) -> dict[str, Any]:
         "order_type": _order_type_label(h),
         "buyer": (h.buyer or "").strip(),
         "order_date": h.order_date.isoformat() if h.order_date else None,
-        "thi_line_ref": (ln.thi_line_ref or "").strip(),
+        "thi_line_ref": thi_lot,
+        # SYSTEM NO (LOT NO): system_reference, fallback thi_line_ref — selaras marketing outstanding
+        "system_no": system_ref or thi_lot,
+        "system_reference": system_ref,
         "material": (ln.material_name or "").strip() or "—",
         "thickness": _thickness_display(ln),
         "emboss": (ln.emboss or "").strip(),
@@ -192,6 +197,8 @@ def _base_marketing_daily_row(h: PoHeader, ln: PoDetail) -> dict[str, Any]:
         "backing": (ln.backing or "").strip(),
         "model": (ln.model or "").strip(),
         "style_article": (ln.style_article or "").strip(),
+        "rtd_text": (ln.rtd_text or "").strip(),
+        "detail_remark": (ln.detail_remark or "").strip(),
         "line_etd": ln.line_etd.isoformat() if ln.line_etd else None,
         "qty": _qty_float(ln.quantity_order),
         "po_category": (h.po_category or "production").lower(),
@@ -885,7 +892,7 @@ def export_po_daily_marketing_csv(
     w = csv.writer(buf)
     w.writerow(_MARKETING_CSV_COLS)
     for row in payload["revise_thickness"]:
-        w.writerow(_row_to_csv_tuple("REVISE_THICKNESS", row))
+        w.writerow(_row_to_csv_tuple("REVISION", row))
     for row in payload["production_orders"]:
         w.writerow(_row_to_csv_tuple("PRODUCTION_ORDER", row))
     for row in payload["samples"]:
@@ -927,7 +934,7 @@ def export_po_daily_marketing_xlsx(
     ws["A2"] = f"Generated at: {app_now().strftime('%Y-%m-%d %H:%M WIB')}"
 
     row_idx = 4
-    row_idx = _append_marketing_section_xlsx(ws, row_idx, "REVISE THICKNESS", payload.get("revise_thickness") or [])
+    row_idx = _append_marketing_section_xlsx(ws, row_idx, "REVISION", payload.get("revise_thickness") or [])
     row_idx = _append_marketing_section_xlsx(ws, row_idx, "PRODUCTION ORDER", payload.get("production_orders") or [])
     row_idx = _append_marketing_section_xlsx(ws, row_idx, "SAMPLE", payload.get("samples") or [])
     row_idx = _append_marketing_section_xlsx(ws, row_idx, "CLAIM", payload.get("claim_orders") or [])

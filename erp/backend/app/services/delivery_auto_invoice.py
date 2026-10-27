@@ -99,11 +99,12 @@ def sync_invoice_lines_from_delivery(
             total += amount
 
         nw = _dec(dd.weight) if dd.weight is not None else None
+        gw = None
         roll = int(dd.qty_roll) if dd.qty_roll is not None else None
         pcs = int(dd.qty_pcs) if dd.qty_pcs is not None else None
 
-        # Lengkapi roll/pcs dari packing detail bila kosong
-        if (roll is None or pcs is None) and dd.packing_detail_id:
+        # Lengkapi roll/pcs/berat dari packing detail bila kosong
+        if dd.packing_detail_id:
             pkd = db.get(PackingDetail, int(dd.packing_detail_id))
             if pkd:
                 if roll is None and pkd.qty_roll is not None:
@@ -112,6 +113,10 @@ def sync_invoice_lines_from_delivery(
                     pcs = int(pkd.qty_pcs)
                 if nw is None and pkd.weight_net is not None:
                     nw = _dec(pkd.weight_net)
+
+        from app.services.marketing_documents import packing_derived_weights
+
+        nw, gw = packing_derived_weights(qty=qty, rolls=roll, weight_net=nw, weight_gross=gw)
 
         desc = _item_description(pod) if pod else "—"
         color = (pod.color or "").strip() if pod else None
@@ -126,6 +131,7 @@ def sync_invoice_lines_from_delivery(
                 roll=roll,
                 pcs=pcs,
                 net_weight=nw,
+                gross_weight=gw,
             )
         )
         created += 1

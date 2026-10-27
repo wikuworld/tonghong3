@@ -1739,13 +1739,40 @@ function panelAddUkur(size) {
     0,
   )
   const stok = Number(activeKyRow.value.stok_qty)
-  if (Number.isFinite(stok) && stok > 0 && measured + val > stok + 1e-9) {
-    ElMessage.warning(
-      t('pages.mrpProses.ukurExceedStock', {
-        total: formatQty(measured + val),
-        stok: formatQty(stok),
-      }),
-    )
+  // Clamp ke stok: simpan sampai kapasitas, catat lebih ukur (backend juga clamp saat apply).
+  if (Number.isFinite(stok) && stok >= 0 && measured + val > stok + 1e-9) {
+    const room = Math.max(0, Math.round((stok - measured) * 1000) / 1000)
+    const overflow = Math.round((val - room) * 1000) / 1000
+    if (room > 1e-9) {
+      activeKyRow.value.ukur_rows.push({
+        key: `${Date.now()}-${room}`,
+        size_val: room,
+        raw_size: val,
+        lebih_ukur: overflow,
+      })
+      ElMessage.warning(
+        t('pages.mrpProses.ukurClampedToStock', {
+          applied: formatQty(room),
+          stok: formatQty(stok),
+          lebih: formatQty(overflow),
+        }),
+      )
+    } else {
+      // Stok penuh: tetap kirim raw saat apply agar backend catat Lebih ukur.
+      activeKyRow.value.ukur_rows.push({
+        key: `${Date.now()}-lebih-${val}`,
+        size_val: 0,
+        raw_size: val,
+        lebih_ukur: overflow > 0 ? overflow : val,
+        overflow_only: true,
+      })
+      ElMessage.warning(
+        t('pages.mrpProses.ukurOverflowOnly', {
+          stok: formatQty(stok),
+          lebih: formatQty(overflow > 0 ? overflow : val),
+        }),
+      )
+    }
     return
   }
   activeKyRow.value.ukur_rows.push({ key: `${Date.now()}-${val}`, size_val: val })
@@ -1791,10 +1818,15 @@ async function applyKyUkursToProses(persiapanId) {
       if (!session?.id) continue
     }
     for (const u of kyRow.ukur_rows || []) {
+      const raw = Number(u.raw_size != null ? u.raw_size : u.size_val)
+      const lebih = Number(u.lebih_ukur) || 0
+      // Kirim ukuran mentah (applied + lebih) agar backend catat Lebih ukur.
+      const sendSize = lebih > 0 && Number.isFinite(raw) && raw > 0 ? raw : Number(u.size_val)
+      if (!(sendSize > 0)) continue
       await mrpProsesAction(persiapanId, {
         action: 'add_ukur',
         ky_id: session.id,
-        size_val: Number(u.size_val),
+        size_val: sendSize,
       })
     }
     if (kyRow.ukur_rows?.length) {

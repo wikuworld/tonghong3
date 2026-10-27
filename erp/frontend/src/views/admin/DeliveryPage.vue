@@ -757,7 +757,6 @@
               {{ t('pages.delivery.invplFoc') }}
             </el-checkbox>
             <div class="delivery-detail-toolbar__btns">
-              <el-button v-if="canPrint" size="small" @click="openSjPrint">{{ t('pages.delivery.printSj') }}</el-button>
               <el-button v-if="canPrint" size="small" type="primary" plain @click="openSjAndInvpl">{{ t('pages.delivery.printSjAndInvpl') }}</el-button>
               <el-button v-if="canPrint" size="small" @click="openSjDotmatrix">{{ t('pages.delivery.printSjDotmatrix') }}</el-button>
               <el-button v-if="canPrint" size="small" @click="downloadSjPdf">{{ t('pages.delivery.downloadPdf') }}</el-button>
@@ -2055,15 +2054,6 @@ async function openDetailById(deliveryId) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     detailLoading.value = false
-  }
-}
-
-async function openSjPrint() {
-  if (!detailRow.value?.id) return
-  try {
-    await fetchAuthenticatedDocument(`/documents/surat-jalan/${detailRow.value.id}`, { mode: 'open' })
-  } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
   }
 }
 
