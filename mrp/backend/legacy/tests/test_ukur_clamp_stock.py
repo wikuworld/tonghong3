@@ -1,4 +1,4 @@
-"""Ukur melebihi stok YL di-clamp; selisih dicatat sebagai Lebih ukur."""
+"""Ukur crust di atas stok tetap disimpan utuh; selisih dicatat sebagai Lebih ukur."""
 
 from __future__ import annotations
 
@@ -56,26 +56,45 @@ class RecordLebihUkurTests(unittest.TestCase):
         cur.execute.assert_not_called()
 
 
-class ClampMathTests(unittest.TestCase):
-    def test_60_vs_60_9(self):
-        prev_actual = 0.0
-        size_val = 60.9
-        cap = 60.0
-        room = max(0.0, round(cap - prev_actual, 3))
-        applied = round(min(size_val, room), 3) if room > 1e-9 else 0.0
-        overflow = round(max(0.0, size_val - applied), 3)
-        self.assertEqual(applied, 60.0)
+class UkurAgainstCapTests(unittest.TestCase):
+    def test_crust_keeps_60_9_when_stock_is_60(self):
+        applied, overflow = api_routes.split_ukur_against_cap(0, 60.9, 60, clamp=False)
+        self.assertAlmostEqual(applied, 60.9, places=3)
         self.assertAlmostEqual(overflow, 0.9, places=3)
 
-    def test_partial_room(self):
-        prev_actual = 50.0
-        size_val = 12.0
-        cap = 60.0
-        room = max(0.0, round(cap - prev_actual, 3))
-        applied = round(min(size_val, room), 3)
-        overflow = round(max(0.0, size_val - applied), 3)
-        self.assertEqual(applied, 10.0)
-        self.assertEqual(overflow, 2.0)
+    def test_crust_overflow_is_only_the_new_excess(self):
+        applied, overflow = api_routes.split_ukur_against_cap(50, 12, 60, clamp=False)
+        self.assertAlmostEqual(applied, 12.0, places=3)
+        self.assertAlmostEqual(overflow, 2.0, places=3)
+
+    def test_crust_second_measure_does_not_repeat_prior_excess(self):
+        applied, overflow = api_routes.split_ukur_against_cap(60.9, 1, 60, clamp=False)
+        self.assertAlmostEqual(applied, 1.0, places=3)
+        self.assertAlmostEqual(overflow, 1.0, places=3)
+
+    def test_mod_still_clamps_to_capacity(self):
+        applied, overflow = api_routes.split_ukur_against_cap(0, 60.9, 60, clamp=True)
+        self.assertAlmostEqual(applied, 60.0, places=3)
+        self.assertAlmostEqual(overflow, 0.9, places=3)
+
+
+class KyCloseVarianceTests(unittest.TestCase):
+    def test_tutup_sisa_records_kurang_against_stock(self):
+        row = api_routes._ky_close_kulit_lebih(50, 60, 60, True)
+        self.assertEqual(row["keterangan"], "Kurang")
+        self.assertAlmostEqual(row["selisih"], -10.0, places=3)
+        self.assertAlmostEqual(row["target_qty"], 60.0, places=3)
+        self.assertAlmostEqual(row["actual_qty"], 50.0, places=3)
+
+    def test_return_to_pallet_records_kurang_against_target(self):
+        row = api_routes._ky_close_kulit_lebih(50, 60, 60, False)
+        self.assertEqual(row["keterangan"], "Kurang")
+        self.assertAlmostEqual(row["selisih"], -10.0, places=3)
+        self.assertAlmostEqual(row["target_qty"], 60.0, places=3)
+
+    def test_over_measure_close_does_not_add_kurang(self):
+        # 60 vs 60.9 stays on the Lebih ukur row from add_ukur, not a Kurang close row.
+        self.assertIsNone(api_routes._ky_close_kulit_lebih(60.9, 60, 60, True))
 
 
 if __name__ == "__main__":

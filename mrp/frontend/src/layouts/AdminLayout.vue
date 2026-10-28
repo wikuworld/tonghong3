@@ -417,6 +417,7 @@ const mrpReportMenus = [
   { path: '/admin/mrp/reports/packing', labelKey: 'menu.mrpReportPacking', icon: Document },
   { path: '/admin/mrp/reports/persiapan', labelKey: 'menu.mrpReportPersiapan', icon: Document },
   { path: '/admin/mrp/reports/selisih-wip', labelKey: 'menu.mrpReportSelisihWip', icon: Document },
+  { path: '/admin/mrp/reports/selisih-ky', labelKey: 'menu.mrpReportSelisihKy', icon: Document },
 ]
 
 function filterMenuTree(menus) {

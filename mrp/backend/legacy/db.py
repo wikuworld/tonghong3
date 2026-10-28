@@ -40,6 +40,8 @@ def db_config() -> dict:
         "password": os.getenv("MRP_DB_PASSWORD")
         or os.getenv("MYSQL_PASSWORD", _DEFAULT_PASSWORD),
         "database": os.getenv("MRP_DB_NAME", "tonghong_mrp"),
+        "charset": "utf8mb4",
+        "collation": "utf8mb4_unicode_ci",
     }
 
 

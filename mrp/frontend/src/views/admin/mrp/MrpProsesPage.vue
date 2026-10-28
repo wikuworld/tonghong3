@@ -732,7 +732,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, VideoPlay } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import AdminSection from '../../../components/AdminSection.vue'
@@ -1267,6 +1267,39 @@ function kySisaQty(row) {
   return sisa > 0 ? sisa : 0
 }
 
+function kyMarkedHabis(row) {
+  const v = row?.tidak_ada_sisa
+  return v === true || v === 1 || v === '1'
+}
+
+function kyMeasuredQty(row) {
+  return (row?.ukur_rows || []).reduce((sum, u) => sum + (Number(u.size_val) || 0), 0)
+}
+
+async function askTutupSisa(actual, stok) {
+  const sisa = Math.max(0, Number(stok) - Number(actual))
+  try {
+    await ElMessageBox.confirm(
+      t('pages.mrpProses.tutupSisaConfirm', {
+        actual: formatQty(actual),
+        stok: formatQty(stok),
+        sisa: formatQty(sisa),
+      }),
+      t('pages.mrpProses.tutupSisaTitle'),
+      {
+        type: 'warning',
+        distinguishCancelAndClose: true,
+        confirmButtonText: t('pages.mrpProses.tutupSisaHabis'),
+        cancelButtonText: t('pages.mrpProses.tutupSisaKembali'),
+      },
+    )
+    return true
+  } catch (action) {
+    if (action === 'cancel') return false
+    return null
+  }
+}
+
 function statusType(status) {
   const s = String(status || '')
   if (s === 'completed' || s === 'saved') return 'success'
@@ -1739,40 +1772,24 @@ function panelAddUkur(size) {
     0,
   )
   const stok = Number(activeKyRow.value.stok_qty)
-  // Clamp ke stok: simpan sampai kapasitas, catat lebih ukur (backend juga clamp saat apply).
+  // Hasil mesin disimpan utuh. Kelebihan di atas stok hanya ditandai, tidak dipotong.
   if (Number.isFinite(stok) && stok >= 0 && measured + val > stok + 1e-9) {
-    const room = Math.max(0, Math.round((stok - measured) * 1000) / 1000)
-    const overflow = Math.round((val - room) * 1000) / 1000
-    if (room > 1e-9) {
-      activeKyRow.value.ukur_rows.push({
-        key: `${Date.now()}-${room}`,
-        size_val: room,
-        raw_size: val,
-        lebih_ukur: overflow,
-      })
-      ElMessage.warning(
-        t('pages.mrpProses.ukurClampedToStock', {
-          applied: formatQty(room),
-          stok: formatQty(stok),
-          lebih: formatQty(overflow),
-        }),
-      )
-    } else {
-      // Stok penuh: tetap kirim raw saat apply agar backend catat Lebih ukur.
-      activeKyRow.value.ukur_rows.push({
-        key: `${Date.now()}-lebih-${val}`,
-        size_val: 0,
-        raw_size: val,
-        lebih_ukur: overflow > 0 ? overflow : val,
-        overflow_only: true,
-      })
-      ElMessage.warning(
-        t('pages.mrpProses.ukurOverflowOnly', {
-          stok: formatQty(stok),
-          lebih: formatQty(overflow > 0 ? overflow : val),
-        }),
-      )
-    }
+    const alreadyOver = Math.max(0, measured - stok)
+    const nowOver = Math.max(0, measured + val - stok)
+    const overflow = Math.round((nowOver - alreadyOver) * 1000) / 1000
+    activeKyRow.value.ukur_rows.push({
+      key: `${Date.now()}-${val}`,
+      size_val: val,
+      raw_size: val,
+      lebih_ukur: overflow,
+    })
+    ElMessage.warning(
+      t('pages.mrpProses.ukurOverStockKept', {
+        nilai: formatQty(val),
+        stok: formatQty(stok),
+        lebih: formatQty(overflow),
+      }),
+    )
     return
   }
   activeKyRow.value.ukur_rows.push({ key: `${Date.now()}-${val}`, size_val: val })
@@ -1820,7 +1837,7 @@ async function applyKyUkursToProses(persiapanId) {
     for (const u of kyRow.ukur_rows || []) {
       const raw = Number(u.raw_size != null ? u.raw_size : u.size_val)
       const lebih = Number(u.lebih_ukur) || 0
-      // Kirim ukuran mentah (applied + lebih) agar backend catat Lebih ukur.
+      // Ukuran utuh. Backend menyimpan semuanya dan mencatat lebih ukur bila lewat stok.
       const sendSize = lebih > 0 && Number.isFinite(raw) && raw > 0 ? raw : Number(u.size_val)
       if (!(sendSize > 0)) continue
       await mrpProsesAction(persiapanId, {
@@ -1830,11 +1847,25 @@ async function applyKyUkursToProses(persiapanId) {
       })
     }
     if (kyRow.ukur_rows?.length) {
-      await mrpProsesAction(persiapanId, {
+      const payload = {
         action: 'selesai_ky',
         ky_id: session.id,
         skip_spek_check: true,
-      })
+      }
+      const fromMod = Number(kyRow.gudang_mod_id) > 0
+      const measured = kyMeasuredQty(kyRow)
+      const stok = Number(kyRow.stok_qty)
+      if (kyMarkedHabis(kyRow)) {
+        payload.tutup_sisa = true
+      } else if (!fromMod && Number.isFinite(stok) && stok > measured + 1e-9) {
+        const choice = await askTutupSisa(measured, stok)
+        if (choice == null) {
+          ElMessage.info(t('pages.mrpProses.tutupSisaSkipped'))
+          continue
+        }
+        payload.tutup_sisa = choice
+      }
+      await mrpProsesAction(persiapanId, payload)
       detail = await mrpGetProses(persiapanId)
     }
   }

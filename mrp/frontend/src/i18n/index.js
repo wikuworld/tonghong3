@@ -246,6 +246,7 @@ const messages = {
       mrpReportPacking: 'Report Packing (MRP)',
       mrpReportPersiapan: 'Report Persiapan (MRP)',
       mrpReportSelisihWip: 'Report Selisih WIP (MRP)',
+      mrpReportSelisihKy: 'Report Selisih KY (MRP)',
       mrpMonitoring: 'Monitoring (MRP)',
       colorSwatch: 'Master Color Swatch',
       userAccess: 'User & Role Access',
@@ -2033,6 +2034,14 @@ const messages = {
         ukurNeedSelectKy: 'Pilih KY (palet) di kiri, lalu centang YL yang akan diproses.',
         ukurNeedCheckYl: 'Centang minimal satu YL di «YL dalam palet» supaya masuk list proses, lalu klik ikon play.',
         ukurExceedStock: 'Total ukur {total} melebihi stok YL ({stok}).',
+        ukurOverStockKept:
+          'Ukur {nilai} tetap disimpan. Melebihi stok {stok}: lebih ukur {lebih} dicatat.',
+        tutupSisaTitle: 'Tutup KY',
+        tutupSisaConfirm:
+          'Hasil ukur {actual} lebih kecil dari stok {stok}. Sisa {sisa} masih ada di data. Fisik sudah habis, atau masih ada dan dikembalikan ke palet?',
+        tutupSisaHabis: 'Fisik sudah habis',
+        tutupSisaKembali: 'Kembalikan ke palet',
+        tutupSisaSkipped: 'KY belum ditutup. Selesaikan dari halaman detail.',
         ukurClampedToStock:
           'Ukur di-clamp ke stok {stok}: disimpan {applied}, lebih ukur {lebih} akan dicatat.',
         ukurOverflowOnly:
@@ -2797,6 +2806,21 @@ const messages = {
         colSelisihQty: 'Selisih Qty',
         colSelisihPct: 'Selisih %',
         totalsHint: 'Total WIP: {wip} · Actual: {actual} · Selisih: {selisih}',
+      },
+      mrpReportSelisihKy: {
+        title: 'Report Selisih KY',
+        subtitle: 'Selisih per KY: lebih ukur, lebih, dan kurang',
+        tableEmpty: 'Belum ada selisih KY untuk filter ini',
+        searchPlaceholder: 'Cari KY, YL, atau WIP?',
+        colTanggal: 'Tanggal',
+        colWip: 'WIP',
+        colKy: 'KY',
+        colYl: 'YL',
+        colStok: 'Stok / target',
+        colUkur: 'Hasil ukur',
+        colSelisih: 'Selisih',
+        colKet: 'Keterangan',
+        totalsHint: 'Total lebih: {lebih} · Total kurang: {kurang}',
       },
       mrpMonitoring: {
         title: 'Monitoring MRP',
@@ -3746,6 +3770,7 @@ const messages = {
       mrpReportPacking: 'Packing Report (MRP)',
       mrpReportPersiapan: 'Prep Report (MRP)',
       mrpReportSelisihWip: 'WIP Variance Report (MRP)',
+      mrpReportSelisihKy: 'KY Variance Report (MRP)',
       mrpMonitoring: 'Monitoring (MRP)',
       colorSwatch: 'Color swatch master',
       userAccess: 'User & Role Access',
@@ -5508,6 +5533,14 @@ const messages = {
         ukurNeedSelectKy: 'Select a KY pallet on the left, then check YLs to process.',
         ukurNeedCheckYl: 'Check at least one YL under «YLs on pallet» so it joins the list, then click play.',
         ukurExceedStock: 'Total measure {total} exceeds YL stock ({stok}).',
+        ukurOverStockKept:
+          'Measure {nilai} is kept. Above stock {stok}: over-measure {lebih} is recorded.',
+        tutupSisaTitle: 'Close KY',
+        tutupSisaConfirm:
+          'Measured {actual} is below stock {stok}. Remainder {sisa} is still on the books. Is the hide finished, or should the remainder go back to the pallet?',
+        tutupSisaHabis: 'Hide is finished',
+        tutupSisaKembali: 'Return to pallet',
+        tutupSisaSkipped: 'KY was not closed. Finish it from the detail page.',
         ukurClampedToStock:
           'Measure clamped to stock {stok}: saved {applied}, over-measure {lebih} will be recorded.',
         ukurOverflowOnly:
@@ -6216,6 +6249,21 @@ const messages = {
         colSelisihQty: 'Qty variance',
         colSelisihPct: 'Variance %',
         totalsHint: 'Total WIP: {wip} · Actual: {actual} · Variance: {selisih}',
+      },
+      mrpReportSelisihKy: {
+        title: 'KY Variance Report',
+        subtitle: 'Per-KY variance: over-measure, over, and short',
+        tableEmpty: 'No KY variance for this filter',
+        searchPlaceholder: 'Search KY, YL, or WIP?',
+        colTanggal: 'Date',
+        colWip: 'WIP',
+        colKy: 'KY',
+        colYl: 'YL',
+        colStok: 'Stock / target',
+        colUkur: 'Measured',
+        colSelisih: 'Variance',
+        colKet: 'Note',
+        totalsHint: 'Total over: {lebih} · Total short: {kurang}',
       },
       mrpMonitoring: {
         title: 'MRP Monitoring',

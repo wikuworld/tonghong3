@@ -85,6 +85,7 @@ export const MENU_MODULE_MAP = {
   'menu.mrpReportPacking': 'mrpShopfloor',
   'menu.mrpReportPersiapan': 'mrpShopfloor',
   'menu.mrpReportSelisihWip': 'mrpShopfloor',
+  'menu.mrpReportSelisihKy': 'mrpShopfloor',
 }
 
 export function moduleForMenu(labelKey) {

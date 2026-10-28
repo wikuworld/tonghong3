@@ -976,10 +976,49 @@ function onPanelStart() {
   scaleOnline.value = true
 }
 
-function finishKy(row) {
-  return act('selesai_ky', { ky_id: row.id }).then((ok) => {
-    if (ok) scaleOnline.value = false
-  })
+function kyMarkedHabis(row) {
+  const v = row?.tidak_ada_sisa
+  return v === true || v === 1 || v === '1'
+}
+
+async function askTutupSisa(actual, stok) {
+  const sisa = Math.max(0, Number(stok) - Number(actual))
+  try {
+    await ElMessageBox.confirm(
+      t('pages.mrpProses.tutupSisaConfirm', {
+        actual: formatQty(actual),
+        stok: formatQty(stok),
+        sisa: formatQty(sisa),
+      }),
+      t('pages.mrpProses.tutupSisaTitle'),
+      {
+        type: 'warning',
+        distinguishCancelAndClose: true,
+        confirmButtonText: t('pages.mrpProses.tutupSisaHabis'),
+        cancelButtonText: t('pages.mrpProses.tutupSisaKembali'),
+      },
+    )
+    return true
+  } catch (action) {
+    if (action === 'cancel') return false
+    return null
+  }
+}
+
+async function finishKy(row) {
+  const payload = { ky_id: row.id }
+  const fromMod = Number(row.gudang_mod_id) > 0
+  const actual = Number(row.actual_qty) || 0
+  const stok = Number(row.stok_qty)
+  if (kyMarkedHabis(row)) {
+    payload.tutup_sisa = true
+  } else if (!fromMod && Number.isFinite(stok) && stok > actual + 1e-9) {
+    const choice = await askTutupSisa(actual, stok)
+    if (choice == null) return
+    payload.tutup_sisa = choice
+  }
+  const ok = await act('selesai_ky', payload)
+  if (ok) scaleOnline.value = false
 }
 
 async function reopenPersiapan() {

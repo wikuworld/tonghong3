@@ -2235,6 +2235,15 @@ export function mrpReportSelisihWip(params = {}) {
   return apiFetch(`/mrp/reports/selisih-wip${suffix}`)
 }
 
+export function mrpReportSelisihKy(params = {}) {
+  const q = appendPageParams(new URLSearchParams(), params)
+  if (params.start_date) q.set('start_date', params.start_date)
+  if (params.end_date) q.set('end_date', params.end_date)
+  if (params.q) q.set('q', params.q)
+  const suffix = q.toString() ? `?${q}` : ''
+  return apiFetch(`/mrp/reports/selisih-ky${suffix}`)
+}
+
 export function mrpListMonitoring(params = {}) {
   const q = appendPageParams(new URLSearchParams(), params)
   if (params.q) q.set('q', params.q)

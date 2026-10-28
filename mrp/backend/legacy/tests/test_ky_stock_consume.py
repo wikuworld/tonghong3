@@ -84,7 +84,7 @@ class ConsumeYlForKySessionTests(unittest.TestCase):
             out_calls.append({"qty": float(qty), "keterangan": keterangan})
             return float(qty)
 
-        def fake_return(cur, palet, yl, qty, *, keterangan=None, tanggal=None):
+        def fake_return(cur, palet, yl, qty, *, keterangan=None, tanggal=None, thickness=None, warna=None):
             return_calls.append({"qty": float(qty), "keterangan": keterangan})
             return float(qty)
 
@@ -105,6 +105,42 @@ class ConsumeYlForKySessionTests(unittest.TestCase):
         self.assertEqual(len(return_calls), 1)
         self.assertEqual(return_calls[0]["qty"], 100.0)
         self.assertIn("dikembalikan", (return_calls[0]["keterangan"] or "").lower())
+
+    def test_measure_above_stock_outs_only_on_hand(self):
+        calls = []
+
+        def fake_stock(cur, palet, yl, qty, tanggal=None, keterangan=None):
+            calls.append(float(qty))
+            return float(qty)
+
+        cur = MagicMock()
+        cur.fetchone.return_value = {"qty": 60.0, "thickness": "1.2", "warna": "BLACK"}
+        with patch.object(mrp_app, "_consume_yl_stock", fake_stock):
+            total = _consume_yl_for_ky_session(
+                cur,
+                _ky(actual_qty=60.9, target_qty=60.0),
+                {"kode_wip": "WIP-99"},
+            )
+        self.assertEqual(total, 60.0)
+        self.assertEqual(calls, [60.0])
+        update_sql, update_params = cur.execute.call_args.args
+        self.assertIn("yl_consumed=1", update_sql)
+        self.assertEqual(update_params, (60.0, 7))
+
+    def test_measure_when_stock_empty_finishes_without_out(self):
+        cur = MagicMock()
+        cur.fetchone.return_value = {"qty": 0.0, "thickness": "", "warna": ""}
+        with patch.object(mrp_app, "_consume_yl_stock") as fake_stock:
+            total = _consume_yl_for_ky_session(
+                cur,
+                _ky(actual_qty=60.9, target_qty=60.0),
+                {"kode_wip": "WIP-99"},
+            )
+        self.assertEqual(total, 0.0)
+        fake_stock.assert_not_called()
+        update_sql, update_params = cur.execute.call_args.args
+        self.assertIn("yl_consumed=1", update_sql)
+        self.assertEqual(update_params, (0.0, 7))
 
     def test_consume_is_idempotent_when_already_out(self):
         cur = MagicMock()

@@ -26,6 +26,7 @@ import MrpUsagePage from '../views/admin/mrp/MrpUsagePage.vue'
 import MrpReportPackingPage from '../views/admin/mrp/MrpReportPackingPage.vue'
 import MrpReportPersiapanPage from '../views/admin/mrp/MrpReportPersiapanPage.vue'
 import MrpReportSelisihWipPage from '../views/admin/mrp/MrpReportSelisihWipPage.vue'
+import MrpReportSelisihKyPage from '../views/admin/mrp/MrpReportSelisihKyPage.vue'
 import MrpMonitoringPage from '../views/admin/mrp/MrpMonitoringPage.vue'
 import LoginPage from '../views/LoginPage.vue'
 import { can, currentRoleFromToken } from '../security/permissions'
@@ -206,6 +207,11 @@ const router = createRouter({
           path: 'mrp/reports/selisih-wip',
           component: MrpReportSelisihWipPage,
           meta: { titleKey: 'menu.mrpReportSelisihWip', module: 'mrpShopfloor' },
+        },
+        {
+          path: 'mrp/reports/selisih-ky',
+          component: MrpReportSelisihKyPage,
+          meta: { titleKey: 'menu.mrpReportSelisihKy', module: 'mrpShopfloor' },
         },
       ],
     },

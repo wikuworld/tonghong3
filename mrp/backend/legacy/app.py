@@ -119,6 +119,34 @@ def _ensure_inbound_commercial_columns(cur):
     _add_column(cur, "tbl_yl", "bentuk_kulit", "VARCHAR(120) DEFAULT NULL")
     _add_column(cur, "tbl_yl", "skala", "VARCHAR(120) DEFAULT NULL")
     _add_column(cur, "tbl_yl", "erp_material_id", "INT DEFAULT NULL")
+    # Tabel lama dibuat saat default database masih latin1. Huruf Cina
+    # (bentuk kulit, nama, keterangan) ditolak MySQL sampai kolomnya utf8mb4.
+    _ensure_database_utf8mb4(cur)
+
+
+def _ensure_database_utf8mb4(cur) -> None:
+    cur.execute(
+        "SELECT TABLE_NAME FROM information_schema.TABLES "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' "
+        "AND (TABLE_COLLATION IS NULL OR TABLE_COLLATION NOT LIKE 'utf8mb4%')"
+    )
+    rows = cur.fetchall()
+    names = []
+    for row in rows:
+        name = row["TABLE_NAME"] if isinstance(row, dict) else row[0]
+        if name and all(ch.isalnum() or ch == "_" for ch in str(name)):
+            names.append(str(name))
+    if not names:
+        return
+    cur.execute("SET FOREIGN_KEY_CHECKS=0")
+    try:
+        for name in names:
+            cur.execute(
+                f"ALTER TABLE `{name}` CONVERT TO CHARACTER SET utf8mb4 "
+                "COLLATE utf8mb4_unicode_ci"
+            )
+    finally:
+        cur.execute("SET FOREIGN_KEY_CHECKS=1")
 
 
 def _col_names(cur, table):
@@ -1162,6 +1190,8 @@ def _consume_yl_for_ky_session(cur, ky, persiapan=None) -> float:
     Jika ada sisa alokasi (target > actual) dan bukan tidak_ada_sisa:
     OUT target lalu IN kembali (target-actual) agar sisa merge ke lot YL/palet.
     Net stok = −actual (sama seperti hanya OUT actual), dengan jejak IN/OUT eksplisit.
+
+    Jika hasil ukur melebihi sisa stok, OUT hanya sisa yang ada. Saldo tidak minus.
     """
     if not ky:
         raise ValueError("KY tidak ditemukan")
@@ -1200,13 +1230,20 @@ def _consume_yl_for_ky_session(cur, ky, persiapan=None) -> float:
     if not tidak_ada_sisa and target > actual + 1e-9 and stock + 1e-9 >= target:
         out_qty = target
         return_sisa = True
-    consumed = _consume_yl_stock(
-        cur,
-        kode_palet,
-        kode_yl,
-        out_qty,
-        keterangan=f"Keluar proses persiapan{wip_ref}",
-    )
+    # Hasil ukur boleh lewat stok (selisih mesin). Yang keluar dari palet
+    # tidak boleh melebihi sisa, supaya saldo tidak minus.
+    if out_qty > stock + 1e-9:
+        out_qty = stock
+    if out_qty > 1e-9:
+        consumed = _consume_yl_stock(
+            cur,
+            kode_palet,
+            kode_yl,
+            out_qty,
+            keterangan=f"Keluar proses persiapan{wip_ref}",
+        )
+    else:
+        consumed = 0.0
     total_consumed = consumed
     if tidak_ada_sisa:
         cur.execute(

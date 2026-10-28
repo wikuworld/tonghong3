@@ -2519,6 +2519,34 @@ def _yl_stock_qty(cur, kode_palet: str, kode_yl: str) -> float:
     return float((row or {}).get("qty") or 0)
 
 
+def split_ukur_against_cap(
+    prev_actual: float,
+    size_val: float,
+    cap: float,
+    *,
+    clamp: bool,
+) -> tuple[float, float]:
+    """Bagi satu input ukur menjadi (applied, overflow).
+
+    Crust (clamp=False): ukuran mesin disimpan utuh. Overflow adalah bagian
+    yang lewat dari sisa stok, untuk catatan Lebih ukur.
+    MOD (clamp=True): yang disimpan dipotong ke sisa kapasitas.
+    """
+    prev_actual = round(float(prev_actual or 0), 3)
+    size_val = round(float(size_val or 0), 3)
+    cap = round(float(cap or 0), 3)
+    raw_total = round(prev_actual + size_val, 3)
+    if clamp:
+        room = max(0.0, round(cap - prev_actual, 3))
+        applied = round(min(size_val, room), 3) if room > 1e-9 else 0.0
+        overflow = round(max(0.0, size_val - applied), 3)
+        return applied, overflow
+    already_over = max(0.0, round(prev_actual - cap, 3))
+    now_over = max(0.0, round(raw_total - cap, 3))
+    overflow = round(max(0.0, now_over - already_over), 3)
+    return size_val, overflow
+
+
 def _record_lebih_ukur(
     cur,
     *,
@@ -2553,6 +2581,36 @@ def _record_lebih_ukur(
             keterangan,
         ),
     )
+
+
+def _ky_close_kulit_lebih(actual: float, target: float, stock_before: float, closed_remainder: bool):
+    """Baris tbl_kulit_lebih saat KY ditutup. None bila tidak ada selisih.
+
+    Tutup sisa: selisih = hasil ukur − stok sebelum tutup, keterangan Kurang.
+    Selain itu: selisih = hasil ukur − target (Kurang atau Lebih).
+    """
+    actual = float(actual or 0)
+    target = float(target or 0)
+    stock_before = float(stock_before or 0)
+    if closed_remainder:
+        if stock_before <= actual + 1e-9:
+            return None
+        selisih = round(actual - stock_before, 3)
+        return {
+            "target_qty": round(stock_before, 3),
+            "actual_qty": round(actual, 3),
+            "selisih": selisih,
+            "keterangan": "Kurang",
+        }
+    selisih = round(actual - target, 3)
+    if abs(selisih) < 1e-9:
+        return None
+    return {
+        "target_qty": round(target, 3),
+        "actual_qty": round(actual, 3),
+        "selisih": selisih,
+        "keterangan": "Kurang" if selisih < 0 else "Lebih",
+    }
 
 
 def _yl_reserved_qty(cur, kode_palet: str, kode_yl: str, *, exclude_ky_id=None) -> float:
@@ -3674,6 +3732,13 @@ def proses_detail_api(persiapan_id: int):
         (persiapan_id,),
     )
     ky_sessions = _rows(cur.fetchall())
+    for sess in ky_sessions:
+        if int(sess.get("gudang_mod_id") or 0):
+            sess["stok_qty"] = None
+        else:
+            sess["stok_qty"] = _yl_stock_qty(
+                cur, sess.get("kode_palet") or "", sess.get("kode_yl") or ""
+            )
     cur.execute(
         "SELECT id FROM tbl_persiapan_ky WHERE persiapan_id=%s AND status='active' LIMIT 1",
         (persiapan_id,),
@@ -4041,18 +4106,19 @@ def proses_actions(persiapan_id: int):
                 conn.close()
                 return _err("KY aktif tidak ditemukan")
             prev_actual = float(ky_row.get("actual_qty") or 0)
-            raw_total = prev_actual + size_val
+            raw_total = round(prev_actual + size_val, 3)
             from_mod = int(ky_row.get("gudang_mod_id") or 0)
             if from_mod:
                 cap = float(ky_row.get("target_qty") or 0)
                 cap_label = "SF MOD"
+                clamp = True
             else:
                 cap = _yl_stock_qty(cur, ky_row["kode_palet"], ky_row["kode_yl"])
                 cap_label = "stok YL"
-            # Paksa clamp ke kapasitas: simpan sampai cap, catat overflow sebagai Lebih ukur.
-            room = max(0.0, round(cap - prev_actual, 3))
-            applied = round(min(size_val, room), 3) if room > 1e-9 else 0.0
-            overflow = round(max(0.0, size_val - applied), 3)
+                clamp = False
+            applied, overflow = split_ukur_against_cap(
+                prev_actual, size_val, cap, clamp=clamp
+            )
             if applied <= 1e-9 and overflow <= 1e-9:
                 cur.close()
                 conn.close()
@@ -4086,19 +4152,25 @@ def proses_actions(persiapan_id: int):
             action_extra = {
                 "applied": applied,
                 "overflow": overflow,
-                "clamped": overflow > 1e-9,
+                "clamped": bool(clamp and overflow > 1e-9),
+                "over_stock": bool((not clamp) and overflow > 1e-9),
                 "cap": cap,
                 "raw_total": raw_total,
             }
-            if overflow > 1e-9 and applied > 1e-9:
+            if clamp and overflow > 1e-9 and applied > 1e-9:
                 msg = (
                     f"Ukur di-clamp ke {cap_label} {cap}: disimpan {applied}, "
                     f"lebih ukur {overflow} dicatat."
                 )
-            elif overflow > 1e-9:
+            elif clamp and overflow > 1e-9:
                 msg = (
                     f"Kapasitas {cap_label} sudah penuh ({cap}); "
                     f"lebih ukur {overflow} dicatat, ukur tidak ditambah."
+                )
+            elif overflow > 1e-9:
+                msg = (
+                    f"Ukur {applied} disimpan. Melebihi {cap_label} {cap}: "
+                    f"lebih ukur {overflow} dicatat."
                 )
             else:
                 msg = "Ukur ditambahkan"
@@ -4172,17 +4244,26 @@ def proses_actions(persiapan_id: int):
                     return _err(spek_err)
             target = float(ky["target_qty"] or 0)
             actual = float(ky["actual_qty"] or 0)
+            from_mod = int(ky.get("gudang_mod_id") or 0)
+            if body.get("tutup_sisa") in (True, 1, "1", "true", "True"):
+                ky["tidak_ada_sisa"] = 1
+                cur.execute(
+                    "UPDATE tbl_persiapan_ky SET tidak_ada_sisa=1 WHERE id=%s",
+                    (ky_id,),
+                )
+            closed_remainder = int(ky.get("tidak_ada_sisa") or 0) == 1
+            stock_before = (
+                0.0
+                if from_mod
+                else _yl_stock_qty(cur, ky.get("kode_palet") or "", ky.get("kode_yl") or "")
+            )
             consumed = _consume_yl_for_ky_session(cur, ky, persiapan)
-            selisih = actual - target
             cur.execute("UPDATE tbl_persiapan_ky SET status='selesai' WHERE id=%s", (ky_id,))
             _activate_next_planned_ky(cur, persiapan_id)
-            from_mod = int(ky.get("gudang_mod_id") or 0)
-            if (
-                not from_mod
-                and persiapan.get("rencana_item_id")
-                and selisih != 0
-                and int(ky.get("tidak_ada_sisa") or 0) != 1
-            ):
+            variance = None
+            if not from_mod and persiapan.get("rencana_item_id"):
+                variance = _ky_close_kulit_lebih(actual, target, stock_before, closed_remainder)
+            if variance:
                 cur.execute(
                     "INSERT INTO tbl_kulit_lebih "
                     "(rencana_item_id, persiapan_id, ky_id, kode_palet, kode_yl, "
@@ -4194,16 +4275,16 @@ def proses_actions(persiapan_id: int):
                         ky_id,
                         ky["kode_palet"],
                         ky["kode_yl"],
-                        target,
-                        actual,
-                        selisih,
-                        "Kurang" if selisih < 0 else "Lebih",
+                        variance["target_qty"],
+                        variance["actual_qty"],
+                        variance["selisih"],
+                        variance["keterangan"],
                     ),
                 )
             # Catat sisa kulit ke gudang sisa bila ada alokasi tak terpakai
             if (
                 not from_mod
-                and int(ky.get("tidak_ada_sisa") or 0) != 1
+                and not closed_remainder
                 and target > actual + 1e-9
             ):
                 sisa_qty = round(target - actual, 3)
@@ -11787,6 +11868,98 @@ def report_selisih_wip_api():
             "end_date": end_date,
             "rows": page_rows,
             **totals,
+        }
+    )
+    return jsonify(payload)
+
+
+@api.get("/reports/selisih-ky")
+def report_selisih_ky_api():
+    """Selisih per KY dari tbl_kulit_lebih (Lebih ukur, Lebih, Kurang)."""
+    today = date.today().isoformat()
+    start_date = request.args.get("start_date") or today
+    end_date = request.args.get("end_date") or today
+    q = (request.args.get("q") or "").strip().lower()
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    try:
+        cur.execute(
+            """
+            SELECT kl.id,
+                   DATE(kl.created_at) AS tanggal,
+                   COALESCE(NULLIF(TRIM(pk.kode_wip), ''), '—') AS kode_wip,
+                   COALESCE(NULLIF(TRIM(kl.kode_palet), ''), '—') AS kode_palet,
+                   COALESCE(NULLIF(TRIM(kl.kode_yl), ''), '—') AS kode_yl,
+                   COALESCE(kl.target_qty, 0) AS target_qty,
+                   COALESCE(kl.actual_qty, 0) AS actual_qty,
+                   COALESCE(kl.selisih, 0) AS selisih,
+                   COALESCE(NULLIF(TRIM(kl.keterangan), ''), '—') AS keterangan
+            FROM tbl_kulit_lebih kl
+            LEFT JOIN tbl_persiapan_kulit pk ON pk.id = kl.persiapan_id
+            WHERE DATE(kl.created_at) BETWEEN %s AND %s
+            ORDER BY kl.created_at DESC, kl.id DESC
+            """,
+            (start_date, end_date),
+        )
+        report_data = _rows(cur.fetchall())
+    except Exception:
+        report_data = []
+    cur.close()
+    conn.close()
+
+    for row in report_data:
+        row["target_qty"] = round(float(row.get("target_qty") or 0), 3)
+        row["actual_qty"] = round(float(row.get("actual_qty") or 0), 3)
+        row["selisih"] = round(float(row.get("selisih") or 0), 3)
+        tanggal = row.get("tanggal")
+        if hasattr(tanggal, "isoformat"):
+            row["tanggal"] = tanggal.isoformat()
+
+    if q:
+        def _match(r):
+            blob = " ".join(
+                str(r.get(k) or "")
+                for k in ("kode_wip", "kode_palet", "kode_yl", "keterangan")
+            ).lower()
+            return q in blob
+
+        report_data = [r for r in report_data if _match(r)]
+
+    pg = parse_page_args(request.args, default_page_size=50)
+    total_lebih = round(sum(r["selisih"] for r in report_data if r["selisih"] > 0), 3)
+    total_kurang = round(sum(r["selisih"] for r in report_data if r["selisih"] < 0), 3)
+    report_data = sort_rows(
+        report_data,
+        sort_by=pg["sort_by"],
+        sort_dir=pg["sort_dir"],
+        fields={
+            "tanggal": "tanggal",
+            "kode_wip": "kode_wip",
+            "kode_palet": "kode_palet",
+            "kode_yl": "kode_yl",
+            "target_qty": "target_qty",
+            "actual_qty": "actual_qty",
+            "selisih": "selisih",
+            "keterangan": "keterangan",
+        },
+    )
+    page_rows, total = slice_page(
+        report_data, page=pg["page"], page_size=pg["page_size"], offset=pg["offset"]
+    )
+    payload = page_payload(
+        items=page_rows,
+        total=total,
+        page=pg["page"],
+        page_size=pg["page_size"],
+        offset=pg["offset"],
+    )
+    payload.update(
+        {
+            "start_date": start_date,
+            "end_date": end_date,
+            "rows": page_rows,
+            "total_lebih": total_lebih,
+            "total_kurang": total_kurang,
         }
     )
     return jsonify(payload)
