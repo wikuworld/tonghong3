@@ -55,6 +55,16 @@ from app.services.fluorescent_color import (
     parse_fluorescent_upload,
     upsert_fluorescent_rows,
 )
+from app.services.fluorescent_color_excel import (
+    export_fluorescent_colors_template_xlsx,
+    export_fluorescent_colors_xlsx,
+    import_fluorescent_colors_xlsx,
+)
+from app.services.brand_excel import (
+    export_brands_template_xlsx,
+    export_brands_xlsx,
+    import_brands_xlsx,
+)
 from app.services.color_code import apply_item_color_extract
 from app.services.master_items_excel import (
     export_master_items_template_xlsx,
@@ -302,6 +312,43 @@ def list_brands_page(
     buyers_by_brand = _buyer_codes_by_brand(db, [int(b.id) for b in brands])
     out = [_brand_out(brand, buyers_by_brand) for brand in brands]
     return page_dict(items=out, total=total, params=params)
+
+
+@router.get("/masters/brands/export")
+def export_brands(
+    template: bool = Query(False, description="Jika true, unduh template kosong (header saja)"),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    if template:
+        excel_content = export_brands_template_xlsx()
+        filename = "brand_template.xlsx"
+    else:
+        excel_content = export_brands_xlsx(db)
+        filename = "brand.xlsx"
+    return StreamingResponse(
+        io.BytesIO(excel_content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/masters/brands/import")
+async def import_brands(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+):
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File Excel kosong")
+    try:
+        result = import_brands_xlsx(db, content)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return result.to_dict()
 
 
 @router.post("/masters/brands", response_model=BrandOut)
@@ -620,6 +667,43 @@ def fluorescent_color_form_options(
             for buyer, seasons in sorted(color_names_by_buyer_season.items())
         },
     )
+
+
+@router.get("/masters/fluorescent-colors/export")
+def export_fluorescent_colors(
+    template: bool = Query(False, description="Jika true, unduh template kosong (header saja)"),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    if template:
+        excel_content = export_fluorescent_colors_template_xlsx()
+        filename = "fluorescent_color_template.xlsx"
+    else:
+        excel_content = export_fluorescent_colors_xlsx(db)
+        filename = "fluorescent_color.xlsx"
+    return StreamingResponse(
+        io.BytesIO(excel_content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/masters/fluorescent-colors/import")
+async def import_fluorescent_colors(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+):
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File Excel kosong")
+    try:
+        result = import_fluorescent_colors_xlsx(db, content)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return result.to_dict()
 
 
 @router.get("/masters/fluorescent-colors/{row_id}", response_model=FluorescentColorOut)

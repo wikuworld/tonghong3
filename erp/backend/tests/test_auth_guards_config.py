@@ -264,8 +264,9 @@ def test_invoice_router_require_auth_and_role_guards():
 
 def test_pricing_router_require_auth_and_role_guards():
     for path, method in [
-        ("/pricing/bulk-update", "POST"),
-        ("/pricing/bulk-update-csv", "POST"),
+        ("/pricing/special-prices", "POST"),
+        ("/pricing/special-prices/{price_id}", "PUT"),
+        ("/pricing/special-prices/{price_id}", "DELETE"),
     ]:
         route = _get_route(pricing.router, path, method)
         assert _has_dep(route, "_dep"), f"{method} {path} harus pakai require_roles"

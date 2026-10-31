@@ -81,10 +81,6 @@ DEFAULT_PERMISSION_MATRIX: dict[str, dict[str, list[str]]] = {
         "update": ["marketing"],
         "delete": [],
     },
-    "bulkPriceUpdate": {
-        "view": ["marketing"],
-        "update": ["marketing"],
-    },
     "masterItems": {
         "view": [],
         "create": [],

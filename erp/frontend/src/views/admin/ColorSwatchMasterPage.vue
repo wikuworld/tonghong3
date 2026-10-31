@@ -9,15 +9,8 @@
       />
       <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
-      <el-button v-if="canCreate" :icon="Upload" @click="openImportDialog">{{ t('pages.colorSwatch.importCsv') }}</el-button>
-      <el-button
-        v-if="isAdmin"
-        plain
-        :loading="importingBundled"
-        @click="importBundled"
-      >
-        {{ t('pages.colorSwatch.importBundled') }}
-      </el-button>
+      <el-button v-if="canView" :icon="Download" @click="handleExport">{{ t('pages.colorSwatch.export') }}</el-button>
+      <el-button v-if="canCreate" type="success" :icon="Upload" @click="openExcelImportDialog">{{ t('pages.colorSwatch.importExcel') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
@@ -403,58 +396,57 @@
     </el-dialog>
 
     <el-dialog
-      v-model="importDialogVisible"
-      width="520px"
+      v-model="excelImportDialogVisible"
+      :title="t('pages.colorSwatch.importExcelTitle')"
+      width="640px"
       destroy-on-close
       align-center
-      class="color-swatch-dialog"
-      :show-close="true"
-      @closed="resetImportState"
     >
-      <template #header>
-        <div class="color-swatch-dialog-header">
-          <div class="color-swatch-dialog-header__main">
-            <h3 class="color-swatch-dialog-header__title">{{ t('pages.colorSwatch.importTitle') }}</h3>
-            <p class="color-swatch-dialog-header__sub">{{ t('pages.colorSwatch.importSub') }}</p>
-          </div>
-          <el-tooltip placement="top-start" :show-after="200">
-            <template #content>{{ t('pages.colorSwatch.importHint') }}</template>
-            <el-icon class="color-swatch-page-hint" :size="16" tabindex="0" :aria-label="t('pages.colorSwatch.importHint')">
-              <InfoFilled />
-            </el-icon>
-          </el-tooltip>
-        </div>
-      </template>
-
-      <div class="color-swatch-dialog-body">
-        <div class="color-swatch-dialog-panel">
-          <div class="color-swatch-dialog-panel__head">
-            <h4 class="color-swatch-dialog-panel__title">{{ t('pages.colorSwatch.importPanelTitle') }}</h4>
-          </div>
-          <div class="color-swatch-dialog-panel__body">
-            <el-upload
-              ref="uploadRef"
-              :auto-upload="false"
-              :limit="1"
-              accept=".csv"
-              :on-change="handleImportFileChange"
-              :on-remove="handleImportFileRemove"
-            >
-              <el-button type="primary" :icon="Upload">{{ t('pages.colorSwatch.selectFile') }}</el-button>
-            </el-upload>
-          </div>
-        </div>
+      <p class="cs-excel-sub">{{ t('pages.colorSwatch.importExcelSub') }}</p>
+      <p class="cs-excel-hint">{{ t('pages.colorSwatch.importExcelHint') }}</p>
+      <ul class="cs-excel-cols">
+        <li>{{ t('pages.colorSwatch.importExcelColsRequired') }}</li>
+        <li>{{ t('pages.colorSwatch.importExcelColsOptional') }}</li>
+      </ul>
+      <div class="cs-excel-actions">
+        <el-button :icon="Download" @click="downloadImportTemplate">{{ t('pages.colorSwatch.downloadTemplate') }}</el-button>
       </div>
-
+      <p class="cs-excel-panel-title">{{ t('pages.colorSwatch.importExcelPanelTitle') }}</p>
+      <el-upload
+        :auto-upload="false"
+        :limit="1"
+        accept=".xlsx,.xls"
+        :on-change="handleExcelImportFile"
+      >
+        <el-button type="primary">{{ t('pages.colorSwatch.selectFile') }}</el-button>
+      </el-upload>
+      <div v-if="excelImportResult" class="cs-excel-result">
+        <p>
+          {{
+            t('pages.colorSwatch.importResultSummary', {
+              created: excelImportResult.created || 0,
+              updated: excelImportResult.updated || 0,
+              skipped: excelImportResult.skipped || 0,
+            })
+          }}
+        </p>
+        <ul v-if="excelImportResult.errors?.length" class="cs-excel-errors">
+          <li v-for="(err, idx) in excelImportResult.errors.slice(0, 8)" :key="idx">
+            {{ t('pages.colorSwatch.importErrorRow', { row: err.row, code: err.color_code || '—', reason: err.reason }) }}
+          </li>
+          <li v-if="excelImportResult.errors.length > 8">
+            {{ t('pages.colorSwatch.importErrorMore', { n: excelImportResult.errors.length - 8 }) }}
+          </li>
+        </ul>
+      </div>
       <template #footer>
-        <div class="color-swatch-dialog-footer">
-          <el-button :icon="Close" @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
-          <el-button type="primary" :icon="Check" :loading="importing" :disabled="!importFile" @click="handleImportCsv">
-            {{ t('pages.colorSwatch.doImport') }}
-          </el-button>
-        </div>
+        <el-button @click="excelImportDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :disabled="!excelImportFile || excelImporting" :loading="excelImporting" @click="handleExcelImport">
+          {{ t('pages.colorSwatch.doImport') }}
+        </el-button>
       </template>
     </el-dialog>
+
   </AdminSection>
 </template>
 
@@ -462,30 +454,26 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Close, InfoFilled, Plus, Refresh, Upload } from '@element-plus/icons-vue'
+import { Check, Close, Download, InfoFilled, Plus, Refresh, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import AdminTableActions from '../../components/admin/AdminTableActions.vue'
 import {
   createColorSwatchRecipe,
   deleteColorSwatchRecipe,
-  importColorSwatchBundled,
-  importColorSwatchCsv,
+  exportColorSwatches,
+  importColorSwatches,
   listColorSwatchFormOptions,
   listColorSwatchRecipesPage,
-  me,
   suggestColorSwatchStandard,
   updateColorSwatchRecipe,
 } from '../../api/client'
 import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
-const { canCreate, canUpdate, canDelete } = useModulePermission('colorSwatch')
-const isAdmin = ref(false)
+const { canView, canCreate, canUpdate, canDelete } = useModulePermission('colorSwatch')
 
 const loading = ref(false)
 const saving = ref(false)
-const importing = ref(false)
-const importingBundled = ref(false)
 const rows = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -496,9 +484,10 @@ const filterBuyer = ref('')
 const sortBy = ref('')
 const sortDir = ref('asc')
 const formVisible = ref(false)
-const importDialogVisible = ref(false)
-const importFile = ref(null)
-const uploadRef = ref(null)
+const excelImportDialogVisible = ref(false)
+const excelImportFile = ref(null)
+const excelImportResult = ref(null)
+const excelImporting = ref(false)
 const editId = ref(null)
 /** User mengubah Color standard manual — jangan ditimpa autofill. */
 const colorStandardManual = ref(false)
@@ -710,14 +699,55 @@ function resetForm() {
   colorStandardAuto.value = false
 }
 
-function resetImportState() {
-  importFile.value = null
-  uploadRef.value?.clearFiles?.()
+function openExcelImportDialog() {
+  excelImportDialogVisible.value = true
+  excelImportFile.value = null
+  excelImportResult.value = null
 }
 
-function openImportDialog() {
-  resetImportState()
-  importDialogVisible.value = true
+function handleExcelImportFile(file) {
+  excelImportFile.value = file.raw
+  excelImportResult.value = null
+}
+
+async function handleExport() {
+  try {
+    await exportColorSwatches()
+    ElMessage.success(t('pages.colorSwatch.exportSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function downloadImportTemplate() {
+  try {
+    await exportColorSwatches({ template: true })
+    ElMessage.success(t('pages.colorSwatch.templateSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function handleExcelImport() {
+  if (!excelImportFile.value) return
+  excelImporting.value = true
+  excelImportResult.value = null
+  try {
+    const result = await importColorSwatches(excelImportFile.value)
+    excelImportResult.value = result
+    ElMessage.success(
+      t('pages.colorSwatch.importResultSummary', {
+        created: result.created || 0,
+        updated: result.updated || 0,
+        skipped: result.skipped || 0,
+      }),
+    )
+    await Promise.all([load(), loadFormOptions()])
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    excelImporting.value = false
+  }
 }
 
 function openCreate() {
@@ -795,76 +825,6 @@ async function remove(row) {
   }
 }
 
-function handleImportFileChange(file) {
-  importFile.value = file.raw
-}
-
-function handleImportFileRemove() {
-  importFile.value = null
-}
-
-async function handleImportCsv() {
-  if (!importFile.value) return
-  try {
-    await ElMessageBox.confirm(t('pages.colorSwatch.importCsvReplaceConfirm'), t('common.confirm'), {
-      type: 'warning',
-    })
-  } catch {
-    return
-  }
-  importing.value = true
-  try {
-    const r = await importColorSwatchCsv(importFile.value, {
-      replaceInactive: true,
-      replaceInactiveScope: 'global',
-    })
-    ElMessage.success(
-      t('pages.colorSwatch.importDone', {
-        inserted: r.inserted,
-        updated: r.updated,
-        deactivated: r.deactivated ?? 0,
-        total: r.total,
-      }),
-    )
-    importDialogVisible.value = false
-    await Promise.all([load(), loadFormOptions()])
-  } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
-  } finally {
-    importing.value = false
-  }
-}
-
-async function importBundled() {
-  try {
-    await ElMessageBox.confirm(t('pages.colorSwatch.importBundledConfirm'), t('common.confirm'), {
-      type: 'warning',
-    })
-  } catch {
-    return
-  }
-  importingBundled.value = true
-  try {
-    const r = await importColorSwatchBundled({
-      replaceInactive: true,
-      replaceInactiveScope: 'global',
-    })
-    ElMessage.success(
-      t('pages.colorSwatch.importDone', {
-        inserted: r.inserted,
-        updated: r.updated,
-        deactivated: r.deactivated ?? 0,
-        total: r.total,
-      }),
-    )
-    await Promise.all([load(), loadFormOptions()])
-  } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
-  } finally {
-    importingBundled.value = false
-  }
-}
-
 watch(
   () => form.factory_key,
   () => {
@@ -879,14 +839,9 @@ watch([filterFactory, filterBuyer, keyword], () => {
   load()
 })
 
-onMounted(async () => {
-  try {
-    const u = await me()
-    isAdmin.value = (u?.role || '') === 'admin'
-  } catch {
-    isAdmin.value = false
-  }
-  await Promise.all([loadFormOptions(), load()])
+onMounted(() => {
+  loadFormOptions()
+  load()
 })
 </script>
 
@@ -1046,5 +1001,47 @@ onMounted(async () => {
   justify-content: flex-end;
   gap: 8px;
   width: 100%;
+}
+
+.cs-excel-sub {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.cs-excel-hint,
+.cs-excel-cols {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.45;
+}
+
+.cs-excel-cols {
+  padding-left: 18px;
+}
+
+.cs-excel-actions {
+  margin-bottom: 12px;
+}
+
+.cs-excel-panel-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cs-excel-result {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
+  font-size: 13px;
+}
+
+.cs-excel-errors {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--el-color-danger);
 }
 </style>

@@ -407,6 +407,51 @@ def iter_csv_recipes(stream: TextIO | BinaryIO, source_file: str) -> list[dict[s
     return out
 
 
+def _cell_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, datetime):
+        return value.strftime("%d/%b/%y")
+    if isinstance(value, date):
+        return value.strftime("%d/%b/%y")
+    return str(value).strip()
+
+
+def iter_xlsx_recipes(raw: bytes, source_file: str) -> list[dict[str, Any]]:
+    """Sheet pertama. Header sama dengan CSV. Kode COLOR SWATCH disalin apa adanya."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+    try:
+        ws = wb.worksheets[0]
+        row_iter = ws.iter_rows(values_only=True)
+        header = next(row_iter, None)
+        if not header:
+            return []
+        keys = [str(cell or "").strip() for cell in header]
+        out: list[dict[str, Any]] = []
+        for values in row_iter:
+            row: dict[str, str] = {}
+            for index, key in enumerate(keys):
+                if not key:
+                    continue
+                cell = values[index] if values is not None and index < len(values) else None
+                row[key] = _cell_text(cell)
+            parsed = parse_csv_row(row, source_file)
+            if parsed:
+                out.append(parsed)
+        return out
+    finally:
+        wb.close()
+
+
+def iter_upload_recipes(raw: bytes, source_file: str) -> list[dict[str, Any]]:
+    name = (source_file or "").lower()
+    if name.endswith(".xlsx") or raw[:2] == b"PK":
+        return iter_xlsx_recipes(raw, source_file)
+    return iter_csv_recipes(io.BytesIO(raw), source_file)
+
+
 def _resolve_customer_id(
     db: Session,
     factory_key: str,

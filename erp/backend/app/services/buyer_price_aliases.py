@@ -148,9 +148,17 @@ def customer_price_rules(
     db: Session | None,
     factory_code: str | None,
 ) -> dict:
-    """Angka tambahan dan diskon ada di list harga buyer, bukan di customer."""
-    del db, factory_code
-    return {"outside": None, "discount": None}
+    """Diskon satu pabrik. Upcharge outside tetap di list harga buyer."""
+    discount = None
+    row = _customer_by_factory_code(db, factory_code)
+    if row is not None and getattr(row, "discount_modifier_enabled", False) is True:
+        value = _modifier_value(getattr(row, "discount_modifier", None))
+        if value is not None and value != 0:
+            discount = {
+                "type": _modifier_type(getattr(row, "discount_modifier_type", None)),
+                "value": value,
+            }
+    return {"outside": None, "discount": discount}
 
 
 def list_price_rules(price_list) -> dict:

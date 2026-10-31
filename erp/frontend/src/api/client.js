@@ -267,6 +267,36 @@ export function deleteCustomer(id) {
   return apiFetch(`/customers/${id}`, { method: 'DELETE' })
 }
 
+export async function exportCustomers({ template = false } = {}) {
+  const q = template ? '?template=true' : ''
+  const r = await fetch(`/api/v1/customers/export${q}`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+  })
+  if (!r.ok) {
+    let msg = r.statusText
+    try {
+      const body = await r.json()
+      if (body?.detail) msg = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg || 'Export failed')
+  }
+  const blob = await r.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = template ? 'customer_template.xlsx' : 'customer.xlsx'
+  a.click()
+  URL.revokeObjectURL(blobUrl)
+}
+
+export async function importCustomers(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/customers/import', { method: 'POST', body: fd })
+}
+
 export function listQuotations(params = {}) {
   const q = new URLSearchParams()
   if (params.q != null && String(params.q).trim()) q.set('q', String(params.q).trim())
@@ -769,6 +799,36 @@ export function deleteBrand(id) {
   return apiFetch(`/masters/brands/${id}`, { method: 'DELETE' })
 }
 
+export async function exportBrands({ template = false } = {}) {
+  const q = template ? '?template=true' : ''
+  const r = await fetch(`/api/v1/masters/brands/export${q}`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+  })
+  if (!r.ok) {
+    let msg = r.statusText
+    try {
+      const body = await r.json()
+      if (body?.detail) msg = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg || 'Export failed')
+  }
+  const blob = await r.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = template ? 'brand_template.xlsx' : 'brand.xlsx'
+  a.click()
+  URL.revokeObjectURL(blobUrl)
+}
+
+export async function importBrands(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/masters/brands/import', { method: 'POST', body: fd })
+}
+
 export function listMasterItems() {
   return apiFetch('/masters/items')
 }
@@ -915,6 +975,36 @@ export function importFluorescentCsv(file) {
   return apiFetch('/masters/fluorescent-colors/import-csv', { method: 'POST', body: fd })
 }
 
+export async function exportFluorescentColors({ template = false } = {}) {
+  const q = template ? '?template=true' : ''
+  const r = await fetch(`/api/v1/masters/fluorescent-colors/export${q}`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+  })
+  if (!r.ok) {
+    let msg = r.statusText
+    try {
+      const body = await r.json()
+      if (body?.detail) msg = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg || 'Export failed')
+  }
+  const blob = await r.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = template ? 'fluorescent_color_template.xlsx' : 'fluorescent_color.xlsx'
+  a.click()
+  URL.revokeObjectURL(blobUrl)
+}
+
+export async function importFluorescentColors(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/masters/fluorescent-colors/import', { method: 'POST', body: fd })
+}
+
 export function listCsiColorsPage(params = {}) {
   const q = new URLSearchParams()
   if (params.buyer_code && String(params.buyer_code).trim()) q.set('buyer_code', String(params.buyer_code).trim())
@@ -945,6 +1035,36 @@ export function deleteCsiColor(id) {
 
 export function importCsiBundled() {
   return apiFetch('/masters/csi-colors/import-bundled', { method: 'POST' })
+}
+
+export async function exportCsiColors({ template = false } = {}) {
+  const q = template ? '?template=true' : ''
+  const r = await fetch(`/api/v1/masters/csi-colors/export${q}`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+  })
+  if (!r.ok) {
+    let msg = r.statusText
+    try {
+      const body = await r.json()
+      if (body?.detail) msg = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg || 'Export failed')
+  }
+  const blob = await r.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = template ? 'csi_color_template.xlsx' : 'csi_color.xlsx'
+  a.click()
+  URL.revokeObjectURL(blobUrl)
+}
+
+export async function importCsiColors(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/masters/csi-colors/import', { method: 'POST', body: fd })
 }
 
 export function listColorWindowsPage(params = {}) {
@@ -1129,13 +1249,43 @@ export function importDataIntelligentWorkbook(file) {
   return apiFetch('/masters/data-intelligent/import', { method: 'POST', body: fd })
 }
 
-export function importColorSwatchCsv(file, { replaceInactive = true, replaceInactiveScope = 'global' } = {}) {
+export function importColorSwatchCsv(file, { replaceInactive = false, replaceInactiveScope = 'global' } = {}) {
   const fd = new FormData()
   fd.append('file', file)
   const q = new URLSearchParams()
   q.set('replace_inactive', replaceInactive ? 'true' : 'false')
   q.set('replace_inactive_scope', replaceInactiveScope)
   return apiFetch(`/masters/color-swatch-recipes/import-csv?${q}`, { method: 'POST', body: fd })
+}
+
+export async function exportColorSwatches({ template = false } = {}) {
+  const q = template ? '?template=true' : ''
+  const r = await fetch(`/api/v1/masters/color-swatch-recipes/export${q}`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+  })
+  if (!r.ok) {
+    let msg = r.statusText
+    try {
+      const body = await r.json()
+      if (body?.detail) msg = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg || 'Export failed')
+  }
+  const blob = await r.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = template ? 'color_swatch_template.xlsx' : 'color_swatch.xlsx'
+  a.click()
+  URL.revokeObjectURL(blobUrl)
+}
+
+export async function importColorSwatches(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/masters/color-swatch-recipes/import', { method: 'POST', body: fd })
 }
 
 export function importColorSwatchBundled({
@@ -1388,6 +1538,36 @@ export function listBuyerPriceLists(params = {}) {
   return apiFetch(`/buyer-prices/lists${suffix}`)
 }
 
+export async function exportBuyerPrices({ template = false } = {}) {
+  const q = template ? '?template=true' : ''
+  const r = await fetch(`/api/v1/buyer-prices/export${q}`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+  })
+  if (!r.ok) {
+    let msg = r.statusText
+    try {
+      const body = await r.json()
+      if (body?.detail) msg = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg || 'Export failed')
+  }
+  const blob = await r.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  a.download = template ? 'buyer_price_template.xlsx' : 'buyer_price.xlsx'
+  a.click()
+  URL.revokeObjectURL(blobUrl)
+}
+
+export async function importBuyerPrices(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  return apiFetch('/buyer-prices/import', { method: 'POST', body: fd })
+}
+
 export function getBuyerPriceList(id) {
   return apiFetch(`/buyer-prices/lists/${id}`)
 }
@@ -1544,16 +1724,6 @@ export async function updateCustomerPrice(id, body) {
 
 export async function deleteCustomerPrice(id) {
   return apiFetch(`/pricing/customer-prices/${id}`, { method: 'DELETE' })
-}
-
-export async function bulkUpdatePrices(updates) {
-  return apiFetch('/pricing/bulk-update', { method: 'POST', body: JSON.stringify({ updates }) })
-}
-
-export async function bulkUpdatePricesCsv(file) {
-  const fd = new FormData()
-  fd.append('file', file)
-  return apiFetch('/pricing/bulk-update-csv', { method: 'POST', body: fd })
 }
 
 

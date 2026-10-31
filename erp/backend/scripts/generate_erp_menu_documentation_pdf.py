@@ -132,14 +132,6 @@ ROWS: list[tuple[str, str, str, str, str, str]] = [
         "master_items, po_headers (resolve harga), buyer_codes",
     ),
     (
-        "Master Data — Harga",
-        "Update Harga Massal",
-        "/admin/bulk-price-update",
-        "Update harga banyak item sekaligus (form tunggal atau unggah CSV) pada special price / list buyer.",
-        "special_prices, customer_special_prices, buyer_price_lists",
-        "—",
-    ),
-    (
         "Master Data — Item & Warna",
         "Master Item",
         "/admin/master-items",

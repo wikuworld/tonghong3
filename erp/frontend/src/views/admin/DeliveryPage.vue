@@ -296,9 +296,12 @@
             <el-table-column prop="material_name" :label="t('pages.delivery.columns.materialName')" min-width="140" show-overflow-tooltip />
             <el-table-column prop="color" :label="t('pages.delivery.columns.color')" min-width="110" show-overflow-tooltip />
             <el-table-column prop="thickness" :label="t('pages.delivery.columns.thickness')" width="90" show-overflow-tooltip />
-            <el-table-column prop="qty_roll" :label="t('pages.delivery.columns.roll')" width="64" align="right" />
+            <el-table-column :label="t('pages.delivery.shipQtyShip')" width="100" align="right">
+              <template #default="{ row }">{{ formatNumber(row.qty_sf, 2) }}</template>
+            </el-table-column>
 
             <template v-if="showDetailCols">
+              <el-table-column prop="qty_roll" :label="t('pages.delivery.columns.roll')" width="64" align="right" />
               <el-table-column prop="destination" :label="t('common.destination')" min-width="120" show-overflow-tooltip />
               <el-table-column prop="system_no" :label="t('pages.delivery.columns.systemNo')" min-width="120" show-overflow-tooltip />
               <el-table-column prop="leather_color" :label="t('pages.delivery.columns.leatherColor')" min-width="110" show-overflow-tooltip />

@@ -50,6 +50,11 @@ class Customer(Base):
     outside_banten: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
+    discount_modifier_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    discount_modifier: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4), nullable=True)
+    discount_modifier_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     payment_terms: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     default_currency: Mapped[Optional[str]] = mapped_column(String(3), nullable=True)
     tax_mode: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)

@@ -9,6 +9,8 @@
       />
       <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
+      <el-button v-if="canView" :icon="Download" @click="handleExport">{{ t('pages.buyerPrices.export') }}</el-button>
+      <el-button v-if="canCreate" type="success" :icon="Upload" @click="openImportDialog">{{ t('pages.buyerPrices.importExcel') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreateDialog">
         {{ t('common.create') }}
       </el-button>
@@ -537,6 +539,14 @@
                     />
                   </el-form-item>
                 </el-col>
+                <el-col :span="24" v-if="sheetHasOutsideBlock">
+                  <el-alert
+                    type="info"
+                    :closable="false"
+                    show-icon
+                    :title="t('pages.buyerPrices.outsideHeaderIgnored')"
+                  />
+                </el-col>
                 <el-col :xs="24" :sm="12">
                   <el-form-item :label="t('pages.buyerPrices.outsideAdjust')">
                     <div class="flex gap-2 w-full">
@@ -817,13 +827,54 @@
         </div>
       </div>
     </el-drawer>
+
+    <el-dialog v-model="importDialogVisible" :title="t('pages.buyerPrices.importExcelTitle')" width="640px" destroy-on-close align-center>
+      <p class="buyer-excel-sub">{{ t('pages.buyerPrices.importExcelSub') }}</p>
+      <p class="buyer-excel-hint">{{ t('pages.buyerPrices.importExcelHint') }}</p>
+      <ul class="buyer-excel-cols">
+        <li>{{ t('pages.buyerPrices.importExcelColsRequired') }}</li>
+        <li>{{ t('pages.buyerPrices.importExcelColsOptional') }}</li>
+      </ul>
+      <div class="buyer-excel-actions">
+        <el-button :icon="Download" @click="downloadImportTemplate">{{ t('pages.buyerPrices.downloadTemplate') }}</el-button>
+      </div>
+      <p class="buyer-excel-panel-title">{{ t('pages.buyerPrices.importExcelPanelTitle') }}</p>
+      <el-upload :auto-upload="false" :limit="1" accept=".xlsx,.xls" :on-change="handleImportFile">
+        <el-button type="primary">{{ t('pages.buyerPrices.selectFile') }}</el-button>
+      </el-upload>
+      <div v-if="importResult" class="buyer-excel-result">
+        <p>
+          {{
+            t('pages.buyerPrices.importResultSummary', {
+              created: importResult.created || 0,
+              updated: importResult.updated || 0,
+              skipped: importResult.skipped || 0,
+            })
+          }}
+        </p>
+        <ul v-if="importResult.errors?.length" class="buyer-excel-errors">
+          <li v-for="(err, idx) in importResult.errors.slice(0, 8)" :key="idx">
+            {{ t('pages.buyerPrices.importErrorRow', { row: err.row, code: err.item || '—', reason: err.reason }) }}
+          </li>
+          <li v-if="importResult.errors.length > 8">
+            {{ t('pages.buyerPrices.importErrorMore', { n: importResult.errors.length - 8 }) }}
+          </li>
+        </ul>
+      </div>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :disabled="!importFile || importing" :loading="importing" @click="handleImport">
+          {{ t('pages.buyerPrices.doImport') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
 <script setup>
 import { computed, h, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { Plus, Close, Check, Refresh, InfoFilled } from '@element-plus/icons-vue'
+import { Plus, Close, Check, Refresh, InfoFilled, Download, Upload } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AdminSection from '../../components/AdminSection.vue'
 import AdminTableActions from '../../components/admin/AdminTableActions.vue'
@@ -833,6 +884,8 @@ import {
   getBuyerPriceList,
   listBrands,
   listBuyerPriceLists,
+  exportBuyerPrices,
+  importBuyerPrices,
   listMasterItems,
   saveBuyerPriceSheet,
   toIsoDate,
@@ -844,7 +897,11 @@ import { buildPageParams, fromElSortChange, normalizePageResult } from '../../ut
 import { applyItemSelection, missingAddonsForRow, missingRequiredPricesForRow, priceAddonFilled, thicknessOptionsForMaterial, uniqueMaterialNames } from '../../utils/buyerPriceSheet'
 
 const { t } = useI18n()
-const { canCreate, canUpdate, canDelete } = useModulePermission('buyerPrices')
+const { canView, canCreate, canUpdate, canDelete } = useModulePermission('buyerPrices')
+const importDialogVisible = ref(false)
+const importFile = ref(null)
+const importResult = ref(null)
+const importing = ref(false)
 
 const SHEET_COLUMNS = ['ITEM', 'THICKNESS', 'COLOR', 'COLOR WHITE', 'COLOR BLACK', 'COLOR COLOR', 'FLOURASENT', 'METALIC', 'EMBOSS', 'SPESIAL EMBOSS']
 
@@ -923,6 +980,12 @@ const headerForm = reactive({
 })
 
 const sheetRows = ref([])
+const sheetHasOutsideBlock = computed(() =>
+  sheetRows.value.some((row) => {
+    const block = String(row?.COLOR || '').trim().toUpperCase()
+    return block === 'OUTSIDE BANTEN' || block === 'OUTSIDE SPECIAL'
+  }),
+)
 
 const masterDrawerTitle = computed(() => {
   const code = masterBuyerCode.value || ''
@@ -1372,6 +1435,57 @@ async function confirmDelete(row) {
   }
 }
 
+function openImportDialog() {
+  importDialogVisible.value = true
+  importFile.value = null
+  importResult.value = null
+}
+
+function handleImportFile(file) {
+  importFile.value = file.raw
+  importResult.value = null
+}
+
+async function handleExport() {
+  try {
+    await exportBuyerPrices()
+    ElMessage.success(t('pages.buyerPrices.exportSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function downloadImportTemplate() {
+  try {
+    await exportBuyerPrices({ template: true })
+    ElMessage.success(t('pages.buyerPrices.templateSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function handleImport() {
+  if (!importFile.value) return
+  importing.value = true
+  importResult.value = null
+  try {
+    const result = await importBuyerPrices(importFile.value)
+    importResult.value = result
+    ElMessage.success(
+      t('pages.buyerPrices.importResultSummary', {
+        created: result.created || 0,
+        updated: result.updated || 0,
+        skipped: result.skipped || 0,
+      }),
+    )
+    await load()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    importing.value = false
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -1756,6 +1870,14 @@ onMounted(load)
   font-size: 12px;
   color: #64748b;
 }
+
+.buyer-excel-sub { margin: 0 0 6px; font-size: 14px; }
+.buyer-excel-hint, .buyer-excel-cols { margin: 0 0 8px; font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.45; }
+.buyer-excel-cols { padding-left: 18px; }
+.buyer-excel-actions { margin-bottom: 12px; }
+.buyer-excel-panel-title { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.buyer-excel-result { margin-top: 14px; padding: 10px 12px; border-radius: 6px; background: var(--el-fill-color-light); font-size: 13px; }
+.buyer-excel-errors { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: var(--el-color-danger); }
 
 @media (max-width: 768px) {
   :deep(.buyer-price-drawer.el-drawer) {

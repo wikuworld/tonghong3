@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import io
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -21,6 +23,11 @@ from app.services.csi_color import (
     apply_csi_fields,
     parse_csi_workbook,
     upsert_csi_rows,
+)
+from app.services.csi_color_excel import (
+    export_csi_colors_template_xlsx,
+    export_csi_colors_xlsx,
+    import_csi_colors_xlsx,
 )
 
 router = APIRouter(tags=["csi-colors"])
@@ -187,6 +194,43 @@ def csi_form_options(
         by_buyer.setdefault(row.buyer_code, []).append(CsiColorOut.model_validate(row))
     buyers = sorted(set(list_active_buyer_codes(db)) | set(by_buyer))
     return CsiFormOptionsOut(buyer_codes=buyers, colors_by_buyer=by_buyer)
+
+
+@router.get("/masters/csi-colors/export")
+def export_csi_colors(
+    template: bool = Query(False, description="Jika true, unduh template kosong (header saja)"),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    if template:
+        excel_content = export_csi_colors_template_xlsx()
+        filename = "csi_color_template.xlsx"
+    else:
+        excel_content = export_csi_colors_xlsx(db)
+        filename = "csi_color.xlsx"
+    return StreamingResponse(
+        io.BytesIO(excel_content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/masters/csi-colors/import")
+async def import_csi_colors(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+):
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File Excel kosong")
+    try:
+        result = import_csi_colors_xlsx(db, content)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return result.to_dict()
 
 
 @router.post("/masters/csi-colors", response_model=CsiColorOut)

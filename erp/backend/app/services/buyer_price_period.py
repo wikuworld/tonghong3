@@ -92,8 +92,27 @@ def assert_no_period_overlap(
             )
 
 
-def pick_price_list(lists: list[Any], as_of: Optional[date]) -> Any | None:
-    """Pilih list yang periodenya mencakup tanggal, lalu cadangan tanpa tanggal."""
+def _as_brand_id(value: Any) -> Optional[int]:
+    if value is None or isinstance(value, bool):
+        return None
+    if not isinstance(value, (int, str)):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def pick_price_list(
+    lists: list[Any],
+    as_of: Optional[date],
+    brand_id: Optional[int] = None,
+) -> Any | None:
+    """Pilih list yang periodenya mencakup tanggal, lalu cadangan tanpa tanggal.
+
+    Bila beberapa list mencakup tanggal yang sama, utamakan brand PO.
+    Tanpa brand yang cocok, list dengan awal periode terbaru yang dipakai.
+    """
     when = as_of or date.today()
     covering: list[Any] = []
     legacy: list[Any] = []
@@ -106,6 +125,13 @@ def pick_price_list(lists: list[Any], as_of: Optional[date]) -> Any | None:
         if start is not None and end is not None and start <= when <= end:
             covering.append(row)
     if covering:
+        wanted = _as_brand_id(brand_id)
+        if wanted is not None:
+            branded = [
+                row for row in covering if _as_brand_id(getattr(row, "brand_id", None)) == wanted
+            ]
+            if branded:
+                covering = branded
         covering.sort(key=lambda row: _as_date(row.period_start) or date.min, reverse=True)
         return covering[0]
     if legacy:
@@ -113,14 +139,19 @@ def pick_price_list(lists: list[Any], as_of: Optional[date]) -> Any | None:
     return None
 
 
-def select_buyer_price_list(db: Session, buyer_code: str, as_of: Optional[date]) -> Any | None:
+def select_buyer_price_list(
+    db: Session,
+    buyer_code: str,
+    as_of: Optional[date],
+    brand_id: Optional[int] = None,
+) -> Any | None:
     code = _code(buyer_code)
     if not code:
         return None
     lists = list(
         db.scalars(select(BuyerPriceList).where(BuyerPriceList.buyer_code == code)).all()
     )
-    return pick_price_list(lists, as_of)
+    return pick_price_list(lists, as_of, brand_id=brand_id)
 
 
 def unique_brand_id_for_buyer(db: Session, buyer_code: str) -> Optional[int]:

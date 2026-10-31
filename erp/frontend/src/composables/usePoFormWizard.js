@@ -637,6 +637,7 @@ async function fetchResolvedUnitPricePreview() {
       color_family: formModel.color_family || null,
       emboss: formModel.emboss || null,
       factory_code: formModel.factory_code || null,
+      brand_id: formModel.brand_id || null,
     })
     if (seq !== pricePreviewSeq) return
     const nextPreview = r.unit_price != null ? Number(r.unit_price) : null
@@ -2538,6 +2539,7 @@ async function annotateDraftPriceAddons() {
           color_family: line.color_family || null,
           emboss: line.emboss || null,
           factory_code: factory,
+          brand_id: formModel.brand_id || null,
         })
         line.price_base = r.base_price != null ? Number(r.base_price) : null
         line.price_addons = Array.isArray(r.addons) ? r.addons : []

@@ -254,7 +254,6 @@ import {
   Box,
   Sell,
   CollectionTag,
-  Coin,
   Goods,
   Operation,
   CircleCheck,
@@ -350,7 +349,6 @@ const erpMasterMenus = [
     icon: Sell,
     children: [
       { path: '/admin/buyer-prices', labelKey: 'menu.buyerPrices', icon: Sell },
-      { path: '/admin/bulk-price-update', labelKey: 'menu.bulkPriceUpdate', icon: Coin },
     ],
   },
   {

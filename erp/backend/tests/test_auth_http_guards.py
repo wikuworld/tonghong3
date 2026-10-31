@@ -90,9 +90,9 @@ def test_write_routes_reject_guest_role_with_403():
         _assert_status(
             client,
             "POST",
-            "/api/v1/pricing/bulk-update",
+            "/api/v1/pricing/special-prices",
             403,
-            {"updates": []},
+            {"buyer_code": "NB", "discount_value": "1"},
         )
         _assert_status(
             client,

@@ -1,11 +1,18 @@
+import io
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.services.customer_excel import (
+    export_customers_template_xlsx,
+    export_customers_xlsx,
+    import_customers_xlsx,
+)
 from app.timeutil import app_now
 from app.models import Brand, BrandConstraint, Customer, CustomerBrandMapping, CustomerPic
 from app.paging import apply_sort, page_dict, parse_page_params
@@ -171,6 +178,43 @@ def create_customer(
     db.commit()
     db.refresh(row)
     return row
+
+
+@router.get("/customers/export")
+def export_customers(
+    template: bool = Query(False, description="Jika true, unduh template kosong (header saja)"),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    if template:
+        excel_content = export_customers_template_xlsx()
+        filename = "customer_template.xlsx"
+    else:
+        excel_content = export_customers_xlsx(db)
+        filename = "customer.xlsx"
+    return StreamingResponse(
+        io.BytesIO(excel_content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/customers/import")
+async def import_customers(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing", "sales")),
+):
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File Excel kosong")
+    try:
+        result = import_customers_xlsx(db, content)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return result.to_dict()
 
 
 @router.get("/customers/{customer_id:int}", response_model=CustomerOut)

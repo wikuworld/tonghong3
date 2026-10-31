@@ -11,7 +11,6 @@ import ReportsPage from '../views/admin/ReportsPage.vue'
 import PackingPage from '../views/admin/PackingPage.vue'
 import BuyerPricePage from '../views/admin/BuyerPricePage.vue'
 import BrandMasterPage from '../views/admin/BrandMasterPage.vue'
-import BulkPriceUpdatePage from '../views/admin/BulkPriceUpdatePage.vue'
 import MarketingFlowPage from '../views/admin/MarketingFlowPage.vue'
 import MasterItemsPage from '../views/admin/MasterItemsPage.vue'
 import FluorescentColorMasterPage from '../views/admin/FluorescentColorMasterPage.vue'
@@ -85,7 +84,7 @@ const router = createRouter({
         { path: 'reports', component: ReportsPage, meta: { titleKey: 'menu.reports', module: 'reports' } },
         { path: 'buyer-prices', component: BuyerPricePage, meta: { titleKey: 'menu.buyerPrices', module: 'buyerPrices' } },
         { path: 'brands', component: BrandMasterPage, meta: { titleKey: 'menu.brandMaster', module: 'brandMaster' } },
-        { path: 'bulk-price-update', component: BulkPriceUpdatePage, meta: { titleKey: 'menu.bulkPriceUpdate', module: 'bulkPriceUpdate' } },
+        { path: 'bulk-price-update', redirect: '/admin/buyer-prices' },
         { path: 'master-items', component: MasterItemsPage, meta: { titleKey: 'menu.masterItems', module: 'masterItems' } },
         { path: 'fluorescent-colors', component: FluorescentColorMasterPage, meta: { titleKey: 'menu.fluorescentColors', module: 'fluorescentColors' } },
         { path: 'csi-colors', component: CsiColorMasterPage, meta: { titleKey: 'menu.csiColors', module: 'csiColors' } },

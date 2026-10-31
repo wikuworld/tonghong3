@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import tempfile
 import zipfile
 from datetime import date
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -24,6 +26,11 @@ from app.schemas import (
     BuyerPriceResolveIn,
     BuyerPriceResolveOut,
     BuyerPriceSheetSave,
+)
+from app.services.buyer_price_excel import (
+    export_buyer_prices_template_xlsx,
+    export_buyer_prices_xlsx,
+    import_buyer_prices_xlsx,
 )
 from app.services.buyer_price_import import list_to_api_dict, persist_buyer_folder
 from app.services.buyer_price_period import (
@@ -305,6 +312,43 @@ def update_buyer_price_list(
     return _row_to_summary(row, brand)
 
 
+@router.get("/buyer-prices/export")
+def export_buyer_prices(
+    template: bool = Query(False, description="Jika true, unduh template kosong (header saja)"),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    if template:
+        excel_content = export_buyer_prices_template_xlsx()
+        filename = "buyer_price_template.xlsx"
+    else:
+        excel_content = export_buyer_prices_xlsx(db)
+        filename = "buyer_price.xlsx"
+    return StreamingResponse(
+        io.BytesIO(excel_content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/buyer-prices/import")
+async def import_buyer_prices(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+):
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File Excel kosong")
+    try:
+        result = import_buyer_prices_xlsx(db, content)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return result.to_dict()
+
+
 @router.get("/buyer-prices/lists/{list_id}")
 def get_buyer_price_list(
     list_id: int,
@@ -398,6 +442,7 @@ def resolve_unit_price(
         color_family=body.color_family,
         emboss=body.emboss,
         factory_code=body.factory_code,
+        brand_id=body.brand_id,
         as_of=body.as_of,
     )
     return BuyerPriceResolveOut(**r)

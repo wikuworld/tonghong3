@@ -9,6 +9,8 @@
       />
       <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
+      <el-button v-if="canView" :icon="Download" @click="handleExport">{{ t('pages.customers.export') }}</el-button>
+      <el-button v-if="canCreate" type="success" :icon="Upload" @click="openImportDialog">{{ t('pages.customers.importExcel') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
@@ -480,6 +482,28 @@
                 <el-switch v-model="formModel.outside_banten" />
               </el-form-item>
             </el-col>
+            <el-col :span="24">
+              <el-form-item :label="t('pages.customers.fieldDiscountModifier')">
+                <div class="customer-outside-row">
+                  <el-switch v-model="formModel.discount_modifier_enabled" />
+                  <template v-if="formModel.discount_modifier_enabled">
+                    <el-select v-model="formModel.discount_modifier_type" class="customer-modifier-type">
+                      <el-option value="nominal" :label="t('pages.customers.adjustAmount')" />
+                      <el-option value="percent" :label="t('pages.customers.adjustPercent')" />
+                    </el-select>
+                    <el-input-number
+                      v-model="formModel.discount_modifier"
+                      :step="0.01"
+                      :precision="4"
+                      :min="formModel.discount_modifier_type === 'percent' ? -100 : -999999"
+                      :max="formModel.discount_modifier_type === 'percent' ? 100 : 999999"
+                      :controls="false"
+                      class="customer-outside-adjust"
+                    />
+                  </template>
+                </div>
+              </el-form-item>
+            </el-col>
           </el-row>
         </section>
       </el-form>
@@ -492,6 +516,47 @@
         </div>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="importDialogVisible" :title="t('pages.customers.importExcelTitle')" width="640px" destroy-on-close align-center>
+      <p class="customer-excel-sub">{{ t('pages.customers.importExcelSub') }}</p>
+      <p class="customer-excel-hint">{{ t('pages.customers.importExcelHint') }}</p>
+      <ul class="customer-excel-cols">
+        <li>{{ t('pages.customers.importExcelColsRequired') }}</li>
+        <li>{{ t('pages.customers.importExcelColsOptional') }}</li>
+      </ul>
+      <div class="customer-excel-actions">
+        <el-button :icon="Download" @click="downloadImportTemplate">{{ t('pages.customers.downloadTemplate') }}</el-button>
+      </div>
+      <p class="customer-excel-panel-title">{{ t('pages.customers.importExcelPanelTitle') }}</p>
+      <el-upload :auto-upload="false" :limit="1" accept=".xlsx,.xls" :on-change="handleImportFile">
+        <el-button type="primary">{{ t('pages.customers.selectFile') }}</el-button>
+      </el-upload>
+      <div v-if="importResult" class="customer-excel-result">
+        <p>
+          {{
+            t('pages.customers.importResultSummary', {
+              created: importResult.created || 0,
+              updated: importResult.updated || 0,
+              skipped: importResult.skipped || 0,
+            })
+          }}
+        </p>
+        <ul v-if="importResult.errors?.length" class="customer-excel-errors">
+          <li v-for="(err, idx) in importResult.errors.slice(0, 8)" :key="idx">
+            {{ t('pages.customers.importErrorRow', { row: err.row, code: err.code || '—', reason: err.reason }) }}
+          </li>
+          <li v-if="importResult.errors.length > 8">
+            {{ t('pages.customers.importErrorMore', { n: importResult.errors.length - 8 }) }}
+          </li>
+        </ul>
+      </div>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :disabled="!importFile || importing" :loading="importing" @click="handleImport">
+          {{ t('pages.customers.doImport') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -499,7 +564,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, InfoFilled } from '@element-plus/icons-vue'
+import { Plus, Refresh, InfoFilled, Download, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import AdminTableActions from '../../components/admin/AdminTableActions.vue'
 import CustomerInfo from './CustomerInfo.vue'
@@ -507,7 +572,9 @@ import { can } from '../../security/permissions'
 import {
   createCustomer,
   deleteCustomer,
+  exportCustomers,
   getCustomer,
+  importCustomers,
   listCustomersPage,
   updateCustomer,
   wilayahDistricts,
@@ -539,7 +606,12 @@ const PAYMENT_TERMS_OPTIONS = [
   { value: 'TT 90 days', label: 'TT 90 days' },
 ]
 
+const canView = can('customers', 'view')
 const canCreate = can('customers', 'create')
+const importDialogVisible = ref(false)
+const importFile = ref(null)
+const importResult = ref(null)
+const importing = ref(false)
 const canUpdate = can('customers', 'update')
 const canDelete = can('customers', 'delete')
 
@@ -663,6 +735,57 @@ async function load() {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
     loading.value = false
+  }
+}
+
+function openImportDialog() {
+  importDialogVisible.value = true
+  importFile.value = null
+  importResult.value = null
+}
+
+function handleImportFile(file) {
+  importFile.value = file.raw
+  importResult.value = null
+}
+
+async function handleExport() {
+  try {
+    await exportCustomers()
+    ElMessage.success(t('pages.customers.exportSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function downloadImportTemplate() {
+  try {
+    await exportCustomers({ template: true })
+    ElMessage.success(t('pages.customers.templateSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function handleImport() {
+  if (!importFile.value) return
+  importing.value = true
+  importResult.value = null
+  try {
+    const result = await importCustomers(importFile.value)
+    importResult.value = result
+    ElMessage.success(
+      t('pages.customers.importResultSummary', {
+        created: result.created || 0,
+        updated: result.updated || 0,
+        skipped: result.skipped || 0,
+      }),
+    )
+    await load()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    importing.value = false
   }
 }
 
@@ -799,6 +922,9 @@ const formModel = reactive({
   remark: '',
   is_export_customer: false,
   outside_banten: false,
+  discount_modifier_enabled: false,
+  discount_modifier: null,
+  discount_modifier_type: 'nominal',
   is_active: true,
   wilayah_province_code: '',
   wilayah_regency_code: '',
@@ -829,6 +955,9 @@ function resetFormModel() {
   formModel.remark = ''
   formModel.is_export_customer = false
   formModel.outside_banten = false
+  formModel.discount_modifier_enabled = false
+  formModel.discount_modifier = null
+  formModel.discount_modifier_type = 'nominal'
   formModel.is_active = true
   formModel.wilayah_province_code = ''
   formModel.wilayah_regency_code = ''
@@ -982,6 +1111,11 @@ async function openEdit(row) {
   formModel.remark = row.remark || ''
   formModel.is_export_customer = Boolean(row.is_export_customer)
   formModel.outside_banten = Boolean(row.outside_banten)
+  formModel.discount_modifier_enabled = Boolean(row.discount_modifier_enabled)
+  formModel.discount_modifier = row.discount_modifier != null && row.discount_modifier !== ''
+    ? Number(row.discount_modifier)
+    : null
+  formModel.discount_modifier_type = row.discount_modifier_type === 'percent' ? 'percent' : 'nominal'
   formModel.is_active = row.is_active !== false
   formModel.wilayah_province_code = row.wilayah_province_code || ''
   formModel.wilayah_regency_code = row.wilayah_regency_code || ''
@@ -1017,6 +1151,9 @@ async function submitForm() {
       remark: formModel.remark.trim() || undefined,
       is_export_customer: formModel.is_export_customer,
       outside_banten: formModel.outside_banten,
+      discount_modifier_enabled: Boolean(formModel.discount_modifier_enabled),
+      discount_modifier: formModel.discount_modifier,
+      discount_modifier_type: formModel.discount_modifier_type === 'percent' ? 'percent' : 'nominal',
       is_active: formModel.is_active,
       wilayah_province_code: formModel.wilayah_province_code || undefined,
       wilayah_regency_code: formModel.wilayah_regency_code || undefined,
@@ -1384,6 +1521,14 @@ function confirmDelete(row) {
   justify-content: center;
   padding-bottom: 14px;
 }
+
+.customer-excel-sub { margin: 0 0 6px; font-size: 14px; }
+.customer-excel-hint, .customer-excel-cols { margin: 0 0 8px; font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.45; }
+.customer-excel-cols { padding-left: 18px; }
+.customer-excel-actions { margin-bottom: 12px; }
+.customer-excel-panel-title { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.customer-excel-result { margin-top: 14px; padding: 10px 12px; border-radius: 6px; background: var(--el-fill-color-light); font-size: 13px; }
+.customer-excel-errors { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: var(--el-color-danger); }
 
 @media (max-width: 900px) {
   .customer-contact-grid {

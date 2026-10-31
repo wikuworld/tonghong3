@@ -1,4 +1,4 @@
-"""Master color swatch recipes — CRUD, import CSV, lookup PO."""
+"""Master color swatch recipes — CRUD, import CSV, export/import Excel, lookup PO."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -22,9 +23,15 @@ from app.services.color_swatch import (
     filter_swatch_recipes_by_dimensions,
     import_recipes,
     iter_csv_recipes,
+    iter_upload_recipes,
     normalize_factory_key,
     recipe_to_po_fill,
     suggest_next_color_standard,
+)
+from app.services.color_swatch_excel import (
+    export_color_swatches_template_xlsx,
+    export_color_swatches_xlsx,
+    import_color_swatches_xlsx,
 )
 from app.services.master_item_dimensions import distinct_material_names
 from app.services.swatch_factory_map import resolve_swatch_customer_id
@@ -466,6 +473,43 @@ def backfill_swatch_csi(
     return SwatchCsiBackfillOut(**stats)
 
 
+@router.get("/masters/color-swatch-recipes/export")
+def export_color_swatches(
+    template: bool = Query(False, description="Jika true, unduh template kosong (header saja)"),
+    db: Session = Depends(get_db),
+    _user=Depends(get_current_user),
+):
+    if template:
+        excel_content = export_color_swatches_template_xlsx()
+        filename = "color_swatch_template.xlsx"
+    else:
+        excel_content = export_color_swatches_xlsx(db)
+        filename = "color_swatch.xlsx"
+    return StreamingResponse(
+        io.BytesIO(excel_content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/masters/color-swatch-recipes/import")
+async def import_color_swatches(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _user=Depends(require_roles("admin", "marketing")),
+):
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="File Excel kosong")
+    try:
+        result = import_color_swatches_xlsx(db, content)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return result.to_dict()
+
+
 @router.get("/masters/color-swatch-recipes/{recipe_id}", response_model=ColorSwatchRecipeOut)
 def get_color_swatch(
     recipe_id: int,
@@ -570,7 +614,7 @@ async def import_color_swatch_csv(
 ) -> ImportResultOut:
     raw = await file.read()
     source = file.filename or "upload.csv"
-    recipes = iter_csv_recipes(io.BytesIO(raw), source)
+    recipes = iter_upload_recipes(raw, source)
     if not recipes:
         raise HTTPException(status_code=400, detail="Tidak ada baris valid dalam file CSV")
     try:

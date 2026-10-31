@@ -408,6 +408,7 @@ def _resolve_list_unit_price(db: Session, po, row, data: dict) -> Decimal:
         color_family=_merged_line_value(data, row, "color_family"),
         emboss=_merged_line_value(data, row, "emboss"),
         factory_code=getattr(po, "factory_code", None),
+        brand_id=getattr(po, "brand_id", None),
         as_of=getattr(po, "order_date", None),
     )
     raw = resolved.get("unit_price")
@@ -481,6 +482,7 @@ def _apply_unit_price_on_update(db: Session, po, row, data: dict, user) -> None:
         color_family=_merged_line_value(data, row, "color_family"),
         emboss=_merged_line_value(data, row, "emboss"),
         factory_code=po.factory_code,
+        brand_id=getattr(po, "brand_id", None),
         as_of=getattr(po, "order_date", None),
     )
     if resolved.get("unit_price") is not None:

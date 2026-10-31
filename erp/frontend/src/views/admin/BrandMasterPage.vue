@@ -9,6 +9,8 @@
       />
       <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
+      <el-button v-if="canView" :icon="Download" @click="handleExport">{{ t('pages.brandMaster.export') }}</el-button>
+      <el-button v-if="canCreate" type="success" :icon="Upload" @click="openImportDialog">{{ t('pages.brandMaster.importExcel') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
@@ -319,6 +321,47 @@
         </div>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="importDialogVisible" :title="t('pages.brandMaster.importExcelTitle')" width="640px" destroy-on-close align-center>
+      <p class="brand-excel-sub">{{ t('pages.brandMaster.importExcelSub') }}</p>
+      <p class="brand-excel-hint">{{ t('pages.brandMaster.importExcelHint') }}</p>
+      <ul class="brand-excel-cols">
+        <li>{{ t('pages.brandMaster.importExcelColsRequired') }}</li>
+        <li>{{ t('pages.brandMaster.importExcelColsOptional') }}</li>
+      </ul>
+      <div class="brand-excel-actions">
+        <el-button :icon="Download" @click="downloadImportTemplate">{{ t('pages.brandMaster.downloadTemplate') }}</el-button>
+      </div>
+      <p class="brand-excel-panel-title">{{ t('pages.brandMaster.importExcelPanelTitle') }}</p>
+      <el-upload :auto-upload="false" :limit="1" accept=".xlsx,.xls" :on-change="handleImportFile">
+        <el-button type="primary">{{ t('pages.brandMaster.selectFile') }}</el-button>
+      </el-upload>
+      <div v-if="importResult" class="brand-excel-result">
+        <p>
+          {{
+            t('pages.brandMaster.importResultSummary', {
+              created: importResult.created || 0,
+              updated: importResult.updated || 0,
+              skipped: importResult.skipped || 0,
+            })
+          }}
+        </p>
+        <ul v-if="importResult.errors?.length" class="brand-excel-errors">
+          <li v-for="(err, idx) in importResult.errors.slice(0, 8)" :key="idx">
+            {{ t('pages.brandMaster.importErrorRow', { row: err.row, code: err.code || '—', reason: err.reason }) }}
+          </li>
+          <li v-if="importResult.errors.length > 8">
+            {{ t('pages.brandMaster.importErrorMore', { n: importResult.errors.length - 8 }) }}
+          </li>
+        </ul>
+      </div>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :disabled="!importFile || importing" :loading="importing" @click="handleImport">
+          {{ t('pages.brandMaster.doImport') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -326,12 +369,14 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Close, InfoFilled, Plus, Refresh } from '@element-plus/icons-vue'
+import { Check, Close, Download, InfoFilled, Plus, Refresh, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import AdminTableActions from '../../components/admin/AdminTableActions.vue'
 import {
   createBrand,
   deleteBrand,
+  exportBrands,
+  importBrands,
   listBrandsPage,
   listBuyerPriceLists,
   listCustomers,
@@ -342,7 +387,11 @@ import { useModulePermission } from '../../composables/useModulePermission'
 import { buildPageParams, fromElSortChange, normalizePageResult } from '../../utils/tableQuery'
 
 const { t } = useI18n()
-const { canCreate, canUpdate, canDelete } = useModulePermission('brandMaster')
+const { canView, canCreate, canUpdate, canDelete } = useModulePermission('brandMaster')
+const importDialogVisible = ref(false)
+const importFile = ref(null)
+const importResult = ref(null)
+const importing = ref(false)
 const loading = ref(false)
 const saving = ref(false)
 const keyword = ref('')
@@ -567,6 +616,57 @@ watch([keyword, filterCustomerId], () => {
   load()
 })
 watch([page, pageSize], () => load())
+
+function openImportDialog() {
+  importDialogVisible.value = true
+  importFile.value = null
+  importResult.value = null
+}
+
+function handleImportFile(file) {
+  importFile.value = file.raw
+  importResult.value = null
+}
+
+async function handleExport() {
+  try {
+    await exportBrands()
+    ElMessage.success(t('pages.brandMaster.exportSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function downloadImportTemplate() {
+  try {
+    await exportBrands({ template: true })
+    ElMessage.success(t('pages.brandMaster.templateSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function handleImport() {
+  if (!importFile.value) return
+  importing.value = true
+  importResult.value = null
+  try {
+    const result = await importBrands(importFile.value)
+    importResult.value = result
+    ElMessage.success(
+      t('pages.brandMaster.importResultSummary', {
+        created: result.created || 0,
+        updated: result.updated || 0,
+        skipped: result.skipped || 0,
+      }),
+    )
+    await load()
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    importing.value = false
+  }
+}
 
 onMounted(load)
 </script>
@@ -832,6 +932,14 @@ onMounted(load)
   gap: 8px;
   width: 100%;
 }
+
+.brand-excel-sub { margin: 0 0 6px; font-size: 14px; }
+.brand-excel-hint, .brand-excel-cols { margin: 0 0 8px; font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.45; }
+.brand-excel-cols { padding-left: 18px; }
+.brand-excel-actions { margin-bottom: 12px; }
+.brand-excel-panel-title { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.brand-excel-result { margin-top: 14px; padding: 10px 12px; border-radius: 6px; background: var(--el-fill-color-light); font-size: 13px; }
+.brand-excel-errors { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: var(--el-color-danger); }
 
 .brand-dialog-footer--single {
   justify-content: flex-end;

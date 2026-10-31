@@ -76,6 +76,9 @@ class CustomerCreate(BaseModel):
     is_active: bool = True
     is_export_customer: bool = False
     outside_banten: bool = False
+    discount_modifier_enabled: bool = False
+    discount_modifier: Optional[Decimal] = None
+    discount_modifier_type: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
@@ -85,6 +88,15 @@ class CustomerCreate(BaseModel):
     tax_mode: Optional[str] = None
     reference_quotation: Optional[str] = None
     contacts: list[CustomerContactIn] = Field(default_factory=list)
+
+    @field_validator("discount_modifier_type", mode="before")
+    @classmethod
+    def _normalize_discount_type(cls, value):
+        return _normalize_customer_modifier_type(value)
+
+    @model_validator(mode="after")
+    def _discount_percent_range(self):
+        return _check_customer_modifier_percent(self)
 
 
 class CustomerUpdate(BaseModel):
@@ -105,6 +117,9 @@ class CustomerUpdate(BaseModel):
     is_active: Optional[bool] = None
     is_export_customer: Optional[bool] = None
     outside_banten: Optional[bool] = None
+    discount_modifier_enabled: Optional[bool] = None
+    discount_modifier: Optional[Decimal] = None
+    discount_modifier_type: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
@@ -114,6 +129,15 @@ class CustomerUpdate(BaseModel):
     tax_mode: Optional[str] = None
     reference_quotation: Optional[str] = None
     contacts: Optional[list[CustomerContactIn]] = None
+
+    @field_validator("discount_modifier_type", mode="before")
+    @classmethod
+    def _normalize_discount_type(cls, value):
+        return _normalize_customer_modifier_type(value)
+
+    @model_validator(mode="after")
+    def _discount_percent_range(self):
+        return _check_customer_modifier_percent(self)
 
 
 class CustomerOut(ORMBase):
@@ -135,6 +159,9 @@ class CustomerOut(ORMBase):
     is_active: bool = True
     is_export_customer: bool = False
     outside_banten: bool = False
+    discount_modifier_enabled: bool = False
+    discount_modifier: Optional[Decimal] = None
+    discount_modifier_type: Optional[str] = None
     wilayah_province_code: Optional[str] = None
     wilayah_regency_code: Optional[str] = None
     wilayah_district_code: Optional[str] = None
@@ -223,6 +250,7 @@ class BuyerPriceResolveIn(BaseModel):
     color_family: Optional[str] = None
     emboss: Optional[str] = None
     factory_code: Optional[str] = None
+    brand_id: Optional[int] = None
     as_of: Optional[date] = None
 
     @field_validator("color_family")

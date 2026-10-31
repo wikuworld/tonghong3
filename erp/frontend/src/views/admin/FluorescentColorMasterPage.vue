@@ -9,15 +9,8 @@
       />
       <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
-      <el-button v-if="canCreate" :icon="Upload" @click="openImportDialog">{{ t('pages.fluorescentColors.importCsv') }}</el-button>
-      <el-button
-        v-if="isAdmin"
-        plain
-        :loading="importingBundled"
-        @click="importBundled"
-      >
-        {{ t('pages.fluorescentColors.importBundled') }}
-      </el-button>
+      <el-button v-if="canView" :icon="Download" @click="handleExport">{{ t('pages.fluorescentColors.export') }}</el-button>
+      <el-button v-if="canCreate" type="success" :icon="Upload" @click="openImportDialog">{{ t('pages.fluorescentColors.importExcel') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
@@ -320,57 +313,49 @@
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="importDialogVisible"
-      width="520px"
-      destroy-on-close
-      align-center
-      class="fluorescent-dialog"
-      :show-close="true"
-      @closed="resetImportState"
-    >
-      <template #header>
-        <div class="fluorescent-dialog-header">
-          <div class="fluorescent-dialog-header__main">
-            <h3 class="fluorescent-dialog-header__title">{{ t('pages.fluorescentColors.importTitle') }}</h3>
-            <p class="fluorescent-dialog-header__sub">{{ t('pages.fluorescentColors.importSub') }}</p>
-          </div>
-          <el-tooltip placement="top-start" :show-after="200">
-            <template #content>{{ t('pages.fluorescentColors.importHint') }}</template>
-            <el-icon class="fluorescent-page-hint" :size="16" tabindex="0" :aria-label="t('pages.fluorescentColors.importHint')">
-              <InfoFilled />
-            </el-icon>
-          </el-tooltip>
-        </div>
-      </template>
-
-      <div class="fluorescent-dialog-body">
-        <div class="fluorescent-dialog-panel">
-          <div class="fluorescent-dialog-panel__head">
-            <h4 class="fluorescent-dialog-panel__title">{{ t('pages.fluorescentColors.importPanelTitle') }}</h4>
-          </div>
-          <div class="fluorescent-dialog-panel__body">
-            <el-upload
-              ref="uploadRef"
-              :auto-upload="false"
-              :limit="1"
-              accept=".csv"
-              :on-change="handleImportFileChange"
-              :on-remove="handleImportFileRemove"
-            >
-              <el-button type="primary" :icon="Upload">{{ t('pages.fluorescentColors.selectFile') }}</el-button>
-            </el-upload>
-          </div>
-        </div>
+    <el-dialog v-model="importDialogVisible" :title="t('pages.fluorescentColors.importExcelTitle')" width="640px" destroy-on-close align-center>
+      <p class="fl-excel-sub">{{ t('pages.fluorescentColors.importExcelSub') }}</p>
+      <p class="fl-excel-hint">{{ t('pages.fluorescentColors.importExcelHint') }}</p>
+      <ul class="fl-excel-cols">
+        <li>{{ t('pages.fluorescentColors.importExcelColsRequired') }}</li>
+        <li>{{ t('pages.fluorescentColors.importExcelColsOptional') }}</li>
+      </ul>
+      <div class="fl-excel-actions">
+        <el-button :icon="Download" @click="downloadImportTemplate">{{ t('pages.fluorescentColors.downloadTemplate') }}</el-button>
       </div>
-
+      <p class="fl-excel-panel-title">{{ t('pages.fluorescentColors.importExcelPanelTitle') }}</p>
+      <el-upload
+        :auto-upload="false"
+        :limit="1"
+        accept=".xlsx,.xls"
+        :on-change="handleImportFile"
+      >
+        <el-button type="primary">{{ t('pages.fluorescentColors.selectFile') }}</el-button>
+      </el-upload>
+      <div v-if="importResult" class="fl-excel-result">
+        <p>
+          {{
+            t('pages.fluorescentColors.importResultSummary', {
+              created: importResult.created || 0,
+              updated: importResult.updated || 0,
+              skipped: importResult.skipped || 0,
+            })
+          }}
+        </p>
+        <ul v-if="importResult.errors?.length" class="fl-excel-errors">
+          <li v-for="(err, idx) in importResult.errors.slice(0, 8)" :key="idx">
+            {{ t('pages.fluorescentColors.importErrorRow', { row: err.row, code: err.color_code || '—', reason: err.reason }) }}
+          </li>
+          <li v-if="importResult.errors.length > 8">
+            {{ t('pages.fluorescentColors.importErrorMore', { n: importResult.errors.length - 8 }) }}
+          </li>
+        </ul>
+      </div>
       <template #footer>
-        <div class="fluorescent-dialog-footer">
-          <el-button :icon="Close" @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
-          <el-button type="primary" :icon="Check" :loading="importing" :disabled="!importFile" @click="handleImportCsv">
-            {{ t('pages.fluorescentColors.doImport') }}
-          </el-button>
-        </div>
+        <el-button @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :disabled="!importFile || importing" :loading="importing" @click="handleImport">
+          {{ t('pages.fluorescentColors.doImport') }}
+        </el-button>
       </template>
     </el-dialog>
   </AdminSection>
@@ -380,29 +365,26 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Close, InfoFilled, Plus, Refresh, Upload } from '@element-plus/icons-vue'
+import { Check, Close, Download, InfoFilled, Plus, Refresh, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import AdminTableActions from '../../components/admin/AdminTableActions.vue'
 import {
   createFluorescentColor,
   deleteFluorescentColor,
-  importFluorescentBundled,
-  importFluorescentCsv,
+  exportFluorescentColors,
+  importFluorescentColors,
   listFluorescentColorsPage,
   listFluorescentFormOptions,
-  me,
   updateFluorescentColor,
 } from '../../api/client'
 import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
-const { canCreate, canUpdate, canDelete } = useModulePermission('fluorescentColors')
-const isAdmin = ref(false)
+const { canView, canCreate, canUpdate, canDelete } = useModulePermission('fluorescentColors')
 
 const loading = ref(false)
 const saving = ref(false)
 const importing = ref(false)
-const importingBundled = ref(false)
 const rows = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -415,7 +397,7 @@ const sortDir = ref('asc')
 const formVisible = ref(false)
 const importDialogVisible = ref(false)
 const importFile = ref(null)
-const uploadRef = ref(null)
+const importResult = ref(null)
 const editId = ref(null)
 
 const formOptions = reactive({
@@ -586,14 +568,55 @@ function resetForm() {
   form.color_class = 'fluorescent'
 }
 
-function resetImportState() {
+function openImportDialog() {
+  importDialogVisible.value = true
   importFile.value = null
-  uploadRef.value?.clearFiles?.()
+  importResult.value = null
 }
 
-function openImportDialog() {
-  resetImportState()
-  importDialogVisible.value = true
+function handleImportFile(file) {
+  importFile.value = file.raw
+  importResult.value = null
+}
+
+async function handleExport() {
+  try {
+    await exportFluorescentColors()
+    ElMessage.success(t('pages.fluorescentColors.exportSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function downloadImportTemplate() {
+  try {
+    await exportFluorescentColors({ template: true })
+    ElMessage.success(t('pages.fluorescentColors.templateSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function handleImport() {
+  if (!importFile.value) return
+  importing.value = true
+  importResult.value = null
+  try {
+    const result = await importFluorescentColors(importFile.value)
+    importResult.value = result
+    ElMessage.success(
+      t('pages.fluorescentColors.importResultSummary', {
+        created: result.created || 0,
+        updated: result.updated || 0,
+        skipped: result.skipped || 0,
+      }),
+    )
+    await Promise.all([load(), loadSummary(), loadFormOptions()])
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  } finally {
+    importing.value = false
+  }
 }
 
 function openCreate() {
@@ -662,73 +685,16 @@ async function remove(row) {
   }
 }
 
-function handleImportFileChange(file) {
-  importFile.value = file.raw
-}
-
-function handleImportFileRemove() {
-  importFile.value = null
-}
-
-async function handleImportCsv() {
-  if (!importFile.value) return
-  importing.value = true
-  try {
-    const r = await importFluorescentCsv(importFile.value)
-    ElMessage.success(
-      t('pages.fluorescentColors.importDone', {
-        inserted: r.inserted,
-        updated: r.updated,
-        total: r.total,
-      }),
-    )
-    importDialogVisible.value = false
-    await Promise.all([load(), loadSummary(), loadFormOptions()])
-  } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
-  } finally {
-    importing.value = false
-  }
-}
-
-async function importBundled() {
-  try {
-    await ElMessageBox.confirm(t('pages.fluorescentColors.importBundledConfirm'), t('common.confirm'), { type: 'info' })
-  } catch {
-    return
-  }
-  importingBundled.value = true
-  try {
-    const r = await importFluorescentBundled()
-    ElMessage.success(
-      t('pages.fluorescentColors.importDone', {
-        inserted: r.inserted,
-        updated: r.updated,
-        total: r.total,
-      }),
-    )
-    await Promise.all([load(), loadSummary(), loadFormOptions()])
-  } catch (e) {
-    ElMessage.error(e.message || t('common.errorGeneric'))
-  } finally {
-    importingBundled.value = false
-  }
-}
-
 watch([page, pageSize], () => load())
 watch([filterBuyer, filterClass, keyword], () => {
   page.value = 1
   load()
 })
 
-onMounted(async () => {
-  try {
-    const u = await me()
-    isAdmin.value = (u?.role || '') === 'admin'
-  } catch {
-    isAdmin.value = false
-  }
-  await Promise.all([loadFormOptions(), load(), loadSummary()])
+onMounted(() => {
+  loadFormOptions()
+  load()
+  loadSummary()
 })
 </script>
 
@@ -877,5 +843,47 @@ onMounted(async () => {
   justify-content: flex-end;
   gap: 8px;
   width: 100%;
+}
+
+.fl-excel-sub {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.fl-excel-hint,
+.fl-excel-cols {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.45;
+}
+
+.fl-excel-cols {
+  padding-left: 18px;
+}
+
+.fl-excel-actions {
+  margin-bottom: 12px;
+}
+
+.fl-excel-panel-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fl-excel-result {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
+  font-size: 13px;
+}
+
+.fl-excel-errors {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--el-color-danger);
 }
 </style>

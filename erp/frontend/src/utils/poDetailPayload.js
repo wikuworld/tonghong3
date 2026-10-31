@@ -61,6 +61,7 @@ export async function appendDetailUnitPrice(body, formModel, { resolveBuyerUnitP
         color_family: formModel.color_family || null,
         emboss: formModel.emboss || null,
         factory_code: formModel.factory_code || null,
+        brand_id: formModel.brand_id || null,
       })
       if (formModel.unit_price_input != null) {
         body.unit_price = Number(formModel.unit_price_input)

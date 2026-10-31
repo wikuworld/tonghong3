@@ -15,6 +15,7 @@ from app.services.buyer_price_aliases import (
     extract_emboss_tokens,
     infer_price_block,
     is_outside_banten_factory,
+    customer_price_rules,
     list_price_rules,
     sheet_has_outside_block,
     normalize_material_alias,
@@ -279,6 +280,7 @@ def resolve_unit_price_for_buyer(
     color_family: Optional[str] = None,
     emboss: Optional[str] = None,
     factory_code: Optional[str] = None,
+    brand_id: Optional[int] = None,
     as_of: Optional[date] = None,
 ) -> dict[str, Any]:
     code = (buyer_code or "").strip().upper()
@@ -292,7 +294,7 @@ def resolve_unit_price_for_buyer(
         }
 
     when = as_of or date.today()
-    lst = select_buyer_price_list(db, code, when)
+    lst = select_buyer_price_list(db, code, when, brand_id=brand_id)
     if not lst:
         return {
             "unit_price": None,
@@ -431,6 +433,11 @@ def resolve_unit_price_for_buyer(
         unit, delta = _apply_customer_modifier(unit, discount, subtract=True)
         if delta:
             addons.append({"key": "DISCOUNT MODIFIER", "label": "- DISKON", "amount": delta})
+    factory_discount = customer_price_rules(db, factory_code).get("discount")
+    if factory_discount:
+        unit, delta = _apply_customer_modifier(unit, factory_discount, subtract=True)
+        if delta:
+            addons.append({"key": "FACTORY DISCOUNT", "label": "- DISKON PABRIK", "amount": delta})
 
     return {
         "unit_price": unit,

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 from app.services.buyer_price_aliases import (
     canonical_customer_code,
+    customer_price_rules,
     emboss_is_special,
     infer_price_block,
     is_outside_banten_factory,
@@ -311,3 +312,61 @@ def test_resolve_header_adjust_only_without_outside_block(monkeypatch):
     lst.discount_modifier_enabled = False
     plain = resolve_unit_price_for_buyer(db, "ADIDAS", material_name="GENERIC PU COATED", color_family="color")
     assert plain["unit_price"] == unit
+
+
+def test_customer_price_rules_reads_enabled_discount():
+    customer = SimpleNamespace(
+        code="BI020",
+        discount_modifier_enabled=True,
+        discount_modifier=Decimal("0.05"),
+        discount_modifier_type="nominal",
+    )
+    db = MagicMock()
+    db.scalars.return_value.first.return_value = customer
+    rules = customer_price_rules(db, "BI020")
+    assert rules["outside"] is None
+    assert rules["discount"] == {"type": "nominal", "value": Decimal("0.05")}
+    customer.discount_modifier_enabled = False
+    assert customer_price_rules(db, "BI020")["discount"] is None
+    customer.discount_modifier_enabled = True
+    customer.discount_modifier = Decimal("0")
+    assert customer_price_rules(db, "BI020")["discount"] is None
+
+
+def test_factory_discount_applies_only_to_that_factory(monkeypatch):
+    rows = [
+        build_price_cells(
+            item="GENERIC PU COATED",
+            block="COMMON",
+            white=1.00,
+            color=1.10,
+        ),
+    ]
+    db, fake = _mock_db_with_list(rows)
+    monkeypatch.setattr("app.services.buyer_price_resolve.list_to_api_dict", fake)
+    monkeypatch.setattr("app.services.buyer_price_resolve.is_outside_banten_factory", lambda *_a, **_k: False)
+
+    def rules(_db, factory_code):
+        if factory_code == "BI020":
+            return {"outside": None, "discount": {"type": "nominal", "value": Decimal("0.05")}}
+        return {"outside": None, "discount": None}
+
+    monkeypatch.setattr("app.services.buyer_price_resolve.customer_price_rules", rules)
+    discounted = resolve_unit_price_for_buyer(
+        db,
+        "NIKE",
+        material_name="GENERIC PU COATED",
+        color_family="color",
+        factory_code="BI020",
+    )
+    other = resolve_unit_price_for_buyer(
+        db,
+        "NIKE",
+        material_name="GENERIC PU COATED",
+        color_family="color",
+        factory_code="CS004",
+    )
+    assert discounted["unit_price"] == Decimal("1.05")
+    assert any(addon["key"] == "FACTORY DISCOUNT" for addon in discounted["addons"])
+    assert other["unit_price"] == Decimal("1.10")
+    assert not any(addon["key"] == "FACTORY DISCOUNT" for addon in other["addons"])

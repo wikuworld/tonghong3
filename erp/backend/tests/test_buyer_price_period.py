@@ -84,6 +84,25 @@ def test_pick_latest_start_when_ranges_both_cover():
     assert chosen.id == 2
 
 
+def test_pick_prefers_po_brand_when_ranges_overlap():
+    official = _list(
+        id=25,
+        brand_id=1,
+        period_start=date(2026, 7, 1),
+        period_end=date(2026, 12, 31),
+    )
+    trial = _list(
+        id=41,
+        brand_id=13,
+        period_start=date(2026, 10, 1),
+        period_end=date(2026, 10, 31),
+    )
+    when = date(2026, 10, 21)
+    assert pick_price_list([official, trial], when, brand_id=1).id == 25
+    assert pick_price_list([official, trial], when, brand_id=99).id == 41
+    assert pick_price_list([official, trial], when).id == 41
+
+
 def test_undated_list_is_fallback():
     dated = _list(id=1, period_start=date(2026, 1, 1), period_end=date(2026, 6, 30))
     legacy = _list(id=9, period_start=None, period_end=None)
@@ -136,3 +155,39 @@ def test_resolve_falls_back_to_undated_list(monkeypatch):
     )
     assert result["matched"] is True
     assert result["unit_price"] == Decimal("9")
+
+
+def test_resolve_uses_brand_when_periods_overlap(monkeypatch):
+    official = _list(
+        id=25,
+        brand_id=1,
+        period_start=date(2026, 7, 1),
+        period_end=date(2026, 12, 31),
+    )
+    trial = _list(
+        id=41,
+        brand_id=13,
+        period_start=date(2026, 10, 1),
+        period_end=date(2026, 10, 31),
+    )
+    db = MagicMock()
+    db.scalars.return_value.all.return_value = [official, trial]
+
+    def sheet(_db, list_id):
+        white = 1.25 if list_id == 25 else 9.99
+        return {
+            "rows": [build_price_cells(item="GENERIC PU COATED", block="COMMON", white=white)],
+            "meta_json": {"column_keys": list(STANDARD_COLUMN_KEYS)},
+        }
+
+    monkeypatch.setattr("app.services.buyer_price_resolve.list_to_api_dict", sheet)
+    monkeypatch.setattr("app.services.buyer_price_resolve.is_outside_banten_factory", lambda *_a, **_k: False)
+    result = resolve_unit_price_for_buyer(
+        db,
+        "NIKE",
+        material_name="GENERIC PU COATED",
+        as_of=date(2026, 10, 21),
+        brand_id=1,
+    )
+    assert result["unit_price"] == Decimal("1.25")
+    assert result["period_start"] == date(2026, 7, 1)

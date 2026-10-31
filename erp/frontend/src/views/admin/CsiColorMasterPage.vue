@@ -9,14 +9,8 @@
       />
       <span v-if="loading" class="text-xs text-slate-500">{{ t('common.loadingData') }}</span>
       <el-button :icon="Refresh" :loading="loading" @click="reload">{{ t('common.refresh') }}</el-button>
-      <el-button
-        v-if="isAdmin"
-        plain
-        :loading="importingBundled"
-        @click="importBundled"
-      >
-        {{ t('pages.csiColors.importBundled') }}
-      </el-button>
+      <el-button v-if="canView" :icon="Download" @click="handleExport">{{ t('pages.csiColors.export') }}</el-button>
+      <el-button v-if="canCreate" type="success" :icon="Upload" @click="openImportDialog">{{ t('pages.csiColors.importExcel') }}</el-button>
       <el-button v-if="canCreate" type="primary" :icon="Plus" @click="openCreate">{{ t('common.create') }}</el-button>
     </template>
 
@@ -159,6 +153,47 @@
         <el-button type="primary" :loading="saving" @click="save">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="importDialogVisible" :title="t('pages.csiColors.importExcelTitle')" width="640px" destroy-on-close align-center>
+      <p class="csi-excel-sub">{{ t('pages.csiColors.importExcelSub') }}</p>
+      <p class="csi-excel-hint">{{ t('pages.csiColors.importExcelHint') }}</p>
+      <ul class="csi-excel-cols">
+        <li>{{ t('pages.csiColors.importExcelColsRequired') }}</li>
+        <li>{{ t('pages.csiColors.importExcelColsOptional') }}</li>
+      </ul>
+      <div class="csi-excel-actions">
+        <el-button :icon="Download" @click="downloadImportTemplate">{{ t('pages.csiColors.downloadTemplate') }}</el-button>
+      </div>
+      <p class="csi-excel-panel-title">{{ t('pages.csiColors.importExcelPanelTitle') }}</p>
+      <el-upload :auto-upload="false" :limit="1" accept=".xlsx,.xls" :on-change="handleImportFile">
+        <el-button type="primary">{{ t('pages.csiColors.selectFile') }}</el-button>
+      </el-upload>
+      <div v-if="importResult" class="csi-excel-result">
+        <p>
+          {{
+            t('pages.csiColors.importResultSummary', {
+              created: importResult.created || 0,
+              updated: importResult.updated || 0,
+              skipped: importResult.skipped || 0,
+            })
+          }}
+        </p>
+        <ul v-if="importResult.errors?.length" class="csi-excel-errors">
+          <li v-for="(err, idx) in importResult.errors.slice(0, 8)" :key="idx">
+            {{ t('pages.csiColors.importErrorRow', { row: err.row, code: err.color_code || '—', reason: err.reason }) }}
+          </li>
+          <li v-if="importResult.errors.length > 8">
+            {{ t('pages.csiColors.importErrorMore', { n: importResult.errors.length - 8 }) }}
+          </li>
+        </ul>
+      </div>
+      <template #footer>
+        <el-button @click="importDialogVisible = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :disabled="!importFile || importing" :loading="importing" @click="handleImport">
+          {{ t('pages.csiColors.doImport') }}
+        </el-button>
+      </template>
+    </el-dialog>
   </AdminSection>
 </template>
 
@@ -166,27 +201,26 @@
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { InfoFilled, Plus, Refresh } from '@element-plus/icons-vue'
+import { Download, InfoFilled, Plus, Refresh, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../components/AdminSection.vue'
 import AdminTableActions from '../../components/admin/AdminTableActions.vue'
 import {
   createCsiColor,
   deleteCsiColor,
-  importCsiBundled,
+  exportCsiColors,
+  importCsiColors,
   listCsiColorsPage,
   listCsiFormOptions,
-  me,
   updateCsiColor,
 } from '../../api/client'
 import { useModulePermission } from '../../composables/useModulePermission'
 
 const { t } = useI18n()
-const { canCreate, canUpdate, canDelete } = useModulePermission('csiColors')
-const isAdmin = ref(false)
+const { canView, canCreate, canUpdate, canDelete } = useModulePermission('csiColors')
 
 const loading = ref(false)
 const saving = ref(false)
-const importingBundled = ref(false)
+const importing = ref(false)
 const rows = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -196,6 +230,9 @@ const filterBuyer = ref('')
 const sortBy = ref('')
 const sortDir = ref('asc')
 const formVisible = ref(false)
+const importDialogVisible = ref(false)
+const importFile = ref(null)
+const importResult = ref(null)
 const editId = ref(null)
 const summaryBuyers = ['NIKE', 'UA', 'NB', 'ADIDAS']
 const summary = reactive({ NIKE: 0, UA: 0, NB: 0, ADIDAS: 0 })
@@ -334,27 +371,54 @@ async function remove(row) {
   }
 }
 
-async function importBundled() {
+function openImportDialog() {
+  importDialogVisible.value = true
+  importFile.value = null
+  importResult.value = null
+}
+
+function handleImportFile(file) {
+  importFile.value = file.raw
+  importResult.value = null
+}
+
+async function handleExport() {
   try {
-    await ElMessageBox.confirm(t('pages.csiColors.importBundledConfirm'), t('common.confirm'), { type: 'info' })
-  } catch {
-    return
+    await exportCsiColors()
+    ElMessage.success(t('pages.csiColors.exportSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
   }
-  importingBundled.value = true
+}
+
+async function downloadImportTemplate() {
   try {
-    const r = await importCsiBundled()
+    await exportCsiColors({ template: true })
+    ElMessage.success(t('pages.csiColors.templateSuccess'))
+  } catch (e) {
+    ElMessage.error(e.message || t('common.errorGeneric'))
+  }
+}
+
+async function handleImport() {
+  if (!importFile.value) return
+  importing.value = true
+  importResult.value = null
+  try {
+    const result = await importCsiColors(importFile.value)
+    importResult.value = result
     ElMessage.success(
-      t('pages.csiColors.importDone', {
-        inserted: r.inserted,
-        updated: r.updated,
-        total: r.total,
+      t('pages.csiColors.importResultSummary', {
+        created: result.created || 0,
+        updated: result.updated || 0,
+        skipped: result.skipped || 0,
       }),
     )
     await Promise.all([load(), loadSummary(), loadFormOptions()])
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
-    importingBundled.value = false
+    importing.value = false
   }
 }
 
@@ -364,14 +428,10 @@ watch([filterBuyer, keyword], () => {
   load()
 })
 
-onMounted(async () => {
-  try {
-    const u = await me()
-    isAdmin.value = (u?.role || '') === 'admin'
-  } catch {
-    isAdmin.value = false
-  }
-  await Promise.all([loadFormOptions(), load(), loadSummary()])
+onMounted(() => {
+  loadFormOptions()
+  load()
+  loadSummary()
 })
 </script>
 
@@ -384,4 +444,11 @@ onMounted(async () => {
 .csi-pagination { display: flex; justify-content: flex-end; margin-top: 12px; }
 .csi-dialog-title { margin: 0; font-size: 16px; }
 .csi-dialog-sub { margin: 4px 0 0; color: #64748b; font-size: 13px; }
+.csi-excel-sub { margin: 0 0 6px; font-size: 14px; }
+.csi-excel-hint, .csi-excel-cols { margin: 0 0 8px; font-size: 12px; color: var(--el-text-color-secondary); line-height: 1.45; }
+.csi-excel-cols { padding-left: 18px; }
+.csi-excel-actions { margin-bottom: 12px; }
+.csi-excel-panel-title { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.csi-excel-result { margin-top: 14px; padding: 10px 12px; border-radius: 6px; background: var(--el-fill-color-light); font-size: 13px; }
+.csi-excel-errors { margin: 8px 0 0; padding-left: 18px; font-size: 12px; color: var(--el-color-danger); }
 </style>
