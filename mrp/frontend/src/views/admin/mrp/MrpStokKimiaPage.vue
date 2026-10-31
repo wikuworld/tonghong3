@@ -81,7 +81,21 @@
               />
             </el-form-item>
             <el-form-item :label="t('pages.mrpInbound.supplier')">
-              <el-input v-model="inForm.supplier_name" clearable />
+              <el-select
+                v-model="inForm.supplier_name"
+                filterable
+                clearable
+                class="w-full"
+                :loading="loadingSuppliers"
+                :placeholder="t('pages.mrpInbound.supplier')"
+              >
+                <el-option
+                  v-for="s in supplierOptionsFor(inForm.supplier_name)"
+                  :key="s.id || s.nama"
+                  :label="s.nama"
+                  :value="s.nama"
+                />
+              </el-select>
             </el-form-item>
             <el-form-item :label="t('pages.mrpInbound.unitPrice')">
               <el-input v-model="inForm.unit_price" type="number" />
@@ -498,6 +512,7 @@ import { can } from '../../../security/permissions'
 import {
   getMaterial,
   mrpGetMasterKimia,
+  mrpListSupplier,
   mrpStokKimia,
   mrpStokKimiaAction,
 } from '../../../api/client'
@@ -526,6 +541,8 @@ const searchOut = ref('')
 const stats = ref({ lots: 0, qty_sisa: 0, out_rows: 0 })
 const canCreate = computed(() => can('mrpShopfloor', 'create'))
 const canUpdate = computed(() => can('mrpShopfloor', 'update'))
+const loadingSuppliers = ref(false)
+const supplierOptions = ref([])
 const inForm = reactive({
   kimia_id: null,
   qty: null,
@@ -684,6 +701,48 @@ const expiredCount = computed(() =>
 function dash(v) {
   const s = (v == null ? '' : String(v)).trim()
   return s || '—'
+}
+
+async function loadPagedMaster(listFn, extra = {}) {
+  const all = []
+  let pageNum = 1
+  const pageSizeLoad = 200
+  for (;;) {
+    const data = await listFn({
+      page: pageNum,
+      page_size: pageSizeLoad,
+      sort_by: 'nama',
+      sort_dir: 'asc',
+      ...extra,
+    })
+    const pageData = normalizePageResult(data, { page: pageNum, pageSize: pageSizeLoad })
+    all.push(...pageData.items)
+    if (!pageData.items.length || all.length >= pageData.total) break
+    pageNum += 1
+  }
+  return all
+}
+
+async function loadSuppliers() {
+  loadingSuppliers.value = true
+  try {
+    supplierOptions.value = await loadPagedMaster(mrpListSupplier, { material: 'KIMIA' })
+  } catch {
+    supplierOptions.value = []
+  } finally {
+    loadingSuppliers.value = false
+  }
+}
+
+function withOrphanNama(options, value) {
+  const nama = String(value || '').trim()
+  if (!nama) return options
+  if (options.some((o) => String(o.nama || '').trim() === nama)) return options
+  return [...options, { id: `orphan-${nama}`, nama }]
+}
+
+function supplierOptionsFor(value) {
+  return withOrphanNama(supplierOptions.value, value)
 }
 
 function formatQty(v) {
@@ -1205,7 +1264,10 @@ async function doOutLapangan() {
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  loadSuppliers()
+  reload()
+})
 </script>
 
 <style scoped>

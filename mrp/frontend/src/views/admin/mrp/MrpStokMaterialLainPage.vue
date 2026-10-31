@@ -44,7 +44,21 @@
           class="w-28"
           @keyup.enter="doIn"
         />
-        <el-input v-model="inForm.supplier_name" :placeholder="t('pages.mrpInbound.supplier')" class="max-w-xs" clearable />
+        <el-select
+          v-model="inForm.supplier_name"
+          filterable
+          clearable
+          class="max-w-xs"
+          :loading="loadingSuppliers"
+          :placeholder="t('pages.mrpInbound.supplier')"
+        >
+          <el-option
+            v-for="s in supplierOptionsFor(inForm.supplier_name)"
+            :key="s.id || s.nama"
+            :label="s.nama"
+            :value="s.nama"
+          />
+        </el-select>
         <el-input v-model="inForm.unit_price" type="number" :placeholder="t('pages.mrpInbound.unitPrice')" class="w-28" />
         <el-date-picker v-model="inForm.tanggal" type="date" value-format="YYYY-MM-DD" />
         <el-button type="primary" :loading="saving" @click="doIn">{{ t('pages.mrpStokMaterialLain.inBtn') }}</el-button>
@@ -231,7 +245,7 @@ import { Printer, Refresh, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
 import { can } from '../../../security/permissions'
-import { mrpStokMaterialLain, mrpStokMaterialLainAction } from '../../../api/client'
+import { mrpListSupplier, mrpStokMaterialLain, mrpStokMaterialLainAction } from '../../../api/client'
 import { buildPageParams, fromElSortChange, normalizePageResult } from '../../../utils/tableQuery'
 import { optionalUnitPrice, printInboundLabels } from '../../../utils/mrpInboundLabelPrint.js'
 
@@ -251,6 +265,8 @@ const searchOut = ref('')
 const stats = ref({ lots: 0, qty_sisa: 0, out_rows: 0 })
 const canCreate = computed(() => can('mrpShopfloor', 'create'))
 const canUpdate = computed(() => can('mrpShopfloor', 'update'))
+const loadingSuppliers = ref(false)
+const supplierOptions = ref([])
 const inForm = reactive({
   material_id: null,
   qty: null,
@@ -310,6 +326,48 @@ const filteredOut = computed(() => {
 function dash(v) {
   const s = (v == null ? '' : String(v)).trim()
   return s || '—'
+}
+
+async function loadPagedMaster(listFn, extra = {}) {
+  const all = []
+  let pageNum = 1
+  const pageSizeLoad = 200
+  for (;;) {
+    const data = await listFn({
+      page: pageNum,
+      page_size: pageSizeLoad,
+      sort_by: 'nama',
+      sort_dir: 'asc',
+      ...extra,
+    })
+    const pageData = normalizePageResult(data, { page: pageNum, pageSize: pageSizeLoad })
+    all.push(...pageData.items)
+    if (!pageData.items.length || all.length >= pageData.total) break
+    pageNum += 1
+  }
+  return all
+}
+
+async function loadSuppliers() {
+  loadingSuppliers.value = true
+  try {
+    supplierOptions.value = await loadPagedMaster(mrpListSupplier, { material: 'MATERIAL LAIN' })
+  } catch {
+    supplierOptions.value = []
+  } finally {
+    loadingSuppliers.value = false
+  }
+}
+
+function withOrphanNama(options, value) {
+  const nama = String(value || '').trim()
+  if (!nama) return options
+  if (options.some((o) => String(o.nama || '').trim() === nama)) return options
+  return [...options, { id: `orphan-${nama}`, nama }]
+}
+
+function supplierOptionsFor(value) {
+  return withOrphanNama(supplierOptions.value, value)
 }
 
 function formatQty(v) {
@@ -598,7 +656,10 @@ async function doOut() {
   }
 }
 
-onMounted(reload)
+onMounted(() => {
+  loadSuppliers()
+  reload()
+})
 </script>
 
 <style scoped>

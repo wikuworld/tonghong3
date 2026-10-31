@@ -1923,8 +1923,17 @@ export function mrpListGudangFg(params = {}) {
   const q = appendPageParams(new URLSearchParams(), params)
   if (params.status) q.set('status', String(params.status))
   if (params.q) q.set('q', String(params.q))
+  if (params.customer) q.set('customer', String(params.customer))
+  const dateFrom = params.date_from || params.date_in_from
+  const dateTo = params.date_to || params.date_in_to
+  if (dateFrom) q.set('date_from', String(dateFrom))
+  if (dateTo) q.set('date_to', String(dateTo))
   const suffix = q.toString() ? `?${q}` : ''
   return apiFetch(`/mrp/gudang-fg${suffix}`)
+}
+
+export function mrpGudangFgFilterOptions() {
+  return apiFetch('/mrp/gudang-fg/filter-options')
 }
 
 export function mrpGetGudangFg(id) {

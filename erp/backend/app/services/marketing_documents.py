@@ -173,6 +173,9 @@ INVPL_TITLE = "INVOICE PACKING LIST"
 INVPL_TITLE_FOC = "INVOICE PACKING LIST (FOC)"
 SJ_TITLE = "SURAT JALAN (DELIVERY SHEET)"
 SJ_TITLE_FOC = "SURAT JALAN (DELIVERY SHEET) (FOC)"
+CI_TITLE = "COMMERCIAL INVOICE"
+CI_TITLE_NON = "NON COMMERCIAL INVOICE"
+CI_NON_SUFFIX = " (Non)"
 
 
 def invpl_document_title(*, foc: bool = False) -> str:
@@ -184,8 +187,13 @@ def sj_document_title(ctx: dict[str, Any] | None = None, *, foc: bool = False) -
     return SJ_TITLE_FOC if on else SJ_TITLE
 
 
+def commercial_invoice_document_title(*, non_commercial: bool = False) -> str:
+    """FOC / claim → judul NON COMMERCIAL INVOICE."""
+    return CI_TITLE_NON if non_commercial else CI_TITLE
+
+
 def apply_invpl_foc_title(ctx: dict[str, Any], foc: bool = False) -> dict[str, Any]:
-    """Salin ctx dan set judul INVPL (+ FOC bila diminta). Tidak mengubah commercial invoice."""
+    """Salin ctx dan set judul INVPL (+ FOC bila diminta). Judul CI diurus gather_commercial_invoice_ctx."""
     out = dict(ctx)
     out["foc"] = bool(foc)
     out["document_title"] = invpl_document_title(foc=bool(foc))
@@ -835,21 +843,27 @@ def gather_commercial_invoice_ctx(db: Session, delivery_id: int) -> dict[str, An
     if not dh:
         raise ValueError("delivery_not_found")
     ctx = gather_invpl_for_delivery(db, delivery_id)
-    suf = (ctx.get("claim_title_suffix") or "").strip()
-    ctx["document_title"] = f"COMMERCIAL INVOICE{suf}"
+    is_foc = bool(getattr(dh, "is_foc", False))
+    # Claim PO atau delivery FOC → Non Commercial Invoice
+    claim_suf = (ctx.get("claim_title_suffix") or "").strip()
+    non_commercial = bool(claim_suf) or is_foc
+    if non_commercial:
+        ctx["claim_title_suffix"] = CI_NON_SUFFIX
+    ctx["is_foc"] = is_foc
+    ctx["document_title"] = commercial_invoice_document_title(non_commercial=non_commercial)
     return ctx
 
 
 def render_commercial_invoice_html(ctx: dict[str, Any]) -> str:
-    """Sama layout INVPL, judul commercial invoice (+ (Non) untuk klaim)."""
+    """Sama layout INVPL, judul commercial invoice (+ (Non) untuk klaim/FOC)."""
     ctx2 = dict(ctx)
-    ctx2.setdefault("document_title", "COMMERCIAL INVOICE")
+    ctx2.setdefault("document_title", CI_TITLE)
     return render_invpl_html(ctx2)
 
 
 def render_commercial_invoice_pdf(ctx: dict[str, Any]) -> bytes:
     ctx2 = dict(ctx)
-    ctx2.setdefault("document_title", "COMMERCIAL INVOICE")
+    ctx2.setdefault("document_title", CI_TITLE)
     return render_invpl_pdf(ctx2)
 
 

@@ -130,9 +130,11 @@
     <el-dialog
       v-model="rejectOpen"
       :title="t('pages.mrpProses.rejectTitle')"
-      width="900px"
+      width="1100px"
       destroy-on-close
       append-to-body
+      class="mrp-proses-disposition-dialog"
+      @closed="resetDispositionUkur"
     >
       <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpProses.rejectHint') }}</p>
       <div v-if="openWips.length" class="mb-3">
@@ -170,37 +172,70 @@
           {{ dash(rejectLookupInfo.kode_rencana) }}
         </span>
       </div>
-      <div v-if="rejectLines.length" class="mrp-proses-section-title">{{ t('pages.mrpProses.rejectYlList') }}</div>
-      <el-table
-        v-if="rejectLines.length"
-        :data="rejectLines"
-        border
-        stripe
-        size="small"
-        class="admin-table mb-3"
-        :empty-text="t('common.tableEmpty')"
-      >
-        <el-table-column prop="kode_palet" :label="t('pages.mrpProses.returnKyLama')" min-width="110" />
-        <el-table-column prop="kode_yl" :label="t('pages.mrpProses.ylCode')" min-width="110" />
-        <el-table-column :label="t('pages.mrpProses.rejectSf')" width="100" align="right">
-          <template #default="{ row }">{{ formatQty(row.reject_sf) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpProses.returnedQty')" width="110" align="right">
-          <template #default="{ row }">{{ formatQty(row.returned_qty) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpProses.rejectedQty')" width="110" align="right">
-          <template #default="{ row }">{{ formatQty(row.rejected_qty) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpProses.rejectLembar')" width="100" align="right">
-          <template #default="{ row }">{{ formatQty(row.lembar_qty) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpProses.blockedReason')" min-width="140" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.blocked_reason || '—' }}</template>
-        </el-table-column>
-      </el-table>
-      <p v-if="rejectLines.length && !rejectCanSave" class="text-sm text-amber-700 mb-0">
-        {{ t('pages.mrpProses.rejectBlocked') }}
-      </p>
+      <div v-if="rejectLines.length" class="mrp-proses-disposition-layout">
+        <div class="mrp-proses-disposition-layout__table">
+          <div class="mrp-proses-section-title">{{ t('pages.mrpProses.rejectYlList') }}</div>
+          <el-table
+            :data="rejectLines"
+            border
+            stripe
+            size="small"
+            class="admin-table mb-3"
+            highlight-current-row
+            :row-class-name="dispositionRowClass"
+            :empty-text="t('common.tableEmpty')"
+            @row-click="(row) => selectDispositionLine('reject', row)"
+          >
+            <el-table-column prop="kode_palet" :label="t('pages.mrpProses.returnKyLama')" min-width="110" />
+            <el-table-column prop="kode_yl" :label="t('pages.mrpProses.ylCode')" min-width="110" />
+            <el-table-column :label="t('pages.mrpProses.remainingQty')" width="90" align="right">
+              <template #default="{ row }">{{ formatQty(row.remaining_qty) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpProses.returnedQty')" width="100" align="right">
+              <template #default="{ row }">{{ formatQty(row.returned_qty) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpProses.rejectedQty')" width="100" align="right">
+              <template #default="{ row }">{{ formatQty(row.rejected_qty) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpProses.rejectSf')" width="90" align="right">
+              <template #default="{ row }">{{ formatQty(row.reject_sf) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpProses.rejectLembar')" width="90" align="right">
+              <template #default="{ row }">{{ formatQty(row.lembar_qty) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpProses.blockedReason')" min-width="120" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.blocked_reason || '—' }}</template>
+            </el-table-column>
+          </el-table>
+          <p v-if="!rejectCanSave" class="text-sm text-amber-700 mb-0">
+            {{
+              rejectLines.some((r) => !r.blocked_reason)
+                ? t('pages.mrpProses.dispositionNeedUkur')
+                : t('pages.mrpProses.rejectBlocked')
+            }}
+          </p>
+        </div>
+        <MrpProsesUkurPanel
+          :title="t('pages.mrpProses.dispositionUkurTitle')"
+          :rows="dispositionActiveUkurRows"
+          :total-size="dispositionActiveTotalSize"
+          :total-qty="dispositionActiveUkurRows.length"
+          :online="dispositionScaleOnline"
+          :active="dispositionKind === 'reject' && !!dispositionActiveKyId"
+          :can-start="dispositionKind === 'reject' && !!dispositionActiveKyId"
+          :can-stop="dispositionScaleOnline && dispositionKind === 'reject'"
+          :can-add="dispositionScaleOnline && dispositionKind === 'reject' && !!dispositionActiveKyId"
+          :can-print="false"
+          :can-save="dispositionKind === 'reject' && dispositionActiveUkurRows.length > 0"
+          :can-delete="dispositionKind === 'reject' && !!dispositionActiveKyId"
+          :hint="dispositionUkurHint"
+          @start="dispositionPanelStart"
+          @stop="dispositionPanelStop"
+          @add="dispositionPanelAdd"
+          @save="dispositionPanelSave"
+          @delete="dispositionPanelDelete"
+        />
+      </div>
       <template #footer>
         <el-button @click="rejectOpen = false">{{ t('common.cancel') }}</el-button>
         <el-button
@@ -215,9 +250,11 @@
     <el-dialog
       v-model="returnOpen"
       :title="t('pages.mrpProses.returnTitle')"
-      width="900px"
+      width="1100px"
       destroy-on-close
       append-to-body
+      class="mrp-proses-disposition-dialog"
+      @closed="resetDispositionUkur"
     >
       <p class="text-sm text-slate-500 mb-3">{{ t('pages.mrpProses.returnHint') }}</p>
       <div v-if="openWips.length" class="mb-3">
@@ -255,51 +292,68 @@
           {{ dash(returnLookupInfo.kode_rencana) }}
         </span>
       </div>
-      <div v-if="returnLines.length" class="mrp-proses-section-title">{{ t('pages.mrpProses.returnYlList') }}</div>
-      <el-table
-        v-if="returnLines.length"
-        :data="returnLines"
-        border
-        stripe
-        size="small"
-        class="admin-table mb-3"
-        :empty-text="t('common.tableEmpty')"
-      >
-        <el-table-column prop="kode_palet" :label="t('pages.mrpProses.returnKyLama')" min-width="110" />
-        <el-table-column prop="kode_yl" :label="t('pages.mrpProses.ylCode')" min-width="110" />
-        <el-table-column :label="t('pages.mrpProses.returnMeasuredQty')" width="110" align="right">
-          <template #default="{ row }">{{ formatQty(row.measured_qty) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpProses.returnedQty')" width="110" align="right">
-          <template #default="{ row }">{{ formatQty(row.returned_qty) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpProses.rejectedQty')" width="110" align="right">
-          <template #default="{ row }">{{ formatQty(row.rejected_qty) }}</template>
-        </el-table-column>
-        <el-table-column :label="t('pages.mrpProses.returnQty')" width="140" align="right">
-          <template #default="{ row }">
-            <el-input-number
-              v-if="!row.blocked_reason"
-              v-model="row.return_qty"
-              :min="0.01"
-              :max="row.max_return_qty"
-              :step="1"
-              :precision="2"
-              controls-position="right"
-              size="small"
-              class="w-full"
-            />
-            <span v-else>{{ formatQty(0) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="kode_yl_baru" :label="t('pages.mrpProses.returnYlBaru')" min-width="120" />
-        <el-table-column :label="t('pages.mrpProses.blockedReason')" min-width="140" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.blocked_reason || '—' }}</template>
-        </el-table-column>
-      </el-table>
-      <p v-if="returnLines.length && !returnCanSave" class="text-sm text-amber-700 mb-0">
-        {{ t('pages.mrpProses.returnBlocked') }}
-      </p>
+      <div v-if="returnLines.length" class="mrp-proses-disposition-layout">
+        <div class="mrp-proses-disposition-layout__table">
+          <div class="mrp-proses-section-title">{{ t('pages.mrpProses.returnYlList') }}</div>
+          <el-table
+            :data="returnLines"
+            border
+            stripe
+            size="small"
+            class="admin-table mb-3"
+            highlight-current-row
+            :row-class-name="dispositionRowClass"
+            :empty-text="t('common.tableEmpty')"
+            @row-click="(row) => selectDispositionLine('return', row)"
+          >
+            <el-table-column prop="kode_palet" :label="t('pages.mrpProses.returnKyLama')" min-width="110" />
+            <el-table-column prop="kode_yl" :label="t('pages.mrpProses.ylCode')" min-width="110" />
+            <el-table-column :label="t('pages.mrpProses.returnMeasuredQty')" width="100" align="right">
+              <template #default="{ row }">{{ formatQty(row.measured_qty) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpProses.returnedQty')" width="100" align="right">
+              <template #default="{ row }">{{ formatQty(row.returned_qty) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpProses.rejectedQty')" width="100" align="right">
+              <template #default="{ row }">{{ formatQty(row.rejected_qty) }}</template>
+            </el-table-column>
+            <el-table-column :label="t('pages.mrpProses.returnQty')" width="100" align="right">
+              <template #default="{ row }">{{ formatQty(row.return_qty) }}</template>
+            </el-table-column>
+            <el-table-column prop="kode_yl_baru" :label="t('pages.mrpProses.returnYlBaru')" min-width="110" />
+            <el-table-column :label="t('pages.mrpProses.blockedReason')" min-width="120" show-overflow-tooltip>
+              <template #default="{ row }">{{ row.blocked_reason || '—' }}</template>
+            </el-table-column>
+          </el-table>
+          <p v-if="!returnCanSave" class="text-sm text-amber-700 mb-0">
+            {{
+              returnLines.some((r) => !r.blocked_reason)
+                ? t('pages.mrpProses.dispositionNeedUkur')
+                : t('pages.mrpProses.returnBlocked')
+            }}
+          </p>
+        </div>
+        <MrpProsesUkurPanel
+          :title="t('pages.mrpProses.dispositionUkurTitle')"
+          :rows="dispositionActiveUkurRows"
+          :total-size="dispositionActiveTotalSize"
+          :total-qty="dispositionActiveUkurRows.length"
+          :online="dispositionScaleOnline"
+          :active="dispositionKind === 'return' && !!dispositionActiveKyId"
+          :can-start="dispositionKind === 'return' && !!dispositionActiveKyId"
+          :can-stop="dispositionScaleOnline && dispositionKind === 'return'"
+          :can-add="dispositionScaleOnline && dispositionKind === 'return' && !!dispositionActiveKyId"
+          :can-print="false"
+          :can-save="dispositionKind === 'return' && dispositionActiveUkurRows.length > 0"
+          :can-delete="dispositionKind === 'return' && !!dispositionActiveKyId"
+          :hint="dispositionUkurHint"
+          @start="dispositionPanelStart"
+          @stop="dispositionPanelStop"
+          @add="dispositionPanelAdd"
+          @save="dispositionPanelSave"
+          @delete="dispositionPanelDelete"
+        />
+      </div>
       <template #footer>
         <el-button @click="returnOpen = false">{{ t('common.cancel') }}</el-button>
         <el-button
@@ -787,12 +841,43 @@ const returnForm = reactive({ kode_wip: '' })
 const returnLookupInfo = ref(null)
 const returnLines = ref([])
 const openWips = ref([])
+const dispositionKind = ref('')
+const dispositionActiveKyId = ref(null)
+const dispositionScaleOnline = ref(false)
 const rejectCanSave = computed(() =>
-  rejectLines.value.some((row) => !row.blocked_reason && Number(row.reject_sf) > 0),
+  rejectLines.value.some(
+    (row) =>
+      !row.blocked_reason &&
+      (row.remeasure_rows || []).length > 0 &&
+      Number(row.reject_sf) > 0,
+  ),
 )
 const returnCanSave = computed(() =>
-  returnLines.value.some((row) => !row.blocked_reason && Number(row.return_qty) > 0),
+  returnLines.value.some(
+    (row) =>
+      !row.blocked_reason &&
+      (row.remeasure_rows || []).length > 0 &&
+      Number(row.return_qty) > 0,
+  ),
 )
+const dispositionLines = computed(() =>
+  dispositionKind.value === 'reject' ? rejectLines.value : returnLines.value,
+)
+const dispositionActiveRow = computed(
+  () =>
+    dispositionLines.value.find((row) => Number(row.ky_id) === Number(dispositionActiveKyId.value)) ||
+    null,
+)
+const dispositionActiveUkurRows = computed(() => dispositionActiveRow.value?.remeasure_rows || [])
+const dispositionActiveTotalSize = computed(() =>
+  dispositionActiveUkurRows.value.reduce((sum, row) => sum + (Number(row.size_val) || 0), 0),
+)
+const dispositionUkurHint = computed(() => {
+  if (!dispositionActiveKyId.value) return t('pages.mrpProses.dispositionPickYl')
+  if (!dispositionScaleOnline.value) return t('pages.mrpProses.dispositionUkurHint')
+  const max = Number(dispositionActiveRow.value?.remaining_qty) || 0
+  return t('pages.mrpProses.dispositionUkurCap', { max: formatQty(max) })
+})
 const returnLabelOpen = ref(false)
 const returnLabelLoading = ref(false)
 const returnLabelPrinting = ref(false)
@@ -1375,10 +1460,107 @@ async function reloadReturn() {
   }
 }
 
+function resetDispositionUkur() {
+  dispositionKind.value = ''
+  dispositionActiveKyId.value = null
+  dispositionScaleOnline.value = false
+}
+
+function syncDispositionQty(row) {
+  if (!row) return
+  const rows = row.remeasure_rows || []
+  const total = rows.reduce((sum, u) => sum + (Number(u.size_val) || 0), 0)
+  const rounded = Math.round(total * 1000) / 1000
+  if (dispositionKind.value === 'reject') {
+    row.reject_sf = rounded
+    row.lembar_qty = rows.length
+    return
+  }
+  if (dispositionKind.value === 'return') {
+    row.return_qty = rounded
+  }
+}
+
+function selectDispositionLine(kind, row) {
+  if (!row || row.blocked_reason) {
+    ElMessage.warning(row?.blocked_reason || t('pages.mrpProses.dispositionPickYl'))
+    return
+  }
+  dispositionKind.value = kind
+  dispositionActiveKyId.value = Number(row.ky_id)
+  if (!Array.isArray(row.remeasure_rows)) row.remeasure_rows = []
+}
+
+function dispositionRowClass({ row }) {
+  if (row?.blocked_reason) return 'is-disposition-blocked'
+  if (Number(row?.ky_id) === Number(dispositionActiveKyId.value)) return 'is-disposition-active'
+  return ''
+}
+
+function dispositionPanelStart() {
+  if (!dispositionActiveKyId.value) {
+    ElMessage.warning(t('pages.mrpProses.dispositionPickYl'))
+    return
+  }
+  dispositionScaleOnline.value = true
+}
+
+function dispositionPanelStop() {
+  dispositionScaleOnline.value = false
+}
+
+function dispositionPanelAdd(size) {
+  const row = dispositionActiveRow.value
+  if (!row) return
+  if (!dispositionScaleOnline.value) {
+    ElMessage.warning(t('pages.mrpProses.panelStartFirst'))
+    return
+  }
+  const val = Number(size)
+  if (!(val > 0)) {
+    ElMessage.warning(t('pages.mrpProses.sizeUkur'))
+    return
+  }
+  if (!Array.isArray(row.remeasure_rows)) row.remeasure_rows = []
+  const measured = row.remeasure_rows.reduce((sum, u) => sum + (Number(u.size_val) || 0), 0)
+  const max = Number(row.remaining_qty) || 0
+  if (measured + val > max + 1e-9) {
+    ElMessage.warning(
+      t('pages.mrpProses.dispositionUkurOver', {
+        max: formatQty(max),
+        sekarang: formatQty(measured),
+      }),
+    )
+    return
+  }
+  row.remeasure_rows.push({ key: `${Date.now()}-${val}`, size_val: val })
+  syncDispositionQty(row)
+}
+
+function dispositionPanelDelete(ukurRow) {
+  const row = dispositionActiveRow.value
+  if (!row?.remeasure_rows) return
+  const key = ukurRow.key ?? ukurRow.id
+  row.remeasure_rows = row.remeasure_rows.filter((r) => (r.key ?? r.id) !== key)
+  syncDispositionQty(row)
+}
+
+function dispositionPanelSave() {
+  const row = dispositionActiveRow.value
+  if (!row?.remeasure_rows?.length) {
+    ElMessage.warning(t('pages.mrpProses.sizeUkur'))
+    return
+  }
+  syncDispositionQty(row)
+  dispositionScaleOnline.value = false
+  ElMessage.success(t('pages.mrpProses.dispositionUkurSaved'))
+}
+
 function resetReturnForm() {
   returnForm.kode_wip = ''
   returnLookupInfo.value = null
   returnLines.value = []
+  resetDispositionUkur()
 }
 
 function openReturn() {
@@ -1391,6 +1573,7 @@ function resetRejectForm() {
   rejectForm.kode_wip = ''
   rejectLookupInfo.value = null
   rejectLines.value = []
+  resetDispositionUkur()
 }
 
 function openReject() {
@@ -1425,14 +1608,21 @@ async function lookupRejectWip() {
   try {
     const data = await mrpProsesRejectLookup(wip)
     rejectLookupInfo.value = data.persiapan || null
+    dispositionKind.value = 'reject'
+    dispositionActiveKyId.value = null
+    dispositionScaleOnline.value = false
     rejectLines.value = (data.lines || []).map((row) => ({
       ...row,
-      reject_sf: Number(row.reject_sf ?? row.remaining_qty) || 0,
-      lembar_qty: Number(row.lembar_qty) || 0,
+      remaining_qty: Number(row.remaining_qty) || 0,
+      reject_sf: 0,
+      lembar_qty: 0,
       returned_qty: Number(row.returned_qty) || 0,
       rejected_qty: Number(row.rejected_qty) || 0,
       blocked_reason: row.blocked_reason || '',
+      remeasure_rows: [],
     }))
+    const first = rejectLines.value.find((row) => !row.blocked_reason)
+    if (first) selectDispositionLine('reject', first)
     if (!rejectLines.value.length) {
       ElMessage.warning(t('pages.mrpProses.rejectNoLines'))
     }
@@ -1449,10 +1639,18 @@ async function submitReject() {
   const wip = rejectForm.kode_wip.trim()
   if (!wip || !rejectLines.value.length) return
   const lines = rejectLines.value
-    .filter((row) => !row.blocked_reason && Number(row.reject_sf) > 0)
-    .map((row) => ({ ky_id: row.ky_id }))
+    .filter(
+      (row) =>
+        !row.blocked_reason &&
+        (row.remeasure_rows || []).length > 0 &&
+        Number(row.reject_sf) > 0,
+    )
+    .map((row) => ({
+      ky_id: row.ky_id,
+      ukur_sizes: (row.remeasure_rows || []).map((u) => Number(u.size_val)),
+    }))
   if (!lines.length) {
-    ElMessage.warning(t('pages.mrpProses.rejectNoLines'))
+    ElMessage.warning(t('pages.mrpProses.dispositionNeedUkur'))
     return
   }
   rejectSaving.value = true
@@ -1475,17 +1673,24 @@ async function lookupReturnWip() {
   try {
     const data = await mrpProsesReturnLookup(wip)
     returnLookupInfo.value = data.persiapan || null
+    dispositionKind.value = 'return'
+    dispositionActiveKyId.value = null
+    dispositionScaleOnline.value = false
     returnLines.value = (data.lines || []).map((row) => {
       const remaining = Number(row.remaining_qty ?? row.return_qty) || 0
       return {
         ...row,
+        remaining_qty: remaining,
         max_return_qty: remaining,
-        return_qty: remaining,
+        return_qty: 0,
         returned_qty: Number(row.returned_qty) || 0,
         rejected_qty: Number(row.rejected_qty) || 0,
         blocked_reason: row.blocked_reason || '',
+        remeasure_rows: [],
       }
     })
+    const first = returnLines.value.find((row) => !row.blocked_reason)
+    if (first) selectDispositionLine('return', first)
     if (!returnLines.value.length) {
       ElMessage.warning(t('pages.mrpProses.returnNoLines'))
     }
@@ -1502,10 +1707,18 @@ async function submitReturn() {
   const wip = returnForm.kode_wip.trim()
   if (!wip || !returnLines.value.length) return
   const lines = returnLines.value
-    .filter((row) => !row.blocked_reason && Number(row.return_qty) > 0)
-    .map((row) => ({ ky_id: row.ky_id, return_qty: Number(row.return_qty) }))
+    .filter(
+      (row) =>
+        !row.blocked_reason &&
+        (row.remeasure_rows || []).length > 0 &&
+        Number(row.return_qty) > 0,
+    )
+    .map((row) => ({
+      ky_id: row.ky_id,
+      ukur_sizes: (row.remeasure_rows || []).map((u) => Number(u.size_val)),
+    }))
   if (!lines.length) {
-    ElMessage.warning(t('pages.mrpProses.returnQtyInvalid'))
+    ElMessage.warning(t('pages.mrpProses.dispositionNeedUkur'))
     return
   }
   returnSaving.value = true
@@ -2123,5 +2336,26 @@ onMounted(reload)
 .mrp-proses-label-sheet__qr {
   width: 72px;
   height: 72px;
+}
+.mrp-proses-disposition-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
+  gap: 0.85rem;
+  align-items: start;
+}
+.mrp-proses-disposition-layout__table {
+  min-width: 0;
+}
+:deep(.is-disposition-active) {
+  --el-table-tr-bg-color: var(--el-color-primary-light-9);
+}
+:deep(.is-disposition-blocked) {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+@media (max-width: 980px) {
+  .mrp-proses-disposition-layout {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -413,16 +413,28 @@
           <el-input v-model="form.customer_name" />
         </el-form-item>
         <el-form-item :label="t('common.date')">
-          <el-date-picker v-model="form.invoice_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
+          <el-date-picker
+            v-model="form.invoice_date"
+            type="date"
+            class="w-full"
+            value-format="YYYY-MM-DD"
+            @change="onTermOrDateChange"
+          />
+        </el-form-item>
+        <el-form-item :label="t('pages.invoice.termOfPayment')">
+          <el-input v-model="form.term_of_payment" @change="onTermOrDateChange" />
         </el-form-item>
         <el-form-item :label="t('pages.invoice.dueDate')">
-          <el-date-picker v-model="form.due_date" type="date" class="w-full" value-format="YYYY-MM-DD" />
+          <el-date-picker
+            v-model="form.due_date"
+            type="date"
+            class="w-full"
+            value-format="YYYY-MM-DD"
+            :placeholder="t('pages.invoice.dueDateAutoHint')"
+          />
         </el-form-item>
         <el-form-item :label="t('common.total') + ' (USD)'">
           <el-input v-model="form.total_amount" type="number" step="0.01" />
-        </el-form-item>
-        <el-form-item :label="t('pages.invoice.termOfPayment')">
-          <el-input v-model="form.term_of_payment" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -1109,6 +1121,45 @@ const form = reactive({
   term_of_payment: '',
 })
 
+function parsePaymentTermDays(term) {
+  if (!term) return null
+  const m = String(term).match(/\d+/)
+  if (m) return Number(m[0])
+  if (/advance/i.test(String(term))) return 0
+  return null
+}
+
+function addDaysIso(isoDate, days) {
+  if (!isoDate || days == null || !Number.isFinite(Number(days))) return ''
+  const d = new Date(`${String(isoDate).slice(0, 10)}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return ''
+  d.setDate(d.getDate() + Number(days))
+  return toIsoDate(d)
+}
+
+/** Isi term + jatuh tempo dari payment_terms customer (tidak menimpa nilai yang sudah diisi). */
+function applyCustomerPaymentTerms(customer, { forceDue = false } = {}) {
+  if (!form.term_of_payment && customer?.payment_terms) {
+    form.term_of_payment = String(customer.payment_terms)
+  }
+  if ((forceDue || !form.due_date) && form.invoice_date && form.term_of_payment) {
+    const days = parsePaymentTermDays(form.term_of_payment)
+    if (days != null) {
+      form.due_date = addDaysIso(form.invoice_date, days)
+    }
+  }
+}
+
+function onTermOrDateChange() {
+  // Hitung ulang due saat term/tanggal berubah (form create; due masih boleh di-override manual setelahnya)
+  if (form.invoice_date && form.term_of_payment) {
+    const days = parsePaymentTermDays(form.term_of_payment)
+    if (days != null) {
+      form.due_date = addDaysIso(form.invoice_date, days)
+    }
+  }
+}
+
 function onPoPick(pid) {
   if (!pid) return
   const p = poList.value.find((x) => x.id === pid)
@@ -1117,6 +1168,7 @@ function onPoPick(pid) {
     form.customer_id = p.customer_id
     const c = customers.value.find((x) => x.id === p.customer_id)
     form.customer_name = c?.name || ''
+    applyCustomerPaymentTerms(c)
   }
   form.invoice_number = form.invoice_number || `INV-${p.po_number}`
 }
@@ -1148,9 +1200,14 @@ async function onDeliveryPick(did) {
     form.customer_id = d.customer_id
     const c = customers.value.find((x) => x.id === d.customer_id)
     form.customer_name = c?.name || d.customer_name || ''
+    applyCustomerPaymentTerms(c)
   }
   if (!form.invoice_date) {
     form.invoice_date = toIsoDate(d?.delivery_date || new Date())
+  }
+  // Hitung ulang due setelah invoice_date terisi
+  if (form.customer_id) {
+    applyCustomerPaymentTerms(customers.value.find((x) => x.id === form.customer_id))
   }
   form.po_id = null
   try {

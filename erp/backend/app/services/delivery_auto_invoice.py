@@ -218,12 +218,22 @@ def ensure_invoice_for_delivery(
     customer_name = None
     customer_address = None
     customer_phone = None
+    cust = None
     if delivery.customer_id:
         cust = db.get(Customer, int(delivery.customer_id))
         if cust:
             customer_name = cust.name
             customer_address = cust.address
             customer_phone = cust.phone
+
+    from app.services.accounts_receivable_report import resolve_invoice_payment_terms
+
+    term, due = resolve_invoice_payment_terms(
+        customer_payment_terms=getattr(cust, "payment_terms", None) if cust else None,
+        term_of_payment=None,
+        due_date=None,
+        base_date=inv_date,
+    )
 
     row = Invoice(
         delivery_id=int(delivery_id),
@@ -235,6 +245,8 @@ def ensure_invoice_for_delivery(
         customer_address=customer_address,
         customer_phone=customer_phone,
         invoice_date=inv_date,
+        term_of_payment=term,
+        due_date=due,
         payment_status="unpaid",
     )
     db.add(row)

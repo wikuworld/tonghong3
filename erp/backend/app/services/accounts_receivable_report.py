@@ -64,6 +64,36 @@ def parse_payment_term_days(term: Optional[str]) -> Optional[int]:
         return None
 
 
+def payment_term_days_for_due(term: Optional[str]) -> Optional[int]:
+    """Hari untuk hitung jatuh tempo. Angka dari term, atau 0 untuk 'advance'."""
+    days = parse_payment_term_days(term)
+    if days is not None:
+        return days
+    if term and re.search(r"advance", str(term), re.I):
+        return 0
+    return None
+
+
+def resolve_invoice_payment_terms(
+    *,
+    customer_payment_terms: Optional[str] = None,
+    term_of_payment: Optional[str] = None,
+    due_date: Optional[date] = None,
+    base_date: Optional[date] = None,
+) -> tuple[Optional[str], Optional[date]]:
+    """Isi term dari customer bila kosong; hitung due_date = base_date + N hari bila kosong."""
+    term = (term_of_payment or "").strip() or None
+    if not term:
+        term = (customer_payment_terms or "").strip() or None
+
+    due = due_date
+    if due is None and base_date is not None and term:
+        days = payment_term_days_for_due(term)
+        if days is not None:
+            due = base_date + timedelta(days=days)
+    return term, due
+
+
 def invoice_faktur_date(inv: Invoice) -> Optional[date]:
     return inv.tax_invoice_date or inv.invoice_date
 
@@ -72,8 +102,8 @@ def invoice_maturity(inv: Invoice) -> Optional[date]:
     if inv.due_date:
         return inv.due_date
     base = invoice_faktur_date(inv)
-    days = parse_payment_term_days(inv.term_of_payment)
-    if base and days:
+    days = payment_term_days_for_due(inv.term_of_payment)
+    if base and days is not None:
         return base + timedelta(days=days)
     return None
 

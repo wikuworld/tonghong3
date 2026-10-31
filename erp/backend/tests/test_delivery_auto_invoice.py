@@ -81,15 +81,25 @@ def test_validate_rejects_draft_by_default():
 
 
 def test_ensure_invoice_creates_thin(monkeypatch):
+    from app.models import Customer
+
     db = _Db()
     delivery = SimpleNamespace(
         id=7,
         status="draft",
         packing_id=3,
-        customer_id=None,
+        customer_id=11,
         delivery_date=date(2026, 9, 17),
     )
+    cust = SimpleNamespace(
+        id=11,
+        name="PT TEST",
+        address="Jl. A",
+        phone="081",
+        payment_terms="TT 30 days",
+    )
     db.get_map[(DeliveryHeader, 7)] = delivery
+    db.get_map[(Customer, 11)] = cust
     db.detail_rows = [SimpleNamespace(id=1, delivery_id=7)]
 
     monkeypatch.setattr(
@@ -136,6 +146,8 @@ def test_ensure_invoice_creates_thin(monkeypatch):
     assert row.invoice_number == "THIN-M260917001"
     assert row.delivery_id == 7
     assert isinstance(row, Invoice)
+    assert row.term_of_payment == "TT 30 days"
+    assert row.due_date == date(2026, 10, 17)
 
 
 def test_ensure_invoice_idempotent(monkeypatch):

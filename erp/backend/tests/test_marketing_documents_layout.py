@@ -166,6 +166,22 @@ def test_invpl_foc_title():
     assert "INVOICE PACKING LIST (FOC)" in foc_html
 
 
+def test_commercial_invoice_foc_is_non_commercial():
+    from app.services.marketing_documents import (
+        commercial_invoice_document_title,
+        render_commercial_invoice_html,
+    )
+
+    assert commercial_invoice_document_title(non_commercial=False) == "COMMERCIAL INVOICE"
+    assert commercial_invoice_document_title(non_commercial=True) == "NON COMMERCIAL INVOICE"
+
+    ctx = dict(_invpl_ctx())
+    ctx["document_title"] = commercial_invoice_document_title(non_commercial=True)
+    html = render_commercial_invoice_html(ctx)
+    assert "NON COMMERCIAL INVOICE" in html
+    assert "COMMERCIAL INVOICE (Non)" not in html
+
+
 def test_packing_derived_weights_formula():
     from app.services.marketing_documents import packing_derived_weights
 

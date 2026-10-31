@@ -207,7 +207,20 @@
           <p v-else class="delivery-scroll-hint">{{ t('pages.delivery.summaryHint') }}</p>
         </div>
 
-        <div class="admin-table-scroll">
+        <div class="delivery-list-scroll-sync">
+          <div
+            v-show="listHScrollNeeded"
+            ref="listTopScrollRef"
+            class="delivery-list-top-scroll"
+            @scroll="onListTopScroll"
+          >
+            <div class="delivery-list-top-scroll__spacer" :style="{ width: `${listScrollWidth}px` }" />
+          </div>
+          <div
+            ref="listBottomScrollRef"
+            class="admin-table-scroll"
+            @scroll="onListBottomScroll"
+          >
           <el-table
             ref="listTableRef"
             :data="lineRows"
@@ -258,15 +271,6 @@
             <el-table-column prop="delivery_date" :label="t('pages.delivery.columns.shipDate')" width="104" sortable="custom">
               <template #default="{ row }">{{ formatDate(row.delivery_date) }}</template>
             </el-table-column>
-            <el-table-column prop="factory_name" :label="t('pages.delivery.columns.factory')" min-width="160" show-overflow-tooltip />
-            <el-table-column prop="destination" :label="t('common.destination')" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="system_no" :label="t('pages.delivery.columns.systemNo')" min-width="120" show-overflow-tooltip />
-            <el-table-column prop="color" :label="t('pages.delivery.columns.color')" min-width="110" show-overflow-tooltip />
-            <el-table-column prop="leather_color" :label="t('pages.delivery.columns.leatherColor')" min-width="110" show-overflow-tooltip />
-            <el-table-column :label="t('pages.delivery.columns.leatherInDate')" width="120">
-              <template #default="{ row }">{{ formatDate(row.leather_in_date) }}</template>
-            </el-table-column>
-            <el-table-column prop="qty_roll" :label="t('pages.delivery.columns.roll')" width="64" align="right" />
             <el-table-column :label="t('pages.delivery.columns.invNumber')" min-width="130" show-overflow-tooltip>
               <template #default="{ row }">
                 <el-button
@@ -288,10 +292,20 @@
                 <span v-else>{{ row.invoice_number || '—' }}</span>
               </template>
             </el-table-column>
+            <el-table-column prop="factory_name" :label="t('common.customer')" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="material_name" :label="t('pages.delivery.columns.materialName')" min-width="140" show-overflow-tooltip />
+            <el-table-column prop="color" :label="t('pages.delivery.columns.color')" min-width="110" show-overflow-tooltip />
+            <el-table-column prop="thickness" :label="t('pages.delivery.columns.thickness')" width="90" show-overflow-tooltip />
+            <el-table-column prop="qty_roll" :label="t('pages.delivery.columns.roll')" width="64" align="right" />
 
             <template v-if="showDetailCols">
+              <el-table-column prop="destination" :label="t('common.destination')" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="system_no" :label="t('pages.delivery.columns.systemNo')" min-width="120" show-overflow-tooltip />
+              <el-table-column prop="leather_color" :label="t('pages.delivery.columns.leatherColor')" min-width="110" show-overflow-tooltip />
+              <el-table-column :label="t('pages.delivery.columns.leatherInDate')" width="120">
+                <template #default="{ row }">{{ formatDate(row.leather_in_date) }}</template>
+              </el-table-column>
               <el-table-column prop="lot_no" :label="t('pages.delivery.columns.lotNo')" min-width="130" show-overflow-tooltip />
-              <el-table-column prop="material_name" :label="t('pages.delivery.columns.materialName')" min-width="140" show-overflow-tooltip />
               <el-table-column :label="t('pages.delivery.columns.sf')" width="88" align="right">
                 <template #default="{ row }">{{ formatNumber(row.qty_sf, 2) }}</template>
               </el-table-column>
@@ -300,7 +314,6 @@
                 <template #default="{ row }">{{ formatDate(row.po_date) }}</template>
               </el-table-column>
               <el-table-column prop="po_number" :label="t('pages.delivery.columns.poNumber')" min-width="130" show-overflow-tooltip sortable="custom" />
-              <el-table-column prop="thickness" :label="t('pages.delivery.columns.thickness')" width="90" show-overflow-tooltip />
               <el-table-column :label="t('pages.delivery.columns.qtyPo')" width="90" align="right">
                 <template #default="{ row }">{{ formatNumber(row.qty_po, 2) }}</template>
               </el-table-column>
@@ -365,6 +378,7 @@
               </template>
             </el-table-column>
           </el-table>
+          </div>
         </div>
 
         <div class="delivery-pagination">
@@ -760,8 +774,8 @@
               <el-button v-if="canPrint" size="small" type="primary" plain @click="openSjAndInvpl">{{ t('pages.delivery.printSjAndInvpl') }}</el-button>
               <el-button v-if="canPrint" size="small" @click="openSjDotmatrix">{{ t('pages.delivery.printSjDotmatrix') }}</el-button>
               <el-button v-if="canPrint" size="small" @click="downloadSjPdf">{{ t('pages.delivery.downloadPdf') }}</el-button>
-              <el-button v-if="canPrint" size="small" type="primary" plain @click="openCommercialInvoice">{{ t('pages.delivery.openCommercialInvoice') }}</el-button>
-              <el-button v-if="canPrint" size="small" type="primary" plain @click="downloadCommercialInvoicePdf">{{ t('pages.delivery.commercialInvoicePdf') }}</el-button>
+              <el-button v-if="canPrint" size="small" type="primary" plain @click="openCommercialInvoice">{{ commercialInvoiceOpenLabel }}</el-button>
+              <el-button v-if="canPrint" size="small" type="primary" plain @click="downloadCommercialInvoicePdf">{{ commercialInvoicePdfLabel }}</el-button>
               <el-button v-if="showCreateInvoiceCta" size="small" plain @click="goCreateInvoiceFromDetail">
                 {{ t('pages.delivery.createArInvoice') }}
               </el-button>
@@ -1018,7 +1032,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1074,6 +1088,73 @@ const saving = ref(false)
 const exporting = ref(false)
 const batchPrinting = ref(false)
 const listTableRef = ref(null)
+const listTopScrollRef = ref(null)
+const listBottomScrollRef = ref(null)
+const listScrollWidth = ref(0)
+const listClientWidth = ref(0)
+const listHScrollNeeded = computed(() => listScrollWidth.value > listClientWidth.value + 1)
+let listScrollSyncing = false
+let listScrollResizeObserver = null
+
+function measureListHorizontalScroll() {
+  const el = listBottomScrollRef.value
+  if (!el) return
+  listScrollWidth.value = el.scrollWidth || 0
+  listClientWidth.value = el.clientWidth || 0
+  nextTick(() => {
+    const top = listTopScrollRef.value
+    const bottom = listBottomScrollRef.value
+    if (top && bottom && top.scrollLeft !== bottom.scrollLeft) {
+      listScrollSyncing = true
+      top.scrollLeft = bottom.scrollLeft
+      listScrollSyncing = false
+    }
+  })
+}
+
+function onListTopScroll() {
+  if (listScrollSyncing) return
+  const top = listTopScrollRef.value
+  const bottom = listBottomScrollRef.value
+  if (!top || !bottom) return
+  listScrollSyncing = true
+  bottom.scrollLeft = top.scrollLeft
+  listScrollSyncing = false
+}
+
+function onListBottomScroll() {
+  if (listScrollSyncing) return
+  const top = listTopScrollRef.value
+  const bottom = listBottomScrollRef.value
+  if (!top || !bottom) return
+  listScrollSyncing = true
+  top.scrollLeft = bottom.scrollLeft
+  listScrollSyncing = false
+}
+
+function setupListHorizontalScrollSync() {
+  teardownListHorizontalScrollSync()
+  const el = listBottomScrollRef.value
+  if (!el || typeof ResizeObserver === 'undefined') {
+    measureListHorizontalScroll()
+    return
+  }
+  listScrollResizeObserver = new ResizeObserver(() => {
+    measureListHorizontalScroll()
+  })
+  listScrollResizeObserver.observe(el)
+  const tableEl = el.querySelector('.el-table')
+  if (tableEl) listScrollResizeObserver.observe(tableEl)
+  measureListHorizontalScroll()
+}
+
+function teardownListHorizontalScrollSync() {
+  if (listScrollResizeObserver) {
+    listScrollResizeObserver.disconnect()
+    listScrollResizeObserver = null
+  }
+}
+
 const listSelection = ref([])
 const keyword = ref('')
 const statusFilter = ref('')
@@ -1312,6 +1393,8 @@ async function load() {
       po_date: r.po_date ? String(r.po_date).slice(0, 10) : '',
     }))
     clearListSelection()
+    await nextTick()
+    measureListHorizontalScroll()
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
@@ -1349,7 +1432,18 @@ watch([currentPage, pageSize], () => {
   load()
 })
 
+watch(showDetailCols, async () => {
+  await nextTick()
+  measureListHorizontalScroll()
+})
+
+onBeforeUnmount(() => {
+  teardownListHorizontalScrollSync()
+})
+
 onMounted(async () => {
+  await nextTick()
+  setupListHorizontalScrollSync()
   const q = route.query
   if (q.keyword != null && String(q.keyword).trim()) keyword.value = String(q.keyword).trim()
   if (q.delivery_date_from && q.delivery_date_to) {
@@ -1580,6 +1674,18 @@ const markingSj = ref(false)
 const scanSjCode = ref('')
 const scanningOut = ref(false)
 const invplFoc = ref(false)
+
+const commercialInvoiceOpenLabel = computed(() =>
+  invplFoc.value
+    ? t('pages.delivery.openNonCommercialInvoice')
+    : t('pages.delivery.openCommercialInvoice'),
+)
+
+const commercialInvoicePdfLabel = computed(() =>
+  invplFoc.value
+    ? t('pages.delivery.nonCommercialInvoicePdf')
+    : t('pages.delivery.commercialInvoicePdf'),
+)
 
 function invplByDeliveryPath(deliveryId, foc = invplFoc.value) {
   const q = foc ? '?foc=1' : ''
@@ -2148,9 +2254,10 @@ async function openCommercialInvoice() {
 async function downloadCommercialInvoicePdf() {
   if (!detailRow.value?.id) return
   try {
+    const prefix = invplFoc.value ? 'non_commercial_invoice' : 'commercial_invoice'
     await fetchAuthenticatedDocument(`/documents/commercial-invoice/${detailRow.value.id}/pdf`, {
       mode: 'download',
-      downloadFallbackName: `commercial_invoice_${detailRow.value.id}.pdf`,
+      downloadFallbackName: `${prefix}_${detailRow.value.id}.pdf`,
     })
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
@@ -2370,6 +2477,26 @@ async function submitArrange() {
   margin: 0;
   font-size: 12px;
   color: #64748b;
+}
+
+.delivery-list-scroll-sync {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.delivery-list-top-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-bottom: 4px;
+  /* Keep bar visible without taking much vertical space */
+  height: 14px;
+}
+
+.delivery-list-top-scroll__spacer {
+  height: 1px;
+  pointer-events: none;
 }
 
 .delivery-list-table {

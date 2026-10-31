@@ -86,11 +86,16 @@ class KyCloseVarianceTests(unittest.TestCase):
         self.assertAlmostEqual(row["target_qty"], 60.0, places=3)
         self.assertAlmostEqual(row["actual_qty"], 50.0, places=3)
 
-    def test_return_to_pallet_records_kurang_against_target(self):
-        row = api_routes._ky_close_kulit_lebih(50, 60, 60, False)
-        self.assertEqual(row["keterangan"], "Kurang")
-        self.assertAlmostEqual(row["selisih"], -10.0, places=3)
+    def test_return_to_pallet_does_not_record_kurang(self):
+        # Sisa balik ke palet → bukan selisih Kurang di laporan.
+        self.assertIsNone(api_routes._ky_close_kulit_lebih(50, 60, 60, False))
+
+    def test_return_to_pallet_still_records_lebih_when_over_target(self):
+        row = api_routes._ky_close_kulit_lebih(70, 60, 60, False)
+        self.assertEqual(row["keterangan"], "Lebih")
+        self.assertAlmostEqual(row["selisih"], 10.0, places=3)
         self.assertAlmostEqual(row["target_qty"], 60.0, places=3)
+        self.assertAlmostEqual(row["actual_qty"], 70.0, places=3)
 
     def test_over_measure_close_does_not_add_kurang(self):
         # 60 vs 60.9 stays on the Lebih ukur row from add_ukur, not a Kurang close row.

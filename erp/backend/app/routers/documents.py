@@ -82,7 +82,10 @@ def document_commercial_invoice_pdf(
 ) -> Response:
     ctx = _commercial_invoice_ctx(db, delivery_id)
     data = md.render_commercial_invoice_pdf(ctx)
-    fn = f"commercial_invoice_delivery_{delivery_id}.pdf"
+    title = str(ctx.get("document_title") or "")
+    non = bool(ctx.get("is_foc")) or "NON COMMERCIAL" in title.upper() or "(Non)" in title
+    prefix = "non_commercial_invoice" if non else "commercial_invoice"
+    fn = f"{prefix}_delivery_{delivery_id}.pdf"
     return Response(
         content=data,
         media_type="application/pdf",

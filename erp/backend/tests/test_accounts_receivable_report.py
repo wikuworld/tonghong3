@@ -13,7 +13,9 @@ from app.services.accounts_receivable_report import (
     invoice_remark,
     invoice_to_rar_row,
     parse_payment_term_days,
+    payment_term_days_for_due,
     render_rar_xlsx,
+    resolve_invoice_payment_terms,
 )
 
 
@@ -51,6 +53,34 @@ def test_parse_payment_term_days():
     assert parse_payment_term_days("30") == 30
     assert parse_payment_term_days("T/T 60 days") == 60
     assert parse_payment_term_days("") is None
+
+
+def test_payment_term_days_for_due_advance():
+    assert payment_term_days_for_due("TT in advance") == 0
+    assert payment_term_days_for_due("TT 30 days") == 30
+    assert payment_term_days_for_due("") is None
+
+
+def test_resolve_invoice_payment_terms_from_customer():
+    term, due = resolve_invoice_payment_terms(
+        customer_payment_terms="TT 30 days",
+        term_of_payment=None,
+        due_date=None,
+        base_date=date(2026, 1, 1),
+    )
+    assert term == "TT 30 days"
+    assert due == date(2026, 1, 31)
+
+
+def test_resolve_invoice_payment_terms_respects_explicit():
+    term, due = resolve_invoice_payment_terms(
+        customer_payment_terms="TT 60 days",
+        term_of_payment="TT 90 days",
+        due_date=date(2026, 3, 1),
+        base_date=date(2026, 1, 1),
+    )
+    assert term == "TT 90 days"
+    assert due == date(2026, 3, 1)
 
 
 def test_invoice_remark_finish_payment():

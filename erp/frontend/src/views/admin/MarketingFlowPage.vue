@@ -495,8 +495,18 @@
       <p class="mkt-out-col-filter-tip">
         {{ outstandingCompactView ? t('pages.marketingFlow.outstandingWorkTip') : t('pages.marketingFlow.colFilterTip') }}
       </p>
+      <div
+        ref="outstandingTopScrollRef"
+        class="mkt-out-hscroll-top"
+        @scroll="onOutstandingTopScroll"
+      >
+        <div
+          class="mkt-out-hscroll-top__spacer"
+          :style="{ width: `${outstandingTableScrollWidth}px` }"
+        />
+      </div>
 
-      <div class="admin-table-scroll mkt-out-table-wrap">
+      <div ref="outstandingTableWrapRef" class="mkt-out-table-wrap">
       <el-table
         ref="outstandingTableRef"
         :key="outstandingTableKey"
@@ -514,53 +524,58 @@
         @selection-change="onOutstandingSelectionChange"
       >
         <el-table-column type="selection" width="42" fixed="left" />
-        <!-- Fixed identitas: Tgl Order, No SO, No Lot (di luar grup agar sticky tetap jalan) -->
-        <el-table-column
-          v-for="col in outstandingFixedIdentityColumns"
-          :key="`fixed-${col.prop}`"
-          :prop="col.prop"
-          :width="col.width"
-          :min-width="col.minWidth"
-          fixed="left"
-          :align="col.align || 'left'"
-          :class-name="[
-            col.prop === 'thi_order' ? 'out-col-thi-order' : '',
-            col.className || '',
-          ].filter(Boolean).join(' ') || undefined"
-          show-overflow-tooltip
-        >
-          <template v-if="!outstandingCompactView" #header>
-            <OutstandingColFilterHeader
-              v-model="outstandingTextFilters[col.prop]"
-              :label="col.label"
-              :options="outstandingColFilterOptions[col.prop] || []"
-            />
-          </template>
-          <template v-else #header>
-            <span>{{
-              col.prop === 'order_date'
-                ? t('common.orderDate')
-                : col.prop === 'thi_order'
-                  ? t('common.poNo')
-                  : t('pages.marketingFlow.colLotNo')
-            }}</span>
-          </template>
-          <template #default="{ row }">
-            <el-button
-              v-if="col.prop === 'thi_order'"
-              link
-              type="primary"
-              @click="goPo(row.po_id)"
-            >
-              {{ row.thi_order || t('common.emptyValue') }}
-            </el-button>
-            <span v-else-if="col.kind === 'date'">{{ formatOutstandingDate(row[col.prop]) }}</span>
-            <span v-else-if="col.kind === 'system_no'">{{ outstandingLotNo(row) || t('common.emptyValue') }}</span>
-            <span v-else>{{ formatOutstandingCell(row[col.prop]) }}</span>
-          </template>
-        </el-table-column>
+        <!-- Fixed identitas: hanya kolom lengkap (sticky Element Plus) -->
+        <template v-if="!outstandingCompactView">
+          <el-table-column
+            v-for="col in outstandingFixedIdentityColumns"
+            :key="`fixed-${col.prop}`"
+            :prop="col.prop"
+            :width="col.width"
+            :min-width="col.minWidth"
+            fixed="left"
+            :align="col.align || 'left'"
+            :class-name="[
+              col.prop === 'thi_order' ? 'out-col-thi-order' : '',
+              col.className || '',
+            ].filter(Boolean).join(' ') || undefined"
+            show-overflow-tooltip
+          >
+            <template #header>
+              <OutstandingColFilterHeader
+                v-model="outstandingTextFilters[col.prop]"
+                :label="col.label"
+                :options="outstandingColFilterOptions[col.prop] || []"
+              />
+            </template>
+            <template #default="{ row }">
+              <el-button
+                v-if="col.prop === 'thi_order'"
+                link
+                type="primary"
+                @click="goPo(row.po_id)"
+              >
+                {{ row.thi_order || t('common.emptyValue') }}
+              </el-button>
+              <span v-else-if="col.kind === 'date'">{{ formatOutstandingDate(row[col.prop]) }}</span>
+              <span v-else-if="col.kind === 'system_no'">{{ outstandingLotNo(row) || t('common.emptyValue') }}</span>
+              <span v-else>{{ formatOutstandingCell(row[col.prop]) }}</span>
+            </template>
+          </el-table-column>
+        </template>
 
         <template v-if="outstandingCompactView">
+          <!-- Tanggal di luar grup agar fixed/sticky Element Plus aman -->
+          <el-table-column
+            prop="order_date"
+            :label="t('common.orderDate')"
+            width="120"
+            fixed="left"
+          >
+            <template #default="{ row }">
+              {{ formatOutstandingDate(row.order_date) }}
+            </template>
+          </el-table-column>
+
           <el-table-column
             :label="t('pages.marketingFlow.colGroupSo')"
             align="center"
@@ -568,22 +583,28 @@
             label-class-name="out-col-group-label out-col-group-label--so"
           >
             <el-table-column
-              :label="t('pages.marketingFlow.colPoCustomer')"
-              min-width="128"
+              prop="customer_name"
+              :label="t('common.customerName')"
+              min-width="180"
               show-overflow-tooltip
               class-name="out-group-start out-group-start--so"
+            />
+            <el-table-column
+              prop="brand"
+              :label="t('pages.marketingFlow.colBrand')"
+              min-width="120"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              :label="t('pages.marketingFlow.colPoCustomer')"
+              min-width="140"
+              show-overflow-tooltip
+              class-name="out-group-end"
             >
               <template #default="{ row }">
                 {{ row.po_customer_ref || row.no_po || t('common.emptyValue') }}
               </template>
             </el-table-column>
-            <el-table-column
-              prop="customer_name"
-              :label="t('common.customerName')"
-              min-width="180"
-              show-overflow-tooltip
-              class-name="out-group-end"
-            />
           </el-table-column>
 
           <el-table-column
@@ -600,10 +621,16 @@
               class-name="out-group-start out-group-start--item"
             />
             <el-table-column
-              prop="qty_sf"
-              :label="t('pages.marketingFlow.colQtySf')"
+              prop="color"
+              :label="t('common.color')"
               width="100"
-              align="right"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              prop="thickness"
+              :label="t('common.thickness')"
+              width="110"
+              show-overflow-tooltip
               class-name="out-group-end"
             />
           </el-table-column>
@@ -638,92 +665,6 @@
             >
               <template #default="{ row }">
                 {{ formatOutstandingCell(row.stock_wh_qty) }}
-              </template>
-            </el-table-column>
-          </el-table-column>
-
-          <el-table-column
-            :label="t('pages.marketingFlow.colGroupDelivery')"
-            align="center"
-            class-name="out-col-group out-col-group--delivery"
-            label-class-name="out-col-group-label out-col-group-label--delivery"
-          >
-            <el-table-column
-              prop="delivered_qty"
-              :label="t('pages.marketingFlow.colDeliveredQty')"
-              width="100"
-              align="right"
-              class-name="out-group-start out-group-start--delivery"
-            />
-            <el-table-column
-              :label="t('pages.marketingFlow.colSuratJalan')"
-              min-width="140"
-              show-overflow-tooltip
-            >
-              <template #default="{ row }">
-                <template v-if="outstandingSjEntries(row).length">
-                  <template v-for="(sj, idx) in outstandingSjEntries(row)" :key="sj.number">
-                    <el-button link type="primary" @click="openOutstandingFgPacking(row, sj.number)">
-                      {{ sj.number }}
-                    </el-button>
-                    <span v-if="idx < outstandingSjEntries(row).length - 1">, </span>
-                  </template>
-                </template>
-                <span v-else class="text-gray-400">—</span>
-              </template>
-            </el-table-column>
-            <template v-for="n in 3" :key="`wave-${n}`">
-              <el-table-column :label="`${outstandingOrdinalLabel(n)} Qty`" width="100" align="right">
-                <template #default="{ row }">{{ formatOutstandingCell(row[`delivery_${n}_qty`]) }}</template>
-              </el-table-column>
-              <el-table-column
-                :label="`${outstandingOrdinalLabel(n)} Date`"
-                width="118"
-                :class-name="n === 3 ? 'out-group-end' : undefined"
-              >
-                <template #default="{ row }">{{ formatOutstandingDate(row[`delivery_${n}_date`]) }}</template>
-              </el-table-column>
-            </template>
-          </el-table-column>
-
-          <el-table-column
-            :label="t('pages.marketingFlow.colGroupStatus')"
-            align="center"
-            class-name="out-col-group out-col-group--status"
-            label-class-name="out-col-group-label out-col-group-label--status"
-          >
-            <el-table-column
-              :label="t('pages.marketingFlow.outWorkCol')"
-              width="160"
-              class-name="out-group-start out-group-start--status"
-            >
-              <template #default="{ row }">
-                <el-tag size="small" effect="plain" :type="outstandingWorkStatusType(row)">
-                  {{ outstandingWorkStatusLabel(row) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('pages.marketingFlow.outstandingColMktStage')" min-width="152">
-              <template #default="{ row }">{{ labelFor(row.mkt_stage) }}</template>
-            </el-table-column>
-            <el-table-column :label="t('pages.marketingFlow.nextStepCol')" min-width="160">
-              <template #default="{ row }">{{ outstandingRowNextLabel(row) }}</template>
-            </el-table-column>
-            <el-table-column
-              :label="t('pages.marketingFlow.colRemarkMarketing')"
-              min-width="168"
-              class-name="out-group-end"
-            >
-              <template #default="{ row }">
-                <el-input
-                  v-if="isOutstandingRowEditing(row)"
-                  v-model="row.remark_marketing"
-                  size="small"
-                  type="textarea"
-                  :rows="2"
-                  :disabled="!canEditPoDetail"
-                />
-                <span v-else>{{ formatOutstandingCell(row.remark_marketing) }}</span>
               </template>
             </el-table-column>
           </el-table-column>
@@ -1281,7 +1222,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -1318,7 +1259,7 @@ import { can } from '../../security/permissions'
 import { useModulePermission } from '../../composables/useModulePermission'
 import { stuckReasonLabel as translateStuckReason } from '../../utils/mktStuckReason.js'
 import { soListNextStep, soListNextStepActionable } from '../../utils/mktStage.js'
-import { outstandingNextAction, outstandingWorkStatus, extractPlanSlots } from '../../utils/outstandingWork.js'
+import { outstandingNextAction, extractPlanSlots } from '../../utils/outstandingWork.js'
 import { formatDate, statusType } from '../../utils/format.js'
 
 const OUTSTANDING_LINES_LIMIT = 1000
@@ -1447,6 +1388,137 @@ const outstandingCompactView = computed(() => outstandingViewMode.value === 'wor
 const workbenchOverride = ref(null)
 const materialStatus = ref('')
 const outstandingTableRef = ref(null)
+const outstandingTableWrapRef = ref(null)
+const outstandingTopScrollRef = ref(null)
+const outstandingTableScrollWidth = ref(0)
+let outstandingBodyWrapperEl = null
+let outstandingSyncingScroll = false
+let outstandingScrollRefreshTimer = null
+let outstandingTableResizeObserver = null
+
+/** Body/header utama saja (bukan patch fixed kiri/kanan). */
+function getOutstandingMainWrapper(kind) {
+  const root = outstandingTableWrapRef.value
+  if (!root?.querySelector) return null
+  const tableRoot = root.querySelector('.el-table')
+  if (!tableRoot) return null
+  const cls = kind === 'header' ? 'el-table__header-wrapper' : 'el-table__body-wrapper'
+  // EP 2.x: sering di dalam .el-table__inner-wrapper; hindari patch .el-table__fixed*
+  const wrap =
+    tableRoot.querySelector(`.el-table__inner-wrapper > .${cls}`)
+    || tableRoot.querySelector(`:scope > .${cls}`)
+    || Array.from(tableRoot.querySelectorAll(`.${cls}`)).find(
+      (el) => !el.closest('.el-table__fixed, .el-table__fixed-right, .el-table__fixed-left'),
+    )
+    || null
+  if (!wrap) return null
+  return wrap.querySelector('.el-scrollbar__wrap') || wrap
+}
+
+function getOutstandingBodyWrapper() {
+  return getOutstandingMainWrapper('body')
+}
+
+function getOutstandingHeaderWrapper() {
+  return getOutstandingMainWrapper('header')
+}
+
+function measureOutstandingTableScrollWidth() {
+  const body = getOutstandingBodyWrapper()
+  const root = outstandingTableWrapRef.value
+  if (!body || !root) {
+    outstandingTableScrollWidth.value = 0
+    return
+  }
+  const bodyTable = root.querySelector('.el-table__body-wrapper > .el-scrollbar .el-table__body')
+    || root.querySelector('.el-table__body-wrapper .el-table__body')
+    || root.querySelector('.el-table__body')
+  const headerTable = root.querySelector('.el-table__header-wrapper > .el-scrollbar .el-table__header')
+    || root.querySelector('.el-table__header-wrapper .el-table__header')
+    || root.querySelector('.el-table__header')
+  const view = body.querySelector?.('.el-scrollbar__view') || null
+  outstandingTableScrollWidth.value = Math.max(
+    body.scrollWidth || 0,
+    bodyTable?.scrollWidth || 0,
+    headerTable?.scrollWidth || 0,
+    view?.scrollWidth || 0,
+    body.clientWidth || 0,
+  )
+}
+
+function setOutstandingTableScrollLeft(left) {
+  const body = getOutstandingBodyWrapper()
+  const header = getOutstandingHeaderWrapper()
+  if (body) body.scrollLeft = left
+  if (header) header.scrollLeft = left
+}
+
+function onOutstandingTopScroll() {
+  if (outstandingSyncingScroll) return
+  if (!outstandingTopScrollRef.value) return
+  outstandingSyncingScroll = true
+  setOutstandingTableScrollLeft(outstandingTopScrollRef.value.scrollLeft)
+  outstandingSyncingScroll = false
+}
+
+function onOutstandingBodyScroll() {
+  if (outstandingSyncingScroll) return
+  if (!outstandingTopScrollRef.value || !outstandingBodyWrapperEl) return
+  outstandingSyncingScroll = true
+  outstandingTopScrollRef.value.scrollLeft = outstandingBodyWrapperEl.scrollLeft
+  const header = getOutstandingHeaderWrapper()
+  if (header) header.scrollLeft = outstandingBodyWrapperEl.scrollLeft
+  outstandingSyncingScroll = false
+}
+
+function unbindOutstandingTableScroll() {
+  if (outstandingBodyWrapperEl) {
+    outstandingBodyWrapperEl.removeEventListener('scroll', onOutstandingBodyScroll)
+    outstandingBodyWrapperEl = null
+  }
+}
+
+function bindOutstandingTableScroll() {
+  unbindOutstandingTableScroll()
+  outstandingBodyWrapperEl = getOutstandingBodyWrapper()
+  if (!outstandingBodyWrapperEl) return
+  outstandingBodyWrapperEl.addEventListener('scroll', onOutstandingBodyScroll, { passive: true })
+  measureOutstandingTableScrollWidth()
+}
+
+function ensureOutstandingTableResizeObserver() {
+  if (outstandingTableResizeObserver || typeof ResizeObserver === 'undefined') return
+  outstandingTableResizeObserver = new ResizeObserver(() => {
+    measureOutstandingTableScrollWidth()
+  })
+  if (outstandingTableWrapRef.value) {
+    outstandingTableResizeObserver.observe(outstandingTableWrapRef.value)
+  }
+}
+
+async function refreshOutstandingTableScroll() {
+  if (outstandingScrollRefreshTimer) {
+    clearTimeout(outstandingScrollRefreshTimer)
+    outstandingScrollRefreshTimer = null
+  }
+  await nextTick()
+  ensureOutstandingTableResizeObserver()
+  if (outstandingTableResizeObserver && outstandingTableWrapRef.value) {
+    outstandingTableResizeObserver.disconnect()
+    outstandingTableResizeObserver.observe(outstandingTableWrapRef.value)
+  }
+  bindOutstandingTableScroll()
+  // Kolom lengkap (grup + fixed) butuh layout pass ekstra sebelum scrollWidth akurat.
+  requestAnimationFrame(() => {
+    measureOutstandingTableScrollWidth()
+    bindOutstandingTableScroll()
+    outstandingScrollRefreshTimer = setTimeout(() => {
+      measureOutstandingTableScrollWidth()
+      bindOutstandingTableScroll()
+      outstandingScrollRefreshTimer = null
+    }, 120)
+  })
+}
 const outstandingSelection = ref([])
 const outstandingScheduleVisible = ref(false)
 const outstandingPiVisible = ref(false)
@@ -2269,6 +2341,7 @@ async function loadOutstanding() {
     outstandingSelection.value = []
     outstandingTableRef.value?.clearSelection?.()
     syncOutstandingFactoryOptions(outstandingRows.value)
+    await refreshOutstandingTableScroll()
   } catch (e) {
     ElMessage.error(e.message || t('common.errorGeneric'))
   } finally {
@@ -2371,27 +2444,8 @@ function workOnOutstandingRow(row, action) {
   else if (action === 'pi') outstandingPiVisible.value = true
 }
 
-function outstandingWorkStatusLabel(row) {
-  return t(`pages.marketingFlow.outWorkStatus.${outstandingWorkStatus(row)}`)
-}
-
-function outstandingWorkStatusType(row) {
-  const st = outstandingWorkStatus(row)
-  if (st === 'shipped' || st === 'closed') return 'success'
-  if (st === 'scheduled') return 'success'
-  if (st === 'partial_ship' || st === 'partial_schedule') return 'warning'
-  return 'info'
-}
-
 function outstandingRowNextLabel(row) {
   return t(`pages.marketingFlow.outNext.${outstandingNextAction(row)}`)
-}
-
-function outstandingRowNextType(row) {
-  const a = outstandingNextAction(row)
-  if (a === 'ship') return 'warning'
-  if (a === 'schedule') return 'primary'
-  return 'default'
 }
 
 function runOutstandingRowPrimary(row) {
@@ -2611,6 +2665,7 @@ async function openSnapshotDetail(id) {
 }
 
 onMounted(async () => {
+  window.addEventListener('resize', measureOutstandingTableScrollWidth)
   try {
     const cust = await listCustomers()
     marketingCustomers.value = Array.isArray(cust) ? cust : (cust?.data || [])
@@ -2653,8 +2708,26 @@ watch(
   },
 )
 
+watch(
+  () => [outstandingTableKey.value, outstandingDisplayRows.value?.length, outstandingCompactView.value],
+  () => {
+    if (section.value !== 'outstanding') return
+    refreshOutstandingTableScroll()
+  },
+)
+
 onUnmounted(() => {
   if (flowKeywordTimer) clearTimeout(flowKeywordTimer)
+  if (outstandingScrollRefreshTimer) {
+    clearTimeout(outstandingScrollRefreshTimer)
+    outstandingScrollRefreshTimer = null
+  }
+  if (outstandingTableResizeObserver) {
+    outstandingTableResizeObserver.disconnect()
+    outstandingTableResizeObserver = null
+  }
+  unbindOutstandingTableScroll()
+  window.removeEventListener('resize', measureOutstandingTableScrollWidth)
 })
 
 watch(flowKeyword, () => {
@@ -3481,9 +3554,50 @@ function handleOutstandingExportCommand(command) {
   margin-bottom: 0.35rem;
 }
 
+.mkt-out-hscroll-top {
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 14px;
+  margin-bottom: 4px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  background: #f8fafc;
+}
+
+.mkt-out-hscroll-top__spacer {
+  height: 1px;
+  min-width: 100%;
+}
+
 .mkt-out-table-wrap {
   margin: 0;
   padding: 0;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Scroll horizontal tetap aktif di wrap internal; hanya sembunyikan bar bawah. */
+.mkt-out-table-wrap :deep(.el-table__body-wrapper),
+.mkt-out-table-wrap :deep(.el-table__header-wrapper) {
+  overflow: hidden;
+}
+
+.mkt-out-table-wrap :deep(.el-table__body-wrapper .el-scrollbar__wrap),
+.mkt-out-table-wrap :deep(.el-table__header-wrapper .el-scrollbar__wrap) {
+  overflow-x: auto !important;
+}
+
+.mkt-out-table-wrap :deep(.el-table__body-wrapper .el-scrollbar__bar.is-horizontal),
+.mkt-out-table-wrap :deep(.el-table__header-wrapper .el-scrollbar__bar.is-horizontal) {
+  display: none !important;
+  height: 0 !important;
+}
+
+.mkt-out-table-wrap :deep(.el-table__body-wrapper .el-scrollbar__wrap)::-webkit-scrollbar:horizontal,
+.mkt-out-table-wrap :deep(.el-table__header-wrapper .el-scrollbar__wrap)::-webkit-scrollbar:horizontal {
+  height: 0;
 }
 
 .outstanding-table--col-filters :deep(th.el-table__cell) {

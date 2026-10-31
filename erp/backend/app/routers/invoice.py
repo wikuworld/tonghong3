@@ -40,7 +40,7 @@ from app.services.invoice_outstanding import (
     invoice_ar_status,
     sync_payment_status_from_balance,
 )
-from app.services.accounts_receivable_report import invoice_balance
+from app.services.accounts_receivable_report import invoice_balance, resolve_invoice_payment_terms
 router = APIRouter(tags=["invoice"])
 
 
@@ -76,6 +76,25 @@ def create_invoice(
             po_for_num = db.get(PoHeader, int(po_id))
         inv_date = data.get("invoice_date") or (delivery.delivery_date if delivery else None)
         data["invoice_number"] = allocate_invoice_number(db, po=po_for_num, on_date=inv_date)
+
+    # Auto term + due_date dari payment_terms customer
+    cust = None
+    cid = data.get("customer_id")
+    if cid:
+        cust = db.get(Customer, int(cid))
+    if cust is None and delivery and delivery.customer_id:
+        cust = db.get(Customer, int(delivery.customer_id))
+    base_date = data.get("invoice_date") or (delivery.delivery_date if delivery else None)
+    term, due = resolve_invoice_payment_terms(
+        customer_payment_terms=getattr(cust, "payment_terms", None) if cust else None,
+        term_of_payment=data.get("term_of_payment"),
+        due_date=data.get("due_date"),
+        base_date=base_date,
+    )
+    if term and not (data.get("term_of_payment") or "").strip():
+        data["term_of_payment"] = term
+    if due is not None and data.get("due_date") is None:
+        data["due_date"] = due
 
     row = Invoice(**data)
     db.add(row)
@@ -332,14 +351,30 @@ def update_invoice(
         "nopen": row.nopen,
         "nomor_aju": row.nomor_aju,
     }
-    for k, v in body.model_dump(exclude_unset=True).items():
+    patch = body.model_dump(exclude_unset=True)
+    for k, v in patch.items():
         setattr(row, k, v)
+
+    # Auto isi term/due dari customer bila masih kosong (tidak menimpa input user)
+    if not (row.term_of_payment or "").strip() or row.due_date is None:
+        cust = db.get(Customer, int(row.customer_id)) if row.customer_id else None
+        term, due = resolve_invoice_payment_terms(
+            customer_payment_terms=getattr(cust, "payment_terms", None) if cust else None,
+            term_of_payment=row.term_of_payment,
+            due_date=row.due_date,
+            base_date=row.tax_invoice_date or row.invoice_date,
+        )
+        if term and not (row.term_of_payment or "").strip():
+            row.term_of_payment = term
+        if due is not None and row.due_date is None:
+            row.due_date = due
+
     # Jika payment/CN diubah, sesuaikan payment_status dari saldo
     if any(
-        f in body.model_dump(exclude_unset=True)
+        f in patch
         for f in ("payment_amount", "payment_date", "payment_status", "credit_note_amount", "oia_export_usd", "total_amount")
     ):
-        if "payment_status" not in body.model_dump(exclude_unset=True):
+        if "payment_status" not in patch:
             sync_payment_status_from_balance(row)
     log_change(
         db,

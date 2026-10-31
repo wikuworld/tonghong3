@@ -50,32 +50,104 @@
             {{ t('pages.mrpGudangFg.statsLine', { inStock: stats.inStock, out: stats.out, failed: stats.failed }) }}
           </p>
         </div>
-        <div class="flex gap-2 flex-wrap items-center">
-          <el-radio-group v-model="statusFilter" size="small" @change="reload">
-            <el-radio-button value="">{{ t('pages.mrpGudangFg.filterAll') }}</el-radio-button>
-            <el-radio-button value="in_stock">{{ t('pages.mrpGudangFg.statusInStock') }}</el-radio-button>
-            <el-radio-button value="out">{{ t('pages.mrpGudangFg.statusOut') }}</el-radio-button>
-            <el-radio-button value="repacked">{{ t('pages.mrpGudangFg.statusRepacked') }}</el-radio-button>
-          </el-radio-group>
-          <el-input
-            v-model="search" @keyup.enter="() => { page = 1; reload() }" @clear="() => { page = 1; reload() }"
-            clearable
-            size="small"
-            class="w-56"
-            :placeholder="t('pages.mrpGudangFg.searchPlaceholder')"
-          />
-        </div>
       </div>
 
-      <p class="text-xs text-slate-500 mb-2">{{ t('pages.mrpGudangFg.scrollHint') }}</p>
+      <div class="filter-panel mb-3">
+        <div class="fg-filter-panel__head">
+          <p class="filter-panel__title mb-0">{{ t('common.filter') }}</p>
+          <div class="flex gap-2 flex-wrap">
+            <el-button size="small" :icon="Refresh" :loading="loading" @click="applyFilters">
+              {{ t('common.refresh') }}
+            </el-button>
+            <el-button size="small" :icon="RefreshLeft" @click="resetFilters">
+              {{ t('common.reset') }}
+            </el-button>
+          </div>
+        </div>
+        <el-form class="filter-form" label-position="top">
+          <el-row :gutter="12">
+            <el-col :xs="24" :sm="12" :md="8" :lg="6">
+              <el-form-item :label="t('common.customer')">
+                <el-select
+                  v-model="customerFilter"
+                  multiple
+                  collapse-tags
+                  collapse-tags-tooltip
+                  filterable
+                  clearable
+                  class="w-full"
+                  :placeholder="t('pages.mrpGudangFg.filterCustomerMulti')"
+                  @change="onFilterChange"
+                >
+                  <el-option
+                    v-for="c in customerOptions"
+                    :key="c"
+                    :label="c"
+                    :value="c"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :md="8" :lg="6">
+              <el-form-item :label="t('pages.mrpGudangFg.dateIn')">
+                <el-date-picker
+                  v-model="dateInRange"
+                  type="daterange"
+                  unlink-panels
+                  range-separator="—"
+                  value-format="YYYY-MM-DD"
+                  class="w-full"
+                  style="width: 100%"
+                  clearable
+                  :start-placeholder="t('common.placeholder.fromDate')"
+                  :end-placeholder="t('common.placeholder.toDate')"
+                  @change="onFilterChange"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :md="8" :lg="6">
+              <el-form-item :label="t('common.status')">
+                <el-radio-group v-model="statusFilter" size="small" @change="onFilterChange">
+                  <el-radio-button value="">{{ t('pages.mrpGudangFg.filterAll') }}</el-radio-button>
+                  <el-radio-button value="in_stock">{{ t('pages.mrpGudangFg.statusInStock') }}</el-radio-button>
+                  <el-radio-button value="out">{{ t('pages.mrpGudangFg.statusOut') }}</el-radio-button>
+                  <el-radio-button value="repacked">{{ t('pages.mrpGudangFg.statusRepacked') }}</el-radio-button>
+                </el-radio-group>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12" :md="8" :lg="6">
+              <el-form-item :label="t('common.search')">
+                <el-input
+                  v-model="search"
+                  clearable
+                  :placeholder="t('pages.mrpGudangFg.searchPlaceholder')"
+                  @keyup.enter="onFilterChange"
+                  @clear="onFilterChange"
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </el-form>
+      </div>
+
+      <p class="text-xs text-slate-500 mb-2">{{ t('pages.mrpGudangFg.scrollHintTop') }}</p>
+      <div
+        ref="topScrollRef"
+        class="fg-hscroll-top"
+        @scroll="onTopScroll"
+      >
+        <div class="fg-hscroll-top__spacer" :style="{ width: `${tableScrollWidth}px` }" />
+      </div>
+      <div ref="tableWrapRef" class="fg-table-wrap">
       <el-table
-        :data="rows"
+        :data="displayedRows"
         v-loading="loading"
         @sort-change="onSortChange"
         border
         stripe
         size="small"
         class="admin-table"
+        max-height="62vh"
         :empty-text="t('common.tableEmpty')"
       >
         <el-table-column type="index" width="56" :label="t('common.noLabel')" align="center" fixed />
@@ -86,25 +158,74 @@
           show-overflow-tooltip
           fixed
         />
-        <el-table-column :label="t('common.lotNo')" min-width="130" show-overflow-tooltip>
+        <el-table-column min-width="140" show-overflow-tooltip>
+          <template #header>
+            <OutstandingColFilterHeader
+              v-model="colFilters.lot_no"
+              :label="t('common.lotNo')"
+              :options="colFilterOptions.lot_no"
+            />
+          </template>
           <template #default="{ row }">{{ dash(row.lot_no) }}</template>
         </el-table-column>
-        <el-table-column :label="t('pages.mrpRencana.soRef')" min-width="100" show-overflow-tooltip>
+        <el-table-column min-width="120" show-overflow-tooltip>
+          <template #header>
+            <OutstandingColFilterHeader
+              v-model="colFilters.no_so"
+              :label="t('pages.mrpRencana.soRef')"
+              :options="colFilterOptions.no_so"
+            />
+          </template>
           <template #default="{ row }">{{ dash(row.no_so) }}</template>
         </el-table-column>
-        <el-table-column :label="t('common.customer')" min-width="120" show-overflow-tooltip>
+        <el-table-column min-width="140" show-overflow-tooltip>
+          <template #header>
+            <OutstandingColFilterHeader
+              v-model="colFilters.customer"
+              :label="t('common.customer')"
+              :options="colFilterOptions.customer"
+            />
+          </template>
           <template #default="{ row }">{{ dash(row.customer) }}</template>
         </el-table-column>
-        <el-table-column :label="t('pages.mrpGudangFg.colThickness')" min-width="90" show-overflow-tooltip>
+        <el-table-column min-width="100" show-overflow-tooltip>
+          <template #header>
+            <OutstandingColFilterHeader
+              v-model="colFilters.thickness"
+              :label="t('pages.mrpGudangFg.colThickness')"
+              :options="colFilterOptions.thickness"
+            />
+          </template>
           <template #default="{ row }">{{ dash(row.thickness) }}</template>
         </el-table-column>
-        <el-table-column :label="t('pages.mrpGudangFg.colMaterial')" min-width="140" show-overflow-tooltip>
+        <el-table-column min-width="150" show-overflow-tooltip>
+          <template #header>
+            <OutstandingColFilterHeader
+              v-model="colFilters.material_name"
+              :label="t('pages.mrpGudangFg.colMaterial')"
+              :options="colFilterOptions.material_name"
+            />
+          </template>
           <template #default="{ row }">{{ dash(row.material_name) }}</template>
         </el-table-column>
-        <el-table-column :label="t('pages.mrpGudangFg.colEmboss')" min-width="100" show-overflow-tooltip>
+        <el-table-column min-width="120" show-overflow-tooltip>
+          <template #header>
+            <OutstandingColFilterHeader
+              v-model="colFilters.emboss"
+              :label="t('pages.mrpGudangFg.colEmboss')"
+              :options="colFilterOptions.emboss"
+            />
+          </template>
           <template #default="{ row }">{{ dash(row.emboss) }}</template>
         </el-table-column>
-        <el-table-column :label="t('pages.mrpGudangFg.colColor')" min-width="100" show-overflow-tooltip>
+        <el-table-column min-width="120" show-overflow-tooltip>
+          <template #header>
+            <OutstandingColFilterHeader
+              v-model="colFilters.color"
+              :label="t('pages.mrpGudangFg.colColor')"
+              :options="colFilterOptions.color"
+            />
+          </template>
           <template #default="{ row }">{{ dash(row.color) }}</template>
         </el-table-column>
         <el-table-column :label="t('pages.mrpGudangFg.colItemCode')" min-width="110" show-overflow-tooltip>
@@ -186,6 +307,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
       <div class="mt-3 flex justify-end">
         <el-pagination
           v-model:current-page="page"
@@ -570,16 +692,18 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CircleCheck, CircleCheckFilled, Refresh, Upload } from '@element-plus/icons-vue'
+import { CircleCheck, CircleCheckFilled, Refresh, RefreshLeft, Upload } from '@element-plus/icons-vue'
 import AdminSection from '../../../components/AdminSection.vue'
 import AdminTableActions from '../../../components/admin/AdminTableActions.vue'
+import OutstandingColFilterHeader from '../../../components/admin/OutstandingColFilterHeader.vue'
 import { can } from '../../../security/permissions'
 import {
   mrpGetGudangFg,
+  mrpGudangFgFilterOptions,
   mrpGudangFgNotes,
   mrpGudangFgOut,
   mrpGudangFgRepack,
@@ -612,6 +736,23 @@ const sortBy = ref('date_in')
 const sortDir = ref('desc')
 const search = ref('')
 const statusFilter = ref('')
+const customerFilter = ref([])
+const customerOptions = ref([])
+const dateInRange = ref(null)
+const colFilters = reactive({
+  lot_no: [],
+  no_so: [],
+  customer: [],
+  thickness: [],
+  material_name: [],
+  emboss: [],
+  color: [],
+})
+const topScrollRef = ref(null)
+const tableWrapRef = ref(null)
+const tableScrollWidth = ref(0)
+let bodyWrapperEl = null
+let syncingScroll = false
 const detailOpen = ref(false)
 const detail = ref(null)
 const detailQtyAlloc = computed(() => {
@@ -653,36 +794,44 @@ const canSaveSj = computed(() => {
   return sjScannedCount.value === sjTotalCount.value
 })
 
-const filteredRows = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  if (!q) return rows.value
-  return rows.value.filter((r) =>
-    [
-      r.kode_packing,
-      r.kode_wip,
-      r.customer,
-      r.status,
-      r.erp_delivery_number,
-      r.bridge_status,
-      r.bridge_error,
-      r.lot_no,
-      r.no_so,
-      r.material_name,
-      r.emboss,
-      r.color,
-      r.thickness,
-      r.kode_barang,
-      r.notes,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase()
-      .includes(q),
-  )
+const COL_FILTER_KEYS = ['lot_no', 'no_so', 'customer', 'thickness', 'material_name', 'emboss', 'color']
+
+function uniqueColValues(list, key) {
+  const seen = new Set()
+  const out = []
+  for (const row of list || []) {
+    const raw = (row?.[key] == null ? '' : String(row[key])).trim()
+    if (!raw || seen.has(raw)) continue
+    seen.add(raw)
+    out.push(raw)
+  }
+  return out.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+}
+
+const colFilterOptions = computed(() => {
+  const list = rows.value || []
+  const opts = {}
+  for (const key of COL_FILTER_KEYS) {
+    opts[key] = uniqueColValues(list, key)
+  }
+  return opts
 })
 
+function rowMatchesColFilters(row) {
+  for (const key of COL_FILTER_KEYS) {
+    const needles = colFilters[key]
+    if (!Array.isArray(needles) || !needles.length) continue
+    const cell = (row?.[key] == null ? '' : String(row[key])).trim().toLowerCase()
+    const hit = needles.some((n) => cell === String(n).trim().toLowerCase())
+    if (!hit) return false
+  }
+  return true
+}
+
+const displayedRows = computed(() => (rows.value || []).filter(rowMatchesColFilters))
+
 const stats = computed(() => {
-  const list = rows.value || []
+  const list = displayedRows.value || []
   return {
     inStock: list.filter((r) => r.status === 'in_stock').length,
     out: list.filter((r) => r.status === 'out').length,
@@ -873,9 +1022,113 @@ function onSortChange(payload) {
   reload()
 }
 
+function onFilterChange() {
+  page.value = 1
+  reload()
+}
+
+function applyFilters() {
+  page.value = 1
+  reload()
+}
+
+function resetFilters() {
+  search.value = ''
+  statusFilter.value = ''
+  customerFilter.value = []
+  dateInRange.value = null
+  for (const key of COL_FILTER_KEYS) {
+    colFilters[key] = []
+  }
+  page.value = 1
+  reload()
+}
+
+async function loadFilterOptions() {
+  try {
+    const data = await mrpGudangFgFilterOptions()
+    customerOptions.value = Array.isArray(data?.customers) ? data.customers : []
+  } catch {
+    customerOptions.value = []
+  }
+}
+
+function getScrollEl(selector) {
+  const root = tableWrapRef.value
+  if (!root?.querySelector) return null
+  const wrap = root.querySelector(selector)
+  if (!wrap) return null
+  return wrap.querySelector('.el-scrollbar__wrap') || wrap
+}
+
+function getBodyWrapper() {
+  return getScrollEl('.el-table__body-wrapper')
+}
+
+function getHeaderWrapper() {
+  return getScrollEl('.el-table__header-wrapper')
+}
+
+function measureTableScrollWidth() {
+  const el = getBodyWrapper()
+  if (!el) {
+    tableScrollWidth.value = 0
+    return
+  }
+  const table = tableWrapRef.value?.querySelector?.('.el-table__body')
+  const width = Math.max(
+    el.scrollWidth || 0,
+    table?.scrollWidth || 0,
+    el.clientWidth || 0,
+  )
+  tableScrollWidth.value = width
+}
+
+function setTableScrollLeft(left) {
+  const body = getBodyWrapper()
+  const header = getHeaderWrapper()
+  if (body) body.scrollLeft = left
+  if (header) header.scrollLeft = left
+}
+
+function onTopScroll() {
+  if (syncingScroll) return
+  if (!topScrollRef.value) return
+  syncingScroll = true
+  setTableScrollLeft(topScrollRef.value.scrollLeft)
+  syncingScroll = false
+}
+
+function onBodyScroll() {
+  if (syncingScroll) return
+  if (!topScrollRef.value || !bodyWrapperEl) return
+  syncingScroll = true
+  topScrollRef.value.scrollLeft = bodyWrapperEl.scrollLeft
+  const header = getHeaderWrapper()
+  if (header) header.scrollLeft = bodyWrapperEl.scrollLeft
+  syncingScroll = false
+}
+
+function unbindTableScroll() {
+  if (bodyWrapperEl) {
+    bodyWrapperEl.removeEventListener('scroll', onBodyScroll)
+    bodyWrapperEl = null
+  }
+}
+
+function bindTableScroll() {
+  unbindTableScroll()
+  bodyWrapperEl = getBodyWrapper()
+  if (!bodyWrapperEl) return
+  bodyWrapperEl.addEventListener('scroll', onBodyScroll, { passive: true })
+  measureTableScrollWidth()
+}
+
 async function reload() {
   loading.value = true
   try {
+    const range = Array.isArray(dateInRange.value) ? dateInRange.value : null
+    const customers = (customerFilter.value || []).map((c) => String(c).trim()).filter(Boolean)
     const data = await mrpListGudangFg(
       buildPageParams({
         page: page.value,
@@ -885,12 +1138,17 @@ async function reload() {
         extra: {
           status: statusFilter.value || undefined,
           q: search.value.trim() || undefined,
+          customer: customers.length ? customers.join(',') : undefined,
+          date_from: range?.[0] || undefined,
+          date_to: range?.[1] || undefined,
         },
       }),
     )
     const pageData = normalizePageResult(data, { page: page.value, pageSize: pageSize.value })
     rows.value = pageData.items
     total.value = pageData.total
+    await nextTick()
+    bindTableScroll()
   } catch (e) {
     ElMessage.error(errMsg(e))
   } finally {
@@ -1140,7 +1398,21 @@ async function saveSjScan() {
   }
 }
 
-onMounted(reload)
+watch(displayedRows, async () => {
+  await nextTick()
+  measureTableScrollWidth()
+})
+
+onMounted(async () => {
+  await loadFilterOptions()
+  await reload()
+  window.addEventListener('resize', measureTableScrollWidth)
+})
+
+onBeforeUnmount(() => {
+  unbindTableScroll()
+  window.removeEventListener('resize', measureTableScrollWidth)
+})
 </script>
 
 <style scoped>
@@ -1149,6 +1421,41 @@ onMounted(reload)
 }
 .w-56 {
   width: 14rem;
+}
+.fg-filter-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+.fg-hscroll-top {
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 12px;
+  margin-bottom: 4px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 4px;
+  background: #f8fafc;
+}
+.fg-hscroll-top__spacer {
+  height: 1px;
+  min-width: 100%;
+}
+.fg-table-wrap {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+/* Sembunyikan scrollbar horizontal native (pakai scrollbar atas); vertikal tetap. */
+.fg-table-wrap :deep(.el-table__body-wrapper .el-scrollbar__bar.is-horizontal),
+.fg-table-wrap :deep(.el-table__header-wrapper .el-scrollbar__bar.is-horizontal) {
+  display: none;
+}
+.fg-table-wrap :deep(.el-table__body-wrapper)::-webkit-scrollbar:horizontal,
+.fg-table-wrap :deep(.el-table__header-wrapper)::-webkit-scrollbar {
+  height: 0;
 }
 .mrp-fg-meta {
   display: grid;

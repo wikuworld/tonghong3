@@ -2586,8 +2586,9 @@ def _record_lebih_ukur(
 def _ky_close_kulit_lebih(actual: float, target: float, stock_before: float, closed_remainder: bool):
     """Baris tbl_kulit_lebih saat KY ditutup. None bila tidak ada selisih.
 
-    Tutup sisa: selisih = hasil ukur − stok sebelum tutup, keterangan Kurang.
-    Selain itu: selisih = hasil ukur − target (Kurang atau Lebih).
+    Tutup sisa (fisik habis): selisih = hasil ukur − stok sebelum tutup, keterangan Kurang.
+    Kembalikan ke palet: sisa stok balik, jadi tidak dicatat sebagai Kurang.
+    Hanya catat Lebih bila hasil ukur > target tanpa tutup sisa.
     """
     actual = float(actual or 0)
     target = float(target or 0)
@@ -2602,14 +2603,15 @@ def _ky_close_kulit_lebih(actual: float, target: float, stock_before: float, clo
             "selisih": selisih,
             "keterangan": "Kurang",
         }
+    # Kembalikan ke palet: jangan catat Kurang (sisa sudah balik ke stok).
     selisih = round(actual - target, 3)
-    if abs(selisih) < 1e-9:
+    if selisih <= 1e-9:
         return None
     return {
         "target_qty": round(target, 3),
         "actual_qty": round(actual, 3),
         "selisih": selisih,
-        "keterangan": "Kurang" if selisih < 0 else "Lebih",
+        "keterangan": "Lebih",
     }
 
 
@@ -3294,6 +3296,7 @@ def proses_return_list():
 @api.post("/proses/return")
 def proses_return_create():
     from app import _return_yl_to_palet, ensure_extended_tables
+    from proses_disposition import parse_ukur_sizes, qty_from_ukur_sizes
 
     body = request.get_json(silent=True) or {}
     kode_wip = (body.get("kode_wip") or body.get("wip") or "").strip()
@@ -3327,12 +3330,14 @@ def proses_return_create():
                 cur.close()
                 conn.close()
                 return _err("ky_id wajib di setiap baris")
-            try:
-                return_qty = float(line.get("return_qty") or 0)
-            except (TypeError, ValueError):
+            ukur_sizes = parse_ukur_sizes(line)
+            if not ukur_sizes:
                 cur.close()
                 conn.close()
-                return _err("Qty retur harus angka")
+                return _err(
+                    "Pengukuran ulang wajib: isi ukur_sizes / ukur_rows per YL yang diretur"
+                )
+            return_qty, _lembar = qty_from_ukur_sizes(ukur_sizes)
             if return_qty <= 0:
                 continue
             cur.execute(
@@ -3471,6 +3476,7 @@ def proses_reject_lookup():
 @api.post("/proses/reject")
 def proses_reject_create():
     from app import ensure_extended_tables, generate_code
+    from proses_disposition import parse_ukur_sizes, qty_from_ukur_sizes
 
     body = request.get_json(silent=True) or {}
     kode_wip = (body.get("kode_wip") or body.get("wip") or "").strip()
@@ -3504,6 +3510,16 @@ def proses_reject_create():
                 cur.close()
                 conn.close()
                 return _err("ky_id wajib di setiap baris")
+            ukur_sizes = parse_ukur_sizes(line)
+            if not ukur_sizes:
+                cur.close()
+                conn.close()
+                return _err(
+                    "Pengukuran ulang wajib: isi ukur_sizes / ukur_rows per YL yang direject"
+                )
+            reject_qty, lembar_qty = qty_from_ukur_sizes(ukur_sizes)
+            if reject_qty <= 1e-9:
+                continue
             cur.execute(
                 "SELECT * FROM tbl_persiapan_ky WHERE id=%s AND persiapan_id=%s",
                 (int(ky_id), persiapan_id),
@@ -3516,8 +3532,12 @@ def proses_reject_create():
             remaining = _remaining_measurable_qty(cur, persiapan_id, int(ky_id), ky)
             if remaining <= 1e-9:
                 continue
-            reject_qty = remaining
-            lembar_qty = _ky_ukur_lembar_count(cur, persiapan_id, int(ky_id))
+            if reject_qty > remaining + 1e-9:
+                cur.close()
+                conn.close()
+                return _err(
+                    f"Qty reject YL {ky.get('kode_yl')} melebihi sisa ({remaining:.2f})"
+                )
             kode_palet = (ky.get("kode_palet") or "").strip()
             kode_yl = (ky.get("kode_yl") or "").strip()
             if not kode_palet or not kode_yl:
@@ -7890,12 +7910,40 @@ def _enrich_gudang_fg_rows(cur, rows: list) -> list:
     return rows
 
 
+@api.get("/gudang-fg/filter-options")
+def gudang_fg_filter_options():
+    """Opsi filter panel Gudang FG (customer unik)."""
+    from app import ensure_extended_tables
+
+    conn = get_db_connection()
+    cur = conn.cursor(dictionary=True)
+    ensure_extended_tables(cur)
+    conn.commit()
+    cur.execute(
+        "SELECT DISTINCT TRIM(customer) AS customer FROM tbl_gudang_fg "
+        "WHERE customer IS NOT NULL AND TRIM(customer) <> '' "
+        "ORDER BY customer ASC"
+    )
+    customers = [
+        (row.get("customer") or "").strip()
+        for row in (_rows(cur.fetchall()) or [])
+        if (row.get("customer") or "").strip()
+    ]
+    cur.close()
+    conn.close()
+    return jsonify({"customers": customers})
+
+
 @api.get("/gudang-fg")
 def gudang_fg_list():
     from app import ensure_extended_tables
 
     status = (request.args.get("status") or "").strip().lower()
     q = (request.args.get("q") or "").strip()
+    customer_raw = (request.args.get("customer") or "").strip()
+    customers = [c.strip() for c in customer_raw.split(",") if c.strip()]
+    date_from = (request.args.get("date_from") or request.args.get("date_in_from") or "").strip()
+    date_to = (request.args.get("date_to") or request.args.get("date_in_to") or "").strip()
     pg = parse_page_args(request.args, default_page_size=20)
     order = order_sql(
         {
@@ -7923,6 +7971,16 @@ def gudang_fg_list():
     if status in ("in_stock", "out", "repacked"):
         where += " AND gf.status=%s"
         params.append(status)
+    if customers:
+        ph = ",".join(["%s"] * len(customers))
+        where += f" AND TRIM(gf.customer) IN ({ph})"
+        params.extend(customers)
+    if date_from:
+        where += " AND DATE(gf.date_in) >= %s"
+        params.append(date_from[:10])
+    if date_to:
+        where += " AND DATE(gf.date_in) <= %s"
+        params.append(date_to[:10])
     if q:
         like = f"%{q}%"
         where += (
